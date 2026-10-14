@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-forest: #193D30;
+  --color-deep: #102A22;
+  --color-cream: #F4F0E5;
+  --color-ivory: #FBF9F3;
+  --color-sage: #A8B79A;
+  --color-brass: #B58A57;
+  --color-charcoal: #202820;
+  --color-muted: #74786E;
+
+  --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-ivory);
+  color: var(--color-charcoal);
+}
+
+body {
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #102A22;
+}
+::-webkit-scrollbar-thumb {
+  background: #244F3F;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B58A57;
+}
+
+/* Focus styles for accessibility */
+:focus-visible {
+  outline: 2px solid #B58A57;
+  outline-offset: 3px;
+}
+
+/* Botanical subtle grain texture overlay */
+.botanical-grain {
+  background-image: radial-gradient(rgba(25, 61, 48, 0.04) 1px, transparent 0);
+  background-size: 24px 24px;
+}
+
+/* Editorial typography fluid scale */
+.headline-hero {
+  font-family: var(--font-serif);
+  font-size: clamp(2.5rem, 5.5vw + 1rem, 5.2rem);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+}
+
+.headline-display {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 3.8vw + 0.5rem, 3.8rem);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.headline-sub {
+  font-family: var(--font-serif);
+  font-size: clamp(1.4rem, 2vw + 0.3rem, 2.2rem);
+  line-height: 1.25;
+}
+
+/* Brass shimmer & gold foil accent */
+.brass-glow {
+  box-shadow: 0 0 35px -5px rgba(181, 138, 87, 0.35);
+}
+
+.brass-border {
+  border-color: rgba(181, 138, 87, 0.4);
+}
+
+/* Reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
