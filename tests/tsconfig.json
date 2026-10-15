@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "typeRoots": ["../node_modules/@types", "../apps/erp/node_modules/@types"],
+    "paths": {
+      "@/*": ["../apps/erp/src/*"],
+      "@ravinarayan/brand": ["../packages/brand/index.ts"]
+    }
+  },
+  "include": ["./*.ts"]
+}

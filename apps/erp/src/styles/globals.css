@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-forest: #5D7656;
+  --color-forest-dark: #263B2D;
+  --color-forest-deep: #1A2E20;
+  --color-sage: #8E9F89;
+  --color-sage-light: #A8B9A1;
+  --color-pale: #DCE5D7;
+  --color-ivory: #FBF9F3;
+  --color-canvas: #FAF8F5;
+  --color-cream: #F4F0E5;
+  --color-brass: #B58A57;
+  --color-brass-light: #C89F6B;
+  --color-walnut: #654735;
+  --color-walnut-light: #7D5842;
+  --color-charcoal: #1A2E20;
+
+  /* Universal typography: Inter throughout the ERP */
+  --font-serif: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+html {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-canvas);
+  color: var(--color-charcoal);
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Custom Scrollbar for Management tables & sidebars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F4F0E5;
+}
+::-webkit-scrollbar-thumb {
+  background: #8E9F89;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #5D7656;
+}
+
+:focus-visible {
+  outline: 2px solid #B58A57;
+  outline-offset: 2px;
+}
+
+@media print {
+  aside, header, footer, .no-print {
+    display: none !important;
+  }
+  body, html {
+    background: #ffffff !important;
+    color: #111827 !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+}

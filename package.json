@@ -1,31 +1,30 @@
 {
-  "name": "ravinarayan-erp",
+  "name": "ravinarayan-monorepo",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "framer-motion": "^11.11.9",
-    "lucide-react": "^0.453.0",
-    "next": "^14.2.18",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.4",
-    "three": "^0.169.0"
-  },
-  "devDependencies": {
-    "@types/node": "^20.17.0",
-    "@types/react": "^18.3.11",
-    "@types/react-dom": "^18.3.1",
-    "@types/three": "^0.169.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14",
-    "typescript": "^5.6.3"
+    "dev:website": "npm run dev --workspace=@ravinarayan/website",
+    "dev:erp": "npm run dev --workspace=@ravinarayan/erp",
+    "build:website": "npm run build --workspace=@ravinarayan/website",
+    "build:erp": "npm run build --workspace=@ravinarayan/erp",
+    "build": "npm run build:website && npm run build:erp",
+    "start:website": "npm run start --workspace=@ravinarayan/website",
+    "start:erp": "npm run start --workspace=@ravinarayan/erp",
+    "lint:website": "npm run lint --workspace=@ravinarayan/website",
+    "lint:erp": "npm run lint --workspace=@ravinarayan/erp",
+    "lint": "npm run lint:website && npm run lint:erp",
+    "test:security": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/auth_hardening.test.js",
+    "test:rbac": "node -r ./tests/register_paths.js tests/dist/tests/rbac_staff_foundation.test.js",
+    "test:rooms": "node -r ./tests/register_paths.js tests/dist/tests/rooms_residents.test.js",
+    "test:finance": "node -r ./tests/register_paths.js tests/dist/tests/finance.test.js",
+    "test:kitchen": "node -r ./tests/register_paths.js tests/dist/tests/kitchen.test.js",
+    "test:integration": "node -r ./tests/register_paths.js tests/dist/tests/integration_audit.test.js",
+    "test:delivery": "node -r ./tests/register_paths.js tests/dist/tests/delivery.test.js",
+    "test": "npm run test:security && npm run test:rbac && npm run test:rooms && npm run test:finance && npm run test:kitchen && npm run test:integration && npm run test:delivery",
+    "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed"
   }
 }
