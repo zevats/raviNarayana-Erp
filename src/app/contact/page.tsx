@@ -13,7 +13,6 @@ import {
   CheckCircle,
   HelpCircle,
   Instagram,
-  Sparkles,
   ExternalLink,
 } from "lucide-react";
 import { siteConfig } from "@/data/siteConfig";
@@ -57,11 +56,11 @@ export default function ContactPage() {
   ];
 
   return (
-    <main className="min-h-screen flex flex-col bg-ivory">
+    <main className="min-h-screen flex flex-col bg-[#FAF8F5]">
       <Navbar />
 
       {/* Hero Header */}
-      <section className="relative pt-36 pb-20 bg-deep text-ivory overflow-hidden">
+      <section className="relative pt-36 pb-20 sm:pb-24 bg-[#16221A] text-white overflow-hidden">
         <div className="absolute inset-0 z-0">
           <Image
             src="/hero-bg.jpg"
@@ -71,19 +70,19 @@ export default function ContactPage() {
             sizes="100vw"
             className="object-cover opacity-20"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-deep via-deep/80 to-black/70" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#16221A] via-[#16221A]/80 to-black/70" />
         </div>
 
         <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-forest-light border border-brass/30 text-brass text-xs font-mono uppercase tracking-wider mb-6">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>We Are Here For You</span>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/20 bg-white/5 backdrop-blur-md text-[11px] font-sans tracking-[0.2em] text-white/90 uppercase mb-5 shadow-sm">
+              <span>WE ARE HERE FOR YOU</span>
             </div>
-            <h1 className="headline-hero font-serif font-bold text-ivory tracking-tight mb-4">
-              Connect with Ravinarayan
+            <h1 className="font-serif text-white tracking-tight font-normal text-4xl sm:text-6xl md:text-7xl leading-[1.08] mb-4">
+              Connect With <br className="hidden sm:inline" />
+              <span className="italic font-light text-white/95">Ravinarayan</span>
             </h1>
-            <p className="text-base sm:text-lg text-cream/90 font-light leading-relaxed">
+            <p className="text-base sm:text-lg text-white/85 font-light leading-relaxed">
               Have questions regarding room vacancy, long-term corporate stays, or daily tiffin delivery? Call us directly or send a message below.
             </p>
           </div>
@@ -91,124 +90,123 @@ export default function ContactPage() {
       </section>
 
       {/* Contact Cards & Form */}
-      <section className="py-20 sm:py-28 bg-ivory">
+      <section className="py-20 sm:py-24 bg-[#FAF8F5]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
             {/* Left Column: Direct Methods */}
             <div className="lg:col-span-5 space-y-6">
               {/* Phone */}
-              <div className="p-7 rounded-3xl bg-white border border-sage/20 shadow-md">
-                <div className="flex items-center gap-4 mb-3">
-                  <div className="p-3 rounded-2xl bg-forest text-ivory">
-                    <Phone className="w-6 h-6" />
+              <div className="p-7 rounded-3xl bg-white border border-[#8E9F89]/20 shadow-md">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-3 rounded-2xl bg-[#1A2E20] text-white">
+                    <Phone className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-xs uppercase font-mono tracking-wider text-brass font-bold">Call Us Directly</p>
-                    <a
-                      href={`tel:${siteConfig.phoneRaw}`}
-                      className="font-serif text-2xl font-bold text-forest hover:text-brass transition-colors"
-                    >
-                      {siteConfig.phone}
-                    </a>
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-[#5E715C] font-semibold">
+                      Telephone
+                    </span>
+                    <h3 className="font-serif font-medium text-[#1A2E20] text-lg">Direct Phone Help Desk</h3>
                   </div>
                 </div>
-                <p className="text-xs text-muted leading-relaxed">
-                  Fastest response for urgent bookings and room inspections.
+                <a
+                  href={`tel:${siteConfig.phoneRaw}`}
+                  className="font-serif text-2xl font-bold text-[#1A2E20] hover:text-[#5D7656] transition-colors block mt-2"
+                >
+                  {siteConfig.phone}
+                </a>
+                <p className="text-xs text-[#5E715C] mt-2 font-light">
+                  Direct phone access available 7 days a week for immediate accommodation inquiries.
                 </p>
               </div>
 
               {/* WhatsApp */}
-              <div className="p-7 rounded-3xl bg-white border border-sage/20 shadow-md">
-                <div className="flex items-center gap-4 mb-3">
+              <div className="p-7 rounded-3xl bg-white border border-[#8E9F89]/20 shadow-md">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="p-3 rounded-2xl bg-emerald-700 text-white">
-                    <MessageSquare className="w-6 h-6" />
+                    <MessageSquare className="w-5 h-5" />
                   </div>
                   <div>
-                    <p className="text-xs uppercase font-mono tracking-wider text-emerald-800 font-bold">Official WhatsApp</p>
-                    <a
-                      href={siteConfig.whatsappUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-serif text-xl font-bold text-forest hover:text-emerald-700 transition-colors"
-                    >
-                      Start WhatsApp Chat
-                    </a>
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-800 font-semibold">
+                      Instant Chat
+                    </span>
+                    <h3 className="font-serif font-medium text-[#1A2E20] text-lg">Official WhatsApp Channel</h3>
                   </div>
                 </div>
-                <p className="text-xs text-muted leading-relaxed">
-                  Send photos, request location pin, or enquire about meal subscription plans.
+                <a
+                  href={siteConfig.whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-serif text-xl font-bold text-emerald-800 hover:text-emerald-700 transition-colors block mt-2"
+                >
+                  Chat with Ravinarayan Team &rarr;
+                </a>
+                <p className="text-xs text-[#5E715C] mt-2 font-light">
+                  Receive room pictures, location map coordinates, and instant tariff confirmations.
                 </p>
               </div>
 
-              {/* Location & Social */}
-              <div className="p-7 rounded-3xl bg-white border border-sage/20 shadow-md space-y-4">
+              {/* Address */}
+              <div className="p-7 rounded-3xl bg-white border border-[#8E9F89]/20 shadow-md space-y-3">
                 <div className="flex items-center gap-3">
-                  <MapPin className="w-5 h-5 text-brass" />
-                  <h3 className="font-serif font-bold text-forest text-lg">Location Area</h3>
+                  <div className="p-3 rounded-2xl bg-[#5D7656]/10 text-[#263B2D]">
+                    <MapPin className="w-5 h-5" />
+                  </div>
+                  <h3 className="font-serif font-medium text-[#1A2E20] text-lg">Property Location</h3>
                 </div>
-                <p className="text-sm text-muted leading-relaxed">
-                  Met City &bull; Yakubpur &bull; Jhajjar, Haryana, India
+                <p className="text-sm text-[#4A584E] leading-relaxed font-light">
+                  Met City &bull; Yakubpur, Jhajjar, Haryana 124103, India.
                 </p>
-                <div className="pt-3 border-t border-charcoal/10 flex items-center justify-between">
-                  <a
-                    href={siteConfig.instagramUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 text-xs text-forest hover:text-brass font-bold transition-colors"
-                  >
-                    <Instagram className="w-4 h-4" />
-                    <span>Follow on Instagram</span>
-                  </a>
-
+                <div className="pt-2 border-t border-[#8E9F89]/20 flex items-center justify-between">
+                  <span className="text-xs text-[#5E715C] font-mono">Industrial Zone &bull; Haryana</span>
                   <a
                     href="https://maps.google.com/?q=Met+City+Yakubpur+Jhajjar+Haryana"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-forest hover:text-brass font-bold transition-colors"
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1A2E20] hover:text-[#5D7656] transition-colors"
                   >
-                    <span>View Area Map</span>
+                    <span>View Map</span>
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
               </div>
             </div>
 
-            {/* Right Column: Inquiry Form */}
-            <div className="lg:col-span-7 bg-white rounded-3xl p-8 sm:p-12 border border-sage/20 shadow-xl">
-              <h2 className="headline-display font-serif font-bold text-forest mb-2">
-                Send an Enquiry
+            {/* Right Column: Interactive Form */}
+            <div className="lg:col-span-7 bg-white rounded-3xl p-8 sm:p-10 border border-[#8E9F89]/20 shadow-xl">
+              <h2 className="font-serif text-2xl sm:text-3xl font-medium text-[#1A2E20] mb-2">
+                Send a Message
               </h2>
-              <p className="text-sm text-muted mb-8">
-                Please leave your requirements. Management will get in touch promptly.
+              <p className="text-sm text-[#4A584E] mb-8 font-light">
+                Submit your inquiry and we will reach out to you directly on WhatsApp or by phone.
               </p>
 
               {isSent ? (
-                <div className="p-8 rounded-2xl bg-forest/5 border border-forest/20 text-center space-y-3">
-                  <CheckCircle className="w-10 h-10 text-forest mx-auto" />
-                  <h3 className="font-serif text-xl font-bold text-forest">Enquiry Generated!</h3>
-                  <p className="text-sm text-muted">
-                    Redirecting to WhatsApp to send your inquiry directly to Ravinarayan management...
+                <div className="p-8 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-3">
+                  <CheckCircle className="w-10 h-10 text-emerald-600 mx-auto" />
+                  <h4 className="font-serif text-xl font-bold text-[#1A2E20]">Inquiry Prepared!</h4>
+                  <p className="text-sm text-[#4A584E]">
+                    Opening WhatsApp to connect directly with the Ravinarayan management team...
                   </p>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                     <div>
-                      <label className="block text-xs uppercase font-mono tracking-wider text-forest font-bold mb-2">
-                        Your Name
+                      <label className="block text-xs uppercase font-mono tracking-wider text-[#1A2E20] font-semibold mb-2">
+                        Your Name *
                       </label>
                       <input
                         type="text"
                         required
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        placeholder="e.g. Vikas Yadav"
-                        className="w-full px-4 py-3 rounded-xl bg-ivory border border-sage/30 text-charcoal text-sm focus:border-forest focus:outline-none transition-colors"
+                        placeholder="e.g. Vikas Sharma"
+                        className="w-full px-4 py-3.5 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/30 text-[#1A2E20] placeholder-[#5E715C]/60 text-sm focus:border-[#1A2E20] focus:outline-none focus:ring-1 focus:ring-[#1A2E20] transition-colors"
                       />
                     </div>
 
                     <div>
-                      <label className="block text-xs uppercase font-mono tracking-wider text-forest font-bold mb-2">
+                      <label className="block text-xs uppercase font-mono tracking-wider text-[#1A2E20] font-semibold mb-2">
                         Phone Number *
                       </label>
                       <input
@@ -217,83 +215,85 @@ export default function ContactPage() {
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         placeholder="+91 98765 43210"
-                        className="w-full px-4 py-3 rounded-xl bg-ivory border border-sage/30 text-charcoal text-sm focus:border-forest focus:outline-none transition-colors"
+                        className="w-full px-4 py-3.5 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/30 text-[#1A2E20] placeholder-[#5E715C]/60 text-sm focus:border-[#1A2E20] focus:outline-none focus:ring-1 focus:ring-[#1A2E20] transition-colors"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase font-mono tracking-wider text-forest font-bold mb-2">
-                      Service Requirement
+                    <label className="block text-xs uppercase font-mono tracking-wider text-[#1A2E20] font-semibold mb-2">
+                      Inquiry Subject
                     </label>
                     <select
                       value={service}
                       onChange={(e) => setService(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl bg-ivory border border-sage/30 text-charcoal text-sm focus:border-forest focus:outline-none transition-colors"
+                      className="w-full px-4 py-3.5 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/30 text-[#1A2E20] text-sm focus:border-[#1A2E20] focus:outline-none focus:ring-1 focus:ring-[#1A2E20] transition-colors"
                     >
-                      <option value="Single Room Accommodation">Single Room Accommodation</option>
-                      <option value="Double Sharing Room">Double Sharing Room</option>
-                      <option value="Suite / Master Bedroom">Suite / Master Bedroom</option>
-                      <option value="Shared Budget Living">Shared Budget Living</option>
-                      <option value="Daily Tiffin Service">Daily Tiffin Meal Delivery</option>
-                      <option value="Corporate / Group Stay">Corporate / Group Booking</option>
+                      <option value="Single Room Accommodation">Single Private Room PG</option>
+                      <option value="Double Sharing Room">Double Sharing Room PG</option>
+                      <option value="Contemporary Suite / Master Room">Contemporary Suite / Master Room</option>
+                      <option value="Daily Tiffin Meal Subscription">Daily Tiffin Meal Subscription</option>
+                      <option value="Corporate / Group Booking">Corporate / Group Accommodation</option>
+                      <option value="General Query or On-site Visit">Schedule an On-site Visit</option>
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-xs uppercase font-mono tracking-wider text-forest font-bold mb-2">
-                      Your Message or Inquiry
+                    <label className="block text-xs uppercase font-mono tracking-wider text-[#1A2E20] font-semibold mb-2">
+                      Message &bull; Move-in Date &bull; Requirements
                     </label>
                     <textarea
                       rows={4}
                       value={message}
                       onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Specify your move-in date, company/college, or special preferences..."
-                      className="w-full px-4 py-3 rounded-xl bg-ivory border border-sage/30 text-charcoal text-sm focus:border-forest focus:outline-none transition-colors resize-none"
+                      placeholder="Share details about your expected duration of stay, food requirements, or workplace in Met City..."
+                      className="w-full px-4 py-3.5 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/30 text-[#1A2E20] placeholder-[#5E715C]/60 text-sm focus:border-[#1A2E20] focus:outline-none focus:ring-1 focus:ring-[#1A2E20] transition-colors resize-none"
                     />
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full sm:w-auto px-8 py-4 rounded-full bg-forest hover:bg-forest-light text-ivory font-bold text-xs tracking-wider uppercase transition-all duration-300 shadow-xl flex items-center justify-center gap-2"
+                    className="w-full sm:w-auto px-8 py-4 rounded-full bg-[#1A2E20] hover:bg-[#263B2D] text-white font-semibold text-xs sm:text-sm tracking-wide transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-0.5 flex items-center justify-center gap-3 group"
                   >
-                    <Send className="w-4 h-4 text-brass" />
-                    <span>Send via WhatsApp</span>
+                    <span>Send Inquiry on WhatsApp</span>
+                    <div className="w-6 h-6 rounded-full bg-white text-[#1A2E20] flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Send className="w-3.5 h-3.5" />
+                    </div>
                   </button>
                 </form>
               )}
             </div>
           </div>
+        </div>
+      </section>
 
-          {/* FAQ Accordion */}
-          <div className="mt-24 max-w-4xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="headline-display font-serif font-bold text-forest">
-                Frequently Asked Questions
-              </h2>
-              <p className="text-sm text-muted mt-2">
-                Quick clarity regarding our living policies and meal delivery.
-              </p>
+      {/* Frequently Asked Questions (Theme: Deep Botanical Green) */}
+      <section className="py-20 sm:py-24 bg-[#16221A] text-white relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-[#5D7656]/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="text-center max-w-2xl mx-auto mb-14">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-white/20 bg-white/5 backdrop-blur-md text-[11px] font-sans tracking-[0.2em] text-white/90 uppercase mb-4 shadow-xs">
+              <HelpCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>FREQUENT QUESTIONS</span>
             </div>
+            <h2 className="font-serif text-3xl sm:text-4xl md:text-5xl font-normal text-white tracking-tight">
+              Common Resident Queries
+            </h2>
+            <p className="mt-3 text-sm sm:text-base text-white/75 font-light leading-relaxed">
+              Transparent answers regarding room admissions, safety policies, and tiffin meal delivery.
+            </p>
+          </div>
 
-            <div className="space-y-4">
-              {faqs.map((faq, i) => (
-                <div
-                  key={i}
-                  className="p-6 rounded-2xl bg-white border border-sage/20 shadow-sm space-y-2"
-                >
-                  <div className="flex items-start gap-3">
-                    <HelpCircle className="w-5 h-5 text-brass shrink-0 mt-0.5" />
-                    <h3 className="font-serif font-bold text-forest text-base sm:text-lg">
-                      {faq.q}
-                    </h3>
-                  </div>
-                  <p className="text-sm text-muted leading-relaxed pl-8">
-                    {faq.a}
-                  </p>
-                </div>
-              ))}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+            {faqs.map((faq, idx) => (
+              <div
+                key={idx}
+                className="p-7 rounded-3xl bg-white/5 border border-white/10 space-y-2 hover:border-white/20 transition-all backdrop-blur-xs"
+              >
+                <h4 className="font-serif font-medium text-lg text-white">{faq.q}</h4>
+                <p className="text-xs sm:text-sm text-white/75 leading-relaxed font-light">{faq.a}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>

@@ -1,181 +1,130 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import {
-  Phone,
-  MapPin,
-  Wifi,
-  Droplets,
-  ShieldCheck,
-  UtensilsCrossed,
-  Shirt,
-  Users,
-  Instagram,
-  ArrowUpRight,
-  Heart,
-} from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
 import { siteConfig } from "@/data/siteConfig";
+import { LUXURY_EASE, staggerContainer, staggerItem } from "@/utils/motion";
 
 export const Footer: React.FC = () => {
+  const shouldReduceMotion = useReducedMotion();
+  const [inquiryText, setInquiryText] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = inquiryText.trim()
+      ? `Hello Ravinarayan Team, I would like to stay in the know / enquire regarding: ${inquiryText.trim()}`
+      : "Hello Ravinarayan Team, I would like to stay in the know about room vacancies and daily tiffin plans.";
+    window.open(`https://wa.me/918571801102?text=${encodeURIComponent(query)}`, "_blank");
+  };
+
   return (
-    <footer className="bg-[#0B1E18] text-ivory border-t border-sage/15 pt-16 sm:pt-20 pb-12">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Main Footer Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-12 pb-14 border-b border-sage/15">
-          {/* Brand & Mission (4 cols) */}
-          <div className="lg:col-span-4 space-y-5">
-            <Link href="/" className="flex items-center gap-3 group">
-              <div className="w-11 h-11 rounded-full overflow-hidden border border-brass/40 bg-forest-dark flex items-center justify-center">
-                <Image
-                  src="/logo.png"
-                  alt="Ravinarayan PG Guesthouse"
-                  width={44}
-                  height={44}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <div>
-                <span className="font-serif text-2xl font-bold tracking-wide text-ivory group-hover:text-brass transition-colors">
-                  Ravinarayan
-                </span>
-                <p className="text-[10px] tracking-widest uppercase font-mono text-sage">
-                  PG Guesthouse &bull; Haryana
-                </p>
-              </div>
-            </Link>
+    <footer className="bg-[#121A15] text-white border-t border-white/10 pt-20 pb-16 sm:pt-24 sm:pb-20 relative overflow-hidden">
+      {/* Subtle Ambient Glow */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-48 bg-[#5D7656]/10 rounded-full blur-3xl pointer-events-none" />
 
-            <p className="text-sm text-cream/70 leading-relaxed max-w-sm">
-              Providing quiet, secure, and respectful PG accommodation and fresh home-style tiffin meal delivery for working professionals and students in Met City, Yakubpur, and Jhajjar.
-            </p>
-
-            <div className="flex items-center gap-3 pt-2">
-              <a
-                href={siteConfig.instagramUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 rounded-full bg-forest-dark border border-sage/20 flex items-center justify-center text-sage hover:text-ivory hover:border-brass transition-colors"
-                aria-label="Ravinarayan Instagram"
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
-              <a
-                href={siteConfig.whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-2 rounded-full bg-emerald-900/60 border border-emerald-500/30 text-emerald-300 text-xs font-medium hover:bg-emerald-800 transition-colors flex items-center gap-1.5"
-              >
-                <span>WhatsApp Helpline</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          </div>
-
-          {/* Quick Links (2 cols) */}
-          <div className="lg:col-span-2 space-y-4">
-            <p className="text-xs uppercase font-mono tracking-widest text-brass font-bold">
-              Navigation
-            </p>
-            <ul className="space-y-2.5 text-sm">
-              {siteConfig.navLinks.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="text-cream/70 hover:text-ivory hover:underline underline-offset-4 transition-colors"
-                  >
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
-              <li>
-                <a
-                  href={siteConfig.tiffinPortalUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-cream/70 hover:text-brass transition-colors"
-                >
-                  <span>Tiffin Service Portal</span>
-                  <ArrowUpRight className="w-3 h-3 text-brass" />
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          {/* Verified Facilities (3 cols) */}
-          <div className="lg:col-span-3 space-y-4">
-            <p className="text-xs uppercase font-mono tracking-widest text-brass font-bold">
-              Verified Facilities
-            </p>
-            <ul className="space-y-2.5 text-xs text-cream/80">
-              <li className="flex items-center gap-2">
-                <Wifi className="w-3.5 h-3.5 text-sage" />
-                <span>High-Speed Internet (Wi-Fi)</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Droplets className="w-3.5 h-3.5 text-sage" />
-                <span>RO Purified Drinking Water</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <ShieldCheck className="w-3.5 h-3.5 text-sage" />
-                <span>24/7 CCTV Campus Security</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <UtensilsCrossed className="w-3.5 h-3.5 text-sage" />
-                <span>Daily Fresh Food Service</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Shirt className="w-3.5 h-3.5 text-sage" />
-                <span>Laundry Facilities Included</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Users className="w-3.5 h-3.5 text-sage" />
-                <span>Respectful Community Living</span>
-              </li>
-            </ul>
-          </div>
-
-          {/* Contact & Service Areas (3 cols) */}
-          <div className="lg:col-span-3 space-y-4">
-            <p className="text-xs uppercase font-mono tracking-widest text-brass font-bold">
-              Service Locations &amp; Contact
-            </p>
-            <div className="space-y-3 text-xs text-cream/80">
-              <div className="flex items-start gap-2.5">
-                <MapPin className="w-4 h-4 text-brass shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-ivory">Met City &bull; Yakubpur</p>
-                  <p className="text-sage">Jhajjar, Haryana, India</p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-2.5">
-                <Phone className="w-4 h-4 text-brass shrink-0 mt-0.5" />
-                <div>
-                  <a
-                    href={`tel:${siteConfig.phoneRaw}`}
-                    className="text-ivory hover:text-brass font-bold text-sm transition-colors"
-                  >
-                    {siteConfig.phone}
-                  </a>
-                  <p className="text-[11px] text-sage">Call for room availability</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer Bottom Bar */}
-        <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-sage/70 gap-4">
-          <p>
-            &copy; {new Date().getFullYear()} {siteConfig.name}. All rights reserved.
+      <motion.div
+        className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-12 sm:space-y-14"
+        initial={shouldReduceMotion ? "visible" : "hidden"}
+        whileInView="visible"
+        viewport={{ once: true, margin: "-40px" }}
+        variants={staggerContainer(0.16, 0.08)}
+      >
+        
+        {/* ============================================================== */}
+        {/* TOP HERO HEADLINE & INQUIRY BAR (Oasila Luxury Style)          */}
+        {/* ============================================================== */}
+        <motion.div variants={staggerItem} className="space-y-5 max-w-2xl mx-auto">
+          <h2 className="font-serif text-4xl sm:text-5xl md:text-6xl font-normal tracking-tight text-white leading-tight">
+            Stay in the know
+          </h2>
+          <p className="text-sm sm:text-base text-white/70 font-light leading-relaxed max-w-lg mx-auto">
+            Be the first to know about verified room vacancies, seasonal tiffin menus, and campus accommodation updates.
           </p>
-          <div className="flex items-center gap-6">
-            <span>Met City &bull; Yakubpur &bull; Jhajjar</span>
-            <span>Botanical Luxury Living</span>
+
+          {/* Centered Luxury Input Pill Bar */}
+          <div className="pt-3 max-w-md mx-auto">
+            <form
+              onSubmit={handleSubmit}
+              className="relative flex items-center bg-white rounded-full p-1.5 shadow-2xl transition-all focus-within:ring-2 focus-within:ring-white/40"
+            >
+              <input
+                type="text"
+                value={inquiryText}
+                onChange={(e) => setInquiryText(e.target.value)}
+                placeholder="Enter your email or WhatsApp number"
+                className="w-full pl-6 pr-14 py-3 bg-transparent text-[#1A2E20] placeholder-[#8E9F89] text-xs sm:text-sm font-light focus:outline-none"
+              />
+              <button
+                type="submit"
+                aria-label="Connect via WhatsApp"
+                className="absolute right-1.5 top-1.5 bottom-1.5 w-11 h-11 bg-[#263B2D] hover:bg-[#1A2E20] text-white rounded-full flex items-center justify-center transition-all group shrink-0"
+              >
+                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </form>
           </div>
-        </div>
-      </div>
+        </motion.div>
+
+        {/* ============================================================== */}
+        {/* CENTERED HORIZONTAL NAVIGATION (Pipe-Separated Editorial Links) */}
+        {/* ============================================================== */}
+        <motion.div variants={staggerItem} className="pt-4 pb-2 border-t border-white/10">
+          <nav
+            aria-label="Footer Navigation"
+            className="flex flex-wrap items-center justify-center gap-y-3 gap-x-3 sm:gap-x-5 text-xs sm:text-sm uppercase tracking-widest text-white/80 font-mono font-medium"
+          >
+            <Link
+              href="/"
+              className="hover:text-white hover:underline underline-offset-8 transition-colors"
+            >
+              Home
+            </Link>
+            <span className="text-white/20 select-none">|</span>
+            <Link
+              href="/about"
+              className="hover:text-white hover:underline underline-offset-8 transition-colors"
+            >
+              About Us
+            </Link>
+            <span className="text-white/20 select-none">|</span>
+            <Link
+              href="/rooms"
+              className="hover:text-white hover:underline underline-offset-8 transition-colors"
+            >
+              Rooms
+            </Link>
+            <span className="text-white/20 select-none">|</span>
+            <Link
+              href="/tiffin-service"
+              className="hover:text-white hover:underline underline-offset-8 transition-colors"
+            >
+              Tiffin Service
+            </Link>
+            <span className="text-white/20 select-none">|</span>
+            <Link
+              href="/contact"
+              className="hover:text-white hover:underline underline-offset-8 transition-colors"
+            >
+              Contact
+            </Link>
+          </nav>
+        </motion.div>
+
+        {/* ============================================================== */}
+        {/* BOTTOM METADATA & COPYRIGHT                                    */}
+        {/* ============================================================== */}
+        <motion.div variants={staggerItem} className="pt-4 space-y-2 text-xs text-white/50 font-light">
+          <p className="font-mono text-[11px] tracking-widest uppercase text-[#A8B9A1]">
+            Met City &bull; Yakubpur &bull; Jhajjar, Haryana
+          </p>
+          <p>
+            Copyright &copy; {new Date().getFullYear()} {siteConfig.name}. All Rights Reserved.
+          </p>
+        </motion.div>
+
+      </motion.div>
     </footer>
   );
 };

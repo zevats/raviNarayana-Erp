@@ -10,29 +10,32 @@ const config: Config = {
     extend: {
       colors: {
         forest: {
-          DEFAULT: "#193D30",
-          light: "#244F3F",
-          dark: "#0E241D",
+          DEFAULT: "#5D7656", // Cabana's primary muted green rgb(93, 118, 86)
+          light: "#789078",   // user suggested muted green #789078
+          dark: "#263B2D",    // deep green for readable text & contrast #263B2D
+          surface: "#3D5240", // soft muted green for surface sections
         },
-        deep: "#102A22",
+        deep: "#263B2D",      // deep botanical green for contrast
         cream: {
-          DEFAULT: "#F4F0E5",
+          DEFAULT: "#F4F0E5", // warm cream
           subtle: "#ECE7D8",
           dark: "#E3DCB8",
         },
-        ivory: "#FBF9F3",
+        ivory: "#FBF9F3",     // soft ivory
         sage: {
-          DEFAULT: "#A8B79A",
-          light: "#C0CEB4",
-          dark: "#8F9F81",
+          DEFAULT: "#8E9F89", // Cabana light sage rgb(142, 159, 137)
+          light: "#A8B9A1",   // user suggested light sage #A8B9A1
+          pale: "#DCE5D7",    // user suggested pale green #DCE5D7
+          dark: "#5D7656",
         },
+        pale: "#DCE5D7",      // pale green #DCE5D7
         brass: {
           DEFAULT: "#B58A57",
           light: "#C89F6B",
           dark: "#9E7443",
         },
-        charcoal: "#202820",
-        muted: "#74786E",
+        charcoal: "#263B2D",  // deep green for readable text #263B2D
+        muted: "#5E715C",     // readable muted botanical sage
       },
       fontFamily: {
         serif: ["var(--font-serif)", "Playfair Display", "Cormorant Garamond", "Georgia", "serif"],
@@ -77,3 +80,4 @@ const config: Config = {
 };
 
 export default config;
+

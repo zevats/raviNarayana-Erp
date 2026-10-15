@@ -5,14 +5,17 @@
 @tailwind utilities;
 
 :root {
-  --color-forest: #193D30;
-  --color-deep: #102A22;
+  --color-forest: #5D7656;
+  --color-forest-light: #789078;
+  --color-deep: #263B2D;
   --color-cream: #F4F0E5;
   --color-ivory: #FBF9F3;
-  --color-sage: #A8B79A;
+  --color-sage: #8E9F89;
+  --color-sage-light: #A8B9A1;
+  --color-pale: #DCE5D7;
   --color-brass: #B58A57;
-  --color-charcoal: #202820;
-  --color-muted: #74786E;
+  --color-charcoal: #263B2D;
+  --color-muted: #5E715C;
 
   --font-serif: 'Cormorant Garamond', 'Playfair Display', Georgia, serif;
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -38,10 +41,10 @@ body {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #102A22;
+  background: #263B2D;
 }
 ::-webkit-scrollbar-thumb {
-  background: #244F3F;
+  background: #5D7656;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -90,6 +93,120 @@ body {
   border-color: rgba(181, 138, 87, 0.4);
 }
 
+/* Oasila Mouse Scroll Indicator Animation */
+@keyframes mouseWheel {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+  25% {
+    opacity: 1;
+  }
+  75% {
+    opacity: 0.7;
+    transform: translateY(13px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(13px);
+  }
+}
+
+.animate-mouse-wheel {
+  animation: mouseWheel 2.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+/* Resorto 120px Stroked Background Outline Text */
+.text-stroked-120 {
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.22);
+  color: transparent;
+  font-family: var(--font-serif);
+  user-select: none;
+}
+
+.text-stroked-brass {
+  -webkit-text-stroke: 1.5px rgba(181, 138, 87, 0.35);
+  color: transparent;
+  font-family: var(--font-serif);
+  user-select: none;
+}
+
+/* Continuous Marquee Ticker for Section Separator */
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marqueeScrollReverse {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
+.animate-marquee-tape {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marqueeScroll 55s linear infinite;
+}
+
+.animate-marquee-tape-reverse {
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  animation: marqueeScrollReverse 55s linear infinite;
+}
+
+.animate-marquee-tape:hover,
+.animate-marquee-tape-reverse:hover {
+  animation-play-state: paused;
+}
+
+/* Vertical infinite marquee for resident reviews */
+@keyframes marqueeVerticalUp {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes marqueeVerticalDown {
+  0% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.animate-marquee-up {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  animation: marqueeVerticalUp 38s linear infinite;
+}
+
+.animate-marquee-down {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  animation: marqueeVerticalDown 38s linear infinite;
+}
+
+.animate-marquee-up:hover,
+.animate-marquee-down:hover {
+  animation-play-state: paused;
+}
+
 /* Reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -101,3 +218,5 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+

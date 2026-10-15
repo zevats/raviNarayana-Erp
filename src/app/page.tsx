@@ -3,12 +3,10 @@
 import React, { useState } from "react";
 import { Navbar } from "@/components/Navbar";
 import { HeroSection } from "@/components/HeroSection";
-import { StorySection } from "@/components/StorySection";
-import { RoomsGallery } from "@/components/RoomsGallery";
-import { AmenitiesSection } from "@/components/AmenitiesSection";
-import { TiffinHighlight } from "@/components/TiffinHighlight";
-import { LocationSection } from "@/components/LocationSection";
-import { FinalCTA } from "@/components/FinalCTA";
+import { ServicesSection } from "@/components/ServicesSection";
+import { FacilitiesShowcase } from "@/components/FacilitiesShowcase";
+import { ReviewsSection } from "@/components/ReviewsSection";
+import { UnifiedContact } from "@/components/UnifiedContact";
 import { Footer } from "@/components/Footer";
 import { RoomModal } from "@/components/RoomModal";
 import { RoomCategory, roomsData } from "@/data/roomsData";
@@ -17,43 +15,32 @@ export default function HomePage() {
   const [selectedRoom, setSelectedRoom] = useState<RoomCategory | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleSelectRoom = (room: RoomCategory) => {
-    setSelectedRoom(room);
-    setIsModalOpen(true);
-  };
-
   const handleOpenGeneralEnquiry = () => {
     setSelectedRoom(roomsData[0]);
     setIsModalOpen(true);
   };
 
   return (
-    <main className="min-h-screen flex flex-col bg-ivory">
+    <main className="min-h-screen flex flex-col bg-[#FAF8F5] overflow-x-clip">
       {/* Top Refined Navigation */}
       <Navbar onOpenEnquiry={handleOpenGeneralEnquiry} />
 
-      {/* Cinematic Hero */}
+      {/* 1. Cinematic Hero Section (Theme: Deep Botanical Green) */}
       <HeroSection onOpenEnquiry={handleOpenGeneralEnquiry} />
 
-      {/* Editorial Story / Brand Philosophy */}
-      <StorySection />
+      {/* 2. Services We Offer (Theme: Warm Cream & Ivory) */}
+      <ServicesSection />
 
-      {/* Premium Accommodations Showcase */}
-      <RoomsGallery onSelectRoom={handleSelectRoom} />
+      {/* 3. Living Spaces & Facilities Showcase (Theme: Deep Botanical Green / Cinematic) */}
+      <FacilitiesShowcase />
 
-      {/* Curated Amenities */}
-      <AmenitiesSection />
+      {/* 4. Resident Testimonials (Theme: Warm Cream & Ivory) */}
+      <ReviewsSection />
 
-      {/* Home-Style Tiffin Service */}
-      <TiffinHighlight />
+      {/* 5. Unified Contact Section (Theme: Deep Botanical Green) */}
+      <UnifiedContact />
 
-      {/* Location & Enquiry Form */}
-      <LocationSection />
-
-      {/* Final Editorial Call to Action */}
-      <FinalCTA onOpenEnquiry={handleOpenGeneralEnquiry} />
-
-      {/* Shared Footer */}
+      {/* 6. Simplified Footer */}
       <Footer />
 
       {/* Interactive Room Enquiry Modal */}
