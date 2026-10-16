@@ -5,6 +5,12 @@ import postgres from "postgres";
 import { resolveDbPath } from "./db";
 import { getDatabaseUrl } from "./client";
 
+export interface MigrationConflict {
+  table: string;
+  id: string;
+  reason: string;
+}
+
 export interface MigrationSummary {
   success: boolean;
   backupPath?: string;
@@ -20,19 +26,21 @@ export interface MigrationSummary {
     pgCount: number;
     match: boolean;
   };
+  conflictsDetected: MigrationConflict[];
   errors: string[];
 }
 
 /**
  * Referential integrity order for migrating tables.
  */
-const TABLES_IN_ORDER = [
+export const TABLES_IN_ORDER = [
   "staff_users",
   "rooms",
   "residents",
   "resident_stays",
   "financial_transactions",
   "sessions",
+  "session_preemptions",
   "login_attempts",
   "audit_logs",
   "resident_meal_preferences",
@@ -42,7 +50,29 @@ const TABLES_IN_ORDER = [
   "delivery_tasks",
   "delivery_task_events",
   "staff_notification_reads",
+  "auth_challenges",
+  "password_resets",
 ];
+
+function getPrimaryKey(table: string, row: Record<string, any>): string {
+  if (table === "staff_notification_reads") {
+    return `${row.staff_id}_${row.notification_id}`;
+  }
+  return String(row.id);
+}
+
+function areRowsEqual(sourceRow: Record<string, any>, targetRow: Record<string, any>): boolean {
+  for (const key of Object.keys(sourceRow)) {
+    const sVal = sourceRow[key];
+    const tVal = targetRow[key];
+    if (sVal === null || sVal === undefined) {
+      if (tVal !== null && tVal !== undefined) return false;
+    } else if (String(sVal) !== String(tVal)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 export async function migrateSqliteToPostgres(options?: {
   dryRun?: boolean;
@@ -53,6 +83,7 @@ export async function migrateSqliteToPostgres(options?: {
     targetRecordCounts: {},
     financialChecksum: { sqliteSum: 0, pgSum: 0, match: false },
     activeStaysChecksum: { sqliteCount: 0, pgCount: 0, match: false },
+    conflictsDetected: [],
     errors: [],
   };
 
@@ -70,9 +101,17 @@ export async function migrateSqliteToPostgres(options?: {
     return summary;
   }
 
-  // 1. Take a verified, dated backup of the source database
+  // 1. Take a verified, dated backup of the source database in data/backups
+  const dbDir = path.dirname(sqlitePath);
+  const backupsDir = path.join(dbDir, "backups");
+  if (!fs.existsSync(backupsDir)) {
+    try {
+      fs.mkdirSync(backupsDir, { recursive: true });
+    } catch {}
+  }
+
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = `${sqlitePath}.backup.${timestamp}`;
+  const backupPath = path.join(backupsDir, `erp_backup_${timestamp}.db`);
   try {
     fs.copyFileSync(sqlitePath, backupPath);
     summary.backupPath = backupPath;
@@ -83,7 +122,6 @@ export async function migrateSqliteToPostgres(options?: {
 
   // 2. Open source SQLite database in readonly mode
   const sqliteDb = new Database(sqlitePath, { readonly: true });
-  const userVersion = sqliteDb.pragma("user_version", { simple: true });
 
   // 3. Connect to PostgreSQL target
   let pgSql: postgres.Sql | null = null;
@@ -94,6 +132,7 @@ export async function migrateSqliteToPostgres(options?: {
   } catch (err: any) {
     summary.errors.push(`Failed to connect to target PostgreSQL instance: ${err.message}`);
     if (pgSql) await pgSql.end({ timeout: 5 });
+    sqliteDb.close();
     return summary;
   }
 
@@ -113,27 +152,72 @@ export async function migrateSqliteToPostgres(options?: {
       return summary;
     }
 
-    // 5. Transfer data inside a single PostgreSQL transaction
+    // 5. Transfer data inside a single PostgreSQL transaction with strict conflict detection
     await pgSql.begin(async (tx) => {
       for (const table of TABLES_IN_ORDER) {
         const sourceCount = summary.sourceRecordCounts[table];
         if (sourceCount === 0) continue;
 
-        const rows = sqliteDb.prepare(`SELECT * FROM "${table}"`).all();
+        let rows: Record<string, any>[] = [];
+        try {
+          rows = sqliteDb.prepare(`SELECT * FROM "${table}"`).all() as Record<string, any>[];
+        } catch {
+          continue;
+        }
+
         if (rows.length === 0) continue;
 
-        // Batch insert in chunks of 100
+        // Fetch existing target rows to detect conflicts
+        const existingTargetRows = (await tx`SELECT * FROM ${tx(table)}`) as Record<string, any>[];
+        const targetPkMap = new Map<string, Record<string, any>>();
+        for (const tRow of existingTargetRows) {
+          targetPkMap.set(getPrimaryKey(table, tRow), tRow);
+        }
+
+        const rowsToInsert: Record<string, any>[] = [];
+        for (const sRow of rows) {
+          const pk = getPrimaryKey(table, sRow);
+          const existing = targetPkMap.get(pk);
+          if (existing) {
+            if (!areRowsEqual(sRow, existing)) {
+              summary.conflictsDetected.push({
+                table,
+                id: pk,
+                reason: `Record '${pk}' exists in target table '${table}' with divergent data.`,
+              });
+              summary.errors.push(
+                `Conflict detected in '${table}' for ID '${pk}'. Source and target data diverge.`
+              );
+            }
+            // Identical row is safely skipped on rerun
+          } else {
+            rowsToInsert.push(sRow);
+          }
+        }
+
+        if (summary.conflictsDetected.length > 0) {
+          throw new Error(
+            `Migration aborted: ${summary.conflictsDetected.length} data conflict(s) detected. Reruns cannot conceal conflicting records.`
+          );
+        }
+
+        // Batch insert non-conflicting new rows in chunks of 100
         const chunkSize = 100;
-        for (let i = 0; i < rows.length; i += chunkSize) {
-          const chunk = rows.slice(i, i + chunkSize) as Record<string, any>[];
+        for (let i = 0; i < rowsToInsert.length; i += chunkSize) {
+          const chunk = rowsToInsert.slice(i, i + chunkSize);
           await tx`
             INSERT INTO ${tx(table)} ${(tx as any)(chunk)}
-            ON CONFLICT DO NOTHING
           `;
         }
 
         const countRow = await tx`SELECT COUNT(*) as count FROM ${tx(table)}`;
         summary.targetRecordCounts[table] = Number(countRow[0].count);
+
+        if (summary.targetRecordCounts[table] !== sourceCount) {
+          summary.errors.push(
+            `Row count mismatch on table '${table}': Source=${sourceCount}, Target=${summary.targetRecordCounts[table]}`
+          );
+        }
       }
     });
 
@@ -186,4 +270,64 @@ export async function migrateSqliteToPostgres(options?: {
   }
 
   return summary;
+}
+
+export interface RollbackOptions {
+  confirmDestructive: boolean;
+  targetUrl?: string;
+  allowProduction?: boolean;
+}
+
+export async function rollbackPostgresMigration(options: RollbackOptions): Promise<{
+  success: boolean;
+  truncatedTables: string[];
+  error?: string;
+}> {
+  if (!options.confirmDestructive) {
+    return {
+      success: false,
+      truncatedTables: [],
+      error: "Destructive rollback rejected: options.confirmDestructive must be explicitly set to true.",
+    };
+  }
+
+  const pgUrl = options.targetUrl || getDatabaseUrl(true);
+  if (!pgUrl) {
+    return {
+      success: false,
+      truncatedTables: [],
+      error: "Target PostgreSQL URL not configured.",
+    };
+  }
+
+  // Safety guard: prevent accidental destructive rollback on production database
+  const isProdEnv = process.env.NODE_ENV === "production";
+  if (isProdEnv && !options.allowProduction) {
+    return {
+      success: false,
+      truncatedTables: [],
+      error: "Destructive rollback blocked: Cannot truncate production database without explicit allowProduction override.",
+    };
+  }
+
+  let sql: postgres.Sql | null = null;
+  const reversedTables = [...TABLES_IN_ORDER].reverse();
+  const truncatedTables: string[] = [];
+
+  try {
+    sql = postgres(pgUrl, { max: 1, idle_timeout: 10 });
+    await sql.begin(async (tx) => {
+      for (const table of reversedTables) {
+        await tx`TRUNCATE TABLE ${tx(table)} CASCADE`;
+        truncatedTables.push(table);
+      }
+    });
+    return { success: true, truncatedTables };
+  } catch (err: any) {
+    return { success: false, truncatedTables, error: err.message };
+  } finally {
+    if (sql) {
+      await sql.end({ timeout: 5 });
+    }
+  }
 }

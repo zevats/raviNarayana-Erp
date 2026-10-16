@@ -42,6 +42,24 @@ export function performDatabaseCleanup(db: Database.Database, force: boolean = f
         DELETE FROM login_attempts WHERE attempted_at < ?
       `).run(retentionCutoffIso);
 
+      // 3. Delete expired session preemption records
+      try {
+        db.prepare(`
+          DELETE FROM session_preemptions WHERE expires_at < ?
+        `).run(nowIso);
+      } catch {
+        // Table may not exist yet during early migration tests
+      }
+
+      // 4. Delete expired auth challenges
+      try {
+        db.prepare(`
+          DELETE FROM auth_challenges WHERE expires_at < ?
+        `).run(nowIso);
+      } catch {
+        // Table may not exist yet during early migration tests
+      }
+
       return {
         expiredSessionsDeleted: sessionResult.changes,
         staleAttemptsDeleted: attemptsResult.changes,

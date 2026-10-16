@@ -60,3 +60,16 @@ export function validateAdminEnvironment(staffCount: number): ValidatedAdminConf
     fullName,
   };
 }
+
+export function validateProductionDatabaseEnvironment(): void {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    const pgUrl = process.env.DATABASE_URL || process.env.DIRECT_URL;
+    if (!pgUrl) {
+      throw new Error(
+        "[FATAL PRODUCTION CONFIGURATION] PostgreSQL database URL (DATABASE_URL) is required in production (NODE_ENV=production). Silent fallback to local ephemeral SQLite is strictly prohibited in production."
+      );
+    }
+  }
+}
+

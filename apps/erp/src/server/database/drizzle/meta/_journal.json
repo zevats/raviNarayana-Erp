@@ -8,6 +8,13 @@
       "when": 1792177175875,
       "tag": "0000_lying_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792179783049,
+      "tag": "0001_faithful_gorgon",
+      "breakpoints": true
     }
   ]
 }

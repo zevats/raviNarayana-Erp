@@ -117,7 +117,18 @@ export async function pingDatabase(): Promise<{
     }
   }
 
-  // Fallback check on SQLite if configured
+  if (process.env.NODE_ENV === "production") {
+    if (!sqlClient) {
+      return {
+        ok: false,
+        latencyMs: 0,
+        engine: "none",
+        error: "PostgreSQL required in production (NODE_ENV=production) but DATABASE_URL is not configured",
+      };
+    }
+  }
+
+  // Fallback check on SQLite in non-production development/test modes
   try {
     const { getDb } = await import("./db");
     const db = getDb();

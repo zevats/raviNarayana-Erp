@@ -520,3 +520,26 @@ export const passwordResets = pgTable(
     index("idx_password_resets_expires").on(table.expiresAt),
   ]
 );
+
+// -----------------------------------------------------------------------------
+// 18. Session Preemptions (Persistent Single Active Session Register)
+// -----------------------------------------------------------------------------
+export const sessionPreemptions = pgTable(
+  "session_preemptions",
+  {
+    id: text("id").primaryKey(),
+    tokenHash: text("token_hash").unique().notNull(),
+    staffId: text("staff_id")
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: "cascade" }),
+    preemptedAt: text("preempted_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_session_preemptions_token").on(table.tokenHash),
+    index("idx_session_preemptions_staff").on(table.staffId),
+    index("idx_session_preemptions_expires").on(table.expiresAt),
+  ]
+);
+

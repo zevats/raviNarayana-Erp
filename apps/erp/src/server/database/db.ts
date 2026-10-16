@@ -179,6 +179,12 @@ export function convertPlaceholders(query: string): string {
 }
 
 export function getAsyncDb(): AsyncDb {
+  if (process.env.NODE_ENV === "production" && !isPostgresConfigured()) {
+    throw new Error(
+      "[FATAL PRODUCTION CONFIGURATION] PostgreSQL database URL (DATABASE_URL) is required in production (NODE_ENV=production). Silent fallback to local ephemeral SQLite is strictly prohibited."
+    );
+  }
+
   if (isPostgresConfigured()) {
     const sqlClient = getPgSql()!;
     const pgDb: AsyncDb = {

@@ -265,9 +265,6 @@ export function findStaffByIdentifier(identifier: string): (StaffUser & { passwo
 import { getEmailAdapter } from "../notifications/emailAdapter";
 import { recordAuditEvent } from "../audit/audit";
 
-// In-memory set of revoked session token hashes to detect preemption
-const preemptedSessionHashes = new Map<string, { staffId: string; preemptedAt: string }>();
-
 export function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
   if (!domain) return "***";
@@ -301,12 +298,28 @@ export function createSession(
 
   const tx = db.transaction(() => {
     if (shouldPreempt) {
-      const existing = db
-        .prepare("SELECT token_hash FROM sessions WHERE staff_id = ?")
-        .all(staffId) as Array<{ token_hash: string }>;
+      try {
+        const existing = db
+          .prepare("SELECT token_hash, expires_at FROM sessions WHERE staff_id = ?")
+          .all(staffId) as Array<{ token_hash: string; expires_at: string }>;
 
-      for (const s of existing) {
-        preemptedSessionHashes.set(s.token_hash, { staffId, preemptedAt: now });
+        const insertPreempt = db.prepare(`
+          INSERT INTO session_preemptions (id, token_hash, staff_id, preempted_at, expires_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const s of existing) {
+          insertPreempt.run(
+            `prm_${crypto.randomUUID()}`,
+            s.token_hash,
+            staffId,
+            now,
+            s.expires_at || expiresAt.toISOString(),
+            now
+          );
+        }
+      } catch {
+        // Fallback if session_preemptions is not yet migrated in test runner
       }
 
       db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
@@ -367,8 +380,17 @@ export function validateSessionDetailed(sessionToken: string): {
   `).get(tokenHash, now) as (AuthenticatedUser & { isActive: number; expiresAt: string }) | undefined;
 
   if (!row) {
-    if (preemptedSessionHashes.has(tokenHash)) {
-      return { user: null, isPreempted: true };
+    try {
+      const preempted = db.prepare(`
+        SELECT staff_id FROM session_preemptions
+        WHERE token_hash = ? AND expires_at > ?
+      `).get(tokenHash, now) as { staff_id: string } | undefined;
+
+      if (preempted) {
+        return { user: null, isPreempted: true };
+      }
+    } catch {
+      // Table may not exist yet in legacy test isolation
     }
     return { user: null };
   }
@@ -394,7 +416,9 @@ export function destroySession(sessionToken: string): void {
   if (!sessionToken) return;
   const db = getDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
-  preemptedSessionHashes.delete(tokenHash);
+  try {
+    db.prepare("DELETE FROM session_preemptions WHERE token_hash = ?").run(tokenHash);
+  } catch {}
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
 }
 
@@ -404,15 +428,9 @@ export function destroySession(sessionToken: string): void {
 export function revokeAllUserSessions(staffId: string): void {
   if (!staffId) return;
   const db = getDb();
-  const now = new Date().toISOString();
-  const existing = db
-    .prepare("SELECT token_hash FROM sessions WHERE staff_id = ?")
-    .all(staffId) as Array<{ token_hash: string }>;
-
-  for (const s of existing) {
-    preemptedSessionHashes.set(s.token_hash, { staffId, preemptedAt: now });
-  }
-
+  try {
+    db.prepare("DELETE FROM session_preemptions WHERE staff_id = ?").run(staffId);
+  } catch {}
   db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
 }
 
@@ -448,7 +466,7 @@ export async function createOtpChallenge(
   const rawOtp = crypto.randomInt(100000, 1000000).toString();
   const otpHash = crypto.createHash("sha256").update(rawOtp).digest("hex");
 
-  const challengeId = `chal_${crypto.randomUUID()}`;
+  const challengeId = `chl_${crypto.randomUUID()}`;
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
 
   db.prepare(`

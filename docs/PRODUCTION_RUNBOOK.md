@@ -96,12 +96,16 @@ Before migrating data from legacy SQLite (`data/erp.db`) to PostgreSQL:
    - 100% exact count validation on every table.
    - Financial ledger sum checksum validation (exact INR rupee match).
    - Active resident stay count validation.
-5. **Emergency Rollback Procedure:**
-   - Target PostgreSQL rollback:
-     ```sql
-     TRUNCATE TABLE financial_transactions, delivery_events, delivery_tasks, meal_plans, resident_stays, residents, rooms, sessions, audit_logs, login_attempts, auth_challenges, password_resets CASCADE;
+5. **Rollback & Disaster Recovery Procedures:**
+   - **Non-Destructive Safety Principle:** Never truncate or drop production database tables during an active operational incident.
+   - **Production Point-in-Time Recovery (PITR):** If data corruption occurs during migration on production, initiate Point-in-Time Recovery (PITR) to the consistent WAL checkpoint recorded immediately prior to migration launch (retaining full offsite snapshot redundancy).
+   - **Dedicated Staging/Test Rollback Utility:**
+     For designated non-production test and staging targets ONLY, the guarded rollback utility can be executed:
+     ```bash
+     node -r ./tests/register_paths.js -e "require('./apps/erp/src/server/database/migrateSqliteToPg').rollbackPostgresMigration({ confirmDestructive: true })"
      ```
-   - Application rollback: Unset `DATABASE_URL` in environment. The ERP application automatically falls back to local SQLite persistence at `ERP_DATABASE_PATH`.
+     *Safety Guards:* This utility requires explicit `confirmDestructive: true` and unconditionally refuses execution if `NODE_ENV === 'production'` unless explicitly overridden with `allowProduction: true`.
+   - **Production Fallback Warning:** Unsetting `DATABASE_URL` is **STRICTLY PROHIBITED** as a production recovery procedure. The production ERP application fails closed with a fatal error if `DATABASE_URL` is omitted, eliminating silent reversion to ephemeral SQLite containers.
 
 ---
 

@@ -32,6 +32,9 @@ export function runMigrations(db: Database.Database): void {
   if (currentVersion < 9) {
     applyMigrationV9(db);
   }
+  if (currentVersion < 10) {
+    applyMigrationV10(db);
+  }
 }
 
 /**
@@ -689,4 +692,33 @@ function applyMigrationV9(db: Database.Database): void {
 
   tx();
 }
+
+/**
+ * Migration V10: Persistent Session Preemption Register
+ * 1. Create session_preemptions table to persist preempted session token hashes across process restarts.
+ * 2. Advance user_version to 10.
+ */
+function applyMigrationV10(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS session_preemptions (
+        id TEXT PRIMARY KEY,
+        token_hash TEXT UNIQUE NOT NULL,
+        staff_id TEXT NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+        preempted_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_session_preemptions_token ON session_preemptions(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_session_preemptions_staff ON session_preemptions(staff_id);
+      CREATE INDEX IF NOT EXISTS idx_session_preemptions_expires ON session_preemptions(expires_at);
+    `);
+
+    db.pragma("user_version = 10");
+  });
+
+  tx();
+}
+
 

@@ -130,3 +130,68 @@ This log provides a persistent, chronological audit trail of all engineering act
 - **Local Git Repository:** Changes staged and committed locally on `master`.
 - **Remote Push:** **NEVER PUSHED TO REMOTE REPOSITORY**. Strict local commit policy enforced.
 
+---
+
+## Log Entry 003 — Task 01A: Phase 01 Verification, Security Remediation & PostgreSQL Readiness
+
+- **Date:** 17 October 2026
+- **Task Identifier:** `TASK-01A` (Phase 01 Verification, Security Remediation & PostgreSQL Readiness)
+- **Author:** Antigravity Engineering (Senior Staff AI Architect)
+- **Starting Commit:** `32aec8a`
+- **Scope & Rationale:** Independently verify Phase 01, fix all confirmed security defects, eliminate CSRF bypass vectors, configure safe CSP and HSTS headers, persist session preemption across server restarts, enforce fail-fast database configuration in production, implement conflict detection in the data migration pipeline, and enforce guarded rollback policies.
+
+### 1. Files Inspected
+- Monorepo root and ERP/Website configurations: `package.json`, `apps/erp/next.config.mjs`, `apps/website/next.config.mjs`, `apps/erp/src/middleware.ts`.
+- Security & Authentication: `apps/erp/src/server/security/csrf.ts`, `apps/erp/src/server/authentication/auth.ts`, `apps/erp/src/server/authorization/authorize.ts`.
+- Database Layer: `apps/erp/src/server/database/schema/index.ts`, `migrations.ts`, `db.ts`, `client.ts`, `env.ts`, `cleanup.ts`, `migrateSqliteToPg.ts`, Drizzle migration files.
+- Documentation: `docs/PRODUCTION_RUNBOOK.md`, `docs/WORK_LOG.md`.
+- Test Suites: `tests/postgresql_phase01.test.ts` and all 7 regression suites.
+
+### 2. Remediations & Technical Fixes
+1. **CSRF Validation & Mutation Protection (`apps/erp/src/server/security/csrf.ts`, `apps/erp/src/middleware.ts`):**
+   - Eliminated vulnerability where a static client header (`X-RN-CSRF: 1`) could independently authorize cross-origin browser requests.
+   - Added strict `sec-fetch-site === "cross-site"` rejection.
+   - Mandated valid Origin / Referer validation against application base URLs for browser requests with ambient session cookies.
+   - Cookie-authenticated mutating requests missing both Origin and Referer are strictly rejected.
+   - Added automatic CSRF middleware validation across all mutating REST endpoints (`POST`, `PUT`, `PATCH`, `DELETE` under `/api/*`).
+2. **CSP & HSTS Security Headers (`apps/erp/next.config.mjs`, `apps/website/next.config.mjs`):**
+   - Completely eliminated `'unsafe-eval'` from production `script-src` directives.
+   - Documented the architectural necessity of `'unsafe-inline'` for Next.js App Router (14.2) bootstrap script hydration.
+   - Replaced aggressive HSTS (`includeSubDomains; preload`) with conservative `max-age=31536000`, preventing irreversible browser domain pinning pending complete subdomain HTTPS validation.
+3. **Persistent Single Active Session Preemption (`apps/erp/src/server/database/schema/index.ts`, `migrations.ts`, `drizzle/0001_faithful_gorgon.sql`, `auth.ts`, `cleanup.ts`):**
+   - Replaced ephemeral in-memory `Map<string, PreemptedSession>` with persistent database table `session_preemptions`.
+   - Added Drizzle schema, SQLite migration V10, and Drizzle migration `0001_faithful_gorgon.sql` for `session_preemptions`.
+   - Preempted session records survive process restarts, multi-instance horizontal scaling, and container redeployments.
+   - Added automatic cleanup of expired preemption records and challenge entries in `cleanup.ts`.
+   - Standardized OTP challenge ID prefix to `chl_` across auth modules.
+4. **Production Database Fallback Safeguards (`apps/erp/src/server/database/env.ts`, `db.ts`, `client.ts`):**
+   - Implemented `validateProductionDatabaseEnvironment()` in `env.ts`.
+   - Startup throws fatal errors in production when `DATABASE_URL` is missing, malformed, or unreachable.
+   - Strictly prohibited silent fallback to local ephemeral SQLite (`data/erp.db`) in production environments.
+   - `pingDatabase()` explicitly returns `ok: false, engine: "none"` when PostgreSQL is unconfigured in production.
+5. **Topological Data Migration & Conflict Detection (`apps/erp/src/server/database/migrateSqliteToPg.ts`, `docs/PRODUCTION_RUNBOOK.md`):**
+   - Included all 18 operational tables (topologically ordered to respect foreign keys).
+   - Added pre-migration backup generation under `data/backups/erp_backup_<timestamp>.db`.
+   - Replaced blind `ON CONFLICT DO NOTHING` with explicit conflict detection: compares existing target records against source rows, halts with a fatal conflict error on divergent data, and prevents silent record overwriting.
+   - Added `rollbackPostgresMigration` requiring explicit `confirmDestructive: true` and disallowing execution in production unless `allowProduction: true` is explicitly passed.
+   - Corrected `docs/PRODUCTION_RUNBOOK.md` to remove claims that unsetting `DATABASE_URL` is a safe rollback, mandating PostgreSQL PITR and WAL replay for production disaster recovery.
+
+### 3. Verification Results
+- **Phase 01 Test Suite (`npm run test:phase01`):** **84 PASSED, 0 FAILED, 2 BLOCKED** (blocked items: live PostgreSQL data migration execution and live row lock verification, explicitly blocked on host credentials).
+- **Existing Regression Test Suites (`npm test`):** **640 PASSED, 0 FAILED across all 7 suites**:
+  - Security & rate limiting (`tests/auth_hardening.test.ts`): 49 / 49 passed
+  - RBAC & staff lifecycle (`tests/rbac_staff_foundation.test.ts`): 114 / 114 passed
+  - Rooms & residents (`tests/rooms_residents.test.ts`): 60 / 60 passed
+  - Finance & cashbook (`tests/finance.test.ts`): 102 / 102 passed
+  - Kitchen & daily meal plans (`tests/kitchen.test.ts`): 81 / 81 passed
+  - Comprehensive integration audit (`tests/integration_audit.test.ts`): 97 / 97 passed
+  - Delivery management (`tests/delivery.test.ts`): 137 / 137 passed
+- **Application Production Builds:**
+  - `npm run build:erp`: **Successfully compiled** Next.js 14.2.35 production build.
+  - `npm run build:website`: **Successfully compiled** Next.js 14.2.35 production build.
+
+### 4. Git Commit Policy
+- **Local Git Repository:** Changes committed locally on `master`.
+- **Remote Push:** **NEVER PUSHED TO REMOTE REPOSITORY**. Strict local commit policy enforced.
+
+

@@ -3,9 +3,19 @@ const nextConfig = {
   reactStrictMode: true,
   async headers() {
     const isProd = process.env.NODE_ENV === "production";
+
+    // Content Security Policy (CSP):
+    // Note on 'unsafe-inline': Next.js App Router (14.2) requires inline bootstrap
+    // scripts (self.__next_f.push) during React hydration. Safer alternatives require
+    // per-request middleware nonce injection wired into layout props.
+    // 'unsafe-eval' is strictly eliminated in production.
+    const scriptSrc = isProd
+      ? "script-src 'self' 'unsafe-inline'"
+      : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:",
       "font-src 'self' data:",
@@ -24,9 +34,10 @@ const nextConfig = {
     ];
 
     if (isProd) {
+      // HSTS: max-age 1 year. Omit includeSubDomains/preload until subdomains are verified HTTPS-ready.
       headers.push({
         key: "Strict-Transport-Security",
-        value: "max-age=63072000; includeSubDomains; preload",
+        value: "max-age=31536000",
       });
     }
 

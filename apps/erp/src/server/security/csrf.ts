@@ -2,13 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 
 const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+export const ERP_COOKIE_NAME = "rn_erp_session";
+
 /**
  * Validates request origin against known host and configured application URLs.
  * Rejects cross-origin state-changing requests to defend against CSRF attacks.
+ * 
+ * Strict Security Rules:
+ * 1. Safe HTTP methods (GET, HEAD, OPTIONS) are exempt.
+ * 2. If 'Sec-Fetch-Site' is 'cross-site', the request is unconditionally rejected.
+ * 3. If an Origin or Referer is present, it MUST match the request Host or allowed origins list.
+ *    No public constant header (such as X-RN-CSRF) can independently authorize an untrusted origin.
+ * 4. If Origin and Referer are absent:
+ *    - If an ambient session cookie (rn_erp_session) is present, the request is rejected with HTTP 403.
+ *    - If no session cookie is present (e.g. non-browser mobile API client), requests with
+ *      verified client headers (x-rn-csrf, x-requested-with, or Authorization) are permitted.
  */
 export function validateCsrf(req: NextRequest): { valid: boolean; error?: string } {
   if (!MUTATING_METHODS.has(req.method.toUpperCase())) {
     return { valid: true };
+  }
+
+  // 1. Unconditionally reject browsers reporting cross-site fetch
+  const secFetchSite = req.headers.get("sec-fetch-site");
+  if (secFetchSite && secFetchSite.toLowerCase() === "cross-site") {
+    return {
+      valid: false,
+      error: "Cross-site request blocked by Sec-Fetch-Site policy (CSRF check failed)",
+    };
   }
 
   const origin = req.headers.get("origin");
@@ -26,13 +47,28 @@ export function validateCsrf(req: NextRequest): { valid: boolean; error?: string
     }
   }
 
-  // If no origin or referer header is provided on a mutating cookie-authenticated request
+  // 2. If no origin or referer header is provided
   if (!requestOrigin) {
-    // If a custom Anti-CSRF token or header is provided by trusted client code
-    const customHeader = req.headers.get("x-rn-csrf") || req.headers.get("x-requested-with");
+    const hasSessionCookie = Boolean(req.cookies.get(ERP_COOKIE_NAME)?.value);
+    
+    // Cookie-authenticated requests missing both origin and referer are untrusted
+    if (hasSessionCookie) {
+      return {
+        valid: false,
+        error: "Missing origin and referer headers on cookie-authenticated request (CSRF check failed)",
+      };
+    }
+
+    // For non-browser / mobile-native clients without cookies
+    const customHeader =
+      req.headers.get("x-rn-csrf") ||
+      req.headers.get("x-requested-with") ||
+      req.headers.get("authorization");
+
     if (customHeader) {
       return { valid: true };
     }
+
     return {
       valid: false,
       error: "Missing origin or referer header on mutating request (CSRF check failed)",
@@ -46,7 +82,7 @@ export function validateCsrf(req: NextRequest): { valid: boolean; error?: string
     return { valid: false, error: "Malformed origin header (CSRF check failed)" };
   }
 
-  // 1. Same-host match
+  // 3. Same-host match
   if (host) {
     const hostWithoutPort = host.split(":")[0].toLowerCase();
     const originHostname = requestUrl.hostname.toLowerCase();
@@ -55,7 +91,7 @@ export function validateCsrf(req: NextRequest): { valid: boolean; error?: string
     }
   }
 
-  // 2. Allowed origins list
+  // 4. Allowed origins list
   const allowedOrigins = [
     process.env.NEXT_PUBLIC_APP_URL,
     "http://localhost:3000",
@@ -77,6 +113,7 @@ export function validateCsrf(req: NextRequest): { valid: boolean; error?: string
     return { valid: true };
   }
 
+  // 5. Hostile cross-origin: NEVER bypass, even if custom headers are passed
   return {
     valid: false,
     error: `Cross-origin request from '${requestOrigin}' rejected by CSRF policy`,
