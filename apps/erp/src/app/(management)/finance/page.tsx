@@ -28,14 +28,13 @@ import { ReversalModal } from "@/modules/finance/components/modals/ReversalModal
 import {
   toLocalDateString,
   getLocalFirstDayOfMonth,
-  getLocalDaysAgo,
 } from "@/modules/finance/utils/dateUtils";
 import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
 
 export default function FinancePage() {
   const [activeTab, setActiveTab] = useState<"cashbook" | "residents">("cashbook");
 
-  // Local calendar date filters (defaults to current month)
+  // Local calendar date filters (defaults to current calendar month)
   const [startDate, setStartDate] = useState(getLocalFirstDayOfMonth());
   const [endDate, setEndDate] = useState(toLocalDateString());
 
@@ -154,8 +153,8 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-7 animate-fade-in max-w-7xl mx-auto pb-12">
-      {/* 1. Header & Actions */}
+    <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-7xl mx-auto pb-12">
+      {/* 1. Executive Header & Action Buttons */}
       <FinanceHeader
         onRefresh={fetchData}
         isLoading={loading}
@@ -172,10 +171,10 @@ export default function FinancePage() {
 
       {/* Global Alerts */}
       {actionSuccess && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm flex items-center justify-between shadow-2xs animate-fade-in">
-          <div className="flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center justify-between shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="font-medium">{actionSuccess}</span>
+            <span className="font-semibold">{actionSuccess}</span>
           </div>
           <button
             onClick={() => setActionSuccess(null)}
@@ -187,10 +186,10 @@ export default function FinancePage() {
       )}
 
       {actionError && (
-        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm flex items-center justify-between shadow-2xs animate-fade-in">
-          <div className="flex items-center gap-2">
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between shadow-2xs animate-fade-in">
+          <div className="flex items-center gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span className="font-medium">{actionError}</span>
+            <span>{actionError}</span>
           </div>
           <button
             onClick={() => setActionError(null)}
@@ -202,70 +201,63 @@ export default function FinancePage() {
       )}
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs sm:text-sm flex items-start gap-2.5 shadow-2xs">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-semibold">Unable to load finance data</p>
-            <p className="text-rose-800/80 mt-0.5">{error}</p>
-          </div>
+        <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5 shadow-2xs animate-fade-in">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
 
-      {/* 2. Primary Tabs Navigation */}
-      <div className="flex items-center gap-2 border-b border-[#8E9F89]/20 pb-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab("cashbook")}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all ${
-            activeTab === "cashbook"
-              ? "bg-[#1A2E20] text-white shadow-2xs"
-              : "text-[#5E715C] hover:text-[#1A2E20] hover:bg-[#FAF8F5]"
-          }`}
-        >
-          <Receipt className="w-4 h-4 text-[#B58A57]" />
-          <span>Cashbook &amp; Transactions</span>
-          {transactions.length > 0 && (
+      {/* 2. Controls Toolbar: Segmented Tabs + Accounting Period */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        {/* Segmented View Switcher Tabs */}
+        <div className="inline-flex p-1 bg-[#FAF8F5] border border-[#8E9F89]/25 rounded-xl text-xs font-semibold gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab("cashbook")}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+              activeTab === "cashbook"
+                ? "bg-[#1A2E20] text-white shadow-xs"
+                : "text-[#5A6C5E] hover:text-[#1A2E20]"
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
+            <span>Cashbook &amp; Transactions</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                 activeTab === "cashbook"
                   ? "bg-white/20 text-white"
-                  : "bg-stone-200/70 text-[#1A2E20]"
+                  : "bg-[#8E9F89]/20 text-[#5A6C5E]"
               }`}
             >
               {transactions.length}
             </span>
-          )}
-        </button>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("residents")}
-          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all ${
-            activeTab === "residents"
-              ? "bg-[#1A2E20] text-white shadow-2xs"
-              : "text-[#5E715C] hover:text-[#1A2E20] hover:bg-[#FAF8F5]"
-          }`}
-        >
-          <Users className="w-4 h-4 text-[#5D7656]" />
-          <span>Resident Statements</span>
-          {residents.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("residents")}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+              activeTab === "residents"
+                ? "bg-[#1A2E20] text-white shadow-xs"
+                : "text-[#5A6C5E] hover:text-[#1A2E20]"
+            }`}
+          >
+            <Users className="w-3.5 h-3.5 text-[#5D7656]" />
+            <span>Resident Statements</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
                 activeTab === "residents"
                   ? "bg-white/20 text-white"
-                  : "bg-stone-200/70 text-[#1A2E20]"
+                  : "bg-[#8E9F89]/20 text-[#5A6C5E]"
               }`}
             >
               {residents.length}
             </span>
-          )}
-        </button>
-      </div>
+          </button>
+        </div>
 
-      {/* 3. Tab Content */}
-      {activeTab === "cashbook" ? (
-        <div className="space-y-6">
-          {/* Accounting Period Controls */}
+        {/* Accounting Period Selector (only in Cashbook tab) */}
+        {activeTab === "cashbook" && (
           <AccountingPeriodSelector
             startDate={startDate}
             endDate={endDate}
@@ -273,7 +265,12 @@ export default function FinancePage() {
             onResetFilters={handleResetFilters}
             hasActiveFilters={hasActiveFilters}
           />
+        )}
+      </div>
 
+      {/* 3. Tab Content */}
+      {activeTab === "cashbook" ? (
+        <div className="space-y-6 sm:space-y-8">
           {/* 5 Financial Summary KPI Cards */}
           <FinancialSummaryCards summary={cashbook} isLoading={loading} />
 
@@ -302,7 +299,7 @@ export default function FinancePage() {
         />
       )}
 
-      {/* 4. Transaction Entry Modals */}
+      {/* Modals & Dialogs */}
       <PaymentModal
         isOpen={isPaymentOpen}
         onClose={() => setIsPaymentOpen(false)}

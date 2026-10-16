@@ -3,22 +3,20 @@
 import React, { useState, useMemo } from "react";
 import {
   Search,
-  FileText,
   CreditCard,
   ArrowLeft,
   Download,
-  AlertCircle,
-  CheckCircle2,
-  Shield,
   Receipt,
   User,
   Phone,
-  Mail,
-  Home,
+  ArrowRight,
   TrendingUp,
+  TrendingDown,
+  Wallet,
+  RotateCcw,
 } from "lucide-react";
 import { ResidentListItem, ResidentFinancialSummary } from "@/types";
-import { formatINR } from "../utils/formatUtils";
+import { formatINR, formatINRWithSign } from "../utils/formatUtils";
 import { exportResidentStatementToCsv } from "../utils/exportCsv";
 
 interface ResidentStatementsViewProps {
@@ -76,21 +74,21 @@ export function ResidentStatementsView({
     setSelectedStatement(null);
   };
 
-  // If a resident statement is selected, show the full statement detail dossier!
+  // If a resident statement is selected, show the full statement detail dossier
   if (selectedStatement) {
     const hasOutstanding = selectedStatement.outstandingRentBalance > 0;
 
     return (
-      <div className="space-y-6 animate-fade-in">
+      <div className="space-y-6 sm:space-y-7 animate-fade-in">
         {/* Navigation & Actions Top Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#8E9F89]/20">
           <button
             type="button"
             onClick={handleBackToList}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs sm:text-sm font-medium transition-colors shadow-2xs"
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs sm:text-sm font-semibold transition-all shadow-2xs"
           >
             <ArrowLeft className="w-4 h-4 text-[#5D7656]" />
-            <span>Back to Resident List</span>
+            <span>&larr; Back to Resident List</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -106,7 +104,7 @@ export function ResidentStatementsView({
             <button
               type="button"
               onClick={() => onOpenPaymentForResident(selectedStatement.residentId)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs sm:text-sm font-medium transition-all shadow-md active:scale-95"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs sm:text-sm font-semibold transition-all shadow-md active:scale-95"
             >
               <CreditCard className="w-4 h-4 text-[#B58A57]" />
               <span>Collect Payment</span>
@@ -115,26 +113,26 @@ export function ResidentStatementsView({
         </div>
 
         {/* Resident Identity Banner */}
-        <div className="bg-white rounded-2xl border border-[#8E9F89]/20 p-5 shadow-2xs">
+        <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-5 sm:p-6 shadow-2xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center text-[#1A2E20] font-serif font-bold text-lg shrink-0">
-                {selectedStatement.fullName.slice(0, 2).toUpperCase()}
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-[#1A2E20] text-[#B58A57] flex items-center justify-center font-serif font-bold text-lg shrink-0 shadow-2xs">
+                {selectedStatement.fullName.charAt(0).toUpperCase()}
               </div>
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-serif text-[#1A2E20] font-normal">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-xl font-serif text-[#1A2E20] font-bold">
                     {selectedStatement.fullName}
                   </h2>
                   {selectedStatement.currentRoomNumber ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#1A2E20] text-white">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#1A2E20] text-white">
                       Room {selectedStatement.currentRoomNumber}
                     </span>
                   ) : (
-                    <span className="text-xs text-[#5E715C] italic">No room assigned</span>
+                    <span className="text-xs text-[#5A6C5E] italic">No room assigned</span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-[#5E715C] mt-1 font-mono">
+                <div className="flex flex-wrap items-center gap-4 text-xs text-[#5A6C5E] mt-1 font-mono">
                   <span className="flex items-center gap-1">
                     <Phone className="w-3.5 h-3.5 text-[#5D7656]" />
                     {selectedStatement.phone}
@@ -144,207 +142,189 @@ export function ResidentStatementsView({
               </div>
             </div>
 
-            {/* Current Balance Tag */}
-            <div
-              className={`px-4 py-3 rounded-xl border flex flex-col items-end justify-center ${
-                hasOutstanding
-                  ? "bg-amber-50/60 border-amber-200 text-amber-900"
-                  : "bg-emerald-50/60 border-emerald-200 text-emerald-900"
-              }`}
-            >
-              <span className="text-[10px] uppercase tracking-wider font-semibold">
+            {/* Current Balance Pill */}
+            <div className="border border-[#8E9F89]/25 rounded-2xl px-5 py-3 bg-[#FAF8F5] text-right">
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-[#6E7F70] block">
                 Current Outstanding Rent
               </span>
-              <span className="text-2xl font-serif font-bold tabular-nums">
+              <span className="text-2xl font-serif font-bold tabular-nums text-[#1A2E20]">
                 {formatINR(selectedStatement.outstandingRentBalance)}
               </span>
             </div>
           </div>
         </div>
 
-        {/* 4 Financial Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {/* 4 Standard Metric Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
           {/* Outstanding Balance */}
-          <div className="bg-white rounded-2xl border border-amber-200/80 bg-amber-50/20 p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-900 block">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
               Outstanding Rent
             </span>
-            <div className="text-2xl font-bold tracking-tight text-amber-950 font-serif tabular-nums mt-2">
-              {formatINR(selectedStatement.outstandingRentBalance)}
+            <div className="mt-2">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+                {formatINR(selectedStatement.outstandingRentBalance)}
+              </span>
             </div>
-            <span className="text-xs text-amber-800/80 mt-1 block font-light">
+            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
               {hasOutstanding ? "Dues pending collection" : "All rent accounts settled"}
             </span>
           </div>
 
           {/* Total Billed Rent */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#5D7656] block">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
               Total Billed Rent
             </span>
-            <div className="text-2xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums mt-2">
-              {formatINR(selectedStatement.totalRentCharges)}
+            <div className="mt-2">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+                {formatINR(selectedStatement.totalRentCharges)}
+              </span>
             </div>
-            <span className="text-xs text-[#5E715C] mt-1 block font-light">
-              Cumulative posted rent charges
+            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
+              Cumulative posted charges
             </span>
           </div>
 
           {/* Total Rent Paid */}
-          <div className="bg-white rounded-2xl border border-emerald-200/80 bg-emerald-50/20 p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800 block">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
               Total Rent Paid
             </span>
-            <div className="text-2xl font-bold tracking-tight text-emerald-950 font-serif tabular-nums mt-2">
-              {formatINR(selectedStatement.totalRentPaid)}
+            <div className="mt-2">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+                {formatINR(selectedStatement.totalRentPaid)}
+              </span>
             </div>
-            <span className="text-xs text-emerald-700/90 mt-1 block font-light">
+            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
               Cumulative rent receipts
             </span>
           </div>
 
           {/* Security Deposit Held */}
-          <div className="bg-white rounded-2xl border border-[#B58A57]/30 bg-[#FAF8F5]/80 p-4 shadow-2xs">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#654735] block">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
               Security Deposit Held
             </span>
-            <div className="text-2xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums mt-2">
-              {formatINR(selectedStatement.totalSecurityDepositHeld)}
+            <div className="mt-2">
+              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+                {formatINR(selectedStatement.totalSecurityDepositHeld)}
+              </span>
             </div>
-            <span className="text-xs text-[#654735]/80 mt-1 block font-light">
+            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
               Refundable liability (not rent)
             </span>
           </div>
         </div>
 
         {/* Chronological Account Ledger History */}
-        <div className="bg-white rounded-2xl border border-[#8E9F89]/20 shadow-2xs overflow-hidden">
-          <div className="p-4 sm:p-5 border-b border-[#8E9F89]/15 flex items-center justify-between bg-[#FAF8F5]/80">
+        <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-[#8E9F89]/20 flex items-center justify-between bg-[#FAF8F5]">
             <div>
-              <h3 className="font-serif text-base text-[#1A2E20] font-medium">
+              <h3 className="font-serif text-base text-[#1A2E20] font-bold">
                 Account Ledger History
               </h3>
-              <p className="text-xs text-[#5E715C] mt-0.5 font-light">
+              <p className="text-xs text-[#5A6C5E] mt-0.5">
                 Chronological statement of all rent charges, payment receipts, deposit collections, and adjustments.
               </p>
             </div>
-            <span className="text-xs text-[#5E715C] font-mono">
-              {(selectedStatement.transactions || []).length} records
+            <span className="text-xs text-[#6E7F70] font-mono tabular-nums">
+              {(selectedStatement.transactions || []).length} record{(selectedStatement.transactions || []).length !== 1 ? "s" : ""}
             </span>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="border-b border-[#8E9F89]/15 bg-[#FAF8F5]/50 text-[#5D7656] font-serif uppercase tracking-wider text-[11px]">
-                  <th className="py-3 px-4 font-semibold">Date</th>
-                  <th className="py-3 px-4 font-semibold">Type</th>
-                  <th className="py-3 px-4 font-semibold">Method &amp; Ref</th>
-                  <th className="py-3 px-4 font-semibold">Billing Period / Notes</th>
-                  <th className="py-3 px-4 font-semibold text-right">Amount (₹)</th>
-                  <th className="py-3 px-4 font-semibold text-center">Status</th>
+                <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
+                  <th className="py-3 px-4">Date</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4">Billing Period</th>
+                  <th className="py-3 px-4">Method &amp; Ref</th>
+                  <th className="py-3 px-4">Description</th>
+                  <th className="py-3 px-4 text-right">Amount</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#8E9F89]/10">
+              <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
                 {(selectedStatement.transactions || []).length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-[#5E715C]">
-                      No financial records found for this resident.
+                    <td colSpan={6} className="py-12 text-center text-[#5A6C5E]">
+                      No transaction records on file for this resident.
                     </td>
                   </tr>
                 ) : (
-                  selectedStatement.transactions.map((t) => {
+                  (selectedStatement.transactions || []).map((t) => {
                     const isPayment = t.transactionType === "RENT_PAYMENT";
                     const isCharge = t.transactionType === "RENT_CHARGE";
                     const isDeposit = t.transactionType === "SECURITY_DEPOSIT";
+                    const isReversal = t.transactionType === "REVERSAL";
                     const isReversed = t.status === "REVERSED";
 
+                    const { formatted, isPositive, isNegative } = formatINRWithSign(
+                      t.amount,
+                      t.transactionType,
+                      t.status
+                    );
+
                     return (
-                      <tr
-                        key={t.id}
-                        className={`hover:bg-[#FAF8F5]/60 transition-colors ${
-                          isReversed ? "bg-stone-50/70 opacity-60" : ""
-                        }`}
-                      >
-                        <td className="py-3 px-4 font-mono whitespace-nowrap text-[#1A2E20]">
+                      <tr key={t.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
+                        <td className="py-3 px-4 font-mono font-medium text-[#1A2E20] whitespace-nowrap">
                           {t.transactionDate}
                         </td>
-
                         <td className="py-3 px-4 whitespace-nowrap">
                           {isPayment && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              Rent Payment
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <TrendingUp className="w-3 h-3" />
+                              <span>Rent Payment</span>
                             </span>
                           )}
                           {isCharge && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-[#FAF8F5] text-[#654735] border border-[#B58A57]/35">
-                              Rent Charge
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FAF8F5] text-[#654735] border border-[#B58A57]/35">
+                              <Receipt className="w-3 h-3 text-[#B58A57]" />
+                              <span>Rent Charge</span>
                             </span>
                           )}
                           {isDeposit && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-900 border border-amber-200">
-                              Security Deposit
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                              <Wallet className="w-3 h-3 text-amber-800" />
+                              <span>Deposit</span>
                             </span>
                           )}
-                          {t.transactionType === "REVERSAL" && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 text-stone-700 border border-stone-300">
-                              Reversal
+                          {isReversal && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Reversal</span>
                             </span>
                           )}
                         </td>
-
+                        <td className="py-3 px-4 text-[#1A2E20] whitespace-nowrap">
+                          {t.billingPeriod || "—"}
+                        </td>
                         <td className="py-3 px-4 whitespace-nowrap">
-                          {t.paymentMethod ? (
-                            <div>
-                              <span className="text-[#1A2E20] font-medium block">
-                                {t.paymentMethod}
-                              </span>
-                              {t.referenceNumber && (
-                                <span className="text-[10px] font-mono text-[#5E715C]">
-                                  Ref: {t.referenceNumber}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[#5E715C]">—</span>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4 max-w-xs truncate">
-                          {t.billingPeriod && (
-                            <span className="font-medium text-[#1A2E20] block">
-                              Period: {t.billingPeriod}
+                          {t.paymentMethod || "—"}
+                          {t.referenceNumber && (
+                            <span className="block text-[11px] text-[#6E7F70] font-mono">
+                              Ref: {t.referenceNumber}
                             </span>
                           )}
-                          <span className="text-[#5E715C] text-[11px] block truncate">
-                            {t.description || "—"}
-                          </span>
                         </td>
-
-                        <td className="py-3 px-4 text-right whitespace-nowrap font-mono font-semibold">
+                        <td className="py-3 px-4 max-w-[220px] truncate" title={t.description || ""}>
+                          {t.description || "—"}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap font-mono font-bold tabular-nums">
                           <span
                             className={
                               isReversed
                                 ? "line-through text-stone-400"
-                                : isPayment || isDeposit
+                                : isPositive
                                 ? "text-emerald-700"
+                                : isNegative
+                                ? "text-rose-700"
                                 : "text-[#1A2E20]"
                             }
                           >
-                            {isPayment || isDeposit ? `+${formatINR(t.amount)}` : formatINR(t.amount)}
+                            {formatted}
                           </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-center whitespace-nowrap">
-                          {isReversed ? (
-                            <span className="px-2 py-0.5 rounded text-[9px] uppercase font-bold bg-red-100 text-red-800 border border-red-300">
-                              Reversed
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded text-[9px] uppercase font-medium bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              Posted
-                            </span>
-                          )}
                         </td>
                       </tr>
                     );
@@ -358,100 +338,90 @@ export function ResidentStatementsView({
     );
   }
 
-  // Otherwise, render the Searchable Resident Statements Directory
+  // Otherwise, render Searchable Resident Statements Directory
   return (
     <div className="space-y-4">
-      {/* Search & Filter Bar */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/20 p-4 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-1 min-w-[260px] bg-[#FAF8F5] px-3.5 py-2 rounded-xl border border-[#8E9F89]/25">
-          <Search className="w-4 h-4 text-[#5D7656] shrink-0" />
+      {/* Search & Filter Bar (Matching Residents & Rooms pattern) */}
+      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-3.5 sm:p-4 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-[#6E7F70] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search residents by name, phone, room, or ID..."
+            placeholder="Search residents by name, phone, or assigned room number..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-transparent text-xs text-[#1A2E20] placeholder-[#5E715C]/60 focus:outline-none"
+            className="w-full pl-9 pr-8 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs sm:text-sm text-[#1A2E20] placeholder:text-[#6E7F70] focus:outline-hidden focus:border-[#1A2E20] focus:ring-1 focus:ring-[#1A2E20]"
           />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery("")}
-              className="text-[#5E715C] hover:text-[#1A2E20] text-xs font-bold px-1"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E7F70] hover:text-[#1A2E20] text-sm font-bold"
             >
               &times;
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
-          <span className="text-[11px] text-[#5E715C] font-semibold uppercase tracking-wider font-serif">
-            Status:
-          </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-none font-medium"
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
           >
             <option value="ALL">All Residents</option>
-            <option value="ACTIVE">In-House (Active)</option>
+            <option value="ACTIVE">Currently In-House (Active)</option>
             <option value="CHECKED_OUT">Checked Out</option>
           </select>
+
+          <span className="text-xs text-[#6E7F70] pl-1 font-mono tabular-nums whitespace-nowrap">
+            {filteredResidents.length} of {residents.length}
+          </span>
         </div>
       </div>
 
       {/* Residents Table */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/20 shadow-2xs overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-[#8E9F89]/15 flex items-center justify-between bg-[#FAF8F5]/80">
-          <div>
-            <h3 className="font-serif text-base text-[#1A2E20] font-medium">
-              Resident Rent Accounts &amp; Statements Directory
-            </h3>
-            <p className="text-xs text-[#5E715C] mt-0.5 font-light">
-              Select any resident to view their full account statement, outstanding balances, and historical ledger.
-            </p>
-          </div>
-          <span className="text-xs text-[#5E715C] font-mono">
-            {filteredResidents.length} residents
-          </span>
-        </div>
-
+      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-[#8E9F89]/15 bg-[#FAF8F5]/50 text-[#5D7656] font-serif uppercase tracking-wider text-[11px]">
-                <th className="py-3.5 px-4 font-semibold">Resident</th>
-                <th className="py-3.5 px-4 font-semibold">Room &amp; Floor</th>
-                <th className="py-3.5 px-4 font-semibold">Contact Info</th>
-                <th className="py-3.5 px-4 font-semibold">Status</th>
-                <th className="py-3.5 px-4 font-semibold text-center">Actions</th>
+              <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
+                <th className="py-3 px-4">Resident</th>
+                <th className="py-3 px-4">Current Room</th>
+                <th className="py-3 px-4">Contact Info</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#8E9F89]/10">
+            <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
               {isLoading ? (
                 Array.from({ length: 6 }).map((_, idx) => (
                   <tr key={`res-skel-${idx}`} className="animate-pulse">
-                    <td className="py-4 px-4">
-                      <div className="h-4 w-32 bg-stone-200 rounded mb-1" />
-                      <div className="h-3 w-20 bg-stone-100 rounded" />
+                    <td className="py-3 px-4">
+                      <div className="h-4 w-32 bg-stone-200 rounded" />
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-3 px-4">
                       <div className="h-4 w-24 bg-stone-200 rounded" />
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-3 px-4">
                       <div className="h-4 w-28 bg-stone-200 rounded" />
                     </td>
-                    <td className="py-4 px-4">
+                    <td className="py-3 px-4">
                       <div className="h-5 w-20 bg-stone-200 rounded-full" />
                     </td>
-                    <td className="py-4 px-4 text-center">
-                      <div className="h-7 w-32 bg-stone-200 rounded mx-auto" />
+                    <td className="py-3 px-4 text-right">
+                      <div className="h-7 w-28 bg-stone-200 rounded ml-auto" />
                     </td>
                   </tr>
                 ))
               ) : filteredResidents.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-[#5E715C]">
-                    <User className="w-8 h-8 mx-auto text-[#8E9F89]/50 mb-2" />
-                    <p className="font-serif text-sm text-[#1A2E20]">No residents match your search</p>
+                  <td colSpan={5} className="py-12 text-center text-[#5A6C5E]">
+                    <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20] mb-2">
+                      <User className="w-6 h-6 text-[#B58A57]" />
+                    </div>
+                    <p className="font-serif text-base text-[#1A2E20] font-bold">No Residents Found</p>
+                    <p className="text-xs text-[#5A6C5E] mt-1">No residents match your search or filter selection.</p>
                   </td>
                 </tr>
               ) : (
@@ -460,79 +430,69 @@ export function ResidentStatementsView({
 
                   return (
                     <tr key={r.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
-                      {/* Resident Name & ID */}
-                      <td className="py-3.5 px-4">
+                      {/* Resident Name & Avatar */}
+                      <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/25 flex items-center justify-center text-[#1A2E20] font-serif font-bold text-xs shrink-0">
-                            {r.fullName.slice(0, 2).toUpperCase()}
+                          <div className="w-7 h-7 rounded-full bg-[#1A2E20] text-[#B58A57] flex items-center justify-center font-serif font-bold text-xs shrink-0 shadow-2xs">
+                            {r.fullName.charAt(0).toUpperCase()}
                           </div>
                           <div>
-                            <span className="font-medium text-[#1A2E20] block">{r.fullName}</span>
-                            <span className="text-[10px] text-[#5E715C] font-mono">{r.id}</span>
+                            <button
+                              onClick={() => handleOpenStatement(r.id)}
+                              className="font-bold text-xs text-[#1A2E20] hover:text-[#B58A57] transition-colors text-left truncate block max-w-[200px]"
+                              title="Click to view financial statement"
+                            >
+                              {r.fullName}
+                            </button>
+                            <span className="text-[10px] text-[#6E7F70] font-mono">{r.id}</span>
                           </div>
                         </div>
                       </td>
 
-                      {/* Room & Floor */}
-                      <td className="py-3.5 px-4">
+                      {/* Current Room */}
+                      <td className="py-3 px-4">
                         {r.currentRoomNumber ? (
-                          <div className="flex flex-col">
-                            <span className="inline-flex items-center gap-1 font-medium text-[#1A2E20]">
-                              <Home className="w-3 h-3 text-[#5D7656]" />
-                              Room {r.currentRoomNumber}
-                            </span>
-                            <span className="text-[10px] text-[#5E715C]">
+                          <div className="font-medium text-[#1A2E20]">
+                            Room {r.currentRoomNumber}
+                            <span className="text-[10px] text-[#5A6C5E] block font-light">
                               {r.currentFloor === 0 ? "Ground Floor" : `Floor ${r.currentFloor}`}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-[#5E715C] italic">No room assigned</span>
+                          <span className="text-xs text-[#5A6C5E] italic">Not assigned</span>
                         )}
                       </td>
 
-                      {/* Contact */}
-                      <td className="py-3.5 px-4 font-mono text-[#1A2E20]">
-                        <div className="flex flex-col">
-                          <span>{r.phone}</span>
-                          {r.email && <span className="text-[10px] text-[#5E715C]">{r.email}</span>}
-                        </div>
+                      {/* Contact Info */}
+                      <td className="py-3 px-4 font-mono text-[#1A2E20]">
+                        <div>{r.phone}</div>
+                        {r.email && <div className="text-[10px] text-[#5A6C5E] font-sans">{r.email}</div>}
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
                             r.status === "ACTIVE"
                               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
                               : "bg-stone-100 text-stone-700 border-stone-200"
                           }`}
                         >
-                          {r.status === "ACTIVE" ? "In-House" : r.status}
+                          {r.status === "ACTIVE" ? "In-House" : "Checked Out"}
                         </span>
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenStatement(r.id)}
-                            disabled={isLoadingThis}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] font-medium text-xs transition-colors shadow-2xs disabled:opacity-50"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-[#5D7656]" />
-                            <span>{isLoadingThis ? "Loading..." : "Statement"}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => onOpenPaymentForResident(r.id)}
-                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white font-medium text-xs transition-colors shadow-2xs active:scale-95"
-                          >
-                            <CreditCard className="w-3.5 h-3.5 text-[#B58A57]" />
-                            <span>Collect</span>
-                          </button>
-                        </div>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenStatement(r.id)}
+                          disabled={isLoadingThis}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs font-semibold transition-all shadow-2xs"
+                        >
+                          <span>{isLoadingThis ? "Loading..." : "View Statement"}</span>
+                          <ArrowRight className="w-3.5 h-3.5 text-[#B58A57]" />
+                        </button>
                       </td>
                     </tr>
                   );

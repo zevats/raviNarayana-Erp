@@ -98,31 +98,36 @@ export function RentChargeModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full border border-[#8E9F89]/30 shadow-2xl overflow-hidden animate-slide-up">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="p-5 sm:p-6 border-b border-[#8E9F89]/15 flex items-center justify-between bg-[#FAF8F5]">
-          <div>
-            <span className="text-[10px] font-mono tracking-widest uppercase text-[#B58A57]">
-              RENT BILLING INVOICE
-            </span>
-            <h3 className="font-serif text-xl text-[#1A2E20] font-normal mt-0.5">
-              Issue Monthly Rent Charge
-            </h3>
+        <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#1A2E20] text-[#B58A57] flex items-center justify-center shrink-0">
+              <Receipt className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-serif text-xl text-[#1A2E20] font-bold">
+                Issue Monthly Rent Charge
+              </h3>
+              <p className="text-[11px] text-[#5A6C5E]">
+                Post scheduled rent receivable invoice to resident ledger
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white border border-[#8E9F89]/30 flex items-center justify-center text-[#5E715C] hover:text-[#1A2E20] transition-colors"
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 transition-colors"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 text-xs">
+        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {error && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2 shadow-2xs">
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
@@ -137,7 +142,7 @@ export function RentChargeModal({
               required
               value={residentId}
               onChange={(e) => setResidentId(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
             >
               <option value="">-- Choose Resident --</option>
               {residents.map((r) => (
@@ -161,7 +166,7 @@ export function RentChargeModal({
                 placeholder="8500"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono focus:outline-none"
+                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono focus:outline-hidden focus:border-[#1A2E20]"
               />
             </div>
 
@@ -175,7 +180,7 @@ export function RentChargeModal({
                 placeholder="e.g. October 2026"
                 value={billingPeriod}
                 onChange={(e) => setBillingPeriod(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-none"
+                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
               />
             </div>
           </div>
@@ -190,7 +195,7 @@ export function RentChargeModal({
               required
               value={transactionDate}
               onChange={(e) => setTransactionDate(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono focus:outline-hidden focus:border-[#1A2E20]"
             />
           </div>
 
@@ -203,24 +208,24 @@ export function RentChargeModal({
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#8E9F89]/15">
+          <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#8E9F89]/20">
             <button
               type="button"
               onClick={onClose}
               disabled={submitting}
-              className="px-4 py-2.5 rounded-xl text-xs text-[#5E715C] hover:text-[#1A2E20] transition-colors"
+              className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs font-semibold text-[#1A2E20] hover:bg-[#FAF8F5]"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-5 py-2.5 rounded-xl bg-[#1A2E20] text-white hover:bg-[#263B2D] text-xs font-medium transition-all shadow-md active:scale-95 disabled:opacity-50"
+              className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs disabled:opacity-50"
             >
               {submitting ? "Posting..." : "Confirm & Post Rent Charge"}
             </button>
