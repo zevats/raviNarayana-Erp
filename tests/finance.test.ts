@@ -24,6 +24,7 @@ import {
 } from "../apps/erp/src/server/finance/financeService";
 import { getAuditLogs, sanitizeAuditMetadata } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
+import { sanitizeCsvCell } from "../apps/erp/src/modules/finance/utils/exportCsv";
 
 // Isolated test database path
 const TEST_FINANCE_DB_PATH = path.resolve(__dirname, "test_finance.db");
@@ -753,6 +754,41 @@ async function runFinanceTests() {
     }
   }
   assert(!sensitiveFieldFound, "All finance audit event metadata verified free of secrets, passwords, or tokens");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 11: Timezone-Safe Period Boundaries & CSV Injection Defense
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 11] Timezone-Safe Period Boundaries & CSV Injection Defense");
+
+  // 1. Timezone-safe default period dates in getCashbookSummary
+  const currentDate = new Date();
+  const expYear = currentDate.getFullYear();
+  const expMonth = String(currentDate.getMonth() + 1).padStart(2, "0");
+  const expDay = String(currentDate.getDate()).padStart(2, "0");
+  const expectedDefaultStart = `${expYear}-${expMonth}-01`;
+  const expectedDefaultEnd = `${expYear}-${expMonth}-${expDay}`;
+
+  const defaultSummary = getCashbookSummary(superAdminUser, {});
+  assert(
+    defaultSummary.startDate === expectedDefaultStart,
+    `getCashbookSummary default startDate correctly uses local calendar month start (${expectedDefaultStart})`
+  );
+  assert(
+    defaultSummary.endDate === expectedDefaultEnd,
+    `getCashbookSummary default endDate correctly uses local calendar current day (${expectedDefaultEnd})`
+  );
+
+  // 2. CSV formula injection prevention
+  assert(sanitizeCsvCell("=1+1") === "'=1+1", "sanitizeCsvCell neutralizes '=' formula injection prefix");
+  assert(sanitizeCsvCell("+cmd|' /C calc'!A0") === "'+cmd|' /C calc'!A0", "sanitizeCsvCell neutralizes '+' formula injection prefix");
+  assert(sanitizeCsvCell('+cmd "calc"') === "\"'+cmd \"\"calc\"\"\"", "sanitizeCsvCell escapes internal quotes and quotes string");
+  assert(sanitizeCsvCell("@SUM(A1:A10)") === "'@SUM(A1:A10)", "sanitizeCsvCell neutralizes '@' formula injection prefix");
+  assert(sanitizeCsvCell("\tTAB_INJECTION") === "'\tTAB_INJECTION", "sanitizeCsvCell neutralizes tab trigger prefix");
+  assert(sanitizeCsvCell(null) === "", "sanitizeCsvCell gracefully converts null to empty string");
+  assert(sanitizeCsvCell(undefined) === "", "sanitizeCsvCell gracefully converts undefined to empty string");
+  assert(sanitizeCsvCell(12500) === "12500", "sanitizeCsvCell leaves numeric values intact");
+  assert(sanitizeCsvCell('Rent "October" Receipt') === "\"Rent \"\"October\"\" Receipt\"", "sanitizeCsvCell escapes internal double quotes");
+  assert(sanitizeCsvCell("Sharma, Rahul") === "\"Sharma, Rahul\"", "sanitizeCsvCell encloses comma-separated strings");
 
   // Clean up
   closeDb();

@@ -771,8 +771,11 @@ export function getCashbookSummary(
 
   // Default to current calendar month if dates not provided
   const now = new Date();
-  const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-  const defaultEnd = now.toISOString().slice(0, 10);
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const defaultStart = `${year}-${month}-01`;
+  const defaultEnd = `${year}-${month}-${day}`;
 
   const startDate = options?.startDate && DATE_REGEX.test(options.startDate) ? options.startDate : defaultStart;
   const endDate = options?.endDate && DATE_REGEX.test(options.endDate) ? options.endDate : defaultEnd;
