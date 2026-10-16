@@ -262,9 +262,29 @@ export function findStaffByIdentifier(identifier: string): (StaffUser & { passwo
  * Creates a cryptographically random session token for the client cookie,
  * while storing only a one-way SHA-256 digest at rest in the database.
  */
+import { getEmailAdapter } from "../notifications/emailAdapter";
+import { recordAuditEvent } from "../audit/audit";
+
+// In-memory set of revoked session token hashes to detect preemption
+const preemptedSessionHashes = new Map<string, { staffId: string; preemptedAt: string }>();
+
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!domain) return "***";
+  if (local.length <= 2) {
+    return `${local[0]}***@${domain}`;
+  }
+  return `${local[0]}***${local[local.length - 1]}@${domain}`;
+}
+
+/**
+ * Creates a cryptographically random session token for the client cookie,
+ * while storing only a one-way SHA-256 digest at rest in the database.
+ * Enforces Single Active Session Per Account across web and mobile.
+ */
 export function createSession(
   staffId: string,
-  metadata?: { ip?: string; userAgent?: string }
+  metadata?: { ip?: string; userAgent?: string; preempt?: boolean }
 ): { sessionToken: string; expiresAt: Date } {
   const db = getDb();
   const id = `sess_${crypto.randomUUID()}`;
@@ -276,20 +296,39 @@ export function createSession(
   const expiresAt = new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
   const now = new Date().toISOString();
 
-  db.prepare(`
-    INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    tokenHash,
-    staffId,
-    expiresAt.toISOString(),
-    now,
-    metadata?.ip || null,
-    metadata?.userAgent || null
-  );
+  // Atomically preempt existing sessions when requested (single active session enforcement)
+  const shouldPreempt = metadata?.preempt === true;
 
-  db.prepare("UPDATE staff_users SET last_login_at = ? WHERE id = ?").run(now, staffId);
+  const tx = db.transaction(() => {
+    if (shouldPreempt) {
+      const existing = db
+        .prepare("SELECT token_hash FROM sessions WHERE staff_id = ?")
+        .all(staffId) as Array<{ token_hash: string }>;
+
+      for (const s of existing) {
+        preemptedSessionHashes.set(s.token_hash, { staffId, preemptedAt: now });
+      }
+
+      db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
+    }
+
+    db.prepare(`
+      INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      tokenHash,
+      staffId,
+      expiresAt.toISOString(),
+      now,
+      metadata?.ip || null,
+      metadata?.userAgent || null
+    );
+
+    db.prepare("UPDATE staff_users SET last_login_at = ? WHERE id = ?").run(now, staffId);
+  });
+
+  tx();
 
   // Throttled background cleanup for expired records
   performDatabaseCleanup(db);
@@ -302,8 +341,16 @@ export function createSession(
  * and matching against the SHA-256 token digest at rest.
  */
 export function validateSession(sessionToken: string): AuthenticatedUser | null {
+  const res = validateSessionDetailed(sessionToken);
+  return res.user;
+}
+
+export function validateSessionDetailed(sessionToken: string): {
+  user: AuthenticatedUser | null;
+  isPreempted?: boolean;
+} {
   if (!sessionToken || sessionToken.length < 32) {
-    return null;
+    return { user: null };
   }
 
   const db = getDb();
@@ -320,18 +367,23 @@ export function validateSession(sessionToken: string): AuthenticatedUser | null 
   `).get(tokenHash, now) as (AuthenticatedUser & { isActive: number; expiresAt: string }) | undefined;
 
   if (!row) {
-    return null;
+    if (preemptedSessionHashes.has(tokenHash)) {
+      return { user: null, isPreempted: true };
+    }
+    return { user: null };
   }
 
   // Periodic throttled cleanup of expired records
   performDatabaseCleanup(db);
 
   return {
-    id: row.id,
-    username: row.username,
-    email: row.email,
-    fullName: row.fullName,
-    role: row.role as any,
+    user: {
+      id: row.id,
+      username: row.username,
+      email: row.email,
+      fullName: row.fullName,
+      role: row.role as any,
+    },
   };
 }
 
@@ -342,5 +394,273 @@ export function destroySession(sessionToken: string): void {
   if (!sessionToken) return;
   const db = getDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
+  preemptedSessionHashes.delete(tokenHash);
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
 }
+
+/**
+ * Revokes all active sessions for a given staff user (e.g., upon deactivation or password reset).
+ */
+export function revokeAllUserSessions(staffId: string): void {
+  if (!staffId) return;
+  const db = getDb();
+  const now = new Date().toISOString();
+  const existing = db
+    .prepare("SELECT token_hash FROM sessions WHERE staff_id = ?")
+    .all(staffId) as Array<{ token_hash: string }>;
+
+  for (const s of existing) {
+    preemptedSessionHashes.set(s.token_hash, { staffId, preemptedAt: now });
+  }
+
+  db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
+}
+
+// -----------------------------------------------------------------------------
+// Email OTP Challenge Flow (10-minute expiry, max 3 attempts)
+// -----------------------------------------------------------------------------
+export async function createOtpChallenge(
+  staffId: string,
+  email: string
+): Promise<{ challengeId: string; maskedEmail: string }> {
+  const db = getDb();
+  const now = new Date();
+
+  // Resend throttling: check if a challenge was created in the last 60 seconds
+  const recent = db.prepare(`
+    SELECT created_at FROM auth_challenges
+    WHERE staff_id = ? AND expires_at > ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(staffId, now.toISOString()) as { created_at: string } | undefined;
+
+  if (recent) {
+    const elapsedSec = (now.getTime() - new Date(recent.created_at).getTime()) / 1000;
+    if (elapsedSec < 60) {
+      const waitSec = Math.ceil(60 - elapsedSec);
+      throw new Error(`Please wait ${waitSec} seconds before requesting a new verification code.`);
+    }
+  }
+
+  // Clear prior challenges for this staff member
+  db.prepare("DELETE FROM auth_challenges WHERE staff_id = ?").run(staffId);
+
+  // Generate cryptographically secure 6-digit numeric OTP (100000 - 999999)
+  const rawOtp = crypto.randomInt(100000, 1000000).toString();
+  const otpHash = crypto.createHash("sha256").update(rawOtp).digest("hex");
+
+  const challengeId = `chal_${crypto.randomUUID()}`;
+  const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+
+  db.prepare(`
+    INSERT INTO auth_challenges (id, staff_id, otp_hash, attempts, expires_at, created_at)
+    VALUES (?, ?, ?, 0, ?, ?)
+  `).run(challengeId, staffId, otpHash, expiresAt, now.toISOString());
+
+  // Dispatch OTP via Email Adapter
+  await getEmailAdapter().sendOtp(email, rawOtp);
+
+  return {
+    challengeId,
+    maskedEmail: maskEmail(email),
+  };
+}
+
+export async function verifyOtpChallenge(
+  challengeId: string,
+  otp: string,
+  metadata?: { ip?: string; userAgent?: string }
+): Promise<{ user: AuthenticatedUser; sessionToken: string; expiresAt: Date }> {
+  const db = getDb();
+  const cleanOtp = (otp || "").trim();
+  const now = new Date().toISOString();
+
+  const challenge = db.prepare(`
+    SELECT id, staff_id, otp_hash, attempts, expires_at
+    FROM auth_challenges
+    WHERE id = ?
+  `).get(challengeId) as {
+    id: string;
+    staff_id: string;
+    otp_hash: string;
+    attempts: number;
+    expires_at: string;
+  } | undefined;
+
+  if (!challenge) {
+    throw new Error("Invalid or expired verification challenge. Please log in again.");
+  }
+
+  if (challenge.expires_at <= now) {
+    db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+    throw new Error("Verification code has expired. Please log in again.");
+  }
+
+  if (challenge.attempts >= 3) {
+    db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+    throw new Error("Too many failed attempts. Verification code has been invalidated. Please log in again.");
+  }
+
+  const presentedHash = crypto.createHash("sha256").update(cleanOtp).digest("hex");
+
+  if (presentedHash !== challenge.otp_hash) {
+    const newAttempts = challenge.attempts + 1;
+    if (newAttempts >= 3) {
+      db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+      throw new Error("Too many failed attempts. Verification code has been invalidated. Please log in again.");
+    }
+    db.prepare("UPDATE auth_challenges SET attempts = ? WHERE id = ?").run(newAttempts, challengeId);
+    throw new Error(`Invalid verification code. ${3 - newAttempts} attempts remaining.`);
+  }
+
+  // Verification succeeded: delete challenge (single-use)
+  db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+
+  // Fetch staff user details
+  const staff = db.prepare(`
+    SELECT id, username, email, full_name as fullName, role, is_active as isActive
+    FROM staff_users
+    WHERE id = ? AND is_active = 1
+  `).get(challenge.staff_id) as AuthenticatedUser & { isActive: number } | undefined;
+
+  if (!staff) {
+    throw new Error("Account is inactive or no longer exists.");
+  }
+
+  // Create session with Single Active Session Preemption
+  const { sessionToken, expiresAt } = createSession(staff.id, { ...metadata, preempt: true });
+
+  return {
+    user: {
+      id: staff.id,
+      username: staff.username,
+      email: staff.email,
+      fullName: staff.fullName,
+      role: staff.role as any,
+    },
+    sessionToken,
+    expiresAt,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Password Recovery Flow (256-bit token, 1-hour expiry, single-use, session wipe)
+// -----------------------------------------------------------------------------
+export async function initiatePasswordReset(
+  identifier: string,
+  origin?: string
+): Promise<{ success: true; message: string }> {
+  const db = getDb();
+  const cleanId = (identifier || "").trim().toLowerCase();
+
+  const genericResponse = {
+    success: true as const,
+    message: "If an account matching that identifier exists, a password reset link has been dispatched.",
+  };
+
+  if (!cleanId) {
+    return genericResponse;
+  }
+
+  const staff = db.prepare(`
+    SELECT id, email, is_active as isActive
+    FROM staff_users
+    WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1
+  `).get(cleanId, cleanId) as { id: string; email: string; isActive: number } | undefined;
+
+  if (!staff) {
+    // Timing-safe: return generic response without leaking existence
+    return genericResponse;
+  }
+
+  // Invalidate any previous unused password resets for this staff member
+  db.prepare("DELETE FROM password_resets WHERE staff_id = ?").run(staff.id);
+
+  // Generate cryptographically secure 256-bit token (32 random bytes)
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const resetId = `pr_${crypto.randomUUID()}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+
+  db.prepare(`
+    INSERT INTO password_resets (id, staff_id, token_hash, expires_at, used_at, created_at)
+    VALUES (?, ?, ?, ?, NULL, ?)
+  `).run(resetId, staff.id, tokenHash, expiresAt, now.toISOString());
+
+  const baseUrl = origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
+  const resetUrl = `${baseUrl}/login?token=${rawToken}`;
+
+  await getEmailAdapter().sendPasswordReset(staff.email, resetUrl);
+
+  return genericResponse;
+}
+
+export async function completePasswordReset(
+  token: string,
+  newPassword: string,
+  clientIp?: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!token || token.length < 32) {
+    return { success: false, error: "Invalid or expired password reset token." };
+  }
+
+  if (!newPassword || newPassword.length < 12) {
+    return { success: false, error: "New password must be at least 12 characters long." };
+  }
+
+  const db = getDb();
+  const tokenHash = crypto.createHash("sha256").update(token.trim()).digest("hex");
+  const now = new Date().toISOString();
+
+  const resetRecord = db.prepare(`
+    SELECT id, staff_id, expires_at, used_at
+    FROM password_resets
+    WHERE token_hash = ? AND used_at IS NULL
+  `).get(tokenHash) as {
+    id: string;
+    staff_id: string;
+    expires_at: string;
+    used_at: string | null;
+  } | undefined;
+
+  if (!resetRecord || resetRecord.expires_at <= now) {
+    return { success: false, error: "Invalid or expired password reset token." };
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  const tx = db.transaction(() => {
+    // 1. Update password
+    db.prepare(`
+      UPDATE staff_users
+      SET password_hash = ?, updated_at = ?
+      WHERE id = ?
+    `).run(passwordHash, now, resetRecord.staff_id);
+
+    // 2. Mark reset token as used (single-use)
+    db.prepare(`
+      UPDATE password_resets
+      SET used_at = ?
+      WHERE id = ?
+    `).run(now, resetRecord.id);
+
+    // 3. Revoke all active sessions for this account across all devices
+    revokeAllUserSessions(resetRecord.staff_id);
+
+    // 4. Record audit event
+    recordAuditEvent({
+      actorId: resetRecord.staff_id,
+      actorUsername: "system_password_reset",
+      action: "staff.password_reset",
+      targetType: "staff",
+      targetId: resetRecord.staff_id,
+      metadata: { reason: "Self-service recovery via email token" },
+      ipAddress: clientIp,
+    });
+  });
+
+  tx();
+
+  return { success: true };
+}
+

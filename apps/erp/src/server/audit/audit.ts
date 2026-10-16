@@ -106,3 +106,80 @@ export function getAuditLogs(options?: {
   params.push(limit, offset);
   return db.prepare(query).all(...params) as AuditLogRecord[];
 }
+
+import { getAsyncDb } from "../database/db";
+
+export async function recordAuditEventAsync(input: AuditEventInput): Promise<AuditLogRecord> {
+  const db = getAsyncDb();
+  const id = `aud_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  const sanitizedMeta = sanitizeAuditMetadata(input.metadata);
+
+  await db.execute(
+    `INSERT INTO audit_logs (id, actor_id, actor_username, action, target_type, target_id, metadata, ip_address, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.actorId || null,
+      input.actorUsername || null,
+      input.action,
+      input.targetType,
+      input.targetId || null,
+      sanitizedMeta,
+      input.ipAddress || null,
+      now,
+    ]
+  );
+
+  return {
+    id,
+    actorId: input.actorId || null,
+    actorUsername: input.actorUsername || null,
+    action: input.action,
+    targetType: input.targetType,
+    targetId: input.targetId || null,
+    metadata: sanitizedMeta,
+    ipAddress: input.ipAddress || null,
+    createdAt: now,
+  };
+}
+
+export async function getAuditLogsAsync(options?: {
+  limit?: number;
+  offset?: number;
+  action?: string;
+  actorId?: string;
+}): Promise<AuditLogRecord[]> {
+  const db = getAsyncDb();
+  const limit = Math.min(Math.max(options?.limit || 50, 1), 200);
+  const offset = Math.max(options?.offset || 0, 0);
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (options?.action) {
+    conditions.push("action = ?");
+    params.push(options.action);
+  }
+
+  if (options?.actorId) {
+    conditions.push("actor_id = ?");
+    params.push(options.actorId);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const query = `
+    SELECT 
+      id, actor_id as actorId, actor_username as actorUsername, action, 
+      target_type as targetType, target_id as targetId, metadata, 
+      ip_address as ipAddress, created_at as createdAt
+    FROM audit_logs
+    ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+
+  params.push(limit, offset);
+  return db.query<AuditLogRecord>(query, params);
+}
+

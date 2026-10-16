@@ -64,3 +64,69 @@ This log provides a persistent, chronological audit trail of all engineering act
 - **Commit Action:** Staged only documentation files created in `docs/`.
 - **Remote Push:** **NEVER PUSHED TO GITHUB / ZERO REMOTE MUTATIONS**.
 - **Next Recommended Step:** Present Task 00 documentation to product manager and owner for review; proceed to **Phase 01: Production Foundation & Security** upon approval.
+
+---
+
+## Log Entry 002 — Task 01: Production Foundation, PostgreSQL Migration & Security Hardening
+
+- **Date:** 17 October 2026
+- **Task Identifier:** `TASK-01` (Phase 01: Production Foundation, PostgreSQL Migration & Security Hardening)
+- **Author:** Antigravity Engineering (Senior Staff AI Architect)
+- **Scope & Rationale:** Implement Phase 01 production foundation and security enhancements without regression of existing capabilities. Establish typed PostgreSQL persistence via Drizzle ORM, an asynchronous database layer (`getAsyncDb()`) supporting connection pooling (`DATABASE_URL` port 6543) and direct connection (`DIRECT_URL` port 5432), safe SQLite-to-PostgreSQL migration with financial aggregate checks, 2-step Email OTP login, secure self-service password recovery, single active session preemption returning HTTP 401 `SESSION_PREEMPTED`, CSRF protection, Next.js security headers, and an active `/api/health` diagnostic endpoint.
+
+### 1. Files Inspected
+- Monorepo structure, engines declarations, root & application `package.json`, `tsconfig.json`.
+- Database modules: `apps/erp/src/server/database/db.ts`, `migrations.ts`, `env.ts`.
+- Authentication & security: `apps/erp/src/server/authentication/auth.ts`, `apps/erp/src/server/authorization/authorize.ts`, `apps/erp/src/app/api/auth/*`.
+- Next.js configurations: `apps/erp/next.config.mjs`, `apps/website/next.config.mjs`.
+- All 7 regression test suites and database seed scripts.
+
+### 2. Files Created or Updated
+- **PostgreSQL Schema & Migrations:**
+  - `apps/erp/src/server/database/schema/index.ts`: Typed Drizzle ORM schema mapping 17 tables (all 15 existing + 2 Phase 01 security tables: `auth_challenges`, `password_resets`), preserving foreign keys, checks (`amount > 0` whole INR), functional unique indexes (`lower(room_number)`, `lower(username)`, `lower(email)`), and partial unique index (`idx_unique_active_resident_stay` for active stays).
+  - `apps/erp/drizzle.config.ts`: Drizzle Kit configuration for schema generation.
+  - `apps/erp/src/server/database/drizzle/0000_lying_giant_girl.sql`: Complete PostgreSQL initial DDL migration.
+  - `apps/erp/src/server/database/migrations.ts`: Added SQLite Migration V9 establishing parity for Phase 01 security tables.
+- **Database Client & Migration Pipeline:**
+  - `apps/erp/src/server/database/client.ts`: Pooled PostgreSQL connection via `postgres` client, Drizzle instance, graceful process exit listeners, and `pingDatabase()` health diagnostic.
+  - `apps/erp/src/server/database/db.ts`: Added `AsyncDb`, `getAsyncDb()`, and `convertPlaceholders()` translating `?` to `$1, $2, ...` outside string literals for PostgreSQL.
+  - `apps/erp/src/server/database/migrateSqliteToPg.ts`: Standalone SQLite-to-PostgreSQL migration script with automatic timestamped backup, referential table order insertion, 100-row batching, record count verification, and whole INR checksum matching.
+- **Transactional Notifications & Security:**
+  - `apps/erp/src/server/notifications/emailAdapter.ts`: `EmailAdapter` interface, production `ResendEmailAdapter` using native fetch, and in-memory `MockEmailAdapter` for isolated testing.
+  - `apps/erp/src/server/security/csrf.ts`: Same-origin and custom header (`X-RN-CSRF`) validation rejecting unauthorized cross-site mutations with HTTP 403.
+  - `apps/erp/next.config.mjs` & `apps/website/next.config.mjs`: Added Content Security Policy (CSP), HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, and `Permissions-Policy`.
+- **Authentication & Endpoints:**
+  - `apps/erp/src/server/authentication/auth.ts`: Implemented `createOtpChallenge`, `verifyOtpChallenge`, `initiatePasswordReset`, `completePasswordReset`, single-session preemption in `createSession`, and `maskEmail`.
+  - `apps/erp/src/server/authorization/authorize.ts`: Handled `isPreempted` session state returning `SESSION_PREEMPTED` and clearing auth cookies.
+  - `apps/erp/src/app/api/auth/login/route.ts`: Refactored to 2-step authentication returning `{ status: "OTP_REQUIRED", challengeId, emailMasked }`.
+  - `apps/erp/src/app/api/auth/otp/verify/route.ts`: Created dedicated OTP verification endpoint.
+  - `apps/erp/src/app/api/auth/forgot-password/route.ts`: Timing-safe self-service recovery initiation.
+  - `apps/erp/src/app/api/auth/reset-password/route.ts`: Single-use token password reset with session invalidation.
+  - `apps/erp/src/app/api/auth/me/route.ts`: Returns HTTP 401 `SESSION_PREEMPTED` on preempted session tokens.
+  - `apps/erp/src/app/api/auth/logout/route.ts`: CSRF-protected session revocation.
+  - `apps/erp/src/app/api/health/route.ts`: Production health check testing DB connectivity and latency.
+  - `apps/erp/src/modules/auth/components/LoginForm.tsx`: Multi-step UI for OTP input and password reset flow.
+- **Tests & Git Index Cleanup:**
+  - `tests/postgresql_phase01.test.ts`: 62 automated Phase 01 assertions covering Drizzle schema, OTP lifecycle, recovery, session preemption, CSRF, security headers, health check, and migration dry-run.
+  - Untracked `tests/test_erp.db*` from Git cache and updated `.gitignore`.
+  - `package.json`: Added `test:phase01` script and updated Node.js engines.
+  - `.env.example`: Added PostgreSQL, Resend, and ERP base URL configuration templates.
+
+### 3. Automated Verification Results
+- **Phase 01 Test Suite (`npm run test:phase01`):** **62 PASSED, 0 FAILED, 2 BLOCKED** (blocked items: live PostgreSQL data migration and live row lock verification, explicitly blocked on host credentials).
+- **Existing Regression Test Suites (`npm test`):** **640 PASSED, 0 FAILED across all 7 suites**:
+  - Security & rate limiting (`tests/auth_hardening.test.ts`): 49 / 49 passed
+  - RBAC & staff lifecycle (`tests/rbac_staff_foundation.test.ts`): 114 / 114 passed
+  - Rooms & residents (`tests/rooms_residents.test.ts`): 60 / 60 passed
+  - Finance & cashbook (`tests/finance.test.ts`): 102 / 102 passed
+  - Kitchen & daily meal plans (`tests/kitchen.test.ts`): 81 / 81 passed
+  - Comprehensive integration audit (`tests/integration_audit.test.ts`): 97 / 97 passed
+  - Delivery management (`tests/delivery.test.ts`): 137 / 137 passed
+- **Application Production Builds:**
+  - `npm run build:erp`: **Successfully built** Next.js 14.2.35 production bundle (0 errors, 11 static pages, 30 dynamic API routes).
+  - `npm run build:website`: **Successfully built** Next.js 14.2.35 production bundle (0 errors, 10 static pages).
+
+### 4. Commit Status
+- **Local Git Repository:** Changes staged and committed locally on `master`.
+- **Remote Push:** **NEVER PUSHED TO REMOTE REPOSITORY**. Strict local commit policy enforced.
+

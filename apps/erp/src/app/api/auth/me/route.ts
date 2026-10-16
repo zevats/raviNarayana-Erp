@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
+import { validateSessionDetailed, ERP_COOKIE_NAME } from "@/server/authentication/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +11,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = validateSession(sessionToken);
+    const { user, isPreempted } = validateSessionDetailed(sessionToken);
+
+    if (isPreempted) {
+      const response = NextResponse.json(
+        {
+          error: "Session has been invalidated by a login from another device or location",
+          code: "SESSION_PREEMPTED",
+        },
+        { status: 401 }
+      );
+      response.cookies.set({
+        name: ERP_COOKIE_NAME,
+        value: "",
+        httpOnly: true,
+        path: "/",
+        maxAge: 0,
+      });
+      return response;
+    }
 
     if (!user) {
       const response = NextResponse.json({ error: "Session expired or invalid" }, { status: 401 });

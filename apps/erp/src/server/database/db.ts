@@ -143,3 +143,115 @@ function seedInitialAdmin(db: Database.Database): void {
     now
   );
 }
+
+import { getPgSql, isPostgresConfigured } from "./client";
+
+export interface AsyncDb {
+  query<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  queryOne<T = any>(sql: string, params?: any[]): Promise<T | null>;
+  execute(sql: string, params?: any[]): Promise<{ changes: number }>;
+  transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T>;
+  isPostgres: boolean;
+}
+
+export function convertPlaceholders(query: string): string {
+  let paramIndex = 1;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let result = "";
+
+  for (let i = 0; i < query.length; i++) {
+    const char = query[i];
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      result += char;
+    } else if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      result += char;
+    } else if (char === "?" && !inSingleQuote && !inDoubleQuote) {
+      result += `$${paramIndex++}`;
+    } else {
+      result += char;
+    }
+  }
+
+  return result;
+}
+
+export function getAsyncDb(): AsyncDb {
+  if (isPostgresConfigured()) {
+    const sqlClient = getPgSql()!;
+    const pgDb: AsyncDb = {
+      isPostgres: true,
+      async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+        const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+        return Array.from(res) as T[];
+      },
+      async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+        const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+        return (res[0] as T) || null;
+      },
+      async execute(sql: string, params?: any[]): Promise<{ changes: number }> {
+        const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+        return { changes: res.count || 0 };
+      },
+      async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
+        return (await sqlClient.begin(async (sqlTx) => {
+          const txClient: AsyncDb = {
+            isPostgres: true,
+            async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+              const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+              return Array.from(res) as T[];
+            },
+            async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+              const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+              return (res[0] as T) || null;
+            },
+            async execute(sql: string, params?: any[]): Promise<{ changes: number }> {
+              const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+              return { changes: res.count || 0 };
+            },
+            transaction: (nestedCb) => nestedCb(txClient),
+          };
+          return await cb(txClient);
+        })) as T;
+      },
+    };
+    return pgDb;
+  }
+
+  // SQLite fallback
+  const db = getDb();
+  const sqliteDb: AsyncDb = {
+    isPostgres: false,
+    async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+      const rows = db.prepare(sql).all(...(params || []));
+      return rows as T[];
+    },
+    async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+      const row = db.prepare(sql).get(...(params || []));
+      return (row as T) || null;
+    },
+    async execute(sql: string, params?: any[]): Promise<{ changes: number }> {
+      const info = db.prepare(sql).run(...(params || []));
+      return { changes: info.changes };
+    },
+    async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const res = await cb(sqliteDb);
+        db.exec("COMMIT");
+        return res;
+      } catch (err) {
+        try {
+          db.exec("ROLLBACK");
+        } catch {
+          // ignore rollback failure if already rolled back
+        }
+        throw err;
+      }
+    },
+  };
+  return sqliteDb;
+}
+

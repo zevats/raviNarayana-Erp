@@ -29,6 +29,9 @@ export function runMigrations(db: Database.Database): void {
   if (currentVersion < 8) {
     applyMigrationV8(db);
   }
+  if (currentVersion < 9) {
+    applyMigrationV9(db);
+  }
 }
 
 /**
@@ -645,3 +648,45 @@ function applyMigrationV8(db: Database.Database): void {
 
   tx();
 }
+
+/**
+ * Migration V9: Phase 1 Security Hardening
+ * 1. Create auth_challenges table for 6-digit Email OTP login (10-minute expiry, max 3 attempts).
+ * 2. Create password_resets table for 256-bit token password recovery (1-hour expiry, single-use).
+ * 3. Advance user_version to 9.
+ */
+function applyMigrationV9(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS auth_challenges (
+        id TEXT PRIMARY KEY,
+        staff_id TEXT NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+        otp_hash TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auth_challenges_staff ON auth_challenges(staff_id);
+      CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires ON auth_challenges(expires_at);
+
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id TEXT PRIMARY KEY,
+        staff_id TEXT NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+        token_hash TEXT UNIQUE NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_password_resets_token ON password_resets(token_hash);
+      CREATE INDEX IF NOT EXISTS idx_password_resets_staff ON password_resets(staff_id);
+      CREATE INDEX IF NOT EXISTS idx_password_resets_expires ON password_resets(expires_at);
+    `);
+
+    db.pragma("user_version = 9");
+  });
+
+  tx();
+}
+

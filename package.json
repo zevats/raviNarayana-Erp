@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=20.9.0 <21.0.0"
+    "node": ">=20.9.0"
   },
   "workspaces": [
     "apps/*",
@@ -27,6 +27,7 @@
     "test:kitchen": "node -r ./tests/register_paths.js tests/dist/tests/kitchen.test.js",
     "test:integration": "node -r ./tests/register_paths.js tests/dist/tests/integration_audit.test.js",
     "test:delivery": "node -r ./tests/register_paths.js tests/dist/tests/delivery.test.js",
+    "test:phase01": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/postgresql_phase01.test.js",
     "test": "npm run test:security && npm run test:rbac && npm run test:rooms && npm run test:finance && npm run test:kitchen && npm run test:integration && npm run test:delivery",
     "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed"
   }

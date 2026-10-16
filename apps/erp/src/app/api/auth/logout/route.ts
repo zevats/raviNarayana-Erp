@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { destroySession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
+import { validateCsrf, csrfForbiddenResponse } from "@/server/security/csrf";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const csrf = validateCsrf(request);
+  if (!csrf.valid) {
+    return csrfForbiddenResponse(csrf.error);
+  }
+
   try {
     const sessionToken = request.cookies.get(ERP_COOKIE_NAME)?.value;
 

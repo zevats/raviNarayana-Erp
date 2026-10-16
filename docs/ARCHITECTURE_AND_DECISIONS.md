@@ -201,10 +201,10 @@ Database schema evolution is tracked via SQLite `PRAGMA user_version` inside [`a
 
 - **Completed Phases:**
   - *Phase 00 (Architecture, Requirements & Security Audit):* **COMPLETE**. Full repository discovery, PRD establishment, threat modeling, and implementation roadmap established.
-- **Current Phase:**
-  - *Phase 01 (Production Foundation & Security Hardening):* **PLANNED / READY FOR IMPLEMENTATION**.
+  - *Phase 01 (Production Foundation, PostgreSQL Migration & Security Hardening):* **COMPLETE**. Typed Drizzle ORM schema, dual-mode async PostgreSQL connection pooler (`DATABASE_URL` / `DIRECT_URL`), SQLite migration utility, 2-step Email OTP login, password recovery, session preemption, CSRF protection, and security headers verified with 62 passing Phase 01 tests and 640 passing regression tests.
+- **Current / Next Phase:**
+  - *Phase 02 (Tiffin Customer & Order Management):* **READY FOR IMPLEMENTATION**.
 - **Upcoming Phases:**
-  - *Phase 02 (Tiffin Customer & Order Management)*
   - *Phase 03 (Kitchen, Dispatch, Delivery & Reconciliation)*
   - *Phase 04 (Authoritative PG Rooms, Occupancy & Resident Lifecycle)*
   - *Phase 05 (Finance, Billing, GST/Non-GST Invoices & Cashbook)*

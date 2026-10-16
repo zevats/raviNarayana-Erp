@@ -28,11 +28,13 @@ yarn-error.log*
 .env*.local
 
 # sqlite database
-/data/*.db
-/data/*.db-journal
-/data/*.db-wal
-/data/*.db-shm
-/data/*.backup*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.backup*
+/data/*.db*
+/tests/*.db*
 
 # typescript
 *.tsbuildinfo

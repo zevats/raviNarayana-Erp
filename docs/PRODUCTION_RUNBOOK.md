@@ -76,6 +76,33 @@ npx next start apps/erp -p ${PORT:-3001}
    - *Phase C:* Deploy code that reads only from new column.
    - *Phase D:* Drop deprecated column in subsequent release.
 
+### 3.2 Safe SQLite-to-PostgreSQL Data Migration & Rollback Procedure
+
+Before migrating data from legacy SQLite (`data/erp.db`) to PostgreSQL:
+
+1. **Pre-Migration Source Backup:**
+   The migration script (`migrateSqliteToPg.ts`) automatically creates an uncompressed snapshot in `data/backups/erp_backup_<timestamp>.db` before connecting to PostgreSQL.
+2. **Run Dry-Run Verification:**
+   ```bash
+   npx tsx apps/erp/src/server/database/migrateSqliteToPg.ts --dry-run
+   ```
+3. **Execute Live Migration:**
+   ```bash
+   npx tsx apps/erp/src/server/database/migrateSqliteToPg.ts
+   ```
+4. **Integrity Assurances:**
+   - Sequential insertion respecting foreign key dependency tree.
+   - Batching in 100-row chunks for high throughput.
+   - 100% exact count validation on every table.
+   - Financial ledger sum checksum validation (exact INR rupee match).
+   - Active resident stay count validation.
+5. **Emergency Rollback Procedure:**
+   - Target PostgreSQL rollback:
+     ```sql
+     TRUNCATE TABLE financial_transactions, delivery_events, delivery_tasks, meal_plans, resident_stays, residents, rooms, sessions, audit_logs, login_attempts, auth_challenges, password_resets CASCADE;
+     ```
+   - Application rollback: Unset `DATABASE_URL` in environment. The ERP application automatically falls back to local SQLite persistence at `ERP_DATABASE_PATH`.
+
 ---
 
 ## 4. Automated Backup & Point-in-Time Recovery (PITR)
