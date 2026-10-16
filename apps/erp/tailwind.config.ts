@@ -14,6 +14,7 @@ const config: Config = {
       fontFamily: {
         sans: ["var(--font-sans)", "Inter", "system-ui", "-apple-system", "sans-serif"],
         serif: ["var(--font-serif)", "Inter", "system-ui", "-apple-system", "sans-serif"],
+        mono: ["var(--font-sans)", "Inter", "system-ui", "-apple-system", "sans-serif"],
       },
       letterSpacing: {
         tight: "-0.02em",

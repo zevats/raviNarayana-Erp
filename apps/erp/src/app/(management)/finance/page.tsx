@@ -153,7 +153,7 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-7xl mx-auto pb-12">
+    <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-7xl w-full mx-auto min-w-0 pb-12">
       {/* 1. Executive Header & Action Buttons */}
       <FinanceHeader
         onRefresh={fetchData}
@@ -208,13 +208,13 @@ export default function FinancePage() {
       )}
 
       {/* 2. Controls Toolbar: Segmented Tabs + Accounting Period */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 min-w-0">
         {/* Segmented View Switcher Tabs */}
-        <div className="inline-flex p-1 bg-[#FAF8F5] border border-[#8E9F89]/25 rounded-xl text-xs font-semibold gap-1">
+        <div className="inline-flex p-1 bg-[#FAF8F5] border border-[#8E9F89]/25 rounded-xl text-xs font-semibold gap-1 min-w-0 overflow-x-auto">
           <button
             type="button"
             onClick={() => setActiveTab("cashbook")}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "cashbook"
                 ? "bg-[#1A2E20] text-white shadow-xs"
                 : "text-[#5A6C5E] hover:text-[#1A2E20]"
@@ -223,7 +223,7 @@ export default function FinancePage() {
             <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
             <span>Cashbook &amp; Transactions</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold tabular-nums ${
                 activeTab === "cashbook"
                   ? "bg-white/20 text-white"
                   : "bg-[#8E9F89]/20 text-[#5A6C5E]"
@@ -236,7 +236,7 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setActiveTab("residents")}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all ${
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "residents"
                 ? "bg-[#1A2E20] text-white shadow-xs"
                 : "text-[#5A6C5E] hover:text-[#1A2E20]"
@@ -245,7 +245,7 @@ export default function FinancePage() {
             <Users className="w-3.5 h-3.5 text-[#5D7656]" />
             <span>Resident Statements</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+              className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold tabular-nums ${
                 activeTab === "residents"
                   ? "bg-white/20 text-white"
                   : "bg-[#8E9F89]/20 text-[#5A6C5E]"

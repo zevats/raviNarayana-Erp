@@ -32,7 +32,7 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
         {/* Header */}
         <div className="p-5 sm:p-6 bg-gradient-to-br from-[#1A2E20] to-[#263B2D] text-white flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-mono tracking-widest uppercase text-[#B58A57]">
+            <span className="text-[10px] font-sans font-semibold tracking-widest uppercase text-[#B58A57]">
               TRANSACTION VOUCHER
             </span>
             <h3 className="font-serif text-xl font-normal mt-0.5">
@@ -56,7 +56,7 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
           {/* Transaction ID */}
           <div className="flex items-center justify-between pb-2.5 border-b border-[#8E9F89]/20">
             <span className="text-[#5E715C]">Voucher ID</span>
-            <div className="flex items-center gap-1.5 font-mono text-[#1A2E20] font-semibold">
+            <div className="flex items-center gap-1.5 font-sans text-[#1A2E20] font-semibold">
               <span>{transaction.id}</span>
               <button
                 type="button"
@@ -72,7 +72,7 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
           {/* Date */}
           <div className="flex items-center justify-between pb-2.5 border-b border-[#8E9F89]/20">
             <span className="text-[#5E715C]">Date</span>
-            <span className="font-mono text-[#1A2E20] font-semibold">
+            <span className="font-sans text-[#1A2E20] font-semibold">
               {formatIndianDate(transaction.transactionDate)} ({transaction.transactionDate})
             </span>
           </div>
@@ -138,7 +138,7 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
           {transaction.referenceNumber && (
             <div className="flex items-center justify-between pb-2.5 border-b border-[#8E9F89]/20">
               <span className="text-[#5E715C]">Reference / UTR</span>
-              <span className="font-mono text-[#1A2E20]">{transaction.referenceNumber}</span>
+              <span className="font-sans text-[#1A2E20]">{transaction.referenceNumber}</span>
             </div>
           )}
 

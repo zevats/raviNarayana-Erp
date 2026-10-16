@@ -95,17 +95,17 @@ export function ReversalModal({
           <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/25 space-y-1.5">
             <div className="flex justify-between">
               <span className="text-[#5A6C5E]">Target Transaction:</span>
-              <span className="font-mono font-semibold text-[#1A2E20]">{transaction.id}</span>
+              <span className="font-sans font-semibold text-[#1A2E20]">{transaction.id}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#5A6C5E]">Type &amp; Date:</span>
-              <span className="text-[#1A2E20] font-medium">
+              <span className="text-[#1A2E20] font-medium font-sans">
                 {transaction.transactionType} ({transaction.transactionDate})
               </span>
             </div>
             <div className="flex justify-between">
               <span className="text-[#5A6C5E]">Amount:</span>
-              <span className="font-mono font-bold text-[#1A2E20] text-sm tabular-nums">
+              <span className="font-sans font-bold text-[#1A2E20] text-sm tabular-nums">
                 {formatINR(transaction.amount)}
               </span>
             </div>

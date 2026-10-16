@@ -32,9 +32,9 @@ export function FinanceHeader({
   canExport,
 }: FinanceHeaderProps) {
   return (
-    <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 pb-2 border-b border-[#8E9F89]/20">
-      <div className="border-l-4 border-[#B58A57] pl-3.5">
-        <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1A2E20]">
+    <div className="flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-4 pb-3 border-b border-[#8E9F89]/20 min-w-0">
+      <div className="border-l-4 border-[#B58A57] pl-3.5 min-w-0">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20]">
           Finance &amp; Cashbook
         </h1>
         <p className="text-xs sm:text-sm text-[#5A6C5E] mt-1 font-sans">
@@ -42,7 +42,7 @@ export function FinanceHeader({
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0 w-full 2xl:w-auto">
         {/* Refresh Button */}
         <button
           onClick={onRefresh}

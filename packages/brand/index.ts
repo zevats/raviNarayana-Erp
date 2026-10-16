@@ -92,8 +92,8 @@ export const brandTokens = {
   typography: {
     fonts: {
       serif: "var(--font-serif), 'Cormorant Garamond', 'Playfair Display', Georgia, serif",
-      sans: "var(--font-sans), 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
-      mono: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+      sans: "var(--font-sans), 'Plus Jakarta Sans', Inter, system-ui, -apple-system, sans-serif",
+      mono: "var(--font-sans), 'Plus Jakarta Sans', Inter, system-ui, -apple-system, sans-serif",
     },
     letterSpacing: {
       tight: "-0.02em",
@@ -172,4 +172,5 @@ export const brandColors = {
 export const brandFonts = {
   serif: ["var(--font-serif)", "Playfair Display", "Cormorant Garamond", "Georgia", "serif"],
   sans: ["var(--font-sans)", "Plus Jakarta Sans", "Inter", "system-ui", "sans-serif"],
+  mono: ["var(--font-sans)", "Plus Jakarta Sans", "Inter", "system-ui", "sans-serif"],
 };

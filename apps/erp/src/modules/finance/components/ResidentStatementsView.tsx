@@ -132,7 +132,7 @@ export function ResidentStatementsView({
                     <span className="text-xs text-[#5A6C5E] italic">No room assigned</span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-4 text-xs text-[#5A6C5E] mt-1 font-mono">
+                <div className="flex flex-wrap items-center gap-4 text-xs text-[#5A6C5E] mt-1 font-sans">
                   <span className="flex items-center gap-1">
                     <Phone className="w-3.5 h-3.5 text-[#5D7656]" />
                     {selectedStatement.phone}
@@ -147,7 +147,7 @@ export function ResidentStatementsView({
               <span className="text-[10px] uppercase font-semibold tracking-wider text-[#6E7F70] block">
                 Current Outstanding Rent
               </span>
-              <span className="text-2xl font-serif font-bold tabular-nums text-[#1A2E20]">
+              <span className="text-2xl font-sans font-bold tabular-nums text-[#1A2E20]">
                 {formatINR(selectedStatement.outstandingRentBalance)}
               </span>
             </div>
@@ -155,63 +155,63 @@ export function ResidentStatementsView({
         </div>
 
         {/* 4 Standard Metric Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 min-w-0">
           {/* Outstanding Balance */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
               Outstanding Rent
             </span>
-            <div className="mt-2">
-              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+            <div className="my-1.5">
+              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
                 {formatINR(selectedStatement.outstandingRentBalance)}
               </span>
             </div>
-            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
+            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
               {hasOutstanding ? "Dues pending collection" : "All rent accounts settled"}
             </span>
           </div>
 
           {/* Total Billed Rent */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
               Total Billed Rent
             </span>
-            <div className="mt-2">
-              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+            <div className="my-1.5">
+              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
                 {formatINR(selectedStatement.totalRentCharges)}
               </span>
             </div>
-            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
+            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
               Cumulative posted charges
             </span>
           </div>
 
           {/* Total Rent Paid */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
               Total Rent Paid
             </span>
-            <div className="mt-2">
-              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+            <div className="my-1.5">
+              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
                 {formatINR(selectedStatement.totalRentPaid)}
               </span>
             </div>
-            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
+            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
               Cumulative rent receipts
             </span>
           </div>
 
           {/* Security Deposit Held */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] truncate">
+          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
               Security Deposit Held
             </span>
-            <div className="mt-2">
-              <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums truncate block">
+            <div className="my-1.5">
+              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
                 {formatINR(selectedStatement.totalSecurityDepositHeld)}
               </span>
             </div>
-            <span className="text-xs text-[#5A6C5E] mt-2 block font-light truncate">
+            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
               Refundable liability (not rent)
             </span>
           </div>
@@ -228,21 +228,21 @@ export function ResidentStatementsView({
                 Chronological statement of all rent charges, payment receipts, deposit collections, and adjustments.
               </p>
             </div>
-            <span className="text-xs text-[#6E7F70] font-mono tabular-nums">
+            <span className="text-xs text-[#6E7F70] font-sans font-medium tabular-nums">
               {(selectedStatement.transactions || []).length} record{(selectedStatement.transactions || []).length !== 1 ? "s" : ""}
             </span>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+          <div className="overflow-x-auto w-full min-w-0">
+            <table className="w-full min-w-[680px] text-left border-collapse">
               <thead>
                 <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
-                  <th className="py-3 px-4">Date</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Billing Period</th>
-                  <th className="py-3 px-4">Method &amp; Ref</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Date</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Type</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Billing Period</th>
+                  <th className="py-3 px-4 whitespace-nowrap">Method &amp; Ref</th>
                   <th className="py-3 px-4">Description</th>
-                  <th className="py-3 px-4 text-right">Amount</th>
+                  <th className="py-3 px-4 text-right whitespace-nowrap">Amount</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
@@ -268,7 +268,7 @@ export function ResidentStatementsView({
 
                     return (
                       <tr key={t.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
-                        <td className="py-3 px-4 font-mono font-medium text-[#1A2E20] whitespace-nowrap">
+                        <td className="py-3 px-4 font-sans font-medium text-[#1A2E20] whitespace-nowrap">
                           {t.transactionDate}
                         </td>
                         <td className="py-3 px-4 whitespace-nowrap">
@@ -303,7 +303,7 @@ export function ResidentStatementsView({
                         <td className="py-3 px-4 whitespace-nowrap">
                           {t.paymentMethod || "—"}
                           {t.referenceNumber && (
-                            <span className="block text-[11px] text-[#6E7F70] font-mono">
+                            <span className="block text-[11px] text-[#6E7F70] font-sans">
                               Ref: {t.referenceNumber}
                             </span>
                           )}
@@ -311,7 +311,7 @@ export function ResidentStatementsView({
                         <td className="py-3 px-4 max-w-[220px] truncate" title={t.description || ""}>
                           {t.description || "—"}
                         </td>
-                        <td className="py-3 px-4 text-right whitespace-nowrap font-mono font-bold tabular-nums">
+                        <td className="py-3 px-4 text-right whitespace-nowrap font-sans font-bold tabular-nums">
                           <span
                             className={
                               isReversed
@@ -374,23 +374,23 @@ export function ResidentStatementsView({
             <option value="CHECKED_OUT">Checked Out</option>
           </select>
 
-          <span className="text-xs text-[#6E7F70] pl-1 font-mono tabular-nums whitespace-nowrap">
+          <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
             {filteredResidents.length} of {residents.length}
           </span>
         </div>
       </div>
 
       {/* Residents Table */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden w-full min-w-0">
+        <div className="overflow-x-auto w-full min-w-0">
+          <table className="w-full min-w-[680px] text-left border-collapse">
             <thead>
               <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
-                <th className="py-3 px-4">Resident</th>
-                <th className="py-3 px-4">Current Room</th>
-                <th className="py-3 px-4">Contact Info</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3 px-4 whitespace-nowrap">Resident</th>
+                <th className="py-3 px-4 whitespace-nowrap">Current Room</th>
+                <th className="py-3 px-4 whitespace-nowrap">Contact Info</th>
+                <th className="py-3 px-4 whitespace-nowrap">Status</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
@@ -444,7 +444,7 @@ export function ResidentStatementsView({
                             >
                               {r.fullName}
                             </button>
-                            <span className="text-[10px] text-[#6E7F70] font-mono">{r.id}</span>
+                            <span className="text-[10px] text-[#6E7F70] font-sans">{r.id}</span>
                           </div>
                         </div>
                       </td>
@@ -464,7 +464,7 @@ export function ResidentStatementsView({
                       </td>
 
                       {/* Contact Info */}
-                      <td className="py-3 px-4 font-mono text-[#1A2E20]">
+                      <td className="py-3 px-4 font-sans text-xs text-[#1A2E20]">
                         <div>{r.phone}</div>
                         {r.email && <div className="text-[10px] text-[#5A6C5E] font-sans">{r.email}</div>}
                       </td>

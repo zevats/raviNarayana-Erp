@@ -98,14 +98,14 @@ export function AccountingPeriodSelector({
       </div>
 
       {/* Date Range Inputs */}
-      <div className="flex items-center gap-1.5 bg-[#FAF8F5] px-2.5 py-1.5 rounded-xl border border-[#8E9F89]/25 text-xs">
+      <div className="flex flex-wrap items-center gap-1.5 bg-[#FAF8F5] px-2.5 py-1.5 rounded-xl border border-[#8E9F89]/25 text-xs min-w-0">
         <span className="text-[11px] text-[#5A6C5E] font-medium">From:</span>
         <input
           type="date"
           value={startDate}
           onChange={(e) => onDateRangeChange(e.target.value, endDate)}
           max={endDate}
-          className="bg-transparent text-[#1A2E20] font-mono text-xs focus:outline-hidden"
+          className="bg-transparent text-[#1A2E20] font-sans font-medium text-xs focus:outline-hidden cursor-pointer"
         />
         <span className="text-[11px] text-[#5A6C5E] font-medium">To:</span>
         <input
@@ -113,7 +113,7 @@ export function AccountingPeriodSelector({
           value={endDate}
           onChange={(e) => onDateRangeChange(startDate, e.target.value)}
           min={startDate}
-          className="bg-transparent text-[#1A2E20] font-mono text-xs focus:outline-hidden"
+          className="bg-transparent text-[#1A2E20] font-sans font-medium text-xs focus:outline-hidden cursor-pointer"
         />
       </div>
 

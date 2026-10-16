@@ -316,32 +316,32 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
       <div className="flex-1 flex flex-col min-w-0 lg:pl-64 xl:pl-72">
         
         {/* Desktop Top Header Bar */}
-        <header className="hidden lg:flex items-center justify-between px-8 py-3.5 bg-white border-b border-[#8E9F89]/20 sticky top-0 z-20 shadow-2xs">
-          <div>
-            <h2 className="text-sm font-semibold text-[#1A2E20]">
+        <header className="hidden lg:flex items-center justify-between px-4 sm:px-6 lg:px-8 py-3.5 bg-white border-b border-[#8E9F89]/20 sticky top-0 z-20 shadow-2xs min-w-0 flex-wrap gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-[#1A2E20] truncate">
               Ravinarayan Management
             </h2>
           </div>
 
-          <div className="flex items-center gap-5">
-            <div className="flex items-center gap-2 text-xs text-[#5A6C5E]">
-              <Calendar className="w-3.5 h-3.5 text-[#B58A57]" />
+          <div className="flex items-center gap-3 sm:gap-5 flex-wrap min-w-0">
+            <div className="flex items-center gap-2 text-xs text-[#5A6C5E] whitespace-nowrap">
+              <Calendar className="w-3.5 h-3.5 text-[#B58A57] shrink-0" />
               <span>{currentDateStr}</span>
             </div>
 
-            <div className="h-4 w-[1px] bg-[#8E9F89]/25" />
+            <div className="h-4 w-[1px] bg-[#8E9F89]/25 shrink-0" />
 
             <NotificationBell />
 
-            <div className="h-4 w-[1px] bg-[#8E9F89]/25" />
+            <div className="h-4 w-[1px] bg-[#8E9F89]/25 shrink-0" />
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
               <span
-                className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium border ${roleStyle.bg} ${roleStyle.text} ${roleStyle.border}`}
+                className={`text-[11px] px-2.5 py-0.5 rounded-full font-medium border shrink-0 ${roleStyle.bg} ${roleStyle.text} ${roleStyle.border}`}
               >
                 {roleLabel}
               </span>
-              <span className="text-xs text-[#1A2E20] font-medium">
+              <span className="text-xs text-[#1A2E20] font-medium truncate">
                 {user.fullName}
               </span>
             </div>
@@ -349,7 +349,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
         </header>
 
         {/* Content Container */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0">
           {children}
         </main>
 

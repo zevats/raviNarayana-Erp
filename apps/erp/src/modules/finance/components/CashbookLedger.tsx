@@ -153,7 +153,7 @@ export function CashbookLedger({
             <option value="REVERSED">Reversed</option>
           </select>
 
-          <span className="text-xs text-[#6E7F70] pl-1 font-mono tabular-nums whitespace-nowrap">
+          <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
             {filtered.length} record{filtered.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -198,18 +198,18 @@ export function CashbookLedger({
           </div>
         ) : (
           <>
-            {/* Desktop Table View */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            {/* Dedicated Horizontally Scrollable Transaction Table */}
+            <div className="overflow-x-auto w-full min-w-0">
+              <table className="w-full min-w-[760px] text-left border-collapse">
                 <thead>
                   <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
-                    <th className="py-3 px-4">Date &amp; ID</th>
-                    <th className="py-3 px-4">Type</th>
-                    <th className="py-3 px-4">Party / Room</th>
-                    <th className="py-3 px-4">Payment Method &amp; Ref</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Date &amp; ID</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Type</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Party / Room</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Payment Method &amp; Ref</th>
                     <th className="py-3 px-4">Description</th>
-                    <th className="py-3 px-4 text-right">Amount</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
+                    <th className="py-3 px-4 text-right whitespace-nowrap">Amount</th>
+                    <th className="py-3 px-4 text-center whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
@@ -236,11 +236,13 @@ export function CashbookLedger({
                       >
                         {/* 1. Date & ID */}
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <span className="font-mono text-xs font-semibold text-[#1A2E20] block">
+                          <span className="font-sans text-xs font-semibold text-[#1A2E20] block">
                             {tx.transactionDate}
                           </span>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-[#6E7F70] font-mono">
-                            <span>{tx.id.slice(0, 14)}...</span>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-[#6E7F70] font-sans">
+                            <span className="truncate max-w-[120px]" title={tx.id}>
+                              {tx.id.slice(0, 14)}...
+                            </span>
                             <button
                               type="button"
                               onClick={(e) => handleCopyId(tx.id, e)}
@@ -300,20 +302,20 @@ export function CashbookLedger({
 
                         {/* 3. Party / Room */}
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-xs text-[#1A2E20]">
+                          <div className="font-semibold text-xs text-[#1A2E20] truncate max-w-[150px]" title={tx.residentName || tx.payeeVendor || "General Operations"}>
                             {tx.residentName || tx.payeeVendor || "General Operations"}
                           </div>
-                          <div className="text-[11px] text-[#5A6C5E] mt-0.5">
+                          <div className="text-[11px] text-[#5A6C5E] mt-0.5 truncate max-w-[150px]">
                             {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.payeeVendor ? `${tx.category} Vendor` : "Operations"}
                           </div>
                         </td>
 
                         {/* 4. Payment Method & Ref */}
                         <td className="py-3 px-4 whitespace-nowrap">
-                          <div className="text-xs text-[#1A2E20] font-medium">
+                          <div className="text-xs text-[#1A2E20] font-medium font-sans">
                             {tx.paymentMethod || "—"}
                           </div>
-                          <div className="text-[11px] text-[#6E7F70] font-mono mt-0.5">
+                          <div className="text-[11px] text-[#6E7F70] font-sans mt-0.5 truncate max-w-[130px]" title={tx.referenceNumber ? `Ref: ${tx.referenceNumber}` : ""}>
                             {tx.referenceNumber ? `Ref: ${tx.referenceNumber}` : "—"}
                           </div>
                         </td>
@@ -333,7 +335,7 @@ export function CashbookLedger({
                         {/* 6. Amount */}
                         <td className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">
                           <span
-                            className={`font-mono text-xs sm:text-sm font-bold tabular-nums ${
+                            className={`font-sans text-xs sm:text-sm font-bold tabular-nums ${
                               isReversed
                                 ? "line-through text-stone-400"
                                 : isPositive
@@ -381,121 +383,9 @@ export function CashbookLedger({
               </table>
             </div>
 
-            {/* Mobile Compact Card View */}
-            <div className="md:hidden divide-y divide-[#8E9F89]/15">
-              {paginated.map((tx) => {
-                const isPayment = tx.transactionType === "RENT_PAYMENT";
-                const isCharge = tx.transactionType === "RENT_CHARGE";
-                const isDeposit = tx.transactionType === "SECURITY_DEPOSIT";
-                const isExpense = tx.transactionType === "EXPENSE";
-                const isReversal = tx.transactionType === "REVERSAL";
-                const isReversed = tx.status === "REVERSED";
-
-                const { formatted, isPositive, isNegative } = formatINRWithSign(
-                  tx.amount,
-                  tx.transactionType,
-                  tx.status
-                );
-
-                return (
-                  <div key={tx.id} className="p-4 space-y-2 hover:bg-[#FAF8F5]/60 transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold text-[#1A2E20]">
-                        {tx.transactionDate}
-                      </span>
-                      <span
-                        className={`font-mono text-sm font-bold tabular-nums ${
-                          isReversed
-                            ? "line-through text-stone-400"
-                            : isPositive
-                            ? "text-emerald-700"
-                            : isNegative
-                            ? "text-rose-700"
-                            : "text-[#1A2E20]"
-                        }`}
-                      >
-                        {formatted}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-xs text-[#1A2E20]">
-                          {tx.residentName || tx.payeeVendor || "General Operations"}
-                        </div>
-                        <div className="text-[11px] text-[#5A6C5E]">
-                          {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.payeeVendor ? `${tx.category} Vendor` : "Operations"}
-                          {tx.paymentMethod && ` • ${tx.paymentMethod}`}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => onViewReceipt(tx)}
-                          className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] shadow-2xs"
-                          title="View receipt"
-                        >
-                          <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
-                        </button>
-                        {!isReversed && !isReversal && (
-                          <button
-                            type="button"
-                            onClick={() => onInitiateReversal(tx)}
-                            className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-rose-50 text-stone-600 hover:text-rose-700 shadow-2xs"
-                            title="Reverse"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 pt-0.5">
-                      {isPayment && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          Rent Payment
-                        </span>
-                      )}
-                      {isCharge && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#FAF8F5] text-[#654735] border border-[#B58A57]/35">
-                          Rent Charge
-                        </span>
-                      )}
-                      {isDeposit && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                          Deposit
-                        </span>
-                      )}
-                      {isExpense && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-700 border border-stone-200">
-                          Expense
-                        </span>
-                      )}
-                      {isReversal && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                          Reversal
-                        </span>
-                      )}
-                      {isReversed && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-stone-200 text-stone-700">
-                          Reversed
-                        </span>
-                      )}
-                      {tx.description && (
-                        <span className="text-[11px] text-[#5A6C5E] truncate">
-                          &bull; {tx.description}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pagination Footer (Matching standard management table pagination) */}
-            <div className="border-t border-[#8E9F89]/20 bg-[#FAF8F5]/60 px-4 py-3 flex items-center justify-between text-xs text-[#5A6C5E]">
-              <div className="font-mono tabular-nums">
+            {/* Pagination Footer */}
+            <div className="border-t border-[#8E9F89]/20 bg-[#FAF8F5]/60 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#5A6C5E] min-w-0">
+              <div className="font-sans tabular-nums">
                 Showing <strong className="text-[#1A2E20]">{startIndex}</strong> to{" "}
                 <strong className="text-[#1A2E20]">{endIndex}</strong> of{" "}
                 <strong className="text-[#1A2E20]">{filtered.length}</strong> transactions
@@ -512,7 +402,7 @@ export function CashbookLedger({
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
 
-                <span className="font-mono text-xs tabular-nums text-[#1A2E20]">
+                <span className="font-sans text-xs tabular-nums text-[#1A2E20]">
                   Page {currentPage} of {totalPages}
                 </span>
 

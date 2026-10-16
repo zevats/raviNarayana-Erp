@@ -809,7 +809,7 @@ export default function RoomsPage() {
             </select>
           </div>
 
-          <span className="text-xs text-[#6E7F70] pl-1 font-mono tabular-nums">
+          <span className="text-xs text-[#6E7F70] pl-1 font-sans tabular-nums">
             {filteredRooms.length} room{filteredRooms.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -970,7 +970,7 @@ export default function RoomsPage() {
                                 <p className="text-xs font-semibold text-[#1A2E20] truncate">
                                   {occ.fullName}
                                 </p>
-                                <p className="font-mono tabular-nums text-[11px] text-[#5A6C5E]">
+                                <p className="font-sans tabular-nums text-[11px] text-[#5A6C5E]">
                                   {occ.phone}
                                 </p>
                               </div>
@@ -1183,7 +1183,7 @@ export default function RoomsPage() {
                               phone: e.target.value,
                             })
                           }
-                          className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                          className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                         />
                       </div>
                     </div>
@@ -1221,7 +1221,7 @@ export default function RoomsPage() {
                               emergencyContact: e.target.value,
                             })
                           }
-                          className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                          className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                         />
                       </div>
                     </div>
@@ -1296,7 +1296,7 @@ export default function RoomsPage() {
                             checkInDate: e.target.value,
                           })
                         }
-                        className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                        className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                       />
                     </div>
 
@@ -1373,7 +1373,7 @@ export default function RoomsPage() {
                     </div>
                     <div>
                       <span>Phone: </span>
-                      <strong className="text-[#1A2E20] font-mono tabular-nums">
+                      <strong className="text-[#1A2E20] font-sans tabular-nums">
                         {assignMode === "NEW"
                           ? tenantFormData.phone
                           : checkedOutResidents.find((r) => r.id === selectedExistingResidentId)?.phone}
@@ -1389,7 +1389,7 @@ export default function RoomsPage() {
                     </div>
                     <div>
                       <span>Check-In Date: </span>
-                      <span className="font-mono tabular-nums text-[#1A2E20] font-semibold">
+                      <span className="font-sans tabular-nums text-[#1A2E20] font-semibold">
                         {tenantFormData.checkInDate}
                       </span>
                     </div>
@@ -1990,7 +1990,7 @@ export default function RoomsPage() {
                         phone: e.target.value,
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
                 </div>
 
@@ -2024,7 +2024,7 @@ export default function RoomsPage() {
                         emergencyContact: e.target.value,
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
                 </div>
 
@@ -2110,7 +2110,7 @@ export default function RoomsPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#5A6C5E]">Check-in Date:</span>
-                  <span className="font-mono tabular-nums text-[#1A2E20]">
+                  <span className="font-sans tabular-nums text-[#1A2E20]">
                     {checkingOutResident.occupant.checkInDate}
                   </span>
                 </div>
@@ -2125,7 +2125,7 @@ export default function RoomsPage() {
                   required
                   value={checkOutDate}
                   onChange={(e) => setCheckOutDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums font-medium focus:outline-hidden focus:border-[#1A2E20]"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums font-medium focus:outline-hidden focus:border-[#1A2E20]"
                 />
               </div>
 

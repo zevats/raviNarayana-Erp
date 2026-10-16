@@ -626,7 +626,7 @@ export default function ResidentsPage() {
             <option value="UNASSIGNED">Not Assigned / Pending</option>
           </select>
 
-          <span className="text-xs text-[#6E7F70] pl-1 font-mono tabular-nums whitespace-nowrap">
+          <span className="text-xs text-[#6E7F70] pl-1 font-sans tabular-nums whitespace-nowrap">
             {filteredResidents.length} of {residents.length}
           </span>
         </div>
@@ -697,7 +697,7 @@ export default function ResidentsPage() {
                       {/* Column 2: Contact Info */}
                       <td className="py-3 px-4 text-[#445448]">
                         <div className="space-y-0.5">
-                          <p className="flex items-center gap-1.5 font-mono tabular-nums text-[11px]">
+                          <p className="flex items-center gap-1.5 font-sans tabular-nums text-[11px]">
                             <Phone className="w-3 h-3 text-[#B58A57] shrink-0" />
                             <span>{res.phone}</span>
                           </p>
@@ -730,7 +730,7 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 4: Current Stay Date */}
-                      <td className="py-3 px-4 font-mono tabular-nums text-[11px] text-[#5A6C5E] whitespace-nowrap">
+                      <td className="py-3 px-4 font-sans tabular-nums text-[11px] text-[#5A6C5E] whitespace-nowrap">
                         {isInHouse && res.checkInDate ? res.checkInDate : "—"}
                       </td>
 
@@ -821,7 +821,7 @@ export default function ResidentsPage() {
                   <h3 className="font-serif text-2xl font-bold text-[#1A2E20] tracking-tight">
                     {viewHistoryResident.fullName}
                   </h3>
-                  <p className="text-xs text-[#5A6C5E] font-mono tabular-nums">
+                  <p className="text-xs text-[#5A6C5E] font-sans tabular-nums">
                     {viewHistoryResident.phone}
                   </p>
                 </div>
@@ -863,7 +863,7 @@ export default function ResidentsPage() {
                   <span className="text-[#6E7F70] block text-[10px] uppercase font-semibold">
                     Emergency Contact
                   </span>
-                  <span className="font-medium text-[#1A2E20] font-mono tabular-nums">
+                  <span className="font-medium text-[#1A2E20] font-sans tabular-nums">
                     {viewHistoryResident.emergencyContact || "—"}
                   </span>
                 </div>
@@ -1005,11 +1005,11 @@ export default function ResidentsPage() {
                         <div className="grid grid-cols-2 gap-2 text-[11px] text-[#5A6C5E]">
                           <p>
                             <strong>Check-In:</strong>{" "}
-                            <span className="font-mono tabular-nums">{stay.checkInDate}</span>
+                            <span className="font-sans tabular-nums">{stay.checkInDate}</span>
                           </p>
                           <p>
                             <strong>Check-Out:</strong>{" "}
-                            <span className="font-mono tabular-nums">
+                            <span className="font-sans tabular-nums">
                               {stay.checkOutDate || "Present"}
                             </span>
                           </p>
@@ -1109,7 +1109,7 @@ export default function ResidentsPage() {
                         phone: e.target.value,
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
                 </div>
 
@@ -1143,7 +1143,7 @@ export default function ResidentsPage() {
                         emergencyContact: e.target.value,
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
                 </div>
 
@@ -1192,7 +1192,7 @@ export default function ResidentsPage() {
                     </p>
                     <p>
                       <strong>Phone:</strong>{" "}
-                      <span className="text-[#1A2E20] font-mono tabular-nums">{editProfileForm.phone}</span>
+                      <span className="text-[#1A2E20] font-sans tabular-nums">{editProfileForm.phone}</span>
                     </p>
                     <p>
                       <strong>Email:</strong>{" "}
@@ -1200,7 +1200,7 @@ export default function ResidentsPage() {
                     </p>
                     <p>
                       <strong>Emergency Contact:</strong>{" "}
-                      <span className="text-[#1A2E20] font-mono tabular-nums">{editProfileForm.emergencyContact || "—"}</span>
+                      <span className="text-[#1A2E20] font-sans tabular-nums">{editProfileForm.emergencyContact || "—"}</span>
                     </p>
                   </div>
                 </div>
@@ -1332,7 +1332,7 @@ export default function ResidentsPage() {
                     onChange={(e) =>
                       setCheckInForm({ ...checkInForm, checkInDate: e.target.value })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden"
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden"
                   />
                 </div>
 
@@ -1414,7 +1414,7 @@ export default function ResidentsPage() {
                     </p>
                     <p>
                       <strong>Check-In Date:</strong>{" "}
-                      <span className="text-[#1A2E20] font-mono tabular-nums">{checkInForm.checkInDate}</span>
+                      <span className="text-[#1A2E20] font-sans tabular-nums">{checkInForm.checkInDate}</span>
                     </p>
                     <p>
                       <strong>Monthly Rent:</strong>{" "}
@@ -1498,7 +1498,7 @@ export default function ResidentsPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-[#5A6C5E]">Check-In Date:</span>
-                <span className="font-mono tabular-nums text-[#1A2E20]">
+                <span className="font-sans tabular-nums text-[#1A2E20]">
                   {checkOutResidentTarget.checkInDate}
                 </span>
               </div>
@@ -1530,7 +1530,7 @@ export default function ResidentsPage() {
                   required
                   value={checkOutDate}
                   onChange={(e) => setCheckOutDate(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden"
                 />
               </div>
 
@@ -1611,7 +1611,7 @@ export default function ResidentsPage() {
                   onChange={(e) =>
                     setRegisterForm({ ...registerForm, phone: e.target.value })
                   }
-                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                 />
               </div>
 
@@ -1644,7 +1644,7 @@ export default function ResidentsPage() {
                       emergencyContact: e.target.value,
                     })
                   }
-                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-mono tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                 />
               </div>
 
