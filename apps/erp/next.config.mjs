@@ -10,11 +10,14 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["better-sqlite3"],
   },
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     config.resolve.alias = {
       ...config.resolve.alias,
       "@": path.resolve(__dirname, "src"),
     };
+    if (isServer) {
+      config.externals = [...(config.externals || []), "better-sqlite3"];
+    }
     return config;
   },
 };

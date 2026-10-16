@@ -6,7 +6,13 @@ import { runMigrations } from "./migrations";
 import { performDatabaseCleanup } from "./cleanup";
 import { validateAdminEnvironment } from "./env";
 
-let dbInstance: Database.Database | null = null;
+interface GlobalDatabaseContext {
+  _rnErpDbInstance?: Database.Database | null;
+  _rnErpStatements?: Map<string, Database.Statement>;
+  _rnShutdownRegistered?: boolean;
+}
+
+const globalForDb = globalThis as unknown as GlobalDatabaseContext;
 
 export function resolveDbPath(): string {
   if (process.env.ERP_DATABASE_PATH) {
@@ -41,8 +47,8 @@ export function resolveDbPath(): string {
 }
 
 export function getDb(): Database.Database {
-  if (dbInstance) {
-    return dbInstance;
+  if (globalForDb._rnErpDbInstance && globalForDb._rnErpDbInstance.open) {
+    return globalForDb._rnErpDbInstance;
   }
 
   const dbPath = resolveDbPath();
@@ -57,6 +63,22 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
 
+  // Prepared statement caching: keeps statements alive with the DB singleton
+  // and protects against V8 GC finalizer assertion failures (env != nullptr)
+  const statementCache = new Map<string, Database.Statement>();
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = ((source: string) => {
+    const key = source.trim();
+    let stmt = statementCache.get(key);
+    if (!stmt) {
+      stmt = originalPrepare(source);
+      statementCache.set(key, stmt);
+    }
+    return stmt;
+  }) as any;
+
+  globalForDb._rnErpStatements = statementCache;
+
   // Versioned migrations
   runMigrations(db);
 
@@ -66,18 +88,32 @@ export function getDb(): Database.Database {
   // Bounded cleanup for expired sessions and old rate-limit records
   performDatabaseCleanup(db);
 
-  dbInstance = db;
-  return dbInstance;
+  globalForDb._rnErpDbInstance = db;
+
+  // Register clean shutdown handlers once per process
+  if (!globalForDb._rnShutdownRegistered && typeof process !== "undefined" && typeof process.once === "function") {
+    globalForDb._rnShutdownRegistered = true;
+    process.once("SIGTERM", () => closeDb());
+    process.once("SIGINT", () => closeDb());
+  }
+
+  return globalForDb._rnErpDbInstance;
 }
 
 export function closeDb(): void {
-  if (dbInstance) {
+  const db = globalForDb._rnErpDbInstance;
+  if (db) {
+    if (globalForDb._rnErpStatements) {
+      globalForDb._rnErpStatements.clear();
+    }
     try {
-      dbInstance.close();
+      if (db.open) {
+        db.close();
+      }
     } catch {
       // Ignore errors on close
     }
-    dbInstance = null;
+    globalForDb._rnErpDbInstance = null;
   }
 }
 
