@@ -234,15 +234,15 @@ async function runPhase01Tests() {
   console.log("\n[TEST SUITE 4] Single Active Session Preemption & Process Restart Persistence");
 
   // 4a: Device 1 login
-  const sessionDevice1 = createSession(testStaffId, { ip: "192.168.1.1", userAgent: "Laptop", preempt: true });
-  assert(validateSessionDetailed(sessionDevice1.sessionToken).user !== null, "Device 1 session is initially valid");
+  const sessionDevice1 = await createSession(testStaffId, { ip: "192.168.1.1", userAgent: "Laptop", preempt: true });
+  assert((await validateSessionDetailed(sessionDevice1.sessionToken)).user !== null, "Device 1 session is initially valid");
 
   // 4b: Device 2 login with preemption -> Device 1 session must be preempted atomically
-  const sessionDevice2 = createSession(testStaffId, { ip: "192.168.1.2", userAgent: "Mobile", preempt: true });
-  assert(validateSessionDetailed(sessionDevice2.sessionToken).user !== null, "Device 2 session is active");
+  const sessionDevice2 = await createSession(testStaffId, { ip: "192.168.1.2", userAgent: "Mobile", preempt: true });
+  assert((await validateSessionDetailed(sessionDevice2.sessionToken)).user !== null, "Device 2 session is active");
 
   // 4c: Validate Device 1: Must be recognized as PREEMPTED
-  const device1Check = validateSessionDetailed(sessionDevice1.sessionToken);
+  const device1Check = await validateSessionDetailed(sessionDevice1.sessionToken);
   assert(device1Check.user === null, "Device 1 session can no longer access protected resources");
   assert(device1Check.isPreempted === true, "Preempted session specifically recognized with isPreempted: true");
 
@@ -254,18 +254,18 @@ async function runPhase01Tests() {
   assert(reopenedDb.open === true, "Database connection re-opened after simulated process restart");
 
   // Device 1 session MUST STILL be recognized as preempted from the persistent database table
-  const device1AfterRestart = validateSessionDetailed(sessionDevice1.sessionToken);
+  const device1AfterRestart = await validateSessionDetailed(sessionDevice1.sessionToken);
   assert(device1AfterRestart.user === null, "Device 1 remains unauthenticated after process restart");
   assert(device1AfterRestart.isPreempted === true, "Preemption status persists across process restarts via database table");
 
   // 4e: Explicit user logout (destroySession) does not mark session as preempted
-  destroySession(sessionDevice2.sessionToken);
-  const device2AfterLogout = validateSessionDetailed(sessionDevice2.sessionToken);
+  await destroySession(sessionDevice2.sessionToken);
+  const device2AfterLogout = await validateSessionDetailed(sessionDevice2.sessionToken);
   assert(device2AfterLogout.user === null, "Logged-out session is invalidated");
   assert(device2AfterLogout.isPreempted !== true, "Logged-out session returns standard 401 without preemption flag");
 
   // 4f: Cleanup
-  revokeAllUserSessions(testStaffId);
+  await revokeAllUserSessions(testStaffId);
 
   // ---------------------------------------------------------------------------
   // TEST SUITE 5: Cross-Site Request Forgery (CSRF) Defense

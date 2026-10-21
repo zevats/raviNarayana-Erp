@@ -11,13 +11,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
-    const result = generateDeliveryTasks(
+    const result = await generateDeliveryTasks(
       user,
       {
         serviceDate: body.serviceDate,

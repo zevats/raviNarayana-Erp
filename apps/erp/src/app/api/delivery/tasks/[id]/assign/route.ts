@@ -14,13 +14,13 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
-    const task = assignDeliveryTask(
+    const task = await assignDeliveryTask(
       user,
       params.id,
       { assignedToStaffId: body.assignedToStaffId },

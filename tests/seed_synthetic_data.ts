@@ -1,9 +1,21 @@
 import { seedSyntheticData } from "../apps/erp/src/server/database/seedSyntheticData";
+import { resolveFixtureDbPath } from "../apps/erp/src/server/database/db";
 
 async function main() {
+  const rawPath = process.env.ERP_DATABASE_PATH;
+  if (!rawPath || rawPath.trim().length === 0) {
+    throw new Error(
+      "Missing required ERP_DATABASE_PATH environment variable for synthetic data seeding. Refusing to proceed without explicit fixture path."
+    );
+  }
+
+  // Pre-validate path to ensure fail-closed behavior before calling seeder
+  const validatedFixturePath = resolveFixtureDbPath(rawPath);
+
   const result = await seedSyntheticData({
     allowSyntheticSeed: true,
     verbose: true,
+    fixturePath: validatedFixturePath,
   });
 
   console.log("\n================================================================================");

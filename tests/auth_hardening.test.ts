@@ -132,7 +132,7 @@ console.log("\n[TEST SUITE 2] Hashed Session Lifecycle & Token Security");
 // Point environment to test DB
 process.env.ERP_DATABASE_PATH = TEST_DB_PATH;
 
-const sessionCreation = auth.createSession("usr_legacy_01", { ip: "10.0.0.5", userAgent: "TestBrowser" });
+const sessionCreation = await auth.createSession("usr_legacy_01", { ip: "10.0.0.5", userAgent: "TestBrowser" });
 assert(sessionCreation.sessionToken.length === 64, "Generated bearer cookie token has 256 bits of entropy (64 hex characters)");
 
 // Verify database does NOT store the raw token
@@ -143,22 +143,22 @@ const expectedHash = crypto.createHash("sha256").update(sessionCreation.sessionT
 assert(dbSession.token_hash === expectedHash, "Database strictly stores SHA-256 digest of the session token");
 
 // Session lookup with valid token
-const validatedUser = auth.validateSession(sessionCreation.sessionToken);
+const validatedUser = await auth.validateSession(sessionCreation.sessionToken);
 assert(validatedUser !== null && validatedUser.id === "usr_legacy_01" && validatedUser.username === "legacyadmin", "Session validation succeeds via hashed lookup");
 
 // Forged token lookup
-const forgedUser = auth.validateSession("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+const forgedUser = await auth.validateSession("ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
 assert(forgedUser === null, "Forged session token rejected with null");
 
 // Expired session lookup
 db.prepare("UPDATE sessions SET expires_at = '2020-01-01T00:00:00Z' WHERE token_hash = ?").run(expectedHash);
-const expiredUser = auth.validateSession(sessionCreation.sessionToken);
+const expiredUser = await auth.validateSession(sessionCreation.sessionToken);
 assert(expiredUser === null, "Expired session rejected with null");
 
 // Session destruction / logout
-const newSession = auth.createSession("usr_legacy_01", { ip: "10.0.0.5" });
-auth.destroySession(newSession.sessionToken);
-const loggedOutUser = auth.validateSession(newSession.sessionToken);
+const newSession = await auth.createSession("usr_legacy_01", { ip: "10.0.0.5" });
+await auth.destroySession(newSession.sessionToken);
+const loggedOutUser = await auth.validateSession(newSession.sessionToken);
 assert(loggedOutUser === null, "Session successfully destroyed from database upon logout");
 
 // -----------------------------------------------------------------------------
@@ -172,35 +172,35 @@ const attackerIp2 = "192.168.1.20";
 
 // Record 4 failed attempts from IP 1
 for (let i = 0; i < 4; i++) {
-  auth.recordLoginAttempt(testTargetAccount, attackerIp1, false);
+  await auth.recordLoginAttempt(testTargetAccount, attackerIp1, false);
 }
-let rlCheck = auth.checkRateLimit(testTargetAccount, attackerIp1);
+let rlCheck = await auth.checkRateLimit(testTargetAccount, attackerIp1);
 assert(!rlCheck.isLimited, "4 failed attempts: Rate limit not triggered yet");
 
 // 5th failed attempt from IP 1
-auth.recordLoginAttempt(testTargetAccount, attackerIp1, false);
-rlCheck = auth.checkRateLimit(testTargetAccount, attackerIp1);
+await auth.recordLoginAttempt(testTargetAccount, attackerIp1, false);
+rlCheck = await auth.checkRateLimit(testTargetAccount, attackerIp1);
 assert(rlCheck.isLimited, "5 failed attempts from same IP: Account + IP rate limit triggered (Layer 2)");
 
 // Crucial: Legitimate administrator from IP 2 (different network) is NOT locked out!
 const adminFromOfficeIp = "192.168.200.50";
-const adminRlCheck = auth.checkRateLimit(testTargetAccount, adminFromOfficeIp);
+const adminRlCheck = await auth.checkRateLimit(testTargetAccount, adminFromOfficeIp);
 assert(!adminRlCheck.isLimited, "Anti-DoS Protection: Administrator from different IP is NOT locked out by attacker's attempts");
 
 // Layer 1: Aggressive spraying from a single IP across multiple accounts
 for (let i = 0; i < 20; i++) {
-  auth.recordLoginAttempt(`randomuser_${i}`, attackerIp2, false);
+  await auth.recordLoginAttempt(`randomuser_${i}`, attackerIp2, false);
 }
-const ipSprayingCheck = auth.checkRateLimit("any_user", attackerIp2);
+const ipSprayingCheck = await auth.checkRateLimit("any_user", attackerIp2);
 assert(ipSprayingCheck.isLimited && (ipSprayingCheck.reason || "").includes("network"), "20 failed attempts from one IP: IP-based global rate limit triggered (Layer 1)");
 
 // Counter reset upon successful login
-auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, false);
-auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, false);
+await auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, false);
+await auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, false);
 const beforeSuccessFailures = db.prepare("SELECT count(*) as count FROM login_attempts WHERE identifier = ? AND ip_address = ? AND success = 0").get(testTargetAccount, adminFromOfficeIp) as any;
 assert(beforeSuccessFailures.count === 2, "Recorded 2 failed attempts for office IP");
 
-auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, true);
+await auth.recordLoginAttempt(testTargetAccount, adminFromOfficeIp, true);
 const afterSuccessFailures = db.prepare("SELECT count(*) as count FROM login_attempts WHERE identifier = ? AND ip_address = ? AND success = 0").get(testTargetAccount, adminFromOfficeIp) as any;
 assert(afterSuccessFailures.count === 0, "Successful login immediately cleared failed attempt counters for client");
 
@@ -353,14 +353,14 @@ assert(
 
 // Verify that an administrator from a different IP address is NOT locked out
 const separateAdminIp = "203.0.113.88";
-const adminConcurrentCheck = auth.checkRateLimitAndRecord(concurrentTarget, separateAdminIp);
+const adminConcurrentCheck = await auth.checkRateLimitAndRecord(concurrentTarget, separateAdminIp);
 assert(
   !adminConcurrentCheck.isLimited,
   "Cross-IP Anti-Lockout: Legitimate user from different IP can still attempt login despite attacker concurrency"
 );
 
 // Verify that a successful login resets the client counters
-auth.recordLoginSuccess(concurrentTarget, separateAdminIp);
+await auth.recordLoginSuccess(concurrentTarget, separateAdminIp);
 const resetCheck = db.prepare(
   "SELECT count(*) as count FROM login_attempts WHERE identifier = ? AND ip_address = ? AND success = 0"
 ).get(concurrentTarget, separateAdminIp) as any;

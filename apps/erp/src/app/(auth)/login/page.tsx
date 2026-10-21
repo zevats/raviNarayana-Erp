@@ -7,12 +7,12 @@ import { Loader2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
+export default async function LoginPage() {
   const cookieStore = cookies();
   const sessionToken = cookieStore.get(ERP_COOKIE_NAME)?.value;
 
   if (sessionToken && sessionToken.length >= 32) {
-    const user = validateSession(sessionToken);
+    const user = await validateSession(sessionToken);
     if (user) {
       redirect("/dashboard");
     }

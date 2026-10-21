@@ -14,10 +14,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
-    const resident = getResidentById(user, params.id);
+    const resident = await getResidentById(user, params.id);
     if (!resident) {
       return NextResponse.json({ error: `Resident '${params.id}' not found.` }, { status: 404 });
     }
@@ -36,13 +36,13 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
-    const resident = updateResident(user, params.id, body, clientIp);
+    const resident = await updateResident(user, params.id, body, clientIp);
 
     return NextResponse.json({ success: true, resident });
   } catch (error: any) {

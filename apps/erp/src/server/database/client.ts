@@ -21,11 +21,40 @@ export function getDatabaseUrl(direct = false): string | null {
   return process.env.DATABASE_URL || process.env.DIRECT_URL || null;
 }
 
+export type DatabaseEngine = "sqlite" | "postgresql";
+
 /**
  * Returns whether a PostgreSQL database URL is configured in the environment.
  */
 export function isPostgresConfigured(): boolean {
   return Boolean(getDatabaseUrl());
+}
+
+/**
+ * Returns the configured database engine based on environment variables.
+ * - In production: defaults to 'postgresql' (mandatory).
+ * - Explicit override: DATABASE_ENGINE='sqlite' | 'postgresql'.
+ * - Default in development/test: 'sqlite' unless DATABASE_ENGINE=postgresql is specified.
+ */
+export function getDatabaseEngine(): DatabaseEngine {
+  const explicit = process.env.DATABASE_ENGINE?.toLowerCase().trim();
+  if (explicit === "postgresql" || explicit === "postgres") {
+    return "postgresql";
+  }
+  if (explicit === "sqlite") {
+    return "sqlite";
+  }
+  if (process.env.NODE_ENV === "production") {
+    return "postgresql";
+  }
+  return "sqlite";
+}
+
+/**
+ * Returns true if PostgreSQL is the active runtime database engine.
+ */
+export function isPostgresActive(): boolean {
+  return getDatabaseEngine() === "postgresql" && isPostgresConfigured();
 }
 
 /**
@@ -99,40 +128,41 @@ export async function pingDatabase(): Promise<{
   error?: string;
 }> {
   const start = performance.now();
-  const sqlClient = getPgSql();
+  const engine = getDatabaseEngine();
 
-  if (sqlClient) {
-    try {
-      await sqlClient`SELECT 1`;
-      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-      return { ok: true, latencyMs, engine: "postgresql" };
-    } catch (err: any) {
-      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-      return {
-        ok: false,
-        latencyMs,
-        engine: "postgresql",
-        error: err?.message || "PostgreSQL connection failed",
-      };
+  if (engine === "postgresql") {
+    const sqlClient = getPgSql();
+    if (sqlClient) {
+      try {
+        await sqlClient`SELECT 1`;
+        const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+        return { ok: true, latencyMs, engine: "postgresql" };
+      } catch (err: any) {
+        const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+        return {
+          ok: false,
+          latencyMs,
+          engine: "postgresql",
+          error: err?.message || "PostgreSQL connection failed",
+        };
+      }
     }
   }
 
   if (process.env.NODE_ENV === "production") {
-    if (!sqlClient) {
-      return {
-        ok: false,
-        latencyMs: 0,
-        engine: "none",
-        error: "PostgreSQL required in production (NODE_ENV=production) but DATABASE_URL is not configured",
-      };
-    }
+    return {
+      ok: false,
+      latencyMs: 0,
+      engine: "none",
+      error: "PostgreSQL required in production (NODE_ENV=production) but DATABASE_URL is not configured",
+    };
   }
 
   // Fallback check on SQLite in non-production development/test modes
   try {
-    const { getDb } = await import("./db");
-    const db = getDb();
-    db.prepare("SELECT 1").get();
+    const { getAsyncDb } = await import("./db");
+    const db = getAsyncDb();
+    await db.queryOne("SELECT 1");
     const latencyMs = Math.round((performance.now() - start) * 100) / 100;
     return { ok: true, latencyMs, engine: "sqlite" };
   } catch (err: any) {

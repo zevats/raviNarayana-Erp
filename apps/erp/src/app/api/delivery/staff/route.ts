@@ -10,10 +10,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
-    const staff = listActiveDeliveryStaff(user);
+    const staff = await listActiveDeliveryStaff(user);
 
     return NextResponse.json({ success: true, staff });
   } catch (error: any) {

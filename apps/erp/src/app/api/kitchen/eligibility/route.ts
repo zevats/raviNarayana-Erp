@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const eligibleResidents = getEligibleResidentsForDate(user, serviceDate);
+    const eligibleResidents = await getEligibleResidentsForDate(user, serviceDate);
 
     return NextResponse.json({
       success: true,

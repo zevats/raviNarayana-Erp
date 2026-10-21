@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { getAsyncDb, AsyncDb } from "./db";
 
 let lastCleanupTimestamp: number = 0;
 const CLEANUP_THROTTLE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -78,6 +79,80 @@ export function performDatabaseCleanup(db: Database.Database, force: boolean = f
     };
   } catch (error) {
     // Observable without exposing internal query parameters or sensitive data
+    console.error("[Database Cleanup Error] Failed to prune expired records:", error instanceof Error ? error.message : "Unknown error");
+    return {
+      executed: false,
+      expiredSessionsDeleted: 0,
+      staleAttemptsDeleted: 0,
+      durationMs: Date.now() - startTime,
+    };
+  }
+}
+
+/**
+ * Perform bounded asynchronous cleanup of expired sessions and stale login-attempt records.
+ * Throttled to run at most once every 30 minutes under active traffic.
+ * Compatible with both AsyncDb SQLite and PostgreSQL runtimes.
+ */
+export async function performDatabaseCleanupAsync(asyncDb?: AsyncDb, force: boolean = false): Promise<CleanupResult> {
+  const now = Date.now();
+  if (!force && now - lastCleanupTimestamp < CLEANUP_THROTTLE_INTERVAL_MS) {
+    return {
+      executed: false,
+      expiredSessionsDeleted: 0,
+      staleAttemptsDeleted: 0,
+      durationMs: 0,
+    };
+  }
+
+  const startTime = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const retentionCutoffIso = new Date(now - LOGIN_ATTEMPTS_RETENTION_MS).toISOString();
+  const db = asyncDb || getAsyncDb();
+
+  try {
+    const counts = await db.transaction(async (tx) => {
+      const sessionResult = await tx.execute(
+        `DELETE FROM sessions WHERE expires_at < ?`,
+        [nowIso]
+      );
+      const attemptsResult = await tx.execute(
+        `DELETE FROM login_attempts WHERE attempted_at < ?`,
+        [retentionCutoffIso]
+      );
+      try {
+        await tx.execute(
+          `DELETE FROM session_preemptions WHERE expires_at < ?`,
+          [nowIso]
+        );
+      } catch {
+        // Table may not exist yet
+      }
+      try {
+        await tx.execute(
+          `DELETE FROM auth_challenges WHERE expires_at < ?`,
+          [nowIso]
+        );
+      } catch {
+        // Table may not exist yet
+      }
+
+      return {
+        expiredSessionsDeleted: sessionResult.changes,
+        staleAttemptsDeleted: attemptsResult.changes,
+      };
+    });
+
+    lastCleanupTimestamp = Date.now();
+    const durationMs = Date.now() - startTime;
+
+    return {
+      executed: true,
+      expiredSessionsDeleted: counts.expiredSessionsDeleted,
+      staleAttemptsDeleted: counts.staleAttemptsDeleted,
+      durationMs,
+    };
+  } catch (error) {
     console.error("[Database Cleanup Error] Failed to prune expired records:", error instanceof Error ? error.message : "Unknown error");
     return {
       executed: false,

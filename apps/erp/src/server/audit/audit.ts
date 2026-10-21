@@ -107,10 +107,10 @@ export function getAuditLogs(options?: {
   return db.prepare(query).all(...params) as AuditLogRecord[];
 }
 
-import { getAsyncDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 
-export async function recordAuditEventAsync(input: AuditEventInput): Promise<AuditLogRecord> {
-  const db = getAsyncDb();
+export async function recordAuditEventAsync(input: AuditEventInput, asyncDb?: AsyncDb): Promise<AuditLogRecord> {
+  const db = asyncDb || getAsyncDb();
   const id = `aud_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const sanitizedMeta = sanitizeAuditMetadata(input.metadata);
@@ -144,13 +144,16 @@ export async function recordAuditEventAsync(input: AuditEventInput): Promise<Aud
   };
 }
 
-export async function getAuditLogsAsync(options?: {
-  limit?: number;
-  offset?: number;
-  action?: string;
-  actorId?: string;
-}): Promise<AuditLogRecord[]> {
-  const db = getAsyncDb();
+export async function getAuditLogsAsync(
+  options?: {
+    limit?: number;
+    offset?: number;
+    action?: string;
+    actorId?: string;
+  },
+  asyncDb?: AsyncDb
+): Promise<AuditLogRecord[]> {
+  const db = asyncDb || getAsyncDb();
   const limit = Math.min(Math.max(options?.limit || 50, 1), 200);
   const offset = Math.max(options?.offset || 0, 0);
 
@@ -169,10 +172,10 @@ export async function getAuditLogsAsync(options?: {
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const query = `
-    SELECT 
-      id, actor_id as actorId, actor_username as actorUsername, action, 
-      target_type as targetType, target_id as targetId, metadata, 
-      ip_address as ipAddress, created_at as createdAt
+    SELECT
+      id, actor_id as "actorId", actor_username as "actorUsername", action,
+      target_type as "targetType", target_id as "targetId", metadata,
+      ip_address as "ipAddress", created_at as "createdAt"
     FROM audit_logs
     ${whereClause}
     ORDER BY created_at DESC

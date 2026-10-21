@@ -1,8 +1,10 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { getDb } from "../database/db";
-import { performDatabaseCleanup } from "../database/cleanup";
+import { getAsyncDb, AsyncDb } from "../database/db";
+import { performDatabaseCleanupAsync } from "../database/cleanup";
 import { StaffUser, AuthenticatedUser } from "../../types";
+import { getEmailAdapter } from "../notifications/emailAdapter";
+import { recordAuditEventAsync } from "../audit/audit";
 
 const SESSION_TTL_DAYS = 7;
 const MAX_IP_FAILED_ATTEMPTS = 20; // Layer 1: Max failed attempts from single IP across all accounts
@@ -34,22 +36,28 @@ export interface RateLimitCheckResult {
  * 2. Identifier + IP limit (blocks targeted brute forcing of an account from a single IP)
  * 3. Distributed account abuse check (applies timing delay without locking out the legitimate account owner)
  */
-export function checkRateLimit(identifier: string, ipAddress: string): RateLimitCheckResult {
-  const db = getDb();
+export async function checkRateLimit(
+  identifier: string,
+  ipAddress: string,
+  asyncDb?: AsyncDb
+): Promise<RateLimitCheckResult> {
+  const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
   const cleanIp = ipAddress.trim().toLowerCase();
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
 
   // Layer 1: IP-based rate limit
-  const ipResult = db.prepare(`
-    SELECT COUNT(*) as failedCount, MIN(attempted_at) as oldestAttempt
-    FROM login_attempts
-    WHERE ip_address = ? AND success = 0 AND attempted_at >= ?
-  `).get(cleanIp, windowStart) as { failedCount: number; oldestAttempt: string | null };
+  const ipResult = await db.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
+    `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+     FROM login_attempts
+     WHERE ip_address = ? AND success = 0 AND attempted_at >= ?`,
+    [cleanIp, windowStart]
+  );
 
-  if (ipResult.failedCount >= MAX_IP_FAILED_ATTEMPTS) {
+  const ipFailedCount = Number(ipResult?.failedCount || 0);
+  if (ipFailedCount >= MAX_IP_FAILED_ATTEMPTS) {
     let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-    if (ipResult.oldestAttempt) {
+    if (ipResult?.oldestAttempt) {
       const elapsedMs = Date.now() - new Date(ipResult.oldestAttempt).getTime();
       remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
     }
@@ -62,15 +70,17 @@ export function checkRateLimit(identifier: string, ipAddress: string): RateLimit
   }
 
   // Layer 2: (Identifier + IP) rate limit
-  const pairResult = db.prepare(`
-    SELECT COUNT(*) as failedCount, MIN(attempted_at) as oldestAttempt
-    FROM login_attempts
-    WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?
-  `).get(cleanId, cleanIp, windowStart) as { failedCount: number; oldestAttempt: string | null };
+  const pairResult = await db.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
+    `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+     FROM login_attempts
+     WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?`,
+    [cleanId, cleanIp, windowStart]
+  );
 
-  if (pairResult.failedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
+  const pairFailedCount = Number(pairResult?.failedCount || 0);
+  if (pairFailedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
     let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-    if (pairResult.oldestAttempt) {
+    if (pairResult?.oldestAttempt) {
       const elapsedMs = Date.now() - new Date(pairResult.oldestAttempt).getTime();
       remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
     }
@@ -83,13 +93,15 @@ export function checkRateLimit(identifier: string, ipAddress: string): RateLimit
   }
 
   // Layer 3: Distributed account velocity check (avoids account lockout denial-of-service)
-  const distResult = db.prepare(`
-    SELECT COUNT(*) as totalFailures
-    FROM login_attempts
-    WHERE identifier = ? AND success = 0 AND attempted_at >= ?
-  `).get(cleanId, windowStart) as { totalFailures: number };
+  const distResult = await db.queryOne<{ totalFailures: number | string }>(
+    `SELECT COUNT(*) as "totalFailures"
+     FROM login_attempts
+     WHERE identifier = ? AND success = 0 AND attempted_at >= ?`,
+    [cleanId, windowStart]
+  );
 
-  const shouldSlowDown = distResult.totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
+  const totalFailures = Number(distResult?.totalFailures || 0);
+  const shouldSlowDown = totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
 
   return {
     isLimited: false,
@@ -101,7 +113,7 @@ export function checkRateLimit(identifier: string, ipAddress: string): RateLimit
 /**
  * Atomic rate-limiting evaluation and attempt reservation.
  * Evaluates Layer 1 (IP), Layer 2 (Identifier + IP), and Layer 3 (Distributed velocity)
- * within an atomic SQLite transaction.
+ * within an atomic database transaction.
  * 
  * If the request is permitted, an initial failed attempt record (success = 0) is atomically
  * reserved in the database. If authentication subsequently succeeds, recordLoginSuccess()
@@ -110,160 +122,166 @@ export function checkRateLimit(identifier: string, ipAddress: string): RateLimit
  * This guarantees that concurrent burst requests cannot bypass rate limits during
  * asynchronous password verification (bcrypt execution).
  */
-export function checkRateLimitAndRecord(identifier: string, ipAddress: string): RateLimitCheckResult {
-  const db = getDb();
+export async function checkRateLimitAndRecord(
+  identifier: string,
+  ipAddress: string,
+  asyncDb?: AsyncDb
+): Promise<RateLimitCheckResult> {
+  const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
   const cleanIp = ipAddress.trim().toLowerCase();
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
   const now = new Date().toISOString();
 
-  let checkResult: RateLimitCheckResult = {
-    isLimited: false,
-    remainingMinutes: 0,
-    shouldSlowDown: false,
-  };
-
-  const tx = db.transaction(() => {
+  return db.transaction(async (tx) => {
     // Layer 1: IP-based rate limit
-    const ipResult = db.prepare(`
-      SELECT COUNT(*) as failedCount, MIN(attempted_at) as oldestAttempt
-      FROM login_attempts
-      WHERE ip_address = ? AND success = 0 AND attempted_at >= ?
-    `).get(cleanIp, windowStart) as { failedCount: number; oldestAttempt: string | null };
+    const ipResult = await tx.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
+      `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+       FROM login_attempts
+       WHERE ip_address = ? AND success = 0 AND attempted_at >= ?`,
+      [cleanIp, windowStart]
+    );
 
-    if (ipResult.failedCount >= MAX_IP_FAILED_ATTEMPTS) {
+    const ipFailedCount = Number(ipResult?.failedCount || 0);
+    if (ipFailedCount >= MAX_IP_FAILED_ATTEMPTS) {
       let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-      if (ipResult.oldestAttempt) {
+      if (ipResult?.oldestAttempt) {
         const elapsedMs = Date.now() - new Date(ipResult.oldestAttempt).getTime();
         remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
       }
-      checkResult = {
+      return {
         isLimited: true,
         remainingMinutes,
         shouldSlowDown: false,
         reason: "Too many failed login attempts from this network. Access temporarily restricted.",
       };
-      return;
     }
 
     // Layer 2: (Identifier + IP) rate limit
-    const pairResult = db.prepare(`
-      SELECT COUNT(*) as failedCount, MIN(attempted_at) as oldestAttempt
-      FROM login_attempts
-      WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?
-    `).get(cleanId, cleanIp, windowStart) as { failedCount: number; oldestAttempt: string | null };
+    const pairResult = await tx.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
+      `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+       FROM login_attempts
+       WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?`,
+      [cleanId, cleanIp, windowStart]
+    );
 
-    if (pairResult.failedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
+    const pairFailedCount = Number(pairResult?.failedCount || 0);
+    if (pairFailedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
       let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-      if (pairResult.oldestAttempt) {
+      if (pairResult?.oldestAttempt) {
         const elapsedMs = Date.now() - new Date(pairResult.oldestAttempt).getTime();
         remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
       }
-      checkResult = {
+      return {
         isLimited: true,
         remainingMinutes,
         shouldSlowDown: false,
         reason: "Too many failed attempts for this account from this network. Please try again later.",
       };
-      return;
     }
 
     // Layer 3: Distributed account velocity check (avoids account lockout denial-of-service)
-    const distResult = db.prepare(`
-      SELECT COUNT(*) as totalFailures
-      FROM login_attempts
-      WHERE identifier = ? AND success = 0 AND attempted_at >= ?
-    `).get(cleanId, windowStart) as { totalFailures: number };
+    const distResult = await tx.queryOne<{ totalFailures: number | string }>(
+      `SELECT COUNT(*) as "totalFailures"
+       FROM login_attempts
+       WHERE identifier = ? AND success = 0 AND attempted_at >= ?`,
+      [cleanId, windowStart]
+    );
 
-    const shouldSlowDown = distResult.totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
+    const totalFailures = Number(distResult?.totalFailures || 0);
+    const shouldSlowDown = totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
 
     // Atomically reserve attempt record with success = 0
     const id = `att_${crypto.randomUUID()}`;
-    db.prepare(`
-      INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
-      VALUES (?, ?, ?, ?, 0)
-    `).run(id, cleanId, cleanIp, now);
+    await tx.execute(
+      `INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
+       VALUES (?, ?, ?, ?, 0)`,
+      [id, cleanId, cleanIp, now]
+    );
 
-    checkResult = {
+    return {
       isLimited: false,
       remainingMinutes: 0,
       shouldSlowDown,
     };
   });
-
-  tx();
-  return checkResult;
 }
 
-export function recordLoginSuccess(identifier: string, ipAddress: string): void {
-  const db = getDb();
+export async function recordLoginSuccess(
+  identifier: string,
+  ipAddress: string,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
   const cleanIp = ipAddress.trim().toLowerCase();
   const now = new Date().toISOString();
   const id = `att_${crypto.randomUUID()}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
-      DELETE FROM login_attempts
-      WHERE identifier = ? AND ip_address = ? AND success = 0
-    `).run(cleanId, cleanIp);
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      `DELETE FROM login_attempts
+       WHERE identifier = ? AND ip_address = ? AND success = 0`,
+      [cleanId, cleanIp]
+    );
 
-    db.prepare(`
-      INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
-      VALUES (?, ?, ?, ?, 1)
-    `).run(id, cleanId, cleanIp, now);
+    await tx.execute(
+      `INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
+       VALUES (?, ?, ?, ?, 1)`,
+      [id, cleanId, cleanIp, now]
+    );
   });
-
-  tx();
 }
 
-export function recordLoginAttempt(identifier: string, ipAddress: string, success: boolean): void {
-  const db = getDb();
+export async function recordLoginAttempt(
+  identifier: string,
+  ipAddress: string,
+  success: boolean,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const db = asyncDb || getAsyncDb();
   const id = `att_${crypto.randomUUID()}`;
   const cleanId = identifier.trim().toLowerCase();
   const cleanIp = ipAddress.trim().toLowerCase();
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
-      INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, cleanId, cleanIp, now, success ? 1 : 0);
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      `INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
+       VALUES (?, ?, ?, ?, ?)`,
+      [id, cleanId, cleanIp, now, success ? 1 : 0]
+    );
 
     // If successful, reset failed attempt counters for this (identifier, ip) client
     if (success) {
-      db.prepare(`
-        DELETE FROM login_attempts
-        WHERE identifier = ? AND ip_address = ? AND success = 0
-      `).run(cleanId, cleanIp);
+      await tx.execute(
+        `DELETE FROM login_attempts
+         WHERE identifier = ? AND ip_address = ? AND success = 0`,
+        [cleanId, cleanIp]
+      );
     }
   });
-
-  tx();
 }
 
-export function findStaffByIdentifier(identifier: string): (StaffUser & { password_hash: string }) | null {
-  const db = getDb();
+export async function findStaffByIdentifier(
+  identifier: string,
+  asyncDb?: AsyncDb
+): Promise<(StaffUser & { password_hash: string }) | null> {
+  const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
 
-  const row = db.prepare(`
-    SELECT 
-      id, username, email, full_name as fullName, password_hash, 
-      role, is_active as isActive, created_at as createdAt, 
-      updated_at as updatedAt, last_login_at as lastLoginAt
-    FROM staff_users
-    WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1
-  `).get(cleanId, cleanId) as (StaffUser & { password_hash: string }) | undefined;
+  const row = await db.queryOne<StaffUser & { password_hash: string }>(
+    `SELECT
+       id, username, email, full_name as "fullName", password_hash,
+       role, is_active as "isActive", created_at as "createdAt",
+       updated_at as "updatedAt", last_login_at as "lastLoginAt"
+     FROM staff_users
+     WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1`,
+    [cleanId, cleanId]
+  );
 
   return row || null;
 }
-
-/**
- * Creates a cryptographically random session token for the client cookie,
- * while storing only a one-way SHA-256 digest at rest in the database.
- */
-import { getEmailAdapter } from "../notifications/emailAdapter";
-import { recordAuditEvent } from "../audit/audit";
 
 export function maskEmail(email: string): string {
   const [local, domain] = email.split("@");
@@ -279,11 +297,12 @@ export function maskEmail(email: string): string {
  * while storing only a one-way SHA-256 digest at rest in the database.
  * Enforces Single Active Session Per Account across web and mobile.
  */
-export function createSession(
+export async function createSession(
   staffId: string,
-  metadata?: { ip?: string; userAgent?: string; preempt?: boolean }
-): { sessionToken: string; expiresAt: Date } {
-  const db = getDb();
+  metadata?: { ip?: string; userAgent?: string; preempt?: boolean },
+  asyncDb?: AsyncDb
+): Promise<{ sessionToken: string; expiresAt: Date }> {
+  const db = asyncDb || getAsyncDb();
   const id = `sess_${crypto.randomUUID()}`;
   
   // 32 cryptographically secure random bytes = 256 bits of entropy
@@ -296,55 +315,54 @@ export function createSession(
   // Atomically preempt existing sessions when requested (single active session enforcement)
   const shouldPreempt = metadata?.preempt === true;
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     if (shouldPreempt) {
       try {
-        const existing = db
-          .prepare("SELECT token_hash, expires_at FROM sessions WHERE staff_id = ?")
-          .all(staffId) as Array<{ token_hash: string; expires_at: string }>;
-
-        const insertPreempt = db.prepare(`
-          INSERT INTO session_preemptions (id, token_hash, staff_id, preempted_at, expires_at, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `);
+        const existing = await tx.query<{ token_hash: string; expires_at: string }>(
+          "SELECT token_hash, expires_at FROM sessions WHERE staff_id = ?",
+          [staffId]
+        );
 
         for (const s of existing) {
-          insertPreempt.run(
-            `prm_${crypto.randomUUID()}`,
-            s.token_hash,
-            staffId,
-            now,
-            s.expires_at || expiresAt.toISOString(),
-            now
+          await tx.execute(
+            `INSERT INTO session_preemptions (id, token_hash, staff_id, preempted_at, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              `prm_${crypto.randomUUID()}`,
+              s.token_hash,
+              staffId,
+              now,
+              s.expires_at || expiresAt.toISOString(),
+              now,
+            ]
           );
         }
       } catch {
         // Fallback if session_preemptions is not yet migrated in test runner
       }
 
-      db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
+      await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
     }
 
-    db.prepare(`
-      INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      tokenHash,
-      staffId,
-      expiresAt.toISOString(),
-      now,
-      metadata?.ip || null,
-      metadata?.userAgent || null
+    await tx.execute(
+      `INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        tokenHash,
+        staffId,
+        expiresAt.toISOString(),
+        now,
+        metadata?.ip || null,
+        metadata?.userAgent || null,
+      ]
     );
 
-    db.prepare("UPDATE staff_users SET last_login_at = ? WHERE id = ?").run(now, staffId);
+    await tx.execute("UPDATE staff_users SET last_login_at = ? WHERE id = ?", [now, staffId]);
   });
 
-  tx();
-
-  // Throttled background cleanup for expired records
-  performDatabaseCleanup(db);
+  // Throttled background cleanup for expired records (non-blocking)
+  performDatabaseCleanupAsync(db).catch(() => {});
 
   return { sessionToken: rawToken, expiresAt };
 }
@@ -353,38 +371,46 @@ export function createSession(
  * Validates a session token presented by the client cookie by hashing it
  * and matching against the SHA-256 token digest at rest.
  */
-export function validateSession(sessionToken: string): AuthenticatedUser | null {
-  const res = validateSessionDetailed(sessionToken);
+export async function validateSession(
+  sessionToken: string,
+  asyncDb?: AsyncDb
+): Promise<AuthenticatedUser | null> {
+  const res = await validateSessionDetailed(sessionToken, asyncDb);
   return res.user;
 }
 
-export function validateSessionDetailed(sessionToken: string): {
+export async function validateSessionDetailed(
+  sessionToken: string,
+  asyncDb?: AsyncDb
+): Promise<{
   user: AuthenticatedUser | null;
   isPreempted?: boolean;
-} {
+}> {
   if (!sessionToken || sessionToken.length < 32) {
     return { user: null };
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
   const now = new Date().toISOString();
 
-  const row = db.prepare(`
-    SELECT 
-      u.id, u.username, u.email, u.full_name as fullName, u.role, u.is_active as isActive,
-      s.expires_at as expiresAt
-    FROM sessions s
-    JOIN staff_users u ON s.staff_id = u.id
-    WHERE s.token_hash = ? AND s.expires_at > ? AND u.is_active = 1
-  `).get(tokenHash, now) as (AuthenticatedUser & { isActive: number; expiresAt: string }) | undefined;
+  const row = await db.queryOne<AuthenticatedUser & { isActive: number; expiresAt: string }>(
+    `SELECT
+       u.id, u.username, u.email, u.full_name as "fullName", u.role, u.is_active as "isActive",
+       s.expires_at as "expiresAt"
+     FROM sessions s
+     JOIN staff_users u ON s.staff_id = u.id
+     WHERE s.token_hash = ? AND s.expires_at > ? AND u.is_active = 1`,
+    [tokenHash, now]
+  );
 
   if (!row) {
     try {
-      const preempted = db.prepare(`
-        SELECT staff_id FROM session_preemptions
-        WHERE token_hash = ? AND expires_at > ?
-      `).get(tokenHash, now) as { staff_id: string } | undefined;
+      const preempted = await db.queryOne<{ staff_id: string }>(
+        `SELECT staff_id FROM session_preemptions
+         WHERE token_hash = ? AND expires_at > ?`,
+        [tokenHash, now]
+      );
 
       if (preempted) {
         return { user: null, isPreempted: true };
@@ -395,8 +421,8 @@ export function validateSessionDetailed(sessionToken: string): {
     return { user: null };
   }
 
-  // Periodic throttled cleanup of expired records
-  performDatabaseCleanup(db);
+  // Periodic throttled cleanup of expired records (non-blocking)
+  performDatabaseCleanupAsync(db).catch(() => {});
 
   return {
     user: {
@@ -412,26 +438,26 @@ export function validateSessionDetailed(sessionToken: string): {
 /**
  * Destroys an active session by deleting its corresponding SHA-256 hash.
  */
-export function destroySession(sessionToken: string): void {
+export async function destroySession(sessionToken: string, asyncDb?: AsyncDb): Promise<void> {
   if (!sessionToken) return;
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
   try {
-    db.prepare("DELETE FROM session_preemptions WHERE token_hash = ?").run(tokenHash);
+    await db.execute("DELETE FROM session_preemptions WHERE token_hash = ?", [tokenHash]);
   } catch {}
-  db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+  await db.execute("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]);
 }
 
 /**
  * Revokes all active sessions for a given staff user (e.g., upon deactivation or password reset).
  */
-export function revokeAllUserSessions(staffId: string): void {
+export async function revokeAllUserSessions(staffId: string, asyncDb?: AsyncDb): Promise<void> {
   if (!staffId) return;
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   try {
-    db.prepare("DELETE FROM session_preemptions WHERE staff_id = ?").run(staffId);
+    await db.execute("DELETE FROM session_preemptions WHERE staff_id = ?", [staffId]);
   } catch {}
-  db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(staffId);
+  await db.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
 }
 
 // -----------------------------------------------------------------------------
@@ -439,17 +465,19 @@ export function revokeAllUserSessions(staffId: string): void {
 // -----------------------------------------------------------------------------
 export async function createOtpChallenge(
   staffId: string,
-  email: string
+  email: string,
+  asyncDb?: AsyncDb
 ): Promise<{ challengeId: string; maskedEmail: string }> {
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const now = new Date();
 
   // Resend throttling: check if a challenge was created in the last 60 seconds
-  const recent = db.prepare(`
-    SELECT created_at FROM auth_challenges
-    WHERE staff_id = ? AND expires_at > ?
-    ORDER BY created_at DESC LIMIT 1
-  `).get(staffId, now.toISOString()) as { created_at: string } | undefined;
+  const recent = await db.queryOne<{ created_at: string }>(
+    `SELECT created_at FROM auth_challenges
+     WHERE staff_id = ? AND expires_at > ?
+     ORDER BY created_at DESC LIMIT 1`,
+    [staffId, now.toISOString()]
+  );
 
   if (recent) {
     const elapsedSec = (now.getTime() - new Date(recent.created_at).getTime()) / 1000;
@@ -460,7 +488,7 @@ export async function createOtpChallenge(
   }
 
   // Clear prior challenges for this staff member
-  db.prepare("DELETE FROM auth_challenges WHERE staff_id = ?").run(staffId);
+  await db.execute("DELETE FROM auth_challenges WHERE staff_id = ?", [staffId]);
 
   // Generate cryptographically secure 6-digit numeric OTP (100000 - 999999)
   const rawOtp = crypto.randomInt(100000, 1000000).toString();
@@ -469,10 +497,11 @@ export async function createOtpChallenge(
   const challengeId = `chl_${crypto.randomUUID()}`;
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
 
-  db.prepare(`
-    INSERT INTO auth_challenges (id, staff_id, otp_hash, attempts, expires_at, created_at)
-    VALUES (?, ?, ?, 0, ?, ?)
-  `).run(challengeId, staffId, otpHash, expiresAt, now.toISOString());
+  await db.execute(
+    `INSERT INTO auth_challenges (id, staff_id, otp_hash, attempts, expires_at, created_at)
+     VALUES (?, ?, ?, 0, ?, ?)`,
+    [challengeId, staffId, otpHash, expiresAt, now.toISOString()]
+  );
 
   // Dispatch OTP via Email Adapter
   await getEmailAdapter().sendOtp(email, rawOtp);
@@ -486,35 +515,37 @@ export async function createOtpChallenge(
 export async function verifyOtpChallenge(
   challengeId: string,
   otp: string,
-  metadata?: { ip?: string; userAgent?: string }
+  metadata?: { ip?: string; userAgent?: string },
+  asyncDb?: AsyncDb
 ): Promise<{ user: AuthenticatedUser; sessionToken: string; expiresAt: Date }> {
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const cleanOtp = (otp || "").trim();
   const now = new Date().toISOString();
 
-  const challenge = db.prepare(`
-    SELECT id, staff_id, otp_hash, attempts, expires_at
-    FROM auth_challenges
-    WHERE id = ?
-  `).get(challengeId) as {
+  const challenge = await db.queryOne<{
     id: string;
     staff_id: string;
     otp_hash: string;
     attempts: number;
     expires_at: string;
-  } | undefined;
+  }>(
+    `SELECT id, staff_id, otp_hash, attempts, expires_at
+     FROM auth_challenges
+     WHERE id = ?`,
+    [challengeId]
+  );
 
   if (!challenge) {
     throw new Error("Invalid or expired verification challenge. Please log in again.");
   }
 
   if (challenge.expires_at <= now) {
-    db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+    await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
     throw new Error("Verification code has expired. Please log in again.");
   }
 
   if (challenge.attempts >= 3) {
-    db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+    await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
     throw new Error("Too many failed attempts. Verification code has been invalidated. Please log in again.");
   }
 
@@ -523,29 +554,30 @@ export async function verifyOtpChallenge(
   if (presentedHash !== challenge.otp_hash) {
     const newAttempts = challenge.attempts + 1;
     if (newAttempts >= 3) {
-      db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+      await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
       throw new Error("Too many failed attempts. Verification code has been invalidated. Please log in again.");
     }
-    db.prepare("UPDATE auth_challenges SET attempts = ? WHERE id = ?").run(newAttempts, challengeId);
+    await db.execute("UPDATE auth_challenges SET attempts = ? WHERE id = ?", [newAttempts, challengeId]);
     throw new Error(`Invalid verification code. ${3 - newAttempts} attempts remaining.`);
   }
 
   // Verification succeeded: delete challenge (single-use)
-  db.prepare("DELETE FROM auth_challenges WHERE id = ?").run(challengeId);
+  await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
 
   // Fetch staff user details
-  const staff = db.prepare(`
-    SELECT id, username, email, full_name as fullName, role, is_active as isActive
-    FROM staff_users
-    WHERE id = ? AND is_active = 1
-  `).get(challenge.staff_id) as AuthenticatedUser & { isActive: number } | undefined;
+  const staff = await db.queryOne<AuthenticatedUser & { isActive: number }>(
+    `SELECT id, username, email, full_name as "fullName", role, is_active as "isActive"
+     FROM staff_users
+     WHERE id = ? AND is_active = 1`,
+    [challenge.staff_id]
+  );
 
   if (!staff) {
     throw new Error("Account is inactive or no longer exists.");
   }
 
   // Create session with Single Active Session Preemption
-  const { sessionToken, expiresAt } = createSession(staff.id, { ...metadata, preempt: true });
+  const { sessionToken, expiresAt } = await createSession(staff.id, { ...metadata, preempt: true }, db);
 
   return {
     user: {
@@ -565,9 +597,10 @@ export async function verifyOtpChallenge(
 // -----------------------------------------------------------------------------
 export async function initiatePasswordReset(
   identifier: string,
-  origin?: string
+  origin?: string,
+  asyncDb?: AsyncDb
 ): Promise<{ success: true; message: string }> {
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const cleanId = (identifier || "").trim().toLowerCase();
 
   const genericResponse = {
@@ -579,11 +612,12 @@ export async function initiatePasswordReset(
     return genericResponse;
   }
 
-  const staff = db.prepare(`
-    SELECT id, email, is_active as isActive
-    FROM staff_users
-    WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1
-  `).get(cleanId, cleanId) as { id: string; email: string; isActive: number } | undefined;
+  const staff = await db.queryOne<{ id: string; email: string; isActive: number }>(
+    `SELECT id, email, is_active as "isActive"
+     FROM staff_users
+     WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1`,
+    [cleanId, cleanId]
+  );
 
   if (!staff) {
     // Timing-safe: return generic response without leaking existence
@@ -591,7 +625,7 @@ export async function initiatePasswordReset(
   }
 
   // Invalidate any previous unused password resets for this staff member
-  db.prepare("DELETE FROM password_resets WHERE staff_id = ?").run(staff.id);
+  await db.execute("DELETE FROM password_resets WHERE staff_id = ?", [staff.id]);
 
   // Generate cryptographically secure 256-bit token (32 random bytes)
   const rawToken = crypto.randomBytes(32).toString("hex");
@@ -600,10 +634,11 @@ export async function initiatePasswordReset(
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
 
-  db.prepare(`
-    INSERT INTO password_resets (id, staff_id, token_hash, expires_at, used_at, created_at)
-    VALUES (?, ?, ?, ?, NULL, ?)
-  `).run(resetId, staff.id, tokenHash, expiresAt, now.toISOString());
+  await db.execute(
+    `INSERT INTO password_resets (id, staff_id, token_hash, expires_at, used_at, created_at)
+     VALUES (?, ?, ?, ?, NULL, ?)`,
+    [resetId, staff.id, tokenHash, expiresAt, now.toISOString()]
+  );
 
   const baseUrl = origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
   const resetUrl = `${baseUrl}/login?token=${rawToken}`;
@@ -616,7 +651,8 @@ export async function initiatePasswordReset(
 export async function completePasswordReset(
   token: string,
   newPassword: string,
-  clientIp?: string
+  clientIp?: string,
+  asyncDb?: AsyncDb
 ): Promise<{ success: boolean; error?: string }> {
   if (!token || token.length < 32) {
     return { success: false, error: "Invalid or expired password reset token." };
@@ -626,20 +662,21 @@ export async function completePasswordReset(
     return { success: false, error: "New password must be at least 12 characters long." };
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(token.trim()).digest("hex");
   const now = new Date().toISOString();
 
-  const resetRecord = db.prepare(`
-    SELECT id, staff_id, expires_at, used_at
-    FROM password_resets
-    WHERE token_hash = ? AND used_at IS NULL
-  `).get(tokenHash) as {
+  const resetRecord = await db.queryOne<{
     id: string;
     staff_id: string;
     expires_at: string;
     used_at: string | null;
-  } | undefined;
+  }>(
+    `SELECT id, staff_id, expires_at, used_at
+     FROM password_resets
+     WHERE token_hash = ? AND used_at IS NULL`,
+    [tokenHash]
+  );
 
   if (!resetRecord || resetRecord.expires_at <= now) {
     return { success: false, error: "Invalid or expired password reset token." };
@@ -647,38 +684,40 @@ export async function completePasswordReset(
 
   const passwordHash = await hashPassword(newPassword);
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // 1. Update password
-    db.prepare(`
-      UPDATE staff_users
-      SET password_hash = ?, updated_at = ?
-      WHERE id = ?
-    `).run(passwordHash, now, resetRecord.staff_id);
+    await tx.execute(
+      `UPDATE staff_users
+       SET password_hash = ?, updated_at = ?
+       WHERE id = ?`,
+      [passwordHash, now, resetRecord.staff_id]
+    );
 
     // 2. Mark reset token as used (single-use)
-    db.prepare(`
-      UPDATE password_resets
-      SET used_at = ?
-      WHERE id = ?
-    `).run(now, resetRecord.id);
+    await tx.execute(
+      `UPDATE password_resets
+       SET used_at = ?
+       WHERE id = ?`,
+      [now, resetRecord.id]
+    );
 
     // 3. Revoke all active sessions for this account across all devices
-    revokeAllUserSessions(resetRecord.staff_id);
+    await revokeAllUserSessions(resetRecord.staff_id, tx);
 
     // 4. Record audit event
-    recordAuditEvent({
-      actorId: resetRecord.staff_id,
-      actorUsername: "system_password_reset",
-      action: "staff.password_reset",
-      targetType: "staff",
-      targetId: resetRecord.staff_id,
-      metadata: { reason: "Self-service recovery via email token" },
-      ipAddress: clientIp,
-    });
+    await recordAuditEventAsync(
+      {
+        actorId: resetRecord.staff_id,
+        actorUsername: "system_password_reset",
+        action: "staff.password_reset",
+        targetType: "staff",
+        targetId: resetRecord.staff_id,
+        metadata: { reason: "Self-service recovery via email token" },
+        ipAddress: clientIp,
+      },
+      tx
+    );
   });
-
-  tx();
 
   return { success: true };
 }
-

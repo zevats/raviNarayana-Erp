@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
     const status = url.searchParams.get("status") as any;
     const search = url.searchParams.get("search") || undefined;
 
-    const residents = listResidents(user, { status, search });
+    const residents = await listResidents(user, { status, search });
     return NextResponse.json({ success: true, residents });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
@@ -30,13 +30,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
-    const resident = registerResident(
+    const resident = await registerResident(
       user,
       {
         fullName: body.fullName,

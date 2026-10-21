@@ -1,9 +1,9 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { isValidRole } from "../authorization/permissions";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import { AuthenticatedUser, StaffRole, StaffUser } from "@/types";
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,30}$/;
@@ -25,18 +25,27 @@ export interface UpdateStaffProfileInput {
 /**
  * List all staff users. Requires staff.read permission.
  */
-export function listStaffUsers(actor: AuthenticatedUser): StaffUser[] {
+export async function listStaffUsers(
+  actor: AuthenticatedUser,
+  asyncDb?: AsyncDb
+): Promise<StaffUser[]> {
   requirePermission(actor, "staff.read");
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
-  const rows = db.prepare(`
-    SELECT 
-      id, username, email, full_name as fullName, role, 
-      is_active as isActive, created_at as createdAt, 
-      updated_at as updatedAt, last_login_at as lastLoginAt
+  const rows = await db.query<any>(`
+    SELECT
+      id,
+      username,
+      email,
+      full_name as "fullName",
+      role,
+      is_active as "isActive",
+      created_at as "createdAt",
+      updated_at as "updatedAt",
+      last_login_at as "lastLoginAt"
     FROM staff_users
     ORDER BY created_at ASC
-  `).all() as any[];
+  `);
 
   return rows.map((r) => ({
     ...r,
@@ -48,20 +57,30 @@ export function listStaffUsers(actor: AuthenticatedUser): StaffUser[] {
  * Retrieve a single staff user by ID.
  * Requires staff.read permission or self-lookup.
  */
-export function getStaffUserById(actor: AuthenticatedUser, targetId: string): StaffUser | null {
+export async function getStaffUserById(
+  actor: AuthenticatedUser,
+  targetId: string,
+  asyncDb?: AsyncDb
+): Promise<StaffUser | null> {
   if (actor.id !== targetId) {
     requirePermission(actor, "staff.read");
   }
 
-  const db = getDb();
-  const row = db.prepare(`
-    SELECT 
-      id, username, email, full_name as fullName, role, 
-      is_active as isActive, created_at as createdAt, 
-      updated_at as updatedAt, last_login_at as lastLoginAt
+  const db = asyncDb ?? getAsyncDb();
+  const row = await db.queryOne<any>(`
+    SELECT
+      id,
+      username,
+      email,
+      full_name as "fullName",
+      role,
+      is_active as "isActive",
+      created_at as "createdAt",
+      updated_at as "updatedAt",
+      last_login_at as "lastLoginAt"
     FROM staff_users
     WHERE id = ?
-  `).get(targetId) as any;
+  `, [targetId]);
 
   if (!row) return null;
 
@@ -78,8 +97,12 @@ export function getStaffUserById(actor: AuthenticatedUser, targetId: string): St
 export async function createStaffUser(
   actor: AuthenticatedUser,
   input: CreateStaffInput,
-  clientIp?: string
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
 ): Promise<StaffUser> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "staff.create", { ip: clientIp, action: "staff.create" });
   requirePermission(actor, "staff.assign_role", { ip: clientIp, action: "staff.assign_role" });
 
@@ -106,13 +129,11 @@ export async function createStaffUser(
     throw new Error(`Invalid role '${role}'.`);
   }
 
-  const db = getDb();
-
   // Check unique constraints
-  const existing = db.prepare(`
+  const existing = await db.queryOne<{ username: string; email: string }>(`
     SELECT username, email FROM staff_users 
     WHERE LOWER(username) = ? OR LOWER(email) = ?
-  `).get(cleanUsername, cleanEmail) as { username: string; email: string } | undefined;
+  `, [cleanUsername, cleanEmail]);
 
   if (existing) {
     if (existing.username.toLowerCase() === cleanUsername) {
@@ -128,13 +149,13 @@ export async function createStaffUser(
   const newId = `usr_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(newId, cleanUsername, cleanEmail, cleanFullName, passwordHash, role, now, now);
+    `, [newId, cleanUsername, cleanEmail, cleanFullName, passwordHash, role, now, now]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "staff.created",
@@ -147,10 +168,8 @@ export async function createStaffUser(
         assignedRole: role,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 
   return {
     id: newId,
@@ -170,22 +189,25 @@ export async function createStaffUser(
  * Requires staff.assign_role permission.
  * Enforces the Sole Super-Admin Protection rule.
  */
-export function updateStaffRole(
+export async function updateStaffRole(
   actor: AuthenticatedUser,
   targetUserId: string,
   newRole: StaffRole,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "staff.assign_role", { ip: clientIp, targetId: targetUserId, action: "staff.assign_role" });
 
   if (!isValidRole(newRole)) {
     throw new Error(`Invalid role '${newRole}'.`);
   }
 
-  const db = getDb();
-  const target = db.prepare(`
-    SELECT id, username, role, is_active as isActive FROM staff_users WHERE id = ?
-  `).get(targetUserId) as { id: string; username: string; role: StaffRole; isActive: number } | undefined;
+  const target = await db.queryOne<{ id: string; username: string; role: StaffRole; isActive: number | boolean }>(`
+    SELECT id, username, role, is_active as "isActive" FROM staff_users WHERE id = ?
+  `, [targetUserId]);
 
   if (!target) {
     throw new Error(`Staff user '${targetUserId}' not found.`);
@@ -197,23 +219,23 @@ export function updateStaffRole(
 
   // Sole Super-Admin Protection: cannot demote the last active super-administrator
   if (target.role === "SUPER_ADMIN" && newRole !== "SUPER_ADMIN") {
-    const adminCount = db.prepare(`
+    const adminCount = await db.queryOne<{ count: number | string }>(`
       SELECT COUNT(*) as count FROM staff_users WHERE role = 'SUPER_ADMIN' AND is_active = 1
-    `).get() as { count: number };
+    `);
 
-    if (adminCount.count <= 1) {
+    if (Number(adminCount?.count || 0) <= 1) {
       throw new Error("Cannot demote the sole remaining active Super Administrator.");
     }
   }
 
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE staff_users SET role = ?, updated_at = ? WHERE id = ?
-    `).run(newRole, now, targetUserId);
+    `, [newRole, now, targetUserId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "staff.role_assigned",
@@ -224,10 +246,8 @@ export function updateStaffRole(
         newRole,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
 
 /**
@@ -236,18 +256,21 @@ export function updateStaffRole(
  * Enforces the Sole Super-Admin Protection rule.
  * Deactivation immediately invalidates all active sessions for the user.
  */
-export function setStaffActiveStatus(
+export async function setStaffActiveStatus(
   actor: AuthenticatedUser,
   targetUserId: string,
   isActive: boolean,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "staff.deactivate", { ip: clientIp, targetId: targetUserId, action: "staff.deactivate" });
 
-  const db = getDb();
-  const target = db.prepare(`
-    SELECT id, username, role, is_active as isActive FROM staff_users WHERE id = ?
-  `).get(targetUserId) as { id: string; username: string; role: StaffRole; isActive: number } | undefined;
+  const target = await db.queryOne<{ id: string; username: string; role: StaffRole; isActive: number | boolean }>(`
+    SELECT id, username, role, is_active as "isActive" FROM staff_users WHERE id = ?
+  `, [targetUserId]);
 
   if (!target) {
     throw new Error(`Staff user '${targetUserId}' not found.`);
@@ -260,28 +283,28 @@ export function setStaffActiveStatus(
 
   // Sole Super-Admin Protection: cannot deactivate the last active super-administrator
   if (target.role === "SUPER_ADMIN" && !isActive) {
-    const adminCount = db.prepare(`
+    const adminCount = await db.queryOne<{ count: number | string }>(`
       SELECT COUNT(*) as count FROM staff_users WHERE role = 'SUPER_ADMIN' AND is_active = 1
-    `).get() as { count: number };
+    `);
 
-    if (adminCount.count <= 1) {
+    if (Number(adminCount?.count || 0) <= 1) {
       throw new Error("Cannot deactivate the sole remaining active Super Administrator.");
     }
   }
 
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE staff_users SET is_active = ?, updated_at = ? WHERE id = ?
-    `).run(isActive ? 1 : 0, now, targetUserId);
+    `, [isActive ? 1 : 0, now, targetUserId]);
 
     // If deactivating, immediately revoke and invalidate all active sessions
     if (!isActive) {
-      db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(targetUserId);
+      await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [targetUserId]);
     }
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: isActive ? "staff.activated" : "staff.deactivated",
@@ -292,10 +315,8 @@ export function setStaffActiveStatus(
         newStatus: isActive,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
 
 /**
@@ -307,8 +328,12 @@ export async function resetStaffPassword(
   actor: AuthenticatedUser,
   targetUserId: string,
   newPassword: string,
-  clientIp?: string
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
 ): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "staff.update", { ip: clientIp, targetId: targetUserId, action: "staff.password_reset" });
 
   if (!newPassword || newPassword.length < 12) {
@@ -319,8 +344,7 @@ export async function resetStaffPassword(
     throw new Error("Demonstration password cannot be used in production.");
   }
 
-  const db = getDb();
-  const target = db.prepare("SELECT id, username FROM staff_users WHERE id = ?").get(targetUserId) as { id: string; username: string } | undefined;
+  const target = await db.queryOne<{ id: string; username: string }>("SELECT id, username FROM staff_users WHERE id = ?", [targetUserId]);
   if (!target) {
     throw new Error(`Staff user '${targetUserId}' not found.`);
   }
@@ -328,15 +352,15 @@ export async function resetStaffPassword(
   const passwordHash = await bcrypt.hash(newPassword, 12);
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE staff_users SET password_hash = ?, updated_at = ? WHERE id = ?
-    `).run(passwordHash, now, targetUserId);
+    `, [passwordHash, now, targetUserId]);
 
     // Invalidate all active sessions for that staff member upon password reset
-    db.prepare("DELETE FROM sessions WHERE staff_id = ?").run(targetUserId);
+    await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [targetUserId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "staff.password_reset",
@@ -346,28 +370,29 @@ export async function resetStaffPassword(
         resetBy: actor.username,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
 
 /**
  * Updates staff member profile fields (fullName, email).
  * Requires staff.update permission or self-update.
  */
-export function updateStaffProfile(
+export async function updateStaffProfile(
   actor: AuthenticatedUser,
   targetUserId: string,
   input: UpdateStaffProfileInput,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   if (actor.id !== targetUserId) {
     requirePermission(actor, "staff.update", { ip: clientIp, targetId: targetUserId, action: "staff.update" });
   }
 
-  const db = getDb();
-  const target = db.prepare("SELECT id, username, email, full_name as fullName FROM staff_users WHERE id = ?").get(targetUserId) as any;
+  const target = await db.queryOne<any>("SELECT id, username, email, full_name as \"fullName\" FROM staff_users WHERE id = ?", [targetUserId]);
   if (!target) {
     throw new Error(`Staff user '${targetUserId}' not found.`);
   }
@@ -392,7 +417,7 @@ export function updateStaffProfile(
     if (!EMAIL_REGEX.test(cleanEmail)) {
       throw new Error("A valid email address is required.");
     }
-    const existing = db.prepare("SELECT id FROM staff_users WHERE LOWER(email) = ? AND id != ?").get(cleanEmail, targetUserId);
+    const existing = await db.queryOne<{ id: string }>("SELECT id FROM staff_users WHERE LOWER(email) = ? AND id != ?", [cleanEmail, targetUserId]);
     if (existing) {
       throw new Error(`Email address '${cleanEmail}' is already registered.`);
     }
@@ -410,10 +435,10 @@ export function updateStaffProfile(
   updates.push("updated_at = ?");
   params.push(now, targetUserId);
 
-  const tx = db.transaction(() => {
-    db.prepare(`UPDATE staff_users SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  await db.transaction(async (tx) => {
+    await tx.execute(`UPDATE staff_users SET ${updates.join(", ")} WHERE id = ?`, params);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "staff.updated",
@@ -421,8 +446,6 @@ export function updateStaffProfile(
       targetId: targetUserId,
       metadata: auditMeta,
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }

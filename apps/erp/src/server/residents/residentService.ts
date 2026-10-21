@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
   ResidentStatus,
@@ -39,15 +39,16 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
  * Lists residents with their current active room assignment.
  * Requires residents.read permission.
  */
-export function listResidents(
+export async function listResidents(
   actor: AuthenticatedUser,
   options?: {
     status?: "ACTIVE" | "CHECKED_OUT" | "ALL";
     search?: string;
-  }
-): ResidentListItem[] {
+  },
+  asyncDb?: AsyncDb
+): Promise<ResidentListItem[]> {
   requirePermission(actor, "residents.read");
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
   const conditions: string[] = [];
   const params: any[] = [];
@@ -67,12 +68,17 @@ export function listResidents(
 
   const query = `
     SELECT 
-      res.id, res.full_name as fullName, res.phone, res.email, res.status,
-      res.created_at as createdAt,
-      rm.room_number as currentRoomNumber, rm.floor as currentFloor,
-      s.check_in_date as checkInDate,
-      (SELECT COUNT(*) FROM resident_stays WHERE resident_id = res.id) as totalStayCount,
-      (SELECT COUNT(*) FROM resident_stays WHERE resident_id = res.id AND status = 'COMPLETED') as completedStayCount
+      res.id,
+      res.full_name as "fullName",
+      res.phone,
+      res.email,
+      res.status,
+      res.created_at as "createdAt",
+      rm.room_number as "currentRoomNumber",
+      rm.floor as "currentFloor",
+      s.check_in_date as "checkInDate",
+      (SELECT COUNT(*) FROM resident_stays WHERE resident_id = res.id) as "totalStayCount",
+      (SELECT COUNT(*) FROM resident_stays WHERE resident_id = res.id AND status = 'COMPLETED') as "completedStayCount"
     FROM residents res
     LEFT JOIN resident_stays s ON s.resident_id = res.id AND s.status = 'ACTIVE'
     LEFT JOIN rooms rm ON rm.id = s.room_id
@@ -80,42 +86,83 @@ export function listResidents(
     ORDER BY res.created_at DESC
   `;
 
-  return db.prepare(query).all(...params) as ResidentListItem[];
+  const rows = await db.query<any>(query, params);
+  return rows.map((r) => ({
+    id: r.id,
+    fullName: r.fullName,
+    phone: r.phone,
+    email: r.email,
+    status: r.status,
+    createdAt: r.createdAt,
+    currentRoomNumber: r.currentRoomNumber,
+    currentFloor: r.currentFloor !== null && r.currentFloor !== undefined ? Number(r.currentFloor) : null,
+    checkInDate: r.checkInDate,
+    totalStayCount: Number(r.totalStayCount || 0),
+    completedStayCount: Number(r.completedStayCount || 0),
+  }));
 }
 
 /**
  * Retrieves a full resident profile including complete stay history.
  */
-export function getResidentById(
+export async function getResidentById(
   actor: AuthenticatedUser,
-  residentId: string
-): ResidentDetail | null {
+  residentId: string,
+  asyncDb?: AsyncDb
+): Promise<ResidentDetail | null> {
   requirePermission(actor, "residents.read");
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
-  const residentRow = db.prepare(`
+  const residentRow = await db.queryOne<any>(`
     SELECT 
-      id, full_name as fullName, phone, email, emergency_contact as emergencyContact,
-      notes, status, created_at as createdAt, updated_at as updatedAt
+      id,
+      full_name as "fullName",
+      phone,
+      email,
+      emergency_contact as "emergencyContact",
+      notes,
+      status,
+      created_at as "createdAt",
+      updated_at as "updatedAt"
     FROM residents
     WHERE id = ?
-  `).get(residentId) as any;
+  `, [residentId]);
 
   if (!residentRow) return null;
 
   // Query stay history
-  const stayRows = db.prepare(`
+  const rawStays = await db.query<any>(`
     SELECT 
-      s.id, s.resident_id as residentId, s.room_id as roomId,
-      rm.room_number as roomNumber, rm.floor,
-      s.check_in_date as checkInDate, s.check_out_date as checkOutDate,
-      s.monthly_rent as monthlyRent, s.security_deposit as securityDeposit,
-      s.status, s.created_at as createdAt
+      s.id,
+      s.resident_id as "residentId",
+      s.room_id as "roomId",
+      rm.room_number as "roomNumber",
+      rm.floor,
+      s.check_in_date as "checkInDate",
+      s.check_out_date as "checkOutDate",
+      s.monthly_rent as "monthlyRent",
+      s.security_deposit as "securityDeposit",
+      s.status,
+      s.created_at as "createdAt"
     FROM resident_stays s
     JOIN rooms rm ON rm.id = s.room_id
     WHERE s.resident_id = ?
     ORDER BY s.check_in_date DESC, s.created_at DESC
-  `).all(residentId) as ResidentStayRecord[];
+  `, [residentId]);
+
+  const stayRows: ResidentStayRecord[] = rawStays.map((s) => ({
+    id: s.id,
+    residentId: s.residentId,
+    roomId: s.roomId,
+    roomNumber: s.roomNumber,
+    floor: Number(s.floor),
+    checkInDate: s.checkInDate,
+    checkOutDate: s.checkOutDate || null,
+    monthlyRent: Number(s.monthlyRent),
+    securityDeposit: Number(s.securityDeposit || 0),
+    status: s.status,
+    createdAt: s.createdAt,
+  }));
 
   const activeStay = stayRows.find((s) => s.status === "ACTIVE");
 
@@ -148,11 +195,15 @@ export function getResidentById(
  * Registers a new resident profile.
  * Requires residents.manage permission.
  */
-export function registerResident(
+export async function registerResident(
   actor: AuthenticatedUser,
   input: RegisterResidentInput,
-  clientIp?: string
-): ResidentDetail {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<ResidentDetail> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "residents.manage", { ip: clientIp, action: "resident.register" });
 
   const cleanName = input.fullName?.trim();
@@ -171,10 +222,8 @@ export function registerResident(
     throw new Error("Invalid email format.");
   }
 
-  const db = getDb();
-
   // Check unique phone number
-  const existingPhone = db.prepare("SELECT id FROM residents WHERE phone = ?").get(cleanPhone);
+  const existingPhone = await db.queryOne<{ id: string }>("SELECT id FROM residents WHERE phone = ?", [cleanPhone]);
   if (existingPhone) {
     throw new Error(`A resident with phone number '${cleanPhone}' is already registered.`);
   }
@@ -182,13 +231,13 @@ export function registerResident(
   const id = `res_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO residents (id, full_name, phone, email, emergency_contact, notes, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(id, cleanName, cleanPhone, cleanEmail, cleanEmergency, cleanNotes, now, now);
+    `, [id, cleanName, cleanPhone, cleanEmail, cleanEmergency, cleanNotes, now, now]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "resident.registered",
@@ -200,10 +249,8 @@ export function registerResident(
         hasEmail: Boolean(cleanEmail),
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 
   return {
     id,
@@ -224,11 +271,15 @@ export function registerResident(
  * Assigns a resident to a room and records their check-in.
  * Enforces room capacity and prevents duplicate active room assignments.
  */
-export function assignResidentToRoom(
+export async function assignResidentToRoom(
   actor: AuthenticatedUser,
   input: CheckInInput,
-  clientIp?: string
-): ResidentStayRecord {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<ResidentStayRecord> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "residents.manage", { ip: clientIp, targetId: input.residentId, action: "resident.check_in" });
 
   const residentId = input.residentId?.trim();
@@ -249,61 +300,60 @@ export function assignResidentToRoom(
     throw new Error("Security deposit must be a non-negative amount.");
   }
 
-  const db = getDb();
-
   let createdStay: ResidentStayRecord;
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // 1. Verify resident exists
-    const resident = db.prepare("SELECT id, full_name as fullName, status FROM residents WHERE id = ?").get(residentId) as any;
+    const resident = await tx.queryOne<any>("SELECT id, full_name as \"fullName\", status FROM residents WHERE id = ?", [residentId]);
     if (!resident) {
       throw new Error(`Resident '${residentId}' not found.`);
     }
 
     // 2. Prevent duplicate active stay: resident cannot already be checked in
-    const activeStay = db.prepare(`
-      SELECT s.id, rm.room_number as roomNumber 
+    const activeStay = await tx.queryOne<{ id: string; roomNumber: string }>(`
+      SELECT s.id, rm.room_number as "roomNumber"
       FROM resident_stays s
       JOIN rooms rm ON rm.id = s.room_id
       WHERE s.resident_id = ? AND s.status = 'ACTIVE'
-    `).get(residentId) as { id: string; roomNumber: string } | undefined;
+    `, [residentId]);
 
     if (activeStay) {
       throw new Error(`Resident is already actively assigned to Room ${activeStay.roomNumber}. Check out before reassigning.`);
     }
 
     // 3. Verify room exists and is active
-    const room = db.prepare("SELECT id, room_number as roomNumber, floor, capacity, is_active as isActive FROM rooms WHERE id = ?").get(roomId) as any;
+    const room = await tx.queryOne<any>("SELECT id, room_number as \"roomNumber\", floor, capacity, is_active as \"isActive\" FROM rooms WHERE id = ?", [roomId]);
     if (!room) {
       throw new Error(`Room '${roomId}' not found.`);
     }
-    if (!room.isActive) {
+    if (!Boolean(room.isActive)) {
       throw new Error(`Room ${room.roomNumber} is currently inactive and cannot accept check-ins.`);
     }
 
     // 4. Verify capacity limit under transaction: count active stays in target room
-    const currentOccupancy = db.prepare(`
+    const currentOccupancy = await tx.queryOne<{ count: number | string }>(`
       SELECT COUNT(*) as count FROM resident_stays WHERE room_id = ? AND status = 'ACTIVE'
-    `).get(roomId) as { count: number };
+    `, [roomId]);
 
-    if (currentOccupancy.count >= room.capacity) {
+    const occupancyCount = Number(currentOccupancy?.count || 0);
+    if (occupancyCount >= Number(room.capacity)) {
       throw new Error(
-        `Room ${room.roomNumber} is at full capacity (${currentOccupancy.count}/${room.capacity} beds occupied). No beds available.`
+        `Room ${room.roomNumber} is at full capacity (${occupancyCount}/${room.capacity} beds occupied). No beds available.`
       );
     }
 
     const stayId = `stay_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO resident_stays (id, resident_id, room_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `).run(stayId, residentId, roomId, checkInDate, monthlyRent, securityDeposit, now, now);
+    `, [stayId, residentId, roomId, checkInDate, monthlyRent, securityDeposit, now, now]);
 
     // Update resident active status
-    db.prepare("UPDATE residents SET status = 'ACTIVE', updated_at = ? WHERE id = ?").run(now, residentId);
+    await tx.execute("UPDATE residents SET status = 'ACTIVE', updated_at = ? WHERE id = ?", [now, residentId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "resident.checked_in",
@@ -318,14 +368,14 @@ export function assignResidentToRoom(
         securityDeposit,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
 
     createdStay = {
       id: stayId,
       residentId,
       roomId,
       roomNumber: room.roomNumber,
-      floor: room.floor,
+      floor: Number(room.floor),
       checkInDate,
       checkOutDate: null,
       monthlyRent,
@@ -335,8 +385,6 @@ export function assignResidentToRoom(
     };
   });
 
-  tx();
-
   return createdStay!;
 }
 
@@ -344,11 +392,15 @@ export function assignResidentToRoom(
  * Checks out a resident from their active room assignment.
  * Preserves stay history and immediately releases bed capacity.
  */
-export function checkOutResident(
+export async function checkOutResident(
   actor: AuthenticatedUser,
   input: CheckOutInput,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "residents.manage", { ip: clientIp, targetId: input.residentId, action: "resident.check_out" });
 
   const residentId = input.residentId?.trim();
@@ -359,16 +411,14 @@ export function checkOutResident(
     throw new Error("Valid check-out date in YYYY-MM-DD format is required.");
   }
 
-  const db = getDb();
-
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // Find active stay
-    const activeStay = db.prepare(`
-      SELECT s.id, s.room_id as roomId, s.check_in_date as checkInDate, rm.room_number as roomNumber
+    const activeStay = await tx.queryOne<{ id: string; roomId: string; checkInDate: string; roomNumber: string }>(`
+      SELECT s.id, s.room_id as "roomId", s.check_in_date as "checkInDate", rm.room_number as "roomNumber"
       FROM resident_stays s
       JOIN rooms rm ON rm.id = s.room_id
       WHERE s.resident_id = ? AND s.status = 'ACTIVE'
-    `).get(residentId) as { id: string; roomId: string; checkInDate: string; roomNumber: string } | undefined;
+    `, [residentId]);
 
     if (!activeStay) {
       throw new Error("Resident has no active room assignment to check out.");
@@ -383,16 +433,16 @@ export function checkOutResident(
     const now = new Date().toISOString();
 
     // Mark stay completed
-    db.prepare(`
+    await tx.execute(`
       UPDATE resident_stays 
       SET status = 'COMPLETED', check_out_date = ?, updated_at = ? 
       WHERE id = ?
-    `).run(checkOutDate, now, activeStay.id);
+    `, [checkOutDate, now, activeStay.id]);
 
     // Update resident status
-    db.prepare("UPDATE residents SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ?").run(now, residentId);
+    await tx.execute("UPDATE residents SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ?", [now, residentId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "resident.checked_out",
@@ -406,10 +456,8 @@ export function checkOutResident(
         checkOutDate,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
 
 export interface UpdateResidentInput {
@@ -424,16 +472,19 @@ export interface UpdateResidentInput {
  * Updates an existing resident's personal details, contact info, and notes.
  * Enforces phone uniqueness and validates input constraints.
  */
-export function updateResident(
+export async function updateResident(
   actor: AuthenticatedUser,
   residentId: string,
   input: UpdateResidentInput,
-  clientIp?: string
-): ResidentDetail {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<ResidentDetail> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "residents.manage", { ip: clientIp, targetId: residentId, action: "resident.update" });
 
-  const db = getDb();
-  const current = getResidentById(actor, residentId);
+  const current = await getResidentById(actor, residentId, db);
   if (!current) {
     throw new Error(`Resident '${residentId}' not found.`);
   }
@@ -458,7 +509,7 @@ export function updateResident(
       throw new Error("Valid phone number with at least 10 digits is required.");
     }
     if (cleanPhone !== current.phone) {
-      const existing = db.prepare("SELECT id FROM residents WHERE phone = ? AND id != ?").get(cleanPhone, residentId);
+      const existing = await db.queryOne<{ id: string }>("SELECT id FROM residents WHERE phone = ? AND id != ?", [cleanPhone, residentId]);
       if (existing) {
         throw new Error(`A resident with phone number '${cleanPhone}' is already registered.`);
       }
@@ -500,10 +551,10 @@ export function updateResident(
   updates.push("updated_at = ?");
   params.push(now, residentId);
 
-  const tx = db.transaction(() => {
-    db.prepare(`UPDATE residents SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  await db.transaction(async (tx) => {
+    await tx.execute(`UPDATE residents SET ${updates.join(", ")} WHERE id = ?`, params);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "resident.updated",
@@ -511,11 +562,8 @@ export function updateResident(
       targetId: residentId,
       metadata: auditMeta,
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getResidentById(actor, residentId)!;
+  return (await getResidentById(actor, residentId, db))!;
 }
-

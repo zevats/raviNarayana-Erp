@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     const sessionToken = request.cookies.get(ERP_COOKIE_NAME)?.value;
 
     if (sessionToken) {
-      destroySession(sessionToken);
+      await destroySession(sessionToken);
     }
 
     const response = NextResponse.json({ success: true, message: "Logged out successfully" });

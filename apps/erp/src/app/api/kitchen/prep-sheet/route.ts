@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const prepSheet = getPreparationSheetData(user, planId);
+    const prepSheet = await getPreparationSheetData(user, planId);
     if (!prepSheet) {
       return NextResponse.json({ error: "Meal plan not found." }, { status: 404 });
     }

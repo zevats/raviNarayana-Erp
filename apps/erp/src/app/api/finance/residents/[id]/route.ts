@@ -13,10 +13,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
-    const summary = getResidentFinancialSummary(user, params.id);
+    const summary = await getResidentFinancialSummary(user, params.id);
     return NextResponse.json({ success: true, summary });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);

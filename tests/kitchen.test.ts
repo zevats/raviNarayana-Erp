@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 
 import { runMigrations } from "../apps/erp/src/server/database/migrations";
-import { closeDb } from "../apps/erp/src/server/database/db";
+import { closeDb, getAsyncDb, AsyncDb, convertPlaceholders } from "../apps/erp/src/server/database/db";
 import { hasPermission } from "../apps/erp/src/server/authorization/permissions";
 import {
   requirePermission,
@@ -25,6 +25,10 @@ import {
 } from "../apps/erp/src/server/kitchen/kitchenService";
 import { getAuditLogs } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
+
+// Primary database path for zero-modification guard
+const primaryDbPath = path.resolve(__dirname, "../data/erp.db");
+const primaryStatsBefore = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
 
 // Isolated test database path
 const TEST_KITCHEN_DB_PATH = path.resolve(__dirname, "test_kitchen.db");
@@ -300,7 +304,7 @@ async function runKitchenTests() {
 
   // Test 1: Service date 2026-10-10 (during Rohan's stay, before Sneha's check-in)
   // Eligible: Aarav, Priya, Rohan (3 total)
-  const eligOct10 = getEligibleResidentsForDate(kitchenUser, "2026-10-10");
+  const eligOct10 = await getEligibleResidentsForDate(kitchenUser, "2026-10-10");
   const namesOct10 = eligOct10.map(r => r.fullName);
   assert(eligOct10.length === 3, `Service date 2026-10-10 has exactly 3 eligible residents (got ${eligOct10.length})`);
   assert(namesOct10.includes("Aarav Sharma"), "Aarav Sharma is eligible on 2026-10-10");
@@ -310,7 +314,7 @@ async function runKitchenTests() {
 
   // Test 2: Service date 2026-10-15 (after Rohan checked out on 2026-10-12)
   // Eligible: Aarav, Priya (2 total)
-  const eligOct15 = getEligibleResidentsForDate(kitchenUser, "2026-10-15");
+  const eligOct15 = await getEligibleResidentsForDate(kitchenUser, "2026-10-15");
   const namesOct15 = eligOct15.map(r => r.fullName);
   assert(eligOct15.length === 2, `Service date 2026-10-15 has exactly 2 eligible residents (got ${eligOct15.length})`);
   assert(namesOct15.includes("Aarav Sharma"), "Aarav Sharma is eligible on 2026-10-15");
@@ -319,7 +323,7 @@ async function runKitchenTests() {
 
   // Test 3: Service date 2026-10-25 (after Sneha checked in)
   // Eligible: Aarav, Priya, Sneha (3 total)
-  const eligOct25 = getEligibleResidentsForDate(kitchenUser, "2026-10-25");
+  const eligOct25 = await getEligibleResidentsForDate(kitchenUser, "2026-10-25");
   const namesOct25 = eligOct25.map(r => r.fullName);
   assert(eligOct25.length === 3, `Service date 2026-10-25 includes newly checked-in resident Sneha (got ${eligOct25.length})`);
   assert(namesOct25.includes("Sneha Reddy"), "Sneha Reddy is eligible on 2026-10-25");
@@ -330,7 +334,7 @@ async function runKitchenTests() {
   console.log("\n[TEST SUITE 3] Meal Plan Creation, Formula Invariants & Attendance Records");
 
   // Create Breakfast Plan for 2026-10-15 with 2 guest meals
-  const bPlan = createMealPlan(kitchenUser, {
+  const bPlan = await createMealPlan(kitchenUser, {
     serviceDate: "2026-10-15",
     mealType: "BREAKFAST",
     guestCount: 2,
@@ -347,7 +351,7 @@ async function runKitchenTests() {
   assert(bPlan.finalPreparationCount === 4, `Final Preparation Count equals 4 (2 residents + 2 guests, got ${bPlan.finalPreparationCount})`);
 
   // Verify individual resident attendance records were generated
-  const planDetail = getMealPlanById(kitchenUser, bPlan.id)!;
+  const planDetail = (await getMealPlanById(kitchenUser, bPlan.id))!;
   assert(planDetail.residentRecords.length === 2, `Attendance records generated for all 2 eligible residents (got ${planDetail.residentRecords.length})`);
   assert(planDetail.residentRecords.every(r => r.status === "CONFIRMED"), "Eligible residents initially confirmed for meal");
   assert(planDetail.residentRecords.some(r => r.residentName === "Aarav Sharma" && r.roomNumber === "101"), "Aarav Sharma linked to Room 101");
@@ -359,7 +363,7 @@ async function runKitchenTests() {
   console.log("\n[TEST SUITE 4] Opt-Outs, Preferences & Preparation Recalculation");
 
   // Aarav opts out of breakfast on 2026-10-15
-  const updatedBPlan = updateMealPlan(kitchenUser, bPlan.id, {
+  const updatedBPlan = await updateMealPlan(kitchenUser, bPlan.id, {
     guestCount: 3, // change guest count to 3
     notes: "Updated menu: Idli Sambar + Poha",
     residentOptOuts: ["res_aarav"], // Aarav opts out
@@ -369,7 +373,7 @@ async function runKitchenTests() {
   assert(updatedBPlan.guestCount === 3, `Guest count updated to 3 (got ${updatedBPlan.guestCount})`);
   assert(updatedBPlan.finalPreparationCount === 4, `Final Preparation Count recalculated to 4 (1 resident + 3 guests, got ${updatedBPlan.finalPreparationCount})`);
 
-  const updatedDetail = getMealPlanById(kitchenUser, bPlan.id)!;
+  const updatedDetail = (await getMealPlanById(kitchenUser, bPlan.id))!;
   const aaravRecord = updatedDetail.residentRecords.find(r => r.residentId === "res_aarav")!;
   const priyaRecord = updatedDetail.residentRecords.find(r => r.residentId === "res_priya")!;
   assert(aaravRecord.status === "OPTED_OUT", "Aarav's status marked OPTED_OUT");
@@ -381,13 +385,13 @@ async function runKitchenTests() {
   console.log("\n[TEST SUITE 5] Plan Lifecycle: Confirmation & Completion");
 
   // Confirm plan
-  const confirmedPlan = confirmMealPlan(kitchenUser, bPlan.id);
+  const confirmedPlan = await confirmMealPlan(kitchenUser, bPlan.id);
   assert(confirmedPlan.status === "CONFIRMED", "Plan transitioned to CONFIRMED status");
   assert(confirmedPlan.confirmedBy === kitchenUser.id, "Plan stamped with confirmer ID");
   assert(confirmedPlan.confirmedAt !== null, "Plan stamped with confirmation timestamp");
 
   // Complete plan
-  const completedPlan = completeMealPlan(kitchenUser, bPlan.id);
+  const completedPlan = await completeMealPlan(kitchenUser, bPlan.id);
   assert(completedPlan.status === "COMPLETED", "Plan transitioned to COMPLETED status");
   assert(completedPlan.completedBy === kitchenUser.id, "Plan stamped with completer ID");
   assert(completedPlan.completedAt !== null, "Plan stamped with completion timestamp");
@@ -395,7 +399,7 @@ async function runKitchenTests() {
   // Completed plan guardrail: direct edit must fail
   let directEditBlocked = false;
   try {
-    updateMealPlan(kitchenUser, bPlan.id, { notes: "Attempted unlogged edit" });
+    await updateMealPlan(kitchenUser, bPlan.id, { notes: "Attempted unlogged edit" });
   } catch (err: any) {
     directEditBlocked = err.message.includes("Completed meal plans cannot be directly edited");
   }
@@ -409,7 +413,7 @@ async function runKitchenTests() {
   // Attempt duplicate plan creation for BREAKFAST on 2026-10-15
   let duplicatePlanBlocked = false;
   try {
-    createMealPlan(kitchenUser, {
+    await createMealPlan(kitchenUser, {
       serviceDate: "2026-10-15",
       mealType: "BREAKFAST",
       guestCount: 0,
@@ -420,7 +424,7 @@ async function runKitchenTests() {
   assert(duplicatePlanBlocked, "Engine Guard: Duplicate meal plan for same date and meal type is prevented");
 
   // Different meal type on same date is allowed (e.g. LUNCH on 2026-10-15)
-  const lunchPlan = createMealPlan(kitchenUser, {
+  const lunchPlan = await createMealPlan(kitchenUser, {
     serviceDate: "2026-10-15",
     mealType: "LUNCH",
     guestCount: 1,
@@ -437,7 +441,7 @@ async function runKitchenTests() {
   // Short/Empty reason rejected
   let shortReasonBlocked = false;
   try {
-    adjustMealPlanQuantity(kitchenUser, bPlan.id, {
+    await adjustMealPlanQuantity(kitchenUser, bPlan.id, {
       newGuestCount: 5,
       reason: "bad", // < 5 chars
     });
@@ -447,7 +451,7 @@ async function runKitchenTests() {
   assert(shortReasonBlocked, "Validation rejects adjustment reason with fewer than 5 characters");
 
   // Record justified adjustment
-  const adjustedPlan = adjustMealPlanQuantity(kitchenUser, bPlan.id, {
+  const adjustedPlan = await adjustMealPlanQuantity(kitchenUser, bPlan.id, {
     newResidentCount: 2,
     newGuestCount: 4,
     reason: "2 late arrivals from site shift plus 1 visitor extra tiffin pack requested",
@@ -458,7 +462,7 @@ async function runKitchenTests() {
   assert(adjustedPlan.finalPreparationCount === 6, `Final preparation count updated to 6 (got ${adjustedPlan.finalPreparationCount})`);
 
   // Verify adjustment recorded in meal_plan_adjustments table
-  const finalDetail = getMealPlanById(kitchenUser, bPlan.id)!;
+  const finalDetail = (await getMealPlanById(kitchenUser, bPlan.id))!;
   assert(finalDetail.adjustments.length === 1, "Adjustment record created in meal_plan_adjustments table");
   assert(finalDetail.adjustments[0].previousTotal === 4, "Previous total accurately recorded as 4");
   assert(finalDetail.adjustments[0].newTotal === 6, "New total accurately recorded as 6");
@@ -484,13 +488,13 @@ async function runKitchenTests() {
   modDb.close();
 
   // 1. Priya's historical attendance on 2026-10-15 must remain intact
-  const pastPlanDetail = getMealPlanById(kitchenUser, bPlan.id)!;
+  const pastPlanDetail = (await getMealPlanById(kitchenUser, bPlan.id))!;
   const priyaPastRecord = pastPlanDetail.residentRecords.find(r => r.residentId === "res_priya");
   assert(priyaPastRecord !== undefined, "Priya's historical meal record on 2026-10-15 is PRESERVED after checkout");
   assert(priyaPastRecord?.status === "CONFIRMED", "Priya's past attendance status remains CONFIRMED");
 
   // 2. Priya must NOT appear as eligible on 2026-10-17 (future relative to checkout 2026-10-16)
-  const eligPostCheckout = getEligibleResidentsForDate(kitchenUser, "2026-10-17");
+  const eligPostCheckout = await getEligibleResidentsForDate(kitchenUser, "2026-10-17");
   const namesPostCheckout = eligPostCheckout.map(r => r.fullName);
   assert(!namesPostCheckout.includes("Priya Patel"), "Checked-out resident (Priya) is excluded from eligibility on 2026-10-17");
 
@@ -500,7 +504,7 @@ async function runKitchenTests() {
   console.log("\n[TEST SUITE 9] Preparation Sheet & Dashboard Summary");
 
   // Prep sheet data check
-  const prepSheet = getPreparationSheetData(kitchenUser, bPlan.id)!;
+  const prepSheet = (await getPreparationSheetData(kitchenUser, bPlan.id))!;
   assert(prepSheet !== null, "Preparation sheet retrieved successfully");
   assert(prepSheet.summary.mealType === "BREAKFAST", "Prep sheet meal type is BREAKFAST");
   assert(prepSheet.summary.finalPreparationCount === 6, "Prep sheet preparation count is 6");
@@ -508,7 +512,7 @@ async function runKitchenTests() {
   assert(prepSheet.adjustments.length === 1, "Prep sheet includes adjustments list");
 
   // Dashboard summary check for 2026-10-15
-  const dashboardData = getKitchenDashboardSummary(kitchenUser, "2026-10-15");
+  const dashboardData = await getKitchenDashboardSummary(kitchenUser, "2026-10-15");
   assert(dashboardData.plans.breakfast !== null, "Dashboard contains breakfast plan");
   assert(dashboardData.plans.lunch !== null, "Dashboard contains lunch plan");
   assert(dashboardData.plans.dinner === null, "Dashboard shows dinner unplanned");
@@ -523,7 +527,7 @@ async function runKitchenTests() {
   // 1. Unauthenticated throws 401
   let unauthCaught = false;
   try {
-    listMealPlans(null as any);
+    await listMealPlans(null as any);
   } catch (err: any) {
     unauthCaught = err instanceof AuthorizationError && err.statusCode === 401;
   }
@@ -542,7 +546,7 @@ async function runKitchenTests() {
   // 3. ACCOUNTANT blocked from kitchen (HTTP 403)
   let accountantBlockedOnList = false;
   try {
-    listMealPlans(accountantUser);
+    await listMealPlans(accountantUser);
   } catch (err: any) {
     accountantBlockedOnList = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -550,7 +554,7 @@ async function runKitchenTests() {
 
   let accountantBlockedOnCreate = false;
   try {
-    createMealPlan(accountantUser, {
+    await createMealPlan(accountantUser, {
       serviceDate: "2026-10-15",
       mealType: "DINNER",
       guestCount: 0,
@@ -563,7 +567,7 @@ async function runKitchenTests() {
   // 4. DELIVERY_PERSON blocked from kitchen (HTTP 403)
   let deliveryBlockedOnRead = false;
   try {
-    getKitchenDashboardSummary(deliveryUser, "2026-10-15");
+    await getKitchenDashboardSummary(deliveryUser, "2026-10-15");
   } catch (err: any) {
     deliveryBlockedOnRead = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -600,6 +604,192 @@ async function runKitchenTests() {
     }
   }
   assert(!sensitiveFieldFound, "All kitchen audit event metadata verified free of secrets and tokens");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 12: Atomic Transaction Rollback & Resident Preference Upsert
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 12] Atomic Transaction Rollback & Resident Preference Upsert");
+
+  const asyncDb = getAsyncDb();
+  let rollbackCaught = false;
+
+  // Simulate an injected failure during meal plan creation inside a transactional block
+  try {
+    await asyncDb.transaction(async (tx) => {
+      const failingPlanId = "dmp_rollback_test_99";
+      const nowTs = new Date().toISOString();
+      await tx.execute(`
+        INSERT INTO daily_meal_plans (
+          id, service_date, meal_type, planned_resident_count, guest_count,
+          final_preparation_count, status, notes, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [failingPlanId, "2026-10-28", "DINNER", 1, 0, 1, "DRAFT", "Rollback Test", kitchenUser.id, nowTs, nowTs]);
+
+      await tx.execute(`
+        INSERT INTO resident_meal_records (
+          id, plan_id, resident_id, stay_id, service_date, meal_type, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, ["rmr_rollback_test_1", failingPlanId, "res_aarav", "stay_aarav", "2026-10-28", "DINNER", "CONFIRMED", nowTs, nowTs]);
+
+      throw new Error("Simulated mid-operation transaction failure");
+    });
+  } catch (err: any) {
+    rollbackCaught = err.message === "Simulated mid-operation transaction failure";
+  }
+  assert(rollbackCaught, "Transaction failure propagates error to caller");
+
+  // Verify that neither daily_meal_plans nor resident_meal_records retained uncommitted rows
+  const planCheck = await asyncDb.queryOne<any>("SELECT id FROM daily_meal_plans WHERE id = ?", ["dmp_rollback_test_99"]);
+  assert(planCheck === null, "Transaction rollback ensured daily_meal_plans row was not persisted");
+
+  const rmrCheck = await asyncDb.query<any>("SELECT id FROM resident_meal_records WHERE plan_id = ?", ["dmp_rollback_test_99"]);
+  assert(rmrCheck.length === 0, "Transaction rollback ensured resident_meal_records rows were not persisted");
+
+  // Test resident meal preference upsert (cross-engine ON CONFLICT)
+  await updateResidentMealPreference(kitchenUser, "res_aarav", {
+    breakfastOptIn: true,
+    lunchOptIn: false,
+    dinnerOptIn: true,
+    dietaryPreference: "JAIN",
+    notes: "No onion no garlic",
+  });
+
+  const prefRow = await asyncDb.queryOne<any>("SELECT * FROM resident_meal_preferences WHERE resident_id = ?", ["res_aarav"]);
+  assert(prefRow !== null, "Resident meal preferences saved successfully");
+  assert(prefRow.dietary_preference === "JAIN", "Dietary preference updated to JAIN");
+  assert(prefRow.lunch_opt_in === 0, "Lunch opt-in set to 0 (false)");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 13: Mock PostgreSQL Execution & Placeholder Conversion
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 13] Mock PostgreSQL Execution & Placeholder Conversion");
+
+  // 1. Placeholder conversion ($1, $2, ...)
+  const sampleQuery = "SELECT * FROM daily_meal_plans WHERE service_date = ? AND meal_type = ? AND status = ?";
+  const converted = convertPlaceholders(sampleQuery);
+  assert(
+    converted === "SELECT * FROM daily_meal_plans WHERE service_date = $1 AND meal_type = $2 AND status = $3",
+    "convertPlaceholders converts SQLite ? to Postgres $n parameter format"
+  );
+
+  // 2. Mock PostgreSQL AsyncDb adapter
+  const executedSqls: string[] = [];
+  const mockPgDb: AsyncDb = {
+    isPostgres: true,
+    async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+      executedSqls.push(sql);
+      if (sql.includes("FROM daily_meal_plans")) {
+        return [
+          {
+            id: "dmp_pg_mock_1",
+            service_date: "2026-10-15",
+            meal_type: "BREAKFAST",
+            planned_resident_count: 5,
+            guest_count: 2,
+            final_preparation_count: 7,
+            actual_cooked_count: null,
+            status: "CONFIRMED",
+            notes: "Mock PG breakfast",
+            created_by: "usr_kitchen_kt",
+            confirmed_by: "usr_kitchen_kt",
+            confirmed_at: "2026-10-15T06:00:00.000Z",
+            completed_by: null,
+            completed_at: null,
+            created_at: "2026-10-15T05:00:00.000Z",
+            updated_at: "2026-10-15T06:00:00.000Z",
+            created_by_name: "Head Chef Met City",
+            confirmed_by_name: "Head Chef Met City",
+            completed_by_name: null,
+          }
+        ] as unknown as T[];
+      }
+      if (sql.includes("FROM residents r")) {
+        return [
+          {
+            resident_id: "res_pg_1",
+            full_name: "Postgres Resident",
+            room_number: "201",
+            stay_id: "stay_pg_1",
+            breakfast_opt_in: 1,
+            lunch_opt_in: 1,
+            dinner_opt_in: 1,
+            dietary_preference: "VEG",
+          }
+        ] as unknown as T[];
+      }
+      return [];
+    },
+    async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+      executedSqls.push(sql);
+      if (sql.includes("FROM daily_meal_plans")) {
+        return {
+          id: "dmp_pg_mock_1",
+          service_date: "2026-10-15",
+          meal_type: "BREAKFAST",
+          planned_resident_count: 5,
+          guest_count: 2,
+          final_preparation_count: 7,
+          actual_cooked_count: null,
+          status: "CONFIRMED",
+          notes: "Mock PG breakfast",
+          created_by: "usr_kitchen_kt",
+          confirmed_by: "usr_kitchen_kt",
+          confirmed_at: "2026-10-15T06:00:00.000Z",
+          completed_by: null,
+          completed_at: null,
+          created_at: "2026-10-15T05:00:00.000Z",
+          updated_at: "2026-10-15T06:00:00.000Z",
+          created_by_name: "Head Chef Met City",
+          confirmed_by_name: "Head Chef Met City",
+          completed_by_name: null,
+        } as unknown as T;
+      }
+      return null;
+    },
+    async execute(sql: string, params?: any[]) {
+      executedSqls.push(sql);
+      return { changes: 1 };
+    },
+    async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
+      return cb(mockPgDb);
+    },
+  };
+
+  const pgPlans = await listMealPlans(kitchenUser, { startDate: "2026-10-15", endDate: "2026-10-15" }, mockPgDb);
+  assert(pgPlans.length === 1 && pgPlans[0].id === "dmp_pg_mock_1", "listMealPlans executes against PostgreSQL AsyncDb adapter");
+
+  const pgDetail = await getMealPlanById(kitchenUser, "dmp_pg_mock_1", mockPgDb);
+  assert(pgDetail !== null && pgDetail.plan.id === "dmp_pg_mock_1", "getMealPlanById executes against PostgreSQL AsyncDb adapter");
+
+  const pgSummary = await getKitchenDashboardSummary(kitchenUser, "2026-10-15", mockPgDb);
+  assert(pgSummary.metrics.breakfastCount === 7, "getKitchenDashboardSummary calculates breakfast count on PostgreSQL AsyncDb adapter");
+
+  await updateResidentMealPreference(kitchenUser, "res_pg_1", {
+    breakfastOptIn: true,
+    lunchOptIn: true,
+    dinnerOptIn: false,
+    dietaryPreference: "JAIN",
+  }, mockPgDb);
+  assert(executedSqls.some(s => s.includes("ON CONFLICT(resident_id) DO UPDATE SET")), "updateResidentMealPreference executes cross-engine ON CONFLICT upsert on PostgreSQL AsyncDb adapter");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 14: Zero Primary Database Access Guard & Environment Cleanup
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 14] Zero Primary Database Access Guard & Environment Cleanup");
+
+  const primaryStatsAfter = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
+  if (primaryStatsBefore && primaryStatsAfter) {
+    assert(
+      primaryStatsBefore.size === primaryStatsAfter.size,
+      `Primary data/erp.db size unchanged (${primaryStatsBefore.size} bytes)`
+    );
+    assert(
+      primaryStatsBefore.mtimeMs === primaryStatsAfter.mtimeMs,
+      `Primary data/erp.db mtime unchanged (${primaryStatsBefore.mtime.toISOString()})`
+    );
+  } else {
+    assert(true, "Primary database verification step completed");
+  }
 
   // Clean up
   closeDb();

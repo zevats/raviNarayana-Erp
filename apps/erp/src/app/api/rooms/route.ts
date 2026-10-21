@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const status = url.searchParams.get("status") as any;
     const search = url.searchParams.get("search") || undefined;
 
-    const rooms = listRooms(user, { floor, status, search });
+    const rooms = await listRooms(user, { floor, status, search });
     return NextResponse.json({ success: true, rooms });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
@@ -32,13 +32,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
-    const room = createRoom(user, body, clientIp);
+    const room = await createRoom(user, body, clientIp);
     return NextResponse.json({ success: true, room }, { status: 201 });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);

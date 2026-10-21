@@ -173,7 +173,7 @@ async function runIntegrationAuditTests() {
   console.log("\n[TEST SUITE 2] Full 16-Step Cross-Module Operational Lifecycle");
 
   // Step 1: Create Room 401 (Double Sharing, rent ₹9,000, deposit ₹10,000)
-  const room401 = createRoom(managerUser, {
+  const room401 = await createRoom(managerUser, {
     roomNumber: "401",
     floor: 4,
     type: "DOUBLE_SHARING",
@@ -184,12 +184,12 @@ async function runIntegrationAuditTests() {
   assert(room401.id.startsWith("room_"), "Step 1: Room 401 created with prefixed ID");
   assert(room401.capacity === 2, "Step 1: Room capacity is 2");
 
-  const initialRoomDetails = getRoomById(managerUser, room401.id)!;
+  const initialRoomDetails = (await getRoomById(managerUser, room401.id))!;
   assert(initialRoomDetails.occupiedBeds === 0, "Step 1: Initial occupancy is 0 beds");
   assert(initialRoomDetails.availableBeds === 2, "Step 1: 2 available beds");
 
   // Step 2: Register Resident John Doe
-  const residentJohn = registerResident(managerUser, {
+  const residentJohn = await registerResident(managerUser, {
     fullName: "John Doe",
     email: "john.doe@example.com",
     phone: "9876543210",
@@ -201,7 +201,7 @@ async function runIntegrationAuditTests() {
   assert(residentJohn.status === "ACTIVE", "Step 2: Resident status is ACTIVE");
 
   // Step 3: Check-in John Doe to Room 401 on 2026-10-01
-  const stayJohn = assignResidentToRoom(managerUser, {
+  const stayJohn = await assignResidentToRoom(managerUser, {
     residentId: residentJohn.id,
     roomId: room401.id,
     checkInDate: "2026-10-01",
@@ -212,12 +212,12 @@ async function runIntegrationAuditTests() {
   assert(stayJohn.id.startsWith("stay_"), "Step 3: Stay record created with prefixed ID");
   assert(stayJohn.status === "ACTIVE", "Step 3: Stay status is ACTIVE");
 
-  const roomAfterCheckin = getRoomById(managerUser, room401.id)!;
+  const roomAfterCheckin = (await getRoomById(managerUser, room401.id))!;
   assert(roomAfterCheckin.occupiedBeds === 1, "Step 3: Room occupancy incremented to 1/2");
   assert(roomAfterCheckin.availableBeds === 1, "Step 3: Available beds decreased to 1");
 
   // Step 4: Post monthly rent charge (₹9,000 for October 2026)
-  const chargeTx = recordRentCharge(accountantUser, {
+  const chargeTx = await recordRentCharge(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 9000,
@@ -229,11 +229,11 @@ async function runIntegrationAuditTests() {
   assert(chargeTx.transactionType === "RENT_CHARGE", "Step 4: Rent charge recorded");
   assert(chargeTx.amount === 9000, "Step 4: Charge amount is ₹9,000");
 
-  const balanceAfterCharge = getResidentRentBalance(residentJohn.id);
+  const balanceAfterCharge = await getResidentRentBalance(residentJohn.id);
   assert(balanceAfterCharge === 9000, `Step 4: Resident rent balance is ₹9,000 (got ₹${balanceAfterCharge})`);
 
   // Step 5: Partial payment (₹5,000 via UPI)
-  const payTx1 = recordRentPayment(accountantUser, {
+  const payTx1 = await recordRentPayment(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 5000,
@@ -246,13 +246,13 @@ async function runIntegrationAuditTests() {
   assert(payTx1.transactionType === "RENT_PAYMENT", "Step 5: Rent payment recorded");
   assert(payTx1.amount === 5000, "Step 5: Payment amount is ₹5,000");
 
-  const balanceAfterPay1 = getResidentRentBalance(residentJohn.id);
+  const balanceAfterPay1 = await getResidentRentBalance(residentJohn.id);
   assert(balanceAfterPay1 === 4000, `Step 5: Balance reduced to ₹4,000 (got ₹${balanceAfterPay1})`);
 
   // Step 6: Overpayment rejection: Attempt to pay ₹5,000 when only ₹4,000 is due
   let overpayBlocked = false;
   try {
-    recordRentPayment(accountantUser, {
+    await recordRentPayment(accountantUser, {
       residentId: residentJohn.id,
       stayId: stayJohn.id,
       amount: 5000,
@@ -266,7 +266,7 @@ async function runIntegrationAuditTests() {
   assert(overpayBlocked, "Step 6: Overpayment exceeding outstanding balance strictly rejected");
 
   // Step 7: Pay remaining balance (₹4,000 via CASH)
-  const payTx2 = recordRentPayment(accountantUser, {
+  const payTx2 = await recordRentPayment(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 4000,
@@ -275,11 +275,11 @@ async function runIntegrationAuditTests() {
     description: "Final rent settlement in cash",
   });
 
-  const balanceAfterPay2 = getResidentRentBalance(residentJohn.id);
+  const balanceAfterPay2 = await getResidentRentBalance(residentJohn.id);
   assert(balanceAfterPay2 === 0, `Step 7: Rent balance settled to exactly ₹0 (got ₹${balanceAfterPay2})`);
 
   // Step 8: Record Security Deposit (₹10,000 via BANK_TRANSFER) - verify liability isolation
-  const depositTx = recordSecurityDeposit(accountantUser, {
+  const depositTx = await recordSecurityDeposit(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 10000,
@@ -290,12 +290,12 @@ async function runIntegrationAuditTests() {
   });
 
   assert(depositTx.transactionType === "SECURITY_DEPOSIT", "Step 8: Security deposit recorded");
-  const dossierAfterDeposit = getResidentFinancialSummary(accountantUser, residentJohn.id);
+  const dossierAfterDeposit = await getResidentFinancialSummary(accountantUser, residentJohn.id);
   assert(dossierAfterDeposit.totalSecurityDepositHeld === 10000, "Step 8: Security deposit held is ₹10,000");
   assert(dossierAfterDeposit.outstandingRentBalance === 0, "Step 8: Rent balance remains ₹0 (deposit is isolated from rent)");
 
   // Step 9: Operational business expense (₹2,500 Grocery via CASH)
-  const expenseTx = recordExpense(accountantUser, {
+  const expenseTx = await recordExpense(accountantUser, {
     category: "GROCERY",
     amount: 2500,
     transactionDate: "2026-10-05",
@@ -306,7 +306,7 @@ async function runIntegrationAuditTests() {
   assert(expenseTx.transactionType === "EXPENSE", "Step 9: Grocery expense recorded");
 
   // Step 10: Kitchen meal planning for 2026-10-16 (Breakfast)
-  const breakfastPlan = createMealPlan(kitchenUser, {
+  const breakfastPlan = await createMealPlan(kitchenUser, {
     serviceDate: "2026-10-16",
     mealType: "BREAKFAST",
     guestCount: 3,
@@ -317,7 +317,7 @@ async function runIntegrationAuditTests() {
   assert(breakfastPlan.finalPreparationCount === 4, `Step 10: Final preparation count is 4 (1 resident + 3 guests)`);
 
   // Step 11: Resident opt-out for dinner on 2026-10-16
-  const dinnerPlan = createMealPlan(kitchenUser, {
+  const dinnerPlan = await createMealPlan(kitchenUser, {
     serviceDate: "2026-10-16",
     mealType: "DINNER",
     guestCount: 1,
@@ -329,50 +329,50 @@ async function runIntegrationAuditTests() {
   assert(dinnerPlan.finalPreparationCount === 1, `Step 11: Final prep count is 1 (0 residents + 1 guest)`);
 
   // Step 12: Meal plan confirmation & completion workflow
-  const confirmedBreakfast = confirmMealPlan(kitchenUser, breakfastPlan.id);
+  const confirmedBreakfast = await confirmMealPlan(kitchenUser, breakfastPlan.id);
   assert(confirmedBreakfast.status === "CONFIRMED", "Step 12: Breakfast plan transitioned to CONFIRMED");
   assert(confirmedBreakfast.confirmedBy === kitchenUser.id, "Step 12: Stamped with confirmer ID");
 
-  const completedBreakfast = completeMealPlan(kitchenUser, breakfastPlan.id);
+  const completedBreakfast = await completeMealPlan(kitchenUser, breakfastPlan.id);
   assert(completedBreakfast.status === "COMPLETED", "Step 12: Breakfast plan transitioned to COMPLETED");
   assert(completedBreakfast.completedBy === kitchenUser.id, "Step 12: Stamped with completer ID");
 
   // Step 13: Daily kitchen prep sheet and dashboard data
-  const prepSheet = getPreparationSheetData(kitchenUser, breakfastPlan.id);
+  const prepSheet = await getPreparationSheetData(kitchenUser, breakfastPlan.id);
   assert(prepSheet.plan.id === breakfastPlan.id, "Step 13: Prep sheet plan matches breakfast");
   assert(prepSheet.summary.finalPreparationCount === 4, "Step 13: Prep sheet preparation count matches 4");
   assert(prepSheet.residentRecords.length === 1, "Step 13: Prep sheet includes resident records");
 
-  const kitchenDash = getKitchenDashboardSummary(kitchenUser, "2026-10-16");
+  const kitchenDash = await getKitchenDashboardSummary(kitchenUser, "2026-10-16");
   assert(kitchenDash.plans.breakfast !== null, "Step 13: Dashboard contains breakfast");
   assert(kitchenDash.plans.dinner !== null, "Step 13: Dashboard contains dinner");
   assert(kitchenDash.plans.dinner!.plannedResidentCount === 0, "Step 13: Dinner has 0 planned residents due to opt-out");
 
   // Step 14: Resident check-out on 2026-10-20
-  checkOutResident(managerUser, {
+  await checkOutResident(managerUser, {
     residentId: residentJohn.id,
     checkOutDate: "2026-10-20",
   });
 
-  const residentAfterCheckout = getResidentById(managerUser, residentJohn.id)!;
+  const residentAfterCheckout = (await getResidentById(managerUser, residentJohn.id))!;
   assert(residentAfterCheckout.status === "CHECKED_OUT", "Step 14: Resident status updated to CHECKED_OUT");
   assert(residentAfterCheckout.currentRoom === null, "Step 14: Resident has no active room assignment");
 
-  const roomAfterCheckout = getRoomById(managerUser, room401.id)!;
+  const roomAfterCheckout = (await getRoomById(managerUser, room401.id))!;
   assert(roomAfterCheckout.occupiedBeds === 0, "Step 14: Room occupancy decreased to 0/2");
   assert(roomAfterCheckout.availableBeds === 2, "Step 14: Room beds restored to 2");
 
   // Step 15: Post-checkout historical preservation & meal eligibility cutoff
-  const postCheckoutDossier = getResidentFinancialSummary(accountantUser, residentJohn.id);
+  const postCheckoutDossier = await getResidentFinancialSummary(accountantUser, residentJohn.id);
   assert(postCheckoutDossier.transactions.length === 4, "Step 15: All 4 financial transactions preserved after checkout");
   assert(postCheckoutDossier.totalRentPaid === 9000, "Step 15: Financial history fully preserved");
 
-  const futureEligible = getEligibleResidentsForDate(kitchenUser, "2026-10-25");
+  const futureEligible = await getEligibleResidentsForDate(kitchenUser, "2026-10-25");
   const isJohnEligibleFuture = futureEligible.some((r) => r.residentId === residentJohn.id);
   assert(!isJohnEligibleFuture, "Step 15: Checked-out resident is strictly excluded from future meal planning");
 
   // Step 16: End-to-end Cashbook Summary verification
-  const cashbook = getCashbookSummary(accountantUser, {
+  const cashbook = await getCashbookSummary(accountantUser, {
     startDate: "2026-10-01",
     endDate: "2026-10-31",
   });
@@ -390,7 +390,7 @@ async function runIntegrationAuditTests() {
 
   // 1. Rent Charge: Identical vs Mismatched
   const keyChg = "idemp_audit_chg_101";
-  const chgOrig = recordRentCharge(accountantUser, {
+  const chgOrig = await recordRentCharge(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 8000,
@@ -400,7 +400,7 @@ async function runIntegrationAuditTests() {
   });
 
   // Identical submission returns original
-  const chgDup = recordRentCharge(accountantUser, {
+  const chgDup = await recordRentCharge(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 8000,
@@ -413,7 +413,7 @@ async function runIntegrationAuditTests() {
   // Mismatched amount throws error
   let chgMismatchBlocked = false;
   try {
-    recordRentCharge(accountantUser, {
+    await recordRentCharge(accountantUser, {
       residentId: residentJohn.id,
       stayId: stayJohn.id,
       amount: 8500, // Different amount
@@ -428,7 +428,7 @@ async function runIntegrationAuditTests() {
 
   // 2. Rent Payment: Identical vs Mismatched
   const keyPay = "idemp_audit_pay_101";
-  const payOrig = recordRentPayment(accountantUser, {
+  const payOrig = await recordRentPayment(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 3000,
@@ -437,7 +437,7 @@ async function runIntegrationAuditTests() {
     idempotencyKey: keyPay,
   });
 
-  const payDup = recordRentPayment(accountantUser, {
+  const payDup = await recordRentPayment(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 3000,
@@ -450,7 +450,7 @@ async function runIntegrationAuditTests() {
   // Mismatched payment method throws
   let payMismatchBlocked = false;
   try {
-    recordRentPayment(accountantUser, {
+    await recordRentPayment(accountantUser, {
       residentId: residentJohn.id,
       stayId: stayJohn.id,
       amount: 3000,
@@ -465,7 +465,7 @@ async function runIntegrationAuditTests() {
 
   // 3. Security Deposit: Mismatched amount throws
   const keyDep = "idemp_audit_dep_101";
-  recordSecurityDeposit(accountantUser, {
+  await recordSecurityDeposit(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 5000,
@@ -476,7 +476,7 @@ async function runIntegrationAuditTests() {
 
   let depMismatchBlocked = false;
   try {
-    recordSecurityDeposit(accountantUser, {
+    await recordSecurityDeposit(accountantUser, {
       residentId: residentJohn.id,
       stayId: stayJohn.id,
       amount: 6000, // Mismatch
@@ -491,7 +491,7 @@ async function runIntegrationAuditTests() {
 
   // 4. Expense: Mismatched category throws
   const keyExp = "idemp_audit_exp_101";
-  recordExpense(accountantUser, {
+  await recordExpense(accountantUser, {
     category: "MAINTENANCE",
     amount: 1200,
     transactionDate: "2026-10-05",
@@ -502,7 +502,7 @@ async function runIntegrationAuditTests() {
 
   let expMismatchBlocked = false;
   try {
-    recordExpense(accountantUser, {
+    await recordExpense(accountantUser, {
       category: "UTILITIES", // Mismatch
       amount: 1200,
       transactionDate: "2026-10-05",
@@ -528,7 +528,7 @@ async function runIntegrationAuditTests() {
   console.log("\n[TEST SUITE 4] Reversal Protection & Financial Invariant Guards");
 
   // Guard 1: Double reversal of already reversed transaction is blocked
-  const dummyCharge = recordRentCharge(accountantUser, {
+  const dummyCharge = await recordRentCharge(accountantUser, {
     residentId: residentJohn.id,
     stayId: stayJohn.id,
     amount: 1500,
@@ -537,12 +537,12 @@ async function runIntegrationAuditTests() {
     description: "Charge to be reversed",
   });
 
-  const firstReversal = reverseTransaction(accountantUser, dummyCharge.id, "Billed in error by front desk");
+  const firstReversal = await reverseTransaction(accountantUser, dummyCharge.id, "Billed in error by front desk");
   assert(firstReversal.transactionType === "REVERSAL", "First reversal succeeds");
 
   let doubleRevBlocked = false;
   try {
-    reverseTransaction(accountantUser, dummyCharge.id, "Attempt second reversal");
+    await reverseTransaction(accountantUser, dummyCharge.id, "Attempt second reversal");
   } catch (err: any) {
     doubleRevBlocked = err.message.includes("is already reversed");
   }
@@ -551,7 +551,7 @@ async function runIntegrationAuditTests() {
   // Guard 2: Attempting to reverse a REVERSAL transaction itself is blocked
   let reverseReversalBlocked = false;
   try {
-    reverseTransaction(accountantUser, firstReversal.id, "Attempt to reverse the reversal record");
+    await reverseTransaction(accountantUser, firstReversal.id, "Attempt to reverse the reversal record");
   } catch (err: any) {
     reverseReversalBlocked = err.message.includes("Reversal records cannot themselves be reversed");
   }
@@ -565,22 +565,22 @@ async function runIntegrationAuditTests() {
   // If we try to reverse the ₹8,000 charge, it would leave balance at -₹3,000 (illegal negative balance)!
   let paidChargeRevBlocked = false;
   try {
-    reverseTransaction(accountantUser, chgOrig.id, "Attempt to reverse charge that has payments applied");
+    await reverseTransaction(accountantUser, chgOrig.id, "Attempt to reverse charge that has payments applied");
   } catch (err: any) {
     paidChargeRevBlocked = err.message.includes("because payments have already been applied against it");
   }
   assert(paidChargeRevBlocked, "Guard 3: Reversing a rent charge with applied payments is strictly blocked");
 
   // Guard 4: Reversing the payment first allows the charge to then be reversed safely
-  const revPayment = reverseTransaction(accountantUser, payOrig.id, "Payment bounced or refunded");
+  const revPayment = await reverseTransaction(accountantUser, payOrig.id, "Payment bounced or refunded");
   assert(revPayment.transactionType === "REVERSAL", "Rent payment reversed successfully");
-  const balanceAfterPayRev = getResidentRentBalance(residentJohn.id);
+  const balanceAfterPayRev = await getResidentRentBalance(residentJohn.id);
   assert(balanceAfterPayRev === 8000, `Rent balance restored to ₹8,000 after payment reversal (got ₹${balanceAfterPayRev})`);
 
   // Now reversing the charge of ₹8,000 succeeds because current balance equals charge amount (₹8,000 >= ₹8,000)
-  const revCharge = reverseTransaction(accountantUser, chgOrig.id, "Now safe to reverse charge");
+  const revCharge = await reverseTransaction(accountantUser, chgOrig.id, "Now safe to reverse charge");
   assert(revCharge.transactionType === "REVERSAL", "Rent charge reversed successfully once balance was clear");
-  const balanceAfterChgRev = getResidentRentBalance(residentJohn.id);
+  const balanceAfterChgRev = await getResidentRentBalance(residentJohn.id);
   assert(balanceAfterChgRev === 0, `Rent balance restored to ₹0 (got ₹${balanceAfterChgRev})`);
 
   // -----------------------------------------------------------------------------
@@ -606,19 +606,19 @@ async function runIntegrationAuditTests() {
   `).run(septTxId, residentJohn.id, stayJohn.id, accountantUser.id, nowIso, nowIso);
 
   // 2. Query September Cashbook before reversal: September rent collected includes ₹6,000
-  const septCashbook = getCashbookSummary(accountantUser, {
+  const septCashbook = await getCashbookSummary(accountantUser, {
     startDate: "2026-09-01",
     endDate: "2026-09-30",
   });
   assert(septCashbook.totalRentCollected === 6000, "September cashbook shows ₹6,000 rent collected");
 
   // 3. Now in October, staff reverses the September payment (refunds the resident)
-  const septReversal = reverseTransaction(accountantUser, septTxId, "September payment reversed due to bank dispute in October");
+  const septReversal = await reverseTransaction(accountantUser, septTxId, "September payment reversed due to bank dispute in October");
   assert(septReversal.transactionType === "REVERSAL", "Cross-period transaction reversed");
   assert(septReversal.transactionDate.startsWith("2026-"), "Reversal dated today");
 
   // 4. Query October Cashbook: October rent collected reflects the refund outflow from the prior period
-  const octCashbook = getCashbookSummary(accountantUser, {
+  const octCashbook = await getCashbookSummary(accountantUser, {
     startDate: "2026-10-01",
     endDate: "2026-10-31",
   });
@@ -642,26 +642,26 @@ async function runIntegrationAuditTests() {
 
   // 1. Room Over-Capacity Guard: Room 401 has capacity 2.
   // Register 3 more residents and assign them to Room 401
-  const residentAlice = registerResident(managerUser, {
+  const residentAlice = await registerResident(managerUser, {
     fullName: "Alice Smith",
     phone: "9123456780",
     emergencyContact: "+91 91234 56781",
   });
 
-  const residentCharlie = registerResident(managerUser, {
+  const residentCharlie = await registerResident(managerUser, {
     fullName: "Charlie Brown",
     phone: "9123456782",
     emergencyContact: "+91 91234 56783",
   });
 
-  const residentDavid = registerResident(managerUser, {
+  const residentDavid = await registerResident(managerUser, {
     fullName: "David Wilson",
     phone: "9123456784",
     emergencyContact: "+91 91234 56785",
   });
 
   // Assign Alice (occupied beds 1/2)
-  assignResidentToRoom(managerUser, {
+  await assignResidentToRoom(managerUser, {
     residentId: residentAlice.id,
     roomId: room401.id,
     checkInDate: "2026-10-10",
@@ -669,20 +669,20 @@ async function runIntegrationAuditTests() {
   });
 
   // Assign Charlie (occupied beds 2/2 -> FULL)
-  assignResidentToRoom(managerUser, {
+  await assignResidentToRoom(managerUser, {
     residentId: residentCharlie.id,
     roomId: room401.id,
     checkInDate: "2026-10-10",
     monthlyRent: 9000,
   });
 
-  const roomFull = getRoomById(managerUser, room401.id)!;
+  const roomFull = (await getRoomById(managerUser, room401.id))!;
   assert(roomFull.occupiedBeds === 2, "Room 401 occupancy is at full capacity (2/2)");
 
   // Attempting to assign David (exceeding capacity) must throw
   let overCapacityBlocked = false;
   try {
-    assignResidentToRoom(managerUser, {
+    await assignResidentToRoom(managerUser, {
       residentId: residentDavid.id,
       roomId: room401.id,
       checkInDate: "2026-10-10",
@@ -696,7 +696,7 @@ async function runIntegrationAuditTests() {
   // 2. Kitchen Duplicate Creation Prevention under simulated collision
   let dupMealCaught = false;
   try {
-    createMealPlan(kitchenUser, {
+    await createMealPlan(kitchenUser, {
       serviceDate: "2026-10-16",
       mealType: "BREAKFAST", // Already created in Step 10
       guestCount: 2,
@@ -714,7 +714,7 @@ async function runIntegrationAuditTests() {
   // 1. Kitchen staff cannot access finance
   let kitchenBlockedOnFinance = false;
   try {
-    recordRentCharge(kitchenUser, {
+    await recordRentCharge(kitchenUser, {
       residentId: residentAlice.id,
       amount: 5000,
       transactionDate: "2026-10-01",
@@ -728,7 +728,7 @@ async function runIntegrationAuditTests() {
   // 2. Delivery staff cannot perform financial reversals
   let deliveryBlockedOnReversal = false;
   try {
-    reverseTransaction(deliveryUser, dummyCharge.id, "Unauthorized reversal attempt");
+    await reverseTransaction(deliveryUser, dummyCharge.id, "Unauthorized reversal attempt");
   } catch (err: any) {
     deliveryBlockedOnReversal = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -737,7 +737,7 @@ async function runIntegrationAuditTests() {
   // 3. Accountant cannot create meal plans
   let accountantBlockedOnKitchen = false;
   try {
-    createMealPlan(accountantUser, {
+    await createMealPlan(accountantUser, {
       serviceDate: "2026-10-17",
       mealType: "LUNCH",
     });

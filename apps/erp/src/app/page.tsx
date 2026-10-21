@@ -4,11 +4,11 @@ import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
 
 export const dynamic = "force-dynamic";
 
-export default function RootPage() {
+export default async function RootPage() {
   const cookieStore = cookies();
   const sessionToken = cookieStore.get(ERP_COOKIE_NAME)?.value;
 
-  if (sessionToken && validateSession(sessionToken)) {
+  if (sessionToken && (await validateSession(sessionToken))) {
     redirect("/dashboard");
   } else {
     redirect("/login");

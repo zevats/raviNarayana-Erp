@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
 
-    const transactions = listTransactions(user, {
+    const transactions = await listTransactions(user, {
       type,
       category,
       residentId,
@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
@@ -68,23 +68,23 @@ export async function POST(request: NextRequest) {
 
     switch (action) {
       case "RENT_CHARGE":
-        transaction = recordRentCharge(user, body, clientIp);
+        transaction = await recordRentCharge(user, body, clientIp);
         break;
 
       case "RENT_PAYMENT":
-        transaction = recordRentPayment(user, body, clientIp);
+        transaction = await recordRentPayment(user, body, clientIp);
         break;
 
       case "SECURITY_DEPOSIT":
-        transaction = recordSecurityDeposit(user, body, clientIp);
+        transaction = await recordSecurityDeposit(user, body, clientIp);
         break;
 
       case "EXPENSE":
-        transaction = recordExpense(user, body, clientIp);
+        transaction = await recordExpense(user, body, clientIp);
         break;
 
       case "REVERSAL":
-        transaction = reverseTransaction(user, body.transactionId, body.reason, clientIp);
+        transaction = await reverseTransaction(user, body.transactionId, body.reason, clientIp);
         break;
 
       default:

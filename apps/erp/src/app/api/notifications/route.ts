@@ -14,14 +14,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
     const limit = url.searchParams.get("limit") ? parseInt(url.searchParams.get("limit")!, 10) : 30;
     const unreadOnly = url.searchParams.get("unreadOnly") === "true";
 
-    const data = getNotifications(user, { limit, unreadOnly });
+    const data = await getNotifications(user, { limit, unreadOnly });
 
     return NextResponse.json({
       success: true,
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
@@ -51,12 +51,12 @@ export async function POST(request: NextRequest) {
       if (!body.notificationId) {
         return NextResponse.json({ error: "notificationId is required." }, { status: 400 });
       }
-      markNotificationAsRead(user, body.notificationId);
+      await markNotificationAsRead(user, body.notificationId);
       return NextResponse.json({ success: true, notificationId: body.notificationId });
     }
 
     if (action === "mark_all_read") {
-      markAllNotificationsAsRead(user);
+      await markAllNotificationsAsRead(user);
       return NextResponse.json({ success: true });
     }
 

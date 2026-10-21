@@ -1,8 +1,9 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import Database from "better-sqlite3";
 import postgres from "postgres";
-import { resolveDbPath } from "./db";
+import { resolveDbPath, validateFixturePath } from "./db";
 import { getDatabaseUrl } from "./client";
 
 export interface MigrationConflict {
@@ -74,9 +75,101 @@ function areRowsEqual(sourceRow: Record<string, any>, targetRow: Record<string, 
   return true;
 }
 
-export async function migrateSqliteToPostgres(options?: {
+export interface TargetValidationResult {
+  valid: boolean;
+  error?: string;
+  parsedHost?: string;
+  parsedDatabase?: string;
+}
+
+/**
+ * Shared destination identity guard for PostgreSQL migrations and rollbacks.
+ * Enforces fail-closed verification of connection URL, exact hostname match against
+ * EXPECTED_NEON_HOST, optional database name match against EXPECTED_NEON_DATABASE,
+ * and explicit test-write authorization (ALLOW_TEST_MIGRATION=true).
+ * Never logs credentials, query parameters, or sensitive URL components.
+ */
+export function validateDestinationTarget(
+  targetUrl: string | null | undefined,
+  options?: { requireWriteOptIn?: boolean }
+): TargetValidationResult {
+  if (!targetUrl || typeof targetUrl !== "string" || targetUrl.trim().length === 0) {
+    return {
+      valid: false,
+      error: "PostgreSQL target URL (DIRECT_URL or DATABASE_URL) is not configured in environment.",
+    };
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl.trim());
+  } catch {
+    return {
+      valid: false,
+      error: "Target PostgreSQL URL is malformed.",
+    };
+  }
+
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    return {
+      valid: false,
+      error: "Target PostgreSQL URL must use 'postgres:' or 'postgresql:' protocol.",
+    };
+  }
+
+  const expectedHost = process.env.EXPECTED_NEON_HOST?.trim();
+  if (!expectedHost) {
+    return {
+      valid: false,
+      error: "Destination guard rejected: EXPECTED_NEON_HOST environment variable must be explicitly configured with the exact target hostname.",
+    };
+  }
+
+  const actualHost = parsed.hostname.toLowerCase();
+  if (actualHost !== expectedHost.toLowerCase()) {
+    return {
+      valid: false,
+      error: "Destination guard rejected: Target hostname does not match EXPECTED_NEON_HOST.",
+    };
+  }
+
+  const expectedDb = process.env.EXPECTED_NEON_DATABASE?.trim();
+  const actualDb = parsed.pathname.replace(/^\//, "");
+  if (expectedDb && actualDb.toLowerCase() !== expectedDb.toLowerCase()) {
+    return {
+      valid: false,
+      error: "Destination guard rejected: Target database name does not match EXPECTED_NEON_DATABASE.",
+    };
+  }
+
+  if (options?.requireWriteOptIn) {
+    const optIn = process.env.ALLOW_TEST_MIGRATION?.trim().toLowerCase();
+    if (optIn !== "true" && optIn !== "1") {
+      return {
+        valid: false,
+        error: "Destination guard rejected: Explicit test-write opt-in (ALLOW_TEST_MIGRATION=true) is required for database write operations.",
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    parsedHost: actualHost,
+    parsedDatabase: actualDb,
+  };
+}
+
+export interface MigrationOptions {
   dryRun?: boolean;
-}): Promise<MigrationSummary> {
+  sqlitePath?: string;
+  requireFixture?: boolean;
+  repoRoot?: string;
+  targetUrl?: string;
+  pgClient?: any;
+  skipBackup?: boolean;
+}
+
+export async function migrateSqliteToPostgres(options?: MigrationOptions): Promise<MigrationSummary> {
   const summary: MigrationSummary = {
     success: false,
     sourceRecordCounts: {},
@@ -87,57 +180,77 @@ export async function migrateSqliteToPostgres(options?: {
     errors: [],
   };
 
-  const sqlitePath = resolveDbPath();
+  const isDryRun = Boolean(options?.dryRun);
+
+  // 1. Resolve source SQLite database path
+  let sqlitePath: string;
+  if (options?.requireFixture) {
+    if (
+      !options.sqlitePath ||
+      typeof options.sqlitePath !== "string" ||
+      options.sqlitePath.trim().length === 0
+    ) {
+      summary.errors.push(
+        "Fixture migration requires an explicit, non-empty sqlitePath. Refusing to fall back to primary database."
+      );
+      return summary;
+    }
+    const fixtureValidation = validateFixturePath(options.sqlitePath, {
+      repoRoot: options.repoRoot,
+    });
+    if (!fixtureValidation.valid || !fixtureValidation.resolvedPath) {
+      summary.errors.push(
+        fixtureValidation.error || "Fixture database path validation failed."
+      );
+      return summary;
+    }
+    sqlitePath = fixtureValidation.resolvedPath;
+  } else {
+    sqlitePath = options?.sqlitePath || resolveDbPath();
+  }
+
   if (!fs.existsSync(sqlitePath)) {
     summary.errors.push(`Source SQLite database not found at ${sqlitePath}`);
     return summary;
   }
 
-  const pgUrl = getDatabaseUrl(true); // use direct URL for migrations
-  if (!pgUrl) {
-    summary.errors.push(
-      "PostgreSQL target URL (DIRECT_URL or DATABASE_URL) is not configured in environment"
-    );
+  // 2. Validate destination target using fail-closed guard
+  const pgUrl = options?.targetUrl || getDatabaseUrl(true); // use direct URL for migrations
+  const guard = validateDestinationTarget(pgUrl, { requireWriteOptIn: !isDryRun });
+  if (!guard.valid) {
+    summary.errors.push(guard.error || "Destination target validation failed.");
     return summary;
   }
 
-  // 1. Take a verified, dated backup of the source database in data/backups
-  const dbDir = path.dirname(sqlitePath);
-  const backupsDir = path.join(dbDir, "backups");
-  if (!fs.existsSync(backupsDir)) {
-    try {
-      fs.mkdirSync(backupsDir, { recursive: true });
-    } catch {}
-  }
-
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = path.join(backupsDir, `erp_backup_${timestamp}.db`);
-  try {
-    fs.copyFileSync(sqlitePath, backupPath);
-    summary.backupPath = backupPath;
-  } catch (err: any) {
-    summary.errors.push(`Failed to create verified source backup: ${err.message}`);
-    return summary;
-  }
-
-  // 2. Open source SQLite database in readonly mode
+  // 3. Open source SQLite database in readonly mode
   const sqliteDb = new Database(sqlitePath, { readonly: true });
 
-  // 3. Connect to PostgreSQL target
+  // 4. Connect to PostgreSQL target to verify connectivity
   let pgSql: postgres.Sql | null = null;
-  try {
-    pgSql = postgres(pgUrl, { max: 1, idle_timeout: 10 });
-    // Verify target connectivity
-    await pgSql`SELECT 1`;
-  } catch (err: any) {
-    summary.errors.push(`Failed to connect to target PostgreSQL instance: ${err.message}`);
-    if (pgSql) await pgSql.end({ timeout: 5 });
-    sqliteDb.close();
-    return summary;
+  const isExternalClient = Boolean(options?.pgClient);
+  if (isExternalClient) {
+    pgSql = options!.pgClient;
+    try {
+      await pgSql!`SELECT 1`;
+    } catch (err: any) {
+      summary.errors.push(`Failed to verify target PostgreSQL instance: ${err.message}`);
+      sqliteDb.close();
+      return summary;
+    }
+  } else {
+    try {
+      pgSql = postgres(pgUrl!, { max: 1, idle_timeout: 10 });
+      await pgSql`SELECT 1`;
+    } catch (err: any) {
+      summary.errors.push(`Failed to connect to target PostgreSQL instance: ${err.message}`);
+      if (pgSql) await pgSql.end({ timeout: 5 });
+      sqliteDb.close();
+      return summary;
+    }
   }
 
   try {
-    // 4. Inspect source table counts
+    // 5. Inspect source table counts
     for (const table of TABLES_IN_ORDER) {
       try {
         const row = sqliteDb.prepare(`SELECT COUNT(*) as count FROM "${table}"`).get() as { count: number };
@@ -147,12 +260,49 @@ export async function migrateSqliteToPostgres(options?: {
       }
     }
 
-    if (options?.dryRun) {
+    // 6. DRY-RUN CLEAN RETURN:
+    // When dry-run is requested, return source counts and verified connectivity cleanly.
+    // Zero filesystem backup files are created, and zero writes/transactions are issued to PostgreSQL.
+    if (isDryRun) {
       summary.success = true;
       return summary;
     }
 
-    // 5. Transfer data inside a single PostgreSQL transaction with strict conflict detection
+    // 7. LIVE MIGRATION BACKUP:
+    // Only created on authorized live migrations (not dry-run).
+    // Uses exclusive creation strategy (COPYFILE_EXCL) to guarantee existing backups are never silently overwritten.
+    if (!options?.skipBackup) {
+      const dbDir = path.dirname(sqlitePath);
+      const backupsDir = path.join(dbDir, "backups");
+      if (!fs.existsSync(backupsDir)) {
+        try {
+          fs.mkdirSync(backupsDir, { recursive: true });
+        } catch {}
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      let backupPath = path.join(backupsDir, `erp_backup_${timestamp}.db`);
+      if (fs.existsSync(backupPath)) {
+        const nonce = crypto.randomBytes(4).toString("hex");
+        backupPath = path.join(backupsDir, `erp_backup_${timestamp}_${nonce}.db`);
+      }
+
+      try {
+        fs.copyFileSync(sqlitePath, backupPath, fs.constants.COPYFILE_EXCL);
+        summary.backupPath = backupPath;
+      } catch (err: any) {
+        summary.errors.push(`Failed to create verified source backup: ${err.message}`);
+        sqliteDb.close();
+        if (pgSql && !isExternalClient) await pgSql.end({ timeout: 5 });
+        return summary;
+      }
+    }
+
+    if (!pgSql) {
+      throw new Error("Target PostgreSQL client is not initialized");
+    }
+
+    // 8. Transfer data inside a single PostgreSQL transaction with strict conflict detection
     await pgSql.begin(async (tx) => {
       for (const table of TABLES_IN_ORDER) {
         const sourceCount = summary.sourceRecordCounts[table];
@@ -214,49 +364,50 @@ export async function migrateSqliteToPostgres(options?: {
         summary.targetRecordCounts[table] = Number(countRow[0].count);
 
         if (summary.targetRecordCounts[table] !== sourceCount) {
-          summary.errors.push(
-            `Row count mismatch on table '${table}': Source=${sourceCount}, Target=${summary.targetRecordCounts[table]}`
+          throw new Error(
+            `Row count mismatch on table '${table}': Source=${sourceCount}, Target=${summary.targetRecordCounts[table]}. Transaction rolled back.`
           );
         }
       }
+
+      // PRE-COMMIT INTEGRITY VALIDATION:
+      // Executed strictly INSIDE the uncommitted transaction on tx so any mismatch triggers rollback.
+      // 1. Financial checksum: compare sum of all amounts (whole INR)
+      const sqliteFin = sqliteDb
+        .prepare("SELECT COALESCE(SUM(amount), 0) as total FROM financial_transactions")
+        .get() as { total: number };
+      const pgFin = (await tx`SELECT COALESCE(SUM(amount), 0) as total FROM financial_transactions`) as Array<{ total: any }>;
+
+      summary.financialChecksum = {
+        sqliteSum: Number(sqliteFin.total),
+        pgSum: Number(pgFin[0].total),
+        match: Number(sqliteFin.total) === Number(pgFin[0].total),
+      };
+
+      if (!summary.financialChecksum.match) {
+        throw new Error(
+          `Financial checksum mismatch: SQLite=${summary.financialChecksum.sqliteSum}, PG=${summary.financialChecksum.pgSum}. Transaction rolled back.`
+        );
+      }
+
+      // 2. Active stays count checksum
+      const sqliteStays = sqliteDb
+        .prepare("SELECT COUNT(*) as count FROM resident_stays WHERE status = 'ACTIVE'")
+        .get() as { count: number };
+      const pgStays = (await tx`SELECT COUNT(*) as count FROM resident_stays WHERE status = 'ACTIVE'`) as Array<{ count: any }>;
+
+      summary.activeStaysChecksum = {
+        sqliteCount: Number(sqliteStays.count),
+        pgCount: Number(pgStays[0].count),
+        match: Number(sqliteStays.count) === Number(pgStays[0].count),
+      };
+
+      if (!summary.activeStaysChecksum.match) {
+        throw new Error(
+          `Active stays count mismatch: SQLite=${summary.activeStaysChecksum.sqliteCount}, PG=${summary.activeStaysChecksum.pgCount}. Transaction rolled back.`
+        );
+      }
     });
-
-    // 6. Validation Checks
-    // Financial checksum: compare sum of all amounts (whole INR)
-    const sqliteFin = sqliteDb
-      .prepare("SELECT COALESCE(SUM(amount), 0) as total FROM financial_transactions")
-      .get() as { total: number };
-    const pgFin = await pgSql`SELECT COALESCE(SUM(amount), 0) as total FROM financial_transactions`;
-
-    summary.financialChecksum = {
-      sqliteSum: Number(sqliteFin.total),
-      pgSum: Number(pgFin[0].total),
-      match: Number(sqliteFin.total) === Number(pgFin[0].total),
-    };
-
-    if (!summary.financialChecksum.match) {
-      summary.errors.push(
-        `Financial checksum mismatch: SQLite=${summary.financialChecksum.sqliteSum}, PG=${summary.financialChecksum.pgSum}`
-      );
-    }
-
-    // Active stays checksum
-    const sqliteStays = sqliteDb
-      .prepare("SELECT COUNT(*) as count FROM resident_stays WHERE status = 'ACTIVE'")
-      .get() as { count: number };
-    const pgStays = await pgSql`SELECT COUNT(*) as count FROM resident_stays WHERE status = 'ACTIVE'`;
-
-    summary.activeStaysChecksum = {
-      sqliteCount: Number(sqliteStays.count),
-      pgCount: Number(pgStays[0].count),
-      match: Number(sqliteStays.count) === Number(pgStays[0].count),
-    };
-
-    if (!summary.activeStaysChecksum.match) {
-      summary.errors.push(
-        `Active stays count mismatch: SQLite=${summary.activeStaysChecksum.sqliteCount}, PG=${summary.activeStaysChecksum.pgCount}`
-      );
-    }
 
     summary.success = summary.errors.length === 0;
   } catch (err: any) {
@@ -264,7 +415,7 @@ export async function migrateSqliteToPostgres(options?: {
     summary.success = false;
   } finally {
     sqliteDb.close();
-    if (pgSql) {
+    if (pgSql && !isExternalClient) {
       await pgSql.end({ timeout: 5 });
     }
   }
@@ -307,6 +458,16 @@ export async function rollbackPostgresMigration(options: RollbackOptions): Promi
       success: false,
       truncatedTables: [],
       error: "Destructive rollback blocked: Cannot truncate production database without explicit allowProduction override.",
+    };
+  }
+
+  // Destination identity guard: require valid target and explicit test-write opt-in before connecting or truncating
+  const guard = validateDestinationTarget(pgUrl, { requireWriteOptIn: true });
+  if (!guard.valid) {
+    return {
+      success: false,
+      truncatedTables: [],
+      error: `Destructive rollback blocked: ${guard.error}`,
     };
   }
 

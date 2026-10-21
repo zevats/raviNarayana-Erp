@@ -14,10 +14,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
-    const room = getRoomById(user, params.id);
+    const room = await getRoomById(user, params.id);
     if (!room) {
       return NextResponse.json({ error: `Room '${params.id}' not found.` }, { status: 404 });
     }
@@ -36,17 +36,17 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const body = await request.json().catch(() => ({}));
     const clientIp = getClientIp(request);
 
     if (body.isActive !== undefined && typeof body.isActive === "boolean") {
-      setRoomActiveStatus(user, params.id, body.isActive, clientIp);
+      await setRoomActiveStatus(user, params.id, body.isActive, clientIp);
     }
 
-    const updated = updateRoom(
+    const updated = await updateRoom(
       user,
       params.id,
       {
@@ -75,11 +75,11 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
-    deleteRoom(user, params.id, clientIp);
+    await deleteRoom(user, params.id, clientIp);
 
     return NextResponse.json({ success: true, message: "Room deleted successfully." });
   } catch (error: any) {

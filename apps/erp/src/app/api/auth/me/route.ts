@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { user, isPreempted } = validateSessionDetailed(sessionToken);
+    const { user, isPreempted } = await validateSessionDetailed(sessionToken);
 
     if (isPreempted) {
       const response = NextResponse.json(

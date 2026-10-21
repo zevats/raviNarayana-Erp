@@ -17,10 +17,10 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
-    const planDetail = getMealPlanById(user, params.id);
+    const planDetail = await getMealPlanById(user, params.id);
     if (!planDetail) {
       return NextResponse.json({ error: "Meal plan not found." }, { status: 404 });
     }
@@ -42,13 +42,13 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
     const body = await request.json().catch(() => ({}));
 
-    const updatedPlan = updateMealPlan(
+    const updatedPlan = await updateMealPlan(
       user,
       params.id,
       {

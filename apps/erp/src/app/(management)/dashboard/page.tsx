@@ -21,7 +21,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
-import { getDb } from "@/server/database/db";
+import { getAsyncDb } from "@/server/database/db";
 import { NotificationItem } from "@/types";
 import { getNotifications } from "@/server/notifications/notificationService";
 import { ExportReportModal } from "./ExportReportModal";
@@ -50,7 +50,7 @@ function formatRelativeTime(isoString: string): string {
 export default async function DashboardPage() {
   const cookieStore = cookies();
   const sessionToken = cookieStore.get(ERP_COOKIE_NAME)?.value || "";
-  const user = validateSession(sessionToken);
+  const user = await validateSession(sessionToken);
 
   const ownerName = user?.fullName || "Dr. Ravinder Gulia";
   const todayIsoDate = new Date().toISOString().slice(0, 10);
@@ -102,26 +102,26 @@ export default async function DashboardPage() {
   let monthlyData: { month: string; label: string; collected: number; expenses: number }[] = [];
 
   try {
-    const db = getDb();
+    const db = getAsyncDb();
 
     // 1. Rooms & Occupancy
-    const roomRow = db.prepare(`
+    const roomRow = await db.queryOne<{ totalRooms: number | string; totalCapacity: number | string }>(`
       SELECT 
-        COUNT(*) as totalRooms,
-        COALESCE(SUM(capacity), 0) as totalCapacity
+        COUNT(*) as "totalRooms",
+        COALESCE(SUM(capacity), 0) as "totalCapacity"
       FROM rooms
       WHERE is_active = 1
-    `).get() as { totalRooms: number; totalCapacity: number } | undefined;
+    `);
 
-    const activeStaysRow = db.prepare(`
-      SELECT COUNT(*) as occupiedBeds
+    const activeStaysRow = await db.queryOne<{ occupiedBeds: number | string }>(`
+      SELECT COUNT(*) as "occupiedBeds"
       FROM resident_stays
       WHERE status = 'ACTIVE'
-    `).get() as { occupiedBeds: number } | undefined;
+    `);
 
-    const totalRooms = roomRow?.totalRooms || 0;
-    const totalCapacity = roomRow?.totalCapacity || 0;
-    const occupiedBeds = activeStaysRow?.occupiedBeds || 0;
+    const totalRooms = Number(roomRow?.totalRooms || 0);
+    const totalCapacity = Number(roomRow?.totalCapacity || 0);
+    const occupiedBeds = Number(activeStaysRow?.occupiedBeds || 0);
     const vacantBeds = Math.max(0, totalCapacity - occupiedBeds);
     const occupancyRate = totalCapacity > 0 ? Math.round((occupiedBeds / totalCapacity) * 100) : 0;
 
@@ -134,33 +134,33 @@ export default async function DashboardPage() {
     };
 
     // 2. Finance
-    const finSummary = db.prepare(`
+    const finSummary = await db.queryOne<{
+      totalRentCollected: number | string;
+      totalRentBilled: number | string;
+      totalExpensesPaid: number | string;
+      totalDepositsHeld: number | string;
+    }>(`
       SELECT
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalRentCollected,
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalRentBilled,
-        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalExpensesPaid,
-        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalDepositsHeld
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
+        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
+        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld"
       FROM financial_transactions
-    `).get() as {
-      totalRentCollected: number;
-      totalRentBilled: number;
-      totalExpensesPaid: number;
-      totalDepositsHeld: number;
-    } | undefined;
+    `);
 
-    const rentMonthRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as rentMonth
+    const rentMonthRow = await db.queryOne<{ rentMonth: number | string }>(`
+      SELECT COALESCE(SUM(amount), 0) as "rentMonth"
       FROM financial_transactions
       WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date LIKE ?
-    `).get(`${currentMonthPrefix}%`) as { rentMonth: number } | undefined;
+    `, [`${currentMonthPrefix}%`]);
 
-    const expMonthRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as expMonth
+    const expMonthRow = await db.queryOne<{ expMonth: number | string }>(`
+      SELECT COALESCE(SUM(amount), 0) as "expMonth"
       FROM financial_transactions
       WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date LIKE ?
-    `).get(`${currentMonthPrefix}%`) as { expMonth: number } | undefined;
+    `, [`${currentMonthPrefix}%`]);
 
-    const overdueCountRow = db.prepare(`
+    const overdueCountRow = await db.queryOne<{ count: number | string }>(`
       SELECT COUNT(*) as count FROM (
         SELECT r.id
         FROM residents r
@@ -170,36 +170,36 @@ export default async function DashboardPage() {
           SUM(CASE WHEN t.transaction_type = 'RENT_CHARGE' THEN t.amount ELSE 0 END) -
           SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' THEN t.amount ELSE 0 END)
         ) > 0
-      )
-    `).get() as { count: number } | undefined;
+      ) subq
+    `);
 
     // Attributable Tiffin Operating Costs & Revenue
-    const kitchenCostRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as kitchenCost
+    const kitchenCostRow = await db.queryOne<{ kitchenCost: number | string }>(`
+      SELECT COALESCE(SUM(amount), 0) as "kitchenCost"
       FROM financial_transactions
       WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' 
         AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') 
         AND transaction_date LIKE ?
-    `).get(`${currentMonthPrefix}%`) as { kitchenCost: number } | undefined;
+    `, [`${currentMonthPrefix}%`]);
 
-    const tiffinRevRow = db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) as tiffinRev
+    const tiffinRevRow = await db.queryOne<{ tiffinRev: number | string }>(`
+      SELECT COALESCE(SUM(amount), 0) as "tiffinRev"
       FROM financial_transactions
       WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED'
         AND (category = 'TIFFIN' OR description LIKE '%tiffin%')
         AND transaction_date LIKE ?
-    `).get(`${currentMonthPrefix}%`) as { tiffinRev: number } | undefined;
+    `, [`${currentMonthPrefix}%`]);
 
-    const totalRentCollected = finSummary?.totalRentCollected || 0;
-    const totalRentBilled = finSummary?.totalRentBilled || 0;
-    const totalExpensesPaid = finSummary?.totalExpensesPaid || 0;
-    const totalDepositsHeld = finSummary?.totalDepositsHeld || 0;
-    const currentMonthRent = rentMonthRow?.rentMonth || 0;
-    const currentMonthExpenses = expMonthRow?.expMonth || 0;
+    const totalRentCollected = Number(finSummary?.totalRentCollected || 0);
+    const totalRentBilled = Number(finSummary?.totalRentBilled || 0);
+    const totalExpensesPaid = Number(finSummary?.totalExpensesPaid || 0);
+    const totalDepositsHeld = Number(finSummary?.totalDepositsHeld || 0);
+    const currentMonthRent = Number(rentMonthRow?.rentMonth || 0);
+    const currentMonthExpenses = Number(expMonthRow?.expMonth || 0);
     const outstandingRent = Math.max(0, totalRentBilled - totalRentCollected);
-    const overdueCount = overdueCountRow?.count || 0;
-    const kitchenCosts = kitchenCostRow?.kitchenCost || 0;
-    const tiffinRevenue = tiffinRevRow?.tiffinRev || 0;
+    const overdueCount = Number(overdueCountRow?.count || 0);
+    const kitchenCosts = Number(kitchenCostRow?.kitchenCost || 0);
+    const tiffinRevenue = Number(tiffinRevRow?.tiffinRev || 0);
     const tiffinNetResult = tiffinRevenue - kitchenCosts;
 
     finance = {
@@ -226,7 +226,7 @@ export default async function DashboardPage() {
       sixMonths.push(ym);
     }
 
-    const monthlyDbRows = db.prepare(`
+    const monthlyDbRows = await db.query<{ ym: string; collected: number | string; expenses: number | string }>(`
       SELECT 
         substr(transaction_date, 1, 7) as ym,
         COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as collected,
@@ -234,11 +234,11 @@ export default async function DashboardPage() {
       FROM financial_transactions
       WHERE substr(transaction_date, 1, 7) IN (${sixMonths.map(() => "?").join(",")})
       GROUP BY substr(transaction_date, 1, 7)
-    `).all(...sixMonths) as { ym: string; collected: number; expenses: number }[];
+    `, sixMonths);
 
     const monthMap: Record<string, { collected: number; expenses: number }> = {};
     for (const r of monthlyDbRows) {
-      monthMap[r.ym] = { collected: r.collected, expenses: r.expenses };
+      monthMap[r.ym] = { collected: Number(r.collected), expenses: Number(r.expenses) };
     }
 
     monthlyData = sixMonths.map((ym) => {
@@ -254,28 +254,28 @@ export default async function DashboardPage() {
 
     // 4. Meal Fulfillment Tracking (Cooked, Dispatched, Delivered)
     let targetKitchenDate = todayIsoDate;
-    let mealPlans = db.prepare(`
+    let mealPlans = await db.query<{ meal_type: string; status: string; final_preparation_count: number | string; cooked_count: number | string }>(`
       SELECT meal_type, status, final_preparation_count, COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
       FROM daily_meal_plans
       WHERE service_date = ?
-    `).all(targetKitchenDate) as { meal_type: string; status: string; final_preparation_count: number; cooked_count: number }[];
+    `, [targetKitchenDate]);
 
     if (mealPlans.length === 0) {
-      const latestKitchenDate = db.prepare(`
+      const latestKitchenDate = await db.queryOne<{ service_date: string }>(`
         SELECT service_date FROM daily_meal_plans ORDER BY service_date DESC LIMIT 1
-      `).get() as { service_date: string } | undefined;
+      `);
       if (latestKitchenDate) {
         targetKitchenDate = latestKitchenDate.service_date;
-        mealPlans = db.prepare(`
+        mealPlans = await db.query<{ meal_type: string; status: string; final_preparation_count: number | string; cooked_count: number | string }>(`
           SELECT meal_type, status, final_preparation_count, COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
           FROM daily_meal_plans
           WHERE service_date = ?
-        `).all(targetKitchenDate) as { meal_type: string; status: string; final_preparation_count: number; cooked_count: number }[];
+        `, [targetKitchenDate]);
       }
     }
 
     // Delivery stats grouped by meal type for target service date
-    const deliveryMealStats = db.prepare(`
+    const deliveryMealStats = await db.query<{ meal_type: string; total_tasks: number | string; dispatched_count: number | string; delivered_count: number | string }>(`
       SELECT
         meal_type,
         COUNT(*) as total_tasks,
@@ -284,7 +284,7 @@ export default async function DashboardPage() {
       FROM delivery_tasks
       WHERE service_date = ?
       GROUP BY meal_type
-    `).all(targetKitchenDate) as { meal_type: string; total_tasks: number; dispatched_count: number; delivered_count: number }[];
+    `, [targetKitchenDate]);
 
     const deliveryMealMap: Record<string, { dispatched: number; delivered: number; total: number }> = {};
     for (const d of deliveryMealStats) {
@@ -327,18 +327,18 @@ export default async function DashboardPage() {
     };
 
     // 5. Overall Delivery Statistics
-    const delStatsRow = db.prepare(`
+    const delStatsRow = await db.queryOne<{ total_tasks: number | string; delivered: number | string; exceptions: number | string }>(`
       SELECT
         COUNT(*) as total_tasks,
         COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered,
         COALESCE(SUM(CASE WHEN status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exceptions
       FROM delivery_tasks
       WHERE service_date = ?
-    `).get(targetKitchenDate) as { total_tasks: number; delivered: number; exceptions: number } | undefined;
+    `, [targetKitchenDate]);
 
-    const totalDelTasks = delStatsRow?.total_tasks || 0;
-    const totalDelivered = delStatsRow?.delivered || 0;
-    const totalExceptions = delStatsRow?.exceptions || 0;
+    const totalDelTasks = Number(delStatsRow?.total_tasks || 0);
+    const totalDelivered = Number(delStatsRow?.delivered || 0);
+    const totalExceptions = Number(delStatsRow?.exceptions || 0);
 
     deliverySummary = {
       totalTasks: totalDelTasks,
@@ -349,7 +349,7 @@ export default async function DashboardPage() {
 
     // 6. Actionable Live Notifications
     if (user) {
-      liveNotifications = getNotifications(user, { limit: 4 });
+      liveNotifications = await getNotifications(user, { limit: 4 });
     }
 
   } catch (err) {

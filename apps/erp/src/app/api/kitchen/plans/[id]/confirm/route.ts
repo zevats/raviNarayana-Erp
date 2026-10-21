@@ -14,11 +14,11 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
-    const plan = confirmMealPlan(user, params.id, clientIp);
+    const plan = await confirmMealPlan(user, params.id, clientIp);
 
     return NextResponse.json({ success: true, plan });
   } catch (error: any) {

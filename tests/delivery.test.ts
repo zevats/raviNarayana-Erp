@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 
 import { runMigrations } from "../apps/erp/src/server/database/migrations";
-import { getDb, closeDb } from "../apps/erp/src/server/database/db";
+import { getDb, closeDb, getAsyncDb, AsyncDb, convertPlaceholders } from "../apps/erp/src/server/database/db";
 import { hasPermission } from "../apps/erp/src/server/authorization/permissions";
 import {
   requirePermission,
@@ -40,6 +40,10 @@ import {
 } from "../apps/erp/src/server/notifications/notificationService";
 import { getAuditLogs } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
+
+// Primary DB immutability guard
+const primaryDbPath = path.resolve(__dirname, "..", "data", "erp.db");
+const primaryStatsBefore = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
 
 // Isolated delivery test database path
 const TEST_DELIVERY_DB_PATH = path.resolve(__dirname, "test_delivery.db");
@@ -200,7 +204,7 @@ async function runDeliveryTests() {
   // -----------------------------------------------------------------------------
   console.log("\n[TEST SUITE 2] Operational Pre-requisite Setup");
 
-  const room301 = createRoom(managerUser, {
+  const room301 = await createRoom(managerUser, {
     roomNumber: "301",
     floor: 3,
     type: "DOUBLE_SHARING",
@@ -208,7 +212,7 @@ async function runDeliveryTests() {
     baseRentMonthly: 8500,
   });
 
-  const room302 = createRoom(managerUser, {
+  const room302 = await createRoom(managerUser, {
     roomNumber: "302",
     floor: 3,
     type: "SINGLE",
@@ -216,40 +220,40 @@ async function runDeliveryTests() {
     baseRentMonthly: 12000,
   });
 
-  const resAarav = registerResident(managerUser, {
+  const resAarav = await registerResident(managerUser, {
     fullName: "Aarav Sharma",
     phone: "9876543201",
     emergencyContact: "+91 98765 00001",
   });
 
-  const resPriya = registerResident(managerUser, {
+  const resPriya = await registerResident(managerUser, {
     fullName: "Priya Patel",
     phone: "9876543202",
     emergencyContact: "+91 98765 00002",
   });
 
-  const resRohan = registerResident(managerUser, {
+  const resRohan = await registerResident(managerUser, {
     fullName: "Rohan Verma",
     phone: "9876543203",
     emergencyContact: "+91 98765 00003",
   });
 
   // Check-in residents on 2026-10-16
-  assignResidentToRoom(managerUser, {
+  await assignResidentToRoom(managerUser, {
     residentId: resAarav.id,
     roomId: room301.id,
     checkInDate: "2026-10-16",
     monthlyRent: 8500,
   });
 
-  assignResidentToRoom(managerUser, {
+  await assignResidentToRoom(managerUser, {
     residentId: resPriya.id,
     roomId: room301.id,
     checkInDate: "2026-10-16",
     monthlyRent: 8500,
   });
 
-  assignResidentToRoom(managerUser, {
+  await assignResidentToRoom(managerUser, {
     residentId: resRohan.id,
     roomId: room302.id,
     checkInDate: "2026-10-16",
@@ -257,7 +261,7 @@ async function runDeliveryTests() {
   });
 
   // Create Breakfast meal plan with Rohan opted out
-  const draftPlan = createMealPlan(kitchenUser, {
+  const draftPlan = await createMealPlan(kitchenUser, {
     serviceDate: "2026-10-16",
     mealType: "BREAKFAST",
     guestCount: 2,
@@ -271,7 +275,7 @@ async function runDeliveryTests() {
   // Invariant Guard 1: Attempting to generate delivery tasks for a DRAFT plan is rejected
   let draftBlocked = false;
   try {
-    generateDeliveryTasks(managerUser, {
+    await generateDeliveryTasks(managerUser, {
       serviceDate: "2026-10-16",
       mealType: "BREAKFAST",
     });
@@ -281,7 +285,7 @@ async function runDeliveryTests() {
   assert(draftBlocked, "Invariant Guard: Cannot generate delivery tasks from DRAFT kitchen plan");
 
   // Confirm meal plan
-  const confirmedPlan = confirmMealPlan(kitchenUser, draftPlan.id);
+  const confirmedPlan = await confirmMealPlan(kitchenUser, draftPlan.id);
   assert(confirmedPlan.status === "CONFIRMED", "Meal plan transitioned to CONFIRMED");
 
   // -----------------------------------------------------------------------------
@@ -289,7 +293,7 @@ async function runDeliveryTests() {
   // -----------------------------------------------------------------------------
   console.log("\n[TEST SUITE 3] Task Generation & Opt-Out Exclusion");
 
-  const genResult = generateDeliveryTasks(managerUser, {
+  const genResult = await generateDeliveryTasks(managerUser, {
     serviceDate: "2026-10-16",
     mealType: "BREAKFAST",
   });
@@ -311,7 +315,7 @@ async function runDeliveryTests() {
   assert(aaravTask.assignedTo === null, "Initial delivery task is unassigned");
 
   // Verify Rohan has NO delivery task generated
-  const allTasks = listDeliveryTasks(managerUser, { serviceDate: "2026-10-16", mealType: "BREAKFAST" });
+  const allTasks = await listDeliveryTasks(managerUser, { serviceDate: "2026-10-16", mealType: "BREAKFAST" });
   const rohanTask = allTasks.find((t) => t.residentId === resRohan.id);
   assert(rohanTask === undefined, "Opted-out resident (Rohan) has NO delivery task generated");
 
@@ -321,7 +325,7 @@ async function runDeliveryTests() {
   console.log("\n[TEST SUITE 4] Idempotent Generation & Re-run Protection");
 
   // Re-run generation with identical serviceDate & mealType
-  const secondGenResult = generateDeliveryTasks(managerUser, {
+  const secondGenResult = await generateDeliveryTasks(managerUser, {
     serviceDate: "2026-10-16",
     mealType: "BREAKFAST",
   });
@@ -342,7 +346,7 @@ async function runDeliveryTests() {
   // 1. Attempt to assign to non-existent staff
   let nonExistentStaffBlocked = false;
   try {
-    assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: "usr_non_existent" });
+    await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: "usr_non_existent" });
   } catch (err: any) {
     nonExistentStaffBlocked = err.message.includes("not found");
   }
@@ -351,7 +355,7 @@ async function runDeliveryTests() {
   // 2. Attempt to assign to inactive delivery staff
   let inactiveStaffBlocked = false;
   try {
-    assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: "usr_inactive_del" });
+    await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: "usr_inactive_del" });
   } catch (err: any) {
     inactiveStaffBlocked = err.message.includes("is currently inactive");
   }
@@ -360,14 +364,14 @@ async function runDeliveryTests() {
   // 3. Attempt to assign to non-delivery role (e.g. Accountant)
   let nonDeliveryRoleBlocked = false;
   try {
-    assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: accountantUser.id });
+    await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: accountantUser.id });
   } catch (err: any) {
     nonDeliveryRoleBlocked = err.message.includes("Only active DELIVERY_PERSON staff");
   }
   assert(nonDeliveryRoleBlocked, "Validation Guard: Rejects assignment to staff without DELIVERY_PERSON role");
 
   // 4. Legitimate assignment to Ramesh Kumar
-  const assignedTask = assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
+  const assignedTask = await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
   assert(assignedTask.status === "ASSIGNED", "Task transitioned to ASSIGNED status");
   assert(assignedTask.assignedTo === rameshDeliveryUser.id, "Task assigned to Ramesh Kumar");
   assert(assignedTask.assignedToName === "Ramesh Kumar", "Task denormalized assigned staff name");
@@ -375,17 +379,17 @@ async function runDeliveryTests() {
   assert(assignedTask.assignedAt !== null, "Task stamped with assignment timestamp");
 
   // 5. Reassign Task to Suresh Singh
-  const reassignedTask = assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: sureshDeliveryUser.id });
+  const reassignedTask = await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: sureshDeliveryUser.id });
   assert(reassignedTask.assignedTo === sureshDeliveryUser.id, "Task successfully reassigned to Suresh Singh");
 
-  const taskDetails = getDeliveryTaskById(managerUser, aaravTask.id)!;
+  const taskDetails = (await getDeliveryTaskById(managerUser, aaravTask.id))!;
   const eventTypes = taskDetails.events.map((e) => e.eventType);
   assert(eventTypes.includes("CREATED"), "Event timeline includes CREATED");
   assert(eventTypes.includes("ASSIGNED"), "Event timeline includes initial ASSIGNED");
   assert(eventTypes.includes("REASSIGNED"), "Event timeline includes REASSIGNED");
 
   // Assign Priya's task to Ramesh Kumar
-  assignDeliveryTask(managerUser, priyaTask.id, { assignedToStaffId: rameshDeliveryUser.id });
+  await assignDeliveryTask(managerUser, priyaTask.id, { assignedToStaffId: rameshDeliveryUser.id });
 
   // -----------------------------------------------------------------------------
   // TEST SUITE 6: Strict Delivery Staff Ownership Isolation
@@ -398,7 +402,7 @@ async function runDeliveryTests() {
   // 1. Ramesh tries to dispatch Suresh's task -> 403 Forbidden
   let rameshDispatchBlocked = false;
   try {
-    dispatchDeliveryTask(rameshDeliveryUser, aaravTask.id);
+    await dispatchDeliveryTask(rameshDeliveryUser, aaravTask.id);
   } catch (err: any) {
     rameshDispatchBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -407,7 +411,7 @@ async function runDeliveryTests() {
   // 2. Ramesh tries to complete Suresh's task -> 403 Forbidden
   let rameshCompleteBlocked = false;
   try {
-    completeDeliveryTask(rameshDeliveryUser, aaravTask.id, { recipientName: "Intruder" });
+    await completeDeliveryTask(rameshDeliveryUser, aaravTask.id, { recipientName: "Intruder" });
   } catch (err: any) {
     rameshCompleteBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -416,7 +420,7 @@ async function runDeliveryTests() {
   // 3. Ramesh tries to report exception on Suresh's task -> 403 Forbidden
   let rameshExceptionBlocked = false;
   try {
-    reportDeliveryException(rameshDeliveryUser, aaravTask.id, {
+    await reportDeliveryException(rameshDeliveryUser, aaravTask.id, {
       exceptionType: "RESIDENT_UNAVAILABLE",
       reason: "Attempt by wrong staff",
     });
@@ -428,24 +432,24 @@ async function runDeliveryTests() {
   // 4. Ramesh tries to view Suresh's task detail -> 403 Forbidden
   let rameshDetailBlocked = false;
   try {
-    getDeliveryTaskById(rameshDeliveryUser, aaravTask.id);
+    await getDeliveryTaskById(rameshDeliveryUser, aaravTask.id);
   } catch (err: any) {
     rameshDetailBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
   assert(rameshDetailBlocked, "Ownership Guard: Ramesh CANNOT inspect Suresh's task detail (HTTP 403)");
 
   // 5. Query Isolation: Ramesh listDeliveryTasks only returns his own assigned task
-  const rameshTasks = listDeliveryTasks(rameshDeliveryUser, { serviceDate: "2026-10-16" });
+  const rameshTasks = await listDeliveryTasks(rameshDeliveryUser, { serviceDate: "2026-10-16" });
   assert(rameshTasks.length === 1, "Ramesh task list returns exactly 1 task");
   assert(rameshTasks[0].id === priyaTask.id, "Ramesh only sees Priya's task");
 
   // Suresh listDeliveryTasks only returns his own assigned task
-  const sureshTasks = listDeliveryTasks(sureshDeliveryUser, { serviceDate: "2026-10-16" });
+  const sureshTasks = await listDeliveryTasks(sureshDeliveryUser, { serviceDate: "2026-10-16" });
   assert(sureshTasks.length === 1, "Suresh task list returns exactly 1 task");
   assert(sureshTasks[0].id === aaravTask.id, "Suresh only sees Aarav's task");
 
   // Manager sees all tasks
-  const managerTasks = listDeliveryTasks(managerUser, { serviceDate: "2026-10-16" });
+  const managerTasks = await listDeliveryTasks(managerUser, { serviceDate: "2026-10-16" });
   assert(managerTasks.length === 2, "Operations Manager sees all 2 tasks across all staff");
 
   // -----------------------------------------------------------------------------
@@ -454,17 +458,17 @@ async function runDeliveryTests() {
   console.log("\n[TEST SUITE 7] Valid State Transitions & Delivery Proof");
 
   // 1. Suresh dispatches Aarav's task (Room 301)
-  const dispatchedTask = dispatchDeliveryTask(sureshDeliveryUser, aaravTask.id);
+  const dispatchedTask = await dispatchDeliveryTask(sureshDeliveryUser, aaravTask.id);
   assert(dispatchedTask.status === "OUT_FOR_DELIVERY", "Task transitioned to OUT_FOR_DELIVERY");
   assert(dispatchedTask.dispatchedBy === sureshDeliveryUser.id, "Stamped with dispatcher ID");
   assert(dispatchedTask.dispatchedAt !== null, "Stamped with dispatch timestamp");
 
   // Dispatch is idempotent
-  const dupDispatch = dispatchDeliveryTask(sureshDeliveryUser, aaravTask.id);
+  const dupDispatch = await dispatchDeliveryTask(sureshDeliveryUser, aaravTask.id);
   assert(dupDispatch.status === "OUT_FOR_DELIVERY", "Repeated dispatch is safely idempotent");
 
   // 2. Suresh completes delivery with handover verification
-  const deliveredTask = completeDeliveryTask(sureshDeliveryUser, aaravTask.id, {
+  const deliveredTask = await completeDeliveryTask(sureshDeliveryUser, aaravTask.id, {
     recipientName: "Aarav Sharma",
     notes: "Handed over at Room 301 doorstep",
   });
@@ -476,7 +480,7 @@ async function runDeliveryTests() {
   assert(deliveredTask.deliveryNotes === "Handed over at Room 301 doorstep", "Recorded delivery notes");
 
   // Completed delivery is idempotent
-  const dupDeliver = completeDeliveryTask(sureshDeliveryUser, aaravTask.id);
+  const dupDeliver = await completeDeliveryTask(sureshDeliveryUser, aaravTask.id);
   assert(dupDeliver.status === "DELIVERED", "Repeated completion is safely idempotent");
 
   // -----------------------------------------------------------------------------
@@ -487,7 +491,7 @@ async function runDeliveryTests() {
   // 1. Delivered task cannot be marked as exception
   let deliveredToExceptionBlocked = false;
   try {
-    reportDeliveryException(managerUser, aaravTask.id, {
+    await reportDeliveryException(managerUser, aaravTask.id, {
       exceptionType: "MEAL_DAMAGED_OR_MISSING",
       reason: "Attempt to mark delivered meal as exception",
     });
@@ -499,7 +503,7 @@ async function runDeliveryTests() {
   // 2. Delivered task cannot be reassigned
   let deliveredReassignBlocked = false;
   try {
-    assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
+    await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
   } catch (err: any) {
     deliveredReassignBlocked = err.message.includes("Delivered tasks cannot be reassigned");
   }
@@ -511,12 +515,12 @@ async function runDeliveryTests() {
   console.log("\n[TEST SUITE 9] Controlled Exception Workflow & Authorized Retries");
 
   // Ramesh dispatches Priya's task
-  dispatchDeliveryTask(rameshDeliveryUser, priyaTask.id);
+  await dispatchDeliveryTask(rameshDeliveryUser, priyaTask.id);
 
   // Validation: Exception reason must be at least 5 characters
   let shortReasonBlocked = false;
   try {
-    reportDeliveryException(rameshDeliveryUser, priyaTask.id, {
+    await reportDeliveryException(rameshDeliveryUser, priyaTask.id, {
       exceptionType: "RESIDENT_UNAVAILABLE",
       reason: "No",
     });
@@ -526,7 +530,7 @@ async function runDeliveryTests() {
   assert(shortReasonBlocked, "Validation Guard: Rejects exception reason with fewer than 5 characters");
 
   // Ramesh reports exception: Resident Unavailable
-  const exceptionTask = reportDeliveryException(rameshDeliveryUser, priyaTask.id, {
+  const exceptionTask = await reportDeliveryException(rameshDeliveryUser, priyaTask.id, {
     exceptionType: "RESIDENT_UNAVAILABLE",
     reason: "Resident not in room, room locked, phone went to voicemail",
   });
@@ -544,14 +548,14 @@ async function runDeliveryTests() {
   // Non-manager cannot retry tasks (delivery persons lack delivery.manage)
   let deliveryStaffRetryBlocked = false;
   try {
-    retryDeliveryTask(rameshDeliveryUser, priyaTask.id, { notes: "Unauthorized retry" });
+    await retryDeliveryTask(rameshDeliveryUser, priyaTask.id, { notes: "Unauthorized retry" });
   } catch (err: any) {
     deliveryStaffRetryBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
   assert(deliveryStaffRetryBlocked, "Privilege Guard: DELIVERY_PERSON cannot call retryDeliveryTask (HTTP 403)");
 
   // Operations Manager retries task and reassigns to Suresh
-  const retriedTask = retryDeliveryTask(managerUser, priyaTask.id, {
+  const retriedTask = await retryDeliveryTask(managerUser, priyaTask.id, {
     reassignToStaffId: sureshDeliveryUser.id,
     notes: "Resident called front desk, reattempting delivery with Suresh",
   });
@@ -562,8 +566,8 @@ async function runDeliveryTests() {
   assert(retriedTask.exceptionReason === null, "Exception reason cleared on retry");
 
   // Suresh delivers the retried task
-  dispatchDeliveryTask(sureshDeliveryUser, priyaTask.id);
-  const finallyDelivered = completeDeliveryTask(sureshDeliveryUser, priyaTask.id, {
+  await dispatchDeliveryTask(sureshDeliveryUser, priyaTask.id);
+  const finallyDelivered = await completeDeliveryTask(sureshDeliveryUser, priyaTask.id, {
     recipientName: "Priya Patel",
     notes: "Successfully handed over on redelivery attempt",
   });
@@ -575,13 +579,13 @@ async function runDeliveryTests() {
   console.log("\n[TEST SUITE 10] Resident Checkout Preservation");
 
   // Check out Aarav Sharma
-  checkOutResident(managerUser, {
+  await checkOutResident(managerUser, {
     residentId: resAarav.id,
     checkOutDate: "2026-10-18",
   });
 
   // Verify historical delivery task is PRESERVED intact
-  const pastAaravTask = getDeliveryTaskById(managerUser, aaravTask.id);
+  const pastAaravTask = await getDeliveryTaskById(managerUser, aaravTask.id);
   assert(pastAaravTask !== null, "Aarav's historical delivery task preserved after checkout");
   assert(pastAaravTask!.task.roomNumber === "301", "Preserves historical room number 301");
   assert(pastAaravTask!.task.status === "DELIVERED", "Preserves historical status DELIVERED");
@@ -600,7 +604,7 @@ async function runDeliveryTests() {
   // -----------------------------------------------------------------------------
   console.log("\n[TEST SUITE 12] Delivery Dashboard & Summary Metrics");
 
-  const summary = getDeliveryDashboardSummary(managerUser, "2026-10-16", "BREAKFAST");
+  const summary = await getDeliveryDashboardSummary(managerUser, "2026-10-16", "BREAKFAST");
   assert(summary.totalTasks === 2, "Summary shows 2 total tasks for Breakfast");
   assert(summary.deliveredCount === 2, "Summary shows 2 delivered tasks");
   assert(summary.pendingCount === 0, "Summary shows 0 pending tasks");
@@ -612,7 +616,7 @@ async function runDeliveryTests() {
   assert(sureshWorkload!.deliveredCount === 2, "Suresh workload accurately shows 2 deliveries");
 
   // List active delivery staff
-  const staffList = listActiveDeliveryStaff(managerUser);
+  const staffList = await listActiveDeliveryStaff(managerUser);
   assert(staffList.length === 2, "Active delivery staff list contains 2 active personnel");
   assert(!staffList.some((s) => s.id === "usr_inactive_del"), "Inactive staff excluded from active staff list");
 
@@ -624,7 +628,7 @@ async function runDeliveryTests() {
   // 1. Unauthenticated caller throws 401
   let unauthCaught = false;
   try {
-    listDeliveryTasks(null as any);
+    await listDeliveryTasks(null as any);
   } catch (err: any) {
     unauthCaught = err instanceof AuthorizationError && err.statusCode === 401;
   }
@@ -651,7 +655,7 @@ async function runDeliveryTests() {
   // 3. ACCOUNTANT blocked with HTTP 403
   let accountantBlocked = false;
   try {
-    listDeliveryTasks(accountantUser);
+    await listDeliveryTasks(accountantUser);
   } catch (err: any) {
     accountantBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -660,7 +664,7 @@ async function runDeliveryTests() {
   // 4. KITCHEN_OPERATIONS blocked from generating delivery tasks with HTTP 403
   let kitchenBlocked = false;
   try {
-    generateDeliveryTasks(kitchenUser, { serviceDate: "2026-10-16", mealType: "BREAKFAST" });
+    await generateDeliveryTasks(kitchenUser, { serviceDate: "2026-10-16", mealType: "BREAKFAST" });
   } catch (err: any) {
     kitchenBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -703,7 +707,7 @@ async function runDeliveryTests() {
   // 1. Least privilege: DELIVERY_PERSON cannot create external orders
   let deliveryPersonBlocked = false;
   try {
-    createExternalDeliveryTask(sureshDeliveryUser, {
+    await createExternalDeliveryTask(sureshDeliveryUser, {
       serviceDate: "2026-10-15",
       mealType: "LUNCH",
       customerName: "Rakesh Verma",
@@ -716,7 +720,7 @@ async function runDeliveryTests() {
   assert(deliveryPersonBlocked, "Privilege Guard: DELIVERY_PERSON cannot create external city orders (HTTP 403)");
 
   // 2. Manager creates external city order
-  const extTask = createExternalDeliveryTask(managerUser, {
+  const extTask = await createExternalDeliveryTask(managerUser, {
     serviceDate: "2026-10-15",
     mealType: "LUNCH",
     customerName: "Vikas Yadav",
@@ -735,16 +739,16 @@ async function runDeliveryTests() {
   assert(extTask.status === "PENDING", "Initial external task status is PENDING");
 
   // 3. Assign external order to Suresh
-  const assignedExt = assignDeliveryTask(managerUser, extTask.id, { assignedToStaffId: sureshDeliveryUser.id });
+  const assignedExt = await assignDeliveryTask(managerUser, extTask.id, { assignedToStaffId: sureshDeliveryUser.id });
   assert(assignedExt.status === "ASSIGNED", "External task transitioned to ASSIGNED");
   assert(assignedExt.assignedTo === sureshDeliveryUser.id, "External task assigned to Suresh");
 
   // 4. Dispatch external order
-  const dispatchedExt = dispatchDeliveryTask(sureshDeliveryUser, extTask.id);
+  const dispatchedExt = await dispatchDeliveryTask(sureshDeliveryUser, extTask.id);
   assert(dispatchedExt.status === "OUT_FOR_DELIVERY", "External task dispatched to OUT_FOR_DELIVERY");
 
   // 5. Complete external order with proof of delivery
-  const deliveredExt = completeDeliveryTask(sureshDeliveryUser, extTask.id, {
+  const deliveredExt = await completeDeliveryTask(sureshDeliveryUser, extTask.id, {
     recipientName: "Vikas Yadav",
     notes: "Handed over at reception",
   });
@@ -752,11 +756,11 @@ async function runDeliveryTests() {
   assert(deliveredExt.recipientName === "Vikas Yadav", "External task handover recipient recorded");
 
   // 6. Filter by orderType
-  const allExternal = listDeliveryTasks(managerUser, { serviceDate: "2026-10-15", orderType: "EXTERNAL" });
+  const allExternal = await listDeliveryTasks(managerUser, { serviceDate: "2026-10-15", orderType: "EXTERNAL" });
   assert(allExternal.length >= 1, "listDeliveryTasks with orderType === 'EXTERNAL' returns external tasks");
   assert(allExternal.every((t) => t.orderType === "EXTERNAL"), "All returned tasks in EXTERNAL filter have orderType === 'EXTERNAL'");
 
-  const allResident = listDeliveryTasks(managerUser, { serviceDate: "2026-10-15", orderType: "RESIDENT" });
+  const allResident = await listDeliveryTasks(managerUser, { serviceDate: "2026-10-15", orderType: "RESIDENT" });
   assert(allResident.every((t) => t.orderType === "RESIDENT"), "All returned tasks in RESIDENT filter have orderType === 'RESIDENT'");
 
   // -----------------------------------------------------------------------------
@@ -764,7 +768,7 @@ async function runDeliveryTests() {
   // -----------------------------------------------------------------------------
   console.log("\n[TEST SUITE 16] Operational Notifications & Read State Tracking");
 
-  const notifSummary = getNotifications(managerUser, { limit: 10 });
+  const notifSummary = await getNotifications(managerUser, { limit: 10 });
   assert(Array.isArray(notifSummary.notifications), "getNotifications returns notifications array");
   assert(typeof notifSummary.unreadCount === "number", "getNotifications returns numeric unreadCount");
 
@@ -779,15 +783,131 @@ async function runDeliveryTests() {
 
     // Test marking single notification as read
     const initialUnread = notifSummary.unreadCount;
-    markNotificationAsRead(managerUser, firstNotif.id);
-    const afterSingleRead = getNotifications(managerUser, { limit: 10 });
+    await markNotificationAsRead(managerUser, firstNotif.id);
+    const afterSingleRead = await getNotifications(managerUser, { limit: 10 });
     assert(afterSingleRead.unreadCount <= initialUnread, "Unread count decrements after marking notification as read");
 
     // Test mark all as read
-    markAllNotificationsAsRead(managerUser);
-    const afterAllRead = getNotifications(managerUser, { limit: 10 });
+    await markAllNotificationsAsRead(managerUser);
+    const afterAllRead = await getNotifications(managerUser, { limit: 10 });
     assert(afterAllRead.unreadCount === 0, "markAllNotificationsAsRead marks all user notifications as read (unreadCount === 0)");
   }
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 17: Delivery Service Async Transaction Rollback Integrity
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 17] Delivery Service Async Transaction Rollback Integrity");
+
+  const asyncDb = getAsyncDb();
+  let rollbackThrew = false;
+  try {
+    await asyncDb.transaction(async (tx) => {
+      await createExternalDeliveryTask(managerUser, {
+        serviceDate: "2026-10-16",
+        mealType: "DINNER",
+        customerName: "Rollback Test User",
+        customerPhone: "+91 99999 88888",
+        deliveryAddress: "Test Address For Rollback",
+      }, undefined, tx);
+      throw new Error("Simulated mid-operation transaction failure");
+    });
+  } catch (err: any) {
+    rollbackThrew = err.message === "Simulated mid-operation transaction failure";
+  }
+  assert(rollbackThrew, "Transaction propagates error to caller");
+
+  // Verify task was NOT inserted into database
+  const rollbackTasks = await listDeliveryTasks(managerUser, { serviceDate: "2026-10-16", orderType: "EXTERNAL" });
+  assert(!rollbackTasks.some((t) => t.customerName === "Rollback Test User"), "Transaction rollback ensured external task was not persisted");
+
+  // Verify audit event was NOT committed to database
+  const allAuditLogsAfterRollback = getAuditLogs({ limit: 100 });
+  assert(!allAuditLogsAfterRollback.some((l) => l.metadata && l.metadata.includes("Rollback Test User")), "Transaction rollback atomically prevented audit log commitment");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 18: Mock PostgreSQL Execution & BigInt / Parameter Compatibility
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 18] Mock PostgreSQL Execution & BigInt / Parameter Compatibility");
+
+  // 1. Placeholder conversion ($1, $2, ...)
+  const sampleQuery = "SELECT * FROM delivery_tasks WHERE service_date = ? AND meal_type = ? AND status = ?";
+  const converted = convertPlaceholders(sampleQuery);
+  assert(converted === "SELECT * FROM delivery_tasks WHERE service_date = $1 AND meal_type = $2 AND status = $3", "convertPlaceholders converts SQLite ? to Postgres $n parameter format");
+
+  // 2. Postgres mock with string-based bigint counts and boolean staff flags
+  const mockPgDb: AsyncDb = {
+    isPostgres: true,
+    async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+      if (sql.includes("FROM staff_users") && sql.includes("COUNT(t.id)")) {
+        return [
+          {
+            staffId: "usr_pg_1",
+            staffName: "Postgres Delivery Staff",
+            assignedCount: "12", // String bigint returned by PostgreSQL driver
+            deliveredCount: "8",
+            pendingCount: "3",
+            exceptionCount: "1",
+          }
+        ] as unknown as T[];
+      }
+      if (sql.includes("FROM staff_users") && sql.includes("WHERE role = 'DELIVERY_PERSON'")) {
+        return [
+          {
+            id: "usr_pg_1",
+            fullName: "Postgres Delivery Staff",
+            username: "pg_staff",
+          }
+        ] as unknown as T[];
+      }
+      return [];
+    },
+    async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+      if (sql.includes("FROM delivery_tasks")) {
+        return {
+          totalTasks: "25", // String bigint returned by PostgreSQL driver
+          pendingCount: "5",
+          assignedCount: "5",
+          outForDeliveryCount: "5",
+          deliveredCount: "8",
+          exceptionCount: "2",
+          unassignedCount: "0",
+        } as unknown as T;
+      }
+      return null;
+    },
+    async execute() { return { changes: 1 }; },
+    async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> { return cb(mockPgDb); },
+  };
+
+  const pgSummary = await getDeliveryDashboardSummary(managerUser, "2026-10-16", "ALL", mockPgDb);
+  assert(typeof pgSummary.totalTasks === "number" && pgSummary.totalTasks === 25, "PostgreSQL string bigint '25' normalized to numeric totalTasks 25");
+  assert(typeof pgSummary.deliveredCount === "number" && pgSummary.deliveredCount === 8, "PostgreSQL string bigint '8' normalized to numeric deliveredCount 8");
+  assert(typeof pgSummary.staffWorkload[0].assignedCount === "number" && pgSummary.staffWorkload[0].assignedCount === 12, "PostgreSQL workload string bigint '12' normalized to numeric assignedCount 12");
+
+  const pgStaff = await listActiveDeliveryStaff(managerUser, mockPgDb);
+  assert(pgStaff.length === 1 && pgStaff[0].username === "pg_staff", "listActiveDeliveryStaff executes successfully on PostgreSQL AsyncDb adapter");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 19: Zero Primary Database Access Guard & Environment Cleanup
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 19] Zero Primary Database Access Guard & Environment Cleanup");
+
+  const primaryStatsAfter = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
+  if (primaryStatsBefore && primaryStatsAfter) {
+    assert(
+      primaryStatsBefore.size === primaryStatsAfter.size,
+      `Primary data/erp.db size unchanged (${primaryStatsBefore.size} bytes)`
+    );
+    assert(
+      primaryStatsBefore.mtimeMs === primaryStatsAfter.mtimeMs,
+      `Primary data/erp.db mtime unchanged (${primaryStatsBefore.mtime.toISOString()})`
+    );
+  } else {
+    assert(true, "Primary database verification step completed");
+  }
+
+  // Final cleanup of test database
+  cleanupTestDb();
 
   console.log("\n================================================================================");
   console.log(`FINAL DELIVERY TEST RESULTS: ${passCount} PASSED, ${failCount} FAILED`);

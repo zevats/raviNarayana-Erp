@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
-import { resolveDbPath, getDb } from "./db";
+import { resolveFixtureDbPath, getFixtureDb } from "./db";
 import type { StaffRole, RoomType, PaymentMethod, ExpenseCategory } from "../../types";
 
 /**
@@ -28,6 +28,7 @@ import type { StaffRole, RoomType, PaymentMethod, ExpenseCategory } from "../../
 export interface SeedOptions {
   allowSyntheticSeed?: boolean;
   verbose?: boolean;
+  fixturePath?: string;
 }
 
 const SEED_BATCH_ID = "batch_demo_2026_v1";
@@ -1008,7 +1009,17 @@ export async function seedSyntheticData(options: SeedOptions = {}): Promise<{
     );
   }
 
-  const dbPath = resolveDbPath();
+  // Require explicit fixture path configuration
+  const rawFixturePath = options.fixturePath || process.env.ERP_DATABASE_PATH;
+  if (!rawFixturePath || typeof rawFixturePath !== "string" || rawFixturePath.trim().length === 0) {
+    throw new Error(
+      "[FATAL SAFETY VIOLATION] Synthetic data seeding strictly requires an explicit, non-empty fixture database path (options.fixturePath or ERP_DATABASE_PATH). Refusing to target or fall back to primary database."
+    );
+  }
+
+  // Fail-closed fixture path validation: ensures path is strictly inside data/fixtures/
+  // and never targets data/erp.db or any representation of the primary database.
+  const dbPath = resolveFixtureDbPath(rawFixturePath);
   const dbDir = path.dirname(dbPath);
 
   // Safety check on path name
@@ -1018,13 +1029,14 @@ export async function seedSyntheticData(options: SeedOptions = {}): Promise<{
     );
   }
 
-  // 1. Create a timestamped SQLite backup
+  // 1. Create a timestamped SQLite backup of existing fixture if it already exists
   const backupDir = path.join(dbDir, "backups");
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = path.join(backupDir, `erp.db.backup.${timestamp}.db`);
+  const fixtureBaseName = path.basename(dbPath);
+  const backupPath = path.join(backupDir, `${fixtureBaseName}.backup.${timestamp}.db`);
 
   if (fs.existsSync(dbPath)) {
     fs.copyFileSync(dbPath, backupPath);
@@ -1034,11 +1046,8 @@ export async function seedSyntheticData(options: SeedOptions = {}): Promise<{
     }
   }
 
-  const db = getDb();
-
-  // Ensure WAL mode and foreign keys
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
+  // Open dedicated, isolated fixture database instance
+  const db = getFixtureDb(dbPath);
 
   // 2. Ensure seed_manifest table exists
   db.exec(`
@@ -2091,7 +2100,18 @@ export async function seedSyntheticData(options: SeedOptions = {}): Promise<{
 // CLI Direct Execution Entry Point
 // ----------------------------------------------------------------------------
 if (require.main === module) {
-  seedSyntheticData({ allowSyntheticSeed: true, verbose: true })
+  const cliFixturePath = process.env.ERP_DATABASE_PATH;
+  if (!cliFixturePath || cliFixturePath.trim().length === 0) {
+    console.error(
+      "\n[FATAL SEEDING ERROR]: Missing required ERP_DATABASE_PATH environment variable for synthetic data seeding. Refusing to proceed without explicit fixture path."
+    );
+    process.exit(1);
+  }
+  seedSyntheticData({
+    allowSyntheticSeed: true,
+    verbose: true,
+    fixturePath: cliFixturePath,
+  })
     .then((result) => {
       console.log("\n================================================================================");
       console.log("RAVINARAYAN ERP — SYNTHETIC DATA SEEDING COMPLETE");

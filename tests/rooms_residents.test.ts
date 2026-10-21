@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 
 import { runMigrations } from "../apps/erp/src/server/database/migrations";
+import { getAsyncDb, closeDb, AsyncDb, convertPlaceholders } from "../apps/erp/src/server/database/db";
 import { hasPermission } from "../apps/erp/src/server/authorization/permissions";
 import {
   requirePermission,
@@ -25,6 +26,10 @@ import {
 } from "../apps/erp/src/server/residents/residentService";
 import { getAuditLogs, sanitizeAuditMetadata } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
+
+// Mandatory primary database safety guard
+const primaryDbPath = path.resolve(__dirname, "../data/erp.db");
+const primaryStatsBefore = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
 
 // Isolated test database path
 const TEST_ROOMS_DB_PATH = path.resolve(__dirname, "test_rooms.db");
@@ -213,7 +218,7 @@ async function runRoomsResidentsTests() {
   console.log("\n[TEST SUITE 2] Room Creation, Validation & Derived Occupancy");
 
   // 2a: Create Room 101 (Double Sharing, Capacity: 2, Rent: 8500)
-  const room101 = createRoom(
+  const room101 = await createRoom(
     opsManagerUser,
     {
       roomNumber: "101",
@@ -228,7 +233,7 @@ async function runRoomsResidentsTests() {
   assert(room101.roomNumber === "101" && room101.capacity === 2, "Room 101 created with capacity 2");
 
   // 2b: Create Room 102 (Single, Capacity: 1, Rent: 14000)
-  const room102 = createRoom(
+  const room102 = await createRoom(
     superAdminUser,
     {
       roomNumber: "102",
@@ -244,7 +249,7 @@ async function runRoomsResidentsTests() {
   // 2c: Reject duplicate room number
   let duplicateRoomBlocked = false;
   try {
-    createRoom(opsManagerUser, {
+    await createRoom(opsManagerUser, {
       roomNumber: "101",
       floor: 2,
       type: "DOUBLE_SHARING",
@@ -259,7 +264,7 @@ async function runRoomsResidentsTests() {
   // 2d: Reject invalid capacity (<= 0)
   let zeroCapacityBlocked = false;
   try {
-    createRoom(opsManagerUser, {
+    await createRoom(opsManagerUser, {
       roomNumber: "103",
       floor: 1,
       type: "SINGLE",
@@ -272,7 +277,7 @@ async function runRoomsResidentsTests() {
   assert(zeroCapacityBlocked, "createRoom rejects zero or negative capacity");
 
   // 2e: List rooms derives correct initial occupancy
-  const initialRooms = listRooms(opsManagerUser);
+  const initialRooms = await listRooms(opsManagerUser);
   assert(initialRooms.length === 2, "listRooms returns exactly 2 created rooms");
   const initial101 = initialRooms.find((r) => r.roomNumber === "101");
   assert(
@@ -286,7 +291,7 @@ async function runRoomsResidentsTests() {
   console.log("\n[TEST SUITE 3] Resident Registration & Phone Uniqueness");
 
   // 3a: Register Resident 1
-  const resident1 = registerResident(
+  const resident1 = await registerResident(
     opsManagerUser,
     {
       fullName: "Aarav Sharma",
@@ -302,7 +307,7 @@ async function runRoomsResidentsTests() {
   assert(resident1.status === "ACTIVE", "New resident defaults to ACTIVE status");
 
   // 3b: Register Resident 2
-  const resident2 = registerResident(
+  const resident2 = await registerResident(
     opsManagerUser,
     {
       fullName: "Vikram Malhotra",
@@ -314,7 +319,7 @@ async function runRoomsResidentsTests() {
   assert(resident2.fullName === "Vikram Malhotra", "Resident 2 registered successfully");
 
   // 3c: Register Resident 3
-  const resident3 = registerResident(
+  const resident3 = await registerResident(
     opsManagerUser,
     {
       fullName: "Rohan Verma",
@@ -328,7 +333,7 @@ async function runRoomsResidentsTests() {
   // 3d: Duplicate phone registration blocked
   let duplicatePhoneBlocked = false;
   try {
-    registerResident(opsManagerUser, {
+    await registerResident(opsManagerUser, {
       fullName: "Imposter Aarav",
       phone: "+91 98765 43210",
     });
@@ -343,7 +348,7 @@ async function runRoomsResidentsTests() {
   console.log("\n[TEST SUITE 4] Room Assignment, Capacity Enforcement & Overbooking Defense");
 
   // 4a: Check in Resident 1 into Room 101 (Bed 1 of 2)
-  const stay1 = assignResidentToRoom(
+  const stay1 = await assignResidentToRoom(
     opsManagerUser,
     {
       residentId: resident1.id,
@@ -358,7 +363,7 @@ async function runRoomsResidentsTests() {
   assert(stay1.status === "ACTIVE", "Stay record status is ACTIVE");
 
   // Verify room 101 occupancy is now 1/2
-  const roomsAfterStay1 = listRooms(opsManagerUser);
+  const roomsAfterStay1 = await listRooms(opsManagerUser);
   const room101After1 = roomsAfterStay1.find((r) => r.id === room101.id);
   assert(
     room101After1?.occupiedBeds === 1 && room101After1?.availableBeds === 1,
@@ -366,12 +371,12 @@ async function runRoomsResidentsTests() {
   );
 
   // Verify resident 1 active room assignment is loaded
-  const res1Detail = getResidentById(opsManagerUser, resident1.id);
+  const res1Detail = await getResidentById(opsManagerUser, resident1.id);
   assert(res1Detail?.status === "ACTIVE", "Resident status is ACTIVE");
   assert(res1Detail?.currentRoom?.roomId === room101.id, "Resident detail includes active stay in Room 101");
 
   // 4b: Check in Resident 2 into Room 101 (Bed 2 of 2 - Full Capacity)
-  const stay2 = assignResidentToRoom(
+  const stay2 = await assignResidentToRoom(
     opsManagerUser,
     {
       residentId: resident2.id,
@@ -385,7 +390,7 @@ async function runRoomsResidentsTests() {
   assert(stay2.status === "ACTIVE", "Resident 2 checked in to Room 101");
 
   // Verify room 101 occupancy is now 2/2 (0 available)
-  const roomsAfterStay2 = listRooms(opsManagerUser);
+  const roomsAfterStay2 = await listRooms(opsManagerUser);
   const room101After2 = roomsAfterStay2.find((r) => r.id === room101.id);
   assert(
     room101After2?.occupiedBeds === 2 && room101After2?.availableBeds === 0,
@@ -395,7 +400,7 @@ async function runRoomsResidentsTests() {
   // 4c: Overbooking Attempt: Attempt to check in Resident 3 into FULL Room 101
   let overbookingBlocked = false;
   try {
-    assignResidentToRoom(opsManagerUser, {
+    await assignResidentToRoom(opsManagerUser, {
       residentId: resident3.id,
       roomId: room101.id,
       checkInDate: "2026-10-15",
@@ -414,7 +419,7 @@ async function runRoomsResidentsTests() {
   // 5a: Application-level check: Resident 1 (already in Room 101) cannot be assigned to Room 102
   let doubleBookingAppBlocked = false;
   try {
-    assignResidentToRoom(opsManagerUser, {
+    await assignResidentToRoom(opsManagerUser, {
       residentId: resident1.id,
       roomId: room102.id,
       checkInDate: "2026-10-15",
@@ -446,7 +451,7 @@ async function runRoomsResidentsTests() {
   console.log("\n[TEST SUITE 6] Check-Out Workflow, Instant Capacity Release & Stay History");
 
   // 6a: Check out Resident 1 from Room 101
-  checkOutResident(
+  await checkOutResident(
     opsManagerUser,
     {
       residentId: resident1.id,
@@ -456,7 +461,7 @@ async function runRoomsResidentsTests() {
   );
 
   // 6b: Instant Capacity Release: Room 101 occupancy immediately drops from 2 to 1
-  const roomsAfterCheckout = listRooms(opsManagerUser);
+  const roomsAfterCheckout = await listRooms(opsManagerUser);
   const room101AfterCheckout = roomsAfterCheckout.find((r) => r.id === room101.id);
   assert(
     room101AfterCheckout?.occupiedBeds === 1 && room101AfterCheckout?.availableBeds === 1,
@@ -464,7 +469,7 @@ async function runRoomsResidentsTests() {
   );
 
   // 6c: Resident 1 status updated to CHECKED_OUT and currentRoom is null
-  const res1AfterCheckout = getResidentById(opsManagerUser, resident1.id);
+  const res1AfterCheckout = await getResidentById(opsManagerUser, resident1.id);
   assert(res1AfterCheckout?.status === "CHECKED_OUT", "Resident status updated to CHECKED_OUT");
   assert(res1AfterCheckout?.currentRoom === null, "Resident has no active room assignment");
   assert(res1AfterCheckout?.stays.length === 1, "Historical stay preserved in resident stay history");
@@ -475,7 +480,7 @@ async function runRoomsResidentsTests() {
   );
 
   // 6d: Resident 3 can now claim the released bed in Room 101
-  const stay3 = assignResidentToRoom(opsManagerUser, {
+  const stay3 = await assignResidentToRoom(opsManagerUser, {
     residentId: resident3.id,
     roomId: room101.id,
     checkInDate: "2026-10-16",
@@ -485,7 +490,7 @@ async function runRoomsResidentsTests() {
   assert(stay3.status === "ACTIVE", "Resident 3 successfully checked in to released bed in Room 101");
 
   // 6e: Resident 1 (checked out) can be checked in again in Room 102
-  const stay1Recheckin = assignResidentToRoom(opsManagerUser, {
+  const stay1Recheckin = await assignResidentToRoom(opsManagerUser, {
     residentId: resident1.id,
     roomId: room102.id,
     checkInDate: "2026-10-17",
@@ -495,7 +500,7 @@ async function runRoomsResidentsTests() {
   assert(stay1Recheckin.status === "ACTIVE", "Previously checked-out resident re-checks into Room 102");
 
   // Verify Resident 1 now has 2 stay records: 1 COMPLETED and 1 ACTIVE
-  const res1FullHistory = getResidentById(opsManagerUser, resident1.id);
+  const res1FullHistory = await getResidentById(opsManagerUser, resident1.id);
   assert(res1FullHistory?.stays.length === 2, "Resident stay history contains both completed and active stays");
   assert(
     res1FullHistory?.stays.some((s) => s.status === "COMPLETED") &&
@@ -512,7 +517,7 @@ async function runRoomsResidentsTests() {
   // Attempt to reduce capacity from 2 to 1 should be blocked!
   let capacityReductionBlocked = false;
   try {
-    updateRoom(opsManagerUser, room101.id, {
+    await updateRoom(opsManagerUser, room101.id, {
       capacity: 1,
     });
   } catch (err: any) {
@@ -524,7 +529,7 @@ async function runRoomsResidentsTests() {
   );
 
   // 7b: Valid update: Room 102 base rent update succeeds
-  const updated102 = updateRoom(opsManagerUser, room102.id, {
+  const updated102 = await updateRoom(opsManagerUser, room102.id, {
     baseRentMonthly: 15000,
   });
   assert(updated102.baseRentMonthly === 15000, "Room 102 monthly rent updated successfully");
@@ -532,7 +537,7 @@ async function runRoomsResidentsTests() {
   // 7c: Attempt to deactivate Room 101 while occupied should be blocked!
   let deactivatingOccupiedRoomBlocked = false;
   try {
-    setRoomActiveStatus(opsManagerUser, room101.id, false);
+    await setRoomActiveStatus(opsManagerUser, room101.id, false);
   } catch (err: any) {
     deactivatingOccupiedRoomBlocked = err.message.includes("Cannot deactivate Room");
   }
@@ -542,15 +547,15 @@ async function runRoomsResidentsTests() {
   );
 
   // 7d: Create a vacant Room 201 and verify deactivating it succeeds
-  const room201 = createRoom(opsManagerUser, {
+  const room201 = await createRoom(opsManagerUser, {
     roomNumber: "201",
     floor: 2,
     type: "TRIPLE_SHARING",
     capacity: 3,
     baseRentMonthly: 7000,
   });
-  setRoomActiveStatus(opsManagerUser, room201.id, false);
-  const deactivated201 = getRoomById(opsManagerUser, room201.id);
+  await setRoomActiveStatus(opsManagerUser, room201.id, false);
+  const deactivated201 = await getRoomById(opsManagerUser, room201.id);
   assert(deactivated201?.isActive === false, "Vacant room successfully deactivated");
 
   // -----------------------------------------------------------------------------
@@ -561,7 +566,7 @@ async function runRoomsResidentsTests() {
   // 8a: Unauthenticated caller throws 401
   let unauthRoomBlocked = false;
   try {
-    listRooms(null as any);
+    await listRooms(null as any);
   } catch (err: any) {
     unauthRoomBlocked = err instanceof AuthorizationError && err.statusCode === 401;
   }
@@ -580,7 +585,7 @@ async function runRoomsResidentsTests() {
 
   let accountantRoomCreateBlocked = false;
   try {
-    createRoom(accountantUser, {
+    await createRoom(accountantUser, {
       roomNumber: "301",
       floor: 3,
       type: "SINGLE",
@@ -594,7 +599,7 @@ async function runRoomsResidentsTests() {
 
   let accountantAssignBlocked = false;
   try {
-    assignResidentToRoom(accountantUser, {
+    await assignResidentToRoom(accountantUser, {
       residentId: resident1.id,
       roomId: room201.id,
       checkInDate: "2026-10-18",
@@ -608,7 +613,7 @@ async function runRoomsResidentsTests() {
   // 8d: Least Privilege: Delivery Person has NO access to rooms or residents
   let deliveryRoomsBlocked = false;
   try {
-    listRooms(deliveryUser);
+    await listRooms(deliveryUser);
   } catch (err: any) {
     deliveryRoomsBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -616,7 +621,7 @@ async function runRoomsResidentsTests() {
 
   let deliveryResidentsBlocked = false;
   try {
-    listResidents(deliveryUser);
+    await listResidents(deliveryUser);
   } catch (err: any) {
     deliveryResidentsBlocked = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -654,10 +659,173 @@ async function runRoomsResidentsTests() {
   assert(allMetadataSafe, "All room and resident audit metadata verified free of secrets and tokens");
 
   // -----------------------------------------------------------------------------
+  // TEST SUITE 10: Atomic Transaction Rollback Integrity on Room / Resident Operations
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 10] Atomic Transaction Rollback Integrity");
+
+  const asyncDb = getAsyncDb();
+  let rollbackCaught = false;
+
+  try {
+    await asyncDb.transaction(async (tx) => {
+      const rollbackRoomId = "room_rollback_test_99";
+      const nowTs = new Date().toISOString();
+      await tx.execute(`
+        INSERT INTO rooms (id, room_number, floor, type, capacity, base_rent_monthly, is_active, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `, [rollbackRoomId, "999", 9, "SINGLE", 1, 9999, nowTs, nowTs]);
+
+      // Intentionally throw mid-transaction
+      throw new Error("Simulated mid-transaction room failure");
+    });
+  } catch (err: any) {
+    rollbackCaught = err.message === "Simulated mid-transaction room failure";
+  }
+  assert(rollbackCaught, "Transaction failure propagates error to caller");
+
+  const roomCheck = await asyncDb.queryOne<any>("SELECT id FROM rooms WHERE id = ?", ["room_rollback_test_99"]);
+  assert(roomCheck === null, "Transaction rollback ensured uncommitted room was not persisted");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 11: Mock PostgreSQL Execution & BigInt / Parameter Compatibility
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 11] Mock PostgreSQL Execution & BigInt / Parameter Compatibility");
+
+  // 1. Placeholder conversion ($1, $2, ...)
+  const sampleQuery = "SELECT * FROM rooms WHERE floor = ? AND type = ? AND is_active = ?";
+  const converted = convertPlaceholders(sampleQuery);
+  assert(
+    converted === "SELECT * FROM rooms WHERE floor = $1 AND type = $2 AND is_active = $3",
+    "convertPlaceholders converts SQLite ? to Postgres $n parameter format"
+  );
+
+  // 2. Mock PostgreSQL AsyncDb adapter returning string counts and bigints
+  const executedSqls: string[] = [];
+  const mockPgDb: AsyncDb = {
+    isPostgres: true,
+    async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+      executedSqls.push(sql);
+      if (sql.includes("FROM rooms")) {
+        return [
+          {
+            id: "room_pg_mock_1",
+            roomNumber: "501",
+            floor: 5,
+            type: "DOUBLE_SHARING",
+            capacity: 2,
+            baseRentMonthly: 11000,
+            isActive: 1,
+            occupiedBeds: "1", // Postgres driver returns string count
+            availableBeds: "1",
+            createdAt: "2026-10-15T00:00:00Z",
+            updatedAt: "2026-10-15T00:00:00Z",
+          }
+        ] as unknown as T[];
+      }
+      if (sql.includes("FROM residents res")) {
+        return [
+          {
+            id: "res_pg_mock_1",
+            fullName: "Postgres Resident",
+            phone: "+91 99999 88888",
+            email: "pg@example.com",
+            status: "ACTIVE",
+            createdAt: "2026-10-15T00:00:00Z",
+            currentRoomNumber: "501",
+            currentFloor: 5,
+            checkInDate: "2026-10-15",
+            totalStayCount: "1",
+            completedStayCount: "0",
+          }
+        ] as unknown as T[];
+      }
+      if (sql.includes("FROM resident_stays")) {
+        return [
+          {
+            id: "stay_pg_mock_1",
+            residentId: "res_pg_1",
+            roomNumber: "501",
+            checkInDate: "2026-10-15",
+          }
+        ] as unknown as T[];
+      }
+      return [];
+    },
+    async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+      executedSqls.push(sql);
+      if (sql.includes("FROM rooms")) {
+        return {
+          id: "room_pg_mock_1",
+          roomNumber: "501",
+          floor: 5,
+          type: "DOUBLE_SHARING",
+          capacity: 2,
+          baseRentMonthly: 11000,
+          isActive: 1,
+          occupiedBeds: "1",
+          availableBeds: "1",
+          createdAt: "2026-10-15T00:00:00Z",
+          updatedAt: "2026-10-15T00:00:00Z",
+        } as unknown as T;
+      }
+      if (sql.includes("FROM residents")) {
+        return {
+          id: "res_pg_mock_1",
+          fullName: "Postgres Resident",
+          phone: "+91 99999 88888",
+          email: "pg@example.com",
+          emergencyContact: null,
+          notes: null,
+          status: "ACTIVE",
+          createdAt: "2026-10-15T00:00:00Z",
+          updatedAt: "2026-10-15T00:00:00Z",
+        } as unknown as T;
+      }
+      return null;
+    },
+    async execute(sql: string, params?: any[]) {
+      executedSqls.push(sql);
+      return { changes: 1 };
+    },
+    async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
+      return cb(mockPgDb);
+    },
+  };
+
+  const pgRooms = await listRooms(opsManagerUser, undefined, mockPgDb);
+  assert(pgRooms.length === 1 && pgRooms[0].roomNumber === "501", "listRooms executes against PostgreSQL AsyncDb adapter");
+  assert(typeof pgRooms[0].occupiedBeds === "number", "listRooms correctly coerces string count to number");
+
+  const pgRoom = await getRoomById(opsManagerUser, "room_pg_mock_1", mockPgDb);
+  assert(pgRoom !== null && pgRoom.roomNumber === "501", "getRoomById executes against PostgreSQL AsyncDb adapter");
+
+  const pgResidents = await listResidents(opsManagerUser, undefined, mockPgDb);
+  assert(pgResidents.length === 1 && pgResidents[0].fullName === "Postgres Resident", "listResidents executes against PostgreSQL AsyncDb adapter");
+  assert(typeof pgResidents[0].totalStayCount === "number", "listResidents correctly coerces string count to number");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 12: Zero Primary Database Access Guard & Environment Cleanup
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 12] Zero Primary Database Access Guard & Environment Cleanup");
+
+  const primaryStatsAfter = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
+  if (primaryStatsBefore && primaryStatsAfter) {
+    assert(
+      primaryStatsBefore.size === primaryStatsAfter.size,
+      `Primary data/erp.db size unchanged (${primaryStatsBefore.size} bytes)`
+    );
+    assert(
+      primaryStatsBefore.mtimeMs === primaryStatsAfter.mtimeMs,
+      `Primary data/erp.db mtime unchanged (${primaryStatsBefore.mtime.toISOString()})`
+    );
+  } else {
+    assert(true, "Primary database verification step completed");
+  }
+
+  // -----------------------------------------------------------------------------
   // CLEANUP & SUMMARY
   // -----------------------------------------------------------------------------
   db.close();
-  const { closeDb } = require("../apps/erp/src/server/database/db");
   closeDb();
   cleanupTestDb();
 

@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
   MealType,
@@ -114,10 +114,11 @@ function mapRowToAdjustment(row: any): MealPlanAdjustment {
  * Does NOT infer eligibility from room inventory alone.
  * Requires kitchen.read permission.
  */
-export function getEligibleResidentsForDate(
+export async function getEligibleResidentsForDate(
   actor: AuthenticatedUser,
-  serviceDate: string
-): ResidentMealEligibility[] {
+  serviceDate: string,
+  asyncDb?: AsyncDb
+): Promise<ResidentMealEligibility[]> {
   requirePermission(actor, "kitchen.read");
 
   const cleanDate = serviceDate?.trim();
@@ -125,14 +126,14 @@ export function getEligibleResidentsForDate(
     throw new Error("Valid service date in YYYY-MM-DD format is required.");
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
 
   // A resident is eligible if they have a stay covering serviceDate:
   // 1. check_in_date <= serviceDate
   // 2. Either ACTIVE stay (check_out_date IS NULL OR check_out_date >= serviceDate)
   //    OR COMPLETED stay where check_out_date >= serviceDate (departing on or after serviceDate).
   // Residents with check_out_date < serviceDate are strictly excluded.
-  const rows = db.prepare(`
+  const rows = await db.query<any>(`
     SELECT DISTINCT
       r.id as resident_id,
       r.full_name,
@@ -155,7 +156,7 @@ export function getEligibleResidentsForDate(
         OR (s.status = 'COMPLETED' AND s.check_out_date >= ?)
       )
     ORDER BY rm.floor ASC, rm.room_number ASC, r.full_name ASC
-  `).all(cleanDate, cleanDate, cleanDate) as any[];
+  `, [cleanDate, cleanDate, cleanDate]);
 
   return rows.map((r) => ({
     residentId: r.resident_id,
@@ -175,11 +176,12 @@ export function getEligibleResidentsForDate(
  * Creates a daily meal plan with calculated resident attendance.
  * Requires kitchen.manage permission.
  */
-export function createMealPlan(
+export async function createMealPlan(
   actor: AuthenticatedUser,
   input: CreateMealPlanInput,
-  clientIp?: string
-): DailyMealPlan {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan> {
   requirePermission(actor, "kitchen.manage", { ip: clientIp, action: "kitchen.plan_created" });
 
   const serviceDate = input.serviceDate?.trim();
@@ -202,12 +204,12 @@ export function createMealPlan(
     throw new Error("Guest count cannot exceed 1,000.");
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
 
   // Check duplicate plan for same service_date and meal_type
-  const existingPlan = db.prepare(`
+  const existingPlan = await db.queryOne<{ id: string; status: string }>(`
     SELECT id, status FROM daily_meal_plans WHERE service_date = ? AND meal_type = ?
-  `).get(serviceDate, mealType) as any;
+  `, [serviceDate, mealType]);
 
   if (existingPlan) {
     throw new Error(
@@ -216,7 +218,7 @@ export function createMealPlan(
   }
 
   // Authoritatively compute eligible residents for serviceDate
-  const eligibleResidents = getEligibleResidentsForDate(actor, serviceDate);
+  const eligibleResidents = await getEligibleResidentsForDate(actor, serviceDate, db);
 
   let plannedResidentCount = 0;
   const residentRecordsToInsert: Array<{
@@ -247,97 +249,98 @@ export function createMealPlan(
   const confirmedBy = initialStatus === "CONFIRMED" ? actor.id : null;
   const confirmedAt = initialStatus === "CONFIRMED" ? now : null;
 
-  const tx = db.transaction(() => {
-    // 1. Insert meal plan
-    db.prepare(`
-      INSERT INTO daily_meal_plans (
-        id, service_date, meal_type, planned_resident_count, guest_count,
-        final_preparation_count, status, notes, created_by, confirmed_by,
-        confirmed_at, completed_by, completed_at, created_at, updated_at
-      ) VALUES (
-        ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?,
-        ?, NULL, NULL, ?, ?
-      )
-    `).run(
-      planId,
-      serviceDate,
-      mealType,
-      plannedResidentCount,
-      guestCount,
-      finalPreparationCount,
-      initialStatus,
-      notes,
-      actor.id,
-      confirmedBy,
-      confirmedAt,
-      now,
-      now
-    );
-
-    // 2. Insert individual resident attendance records
-    const insertRecord = db.prepare(`
-      INSERT INTO resident_meal_records (
-        id, plan_id, resident_id, stay_id, service_date, meal_type,
-        status, notes, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
-    `);
-
-    for (const rec of residentRecordsToInsert) {
-      insertRecord.run(
-        rec.id,
+  try {
+    await db.transaction(async (tx) => {
+      // 1. Insert meal plan
+      await tx.execute(`
+        INSERT INTO daily_meal_plans (
+          id, service_date, meal_type, planned_resident_count, guest_count,
+          final_preparation_count, status, notes, created_by, confirmed_by,
+          confirmed_at, completed_by, completed_at, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, NULL, NULL, ?, ?
+        )
+      `, [
         planId,
-        rec.residentId,
-        rec.stayId,
-        serviceDate,
-        mealType,
-        rec.status,
-        actor.id,
-        now,
-        now
-      );
-    }
-
-    // 3. Audit log
-    recordAuditEvent({
-      actorId: actor.id,
-      actorUsername: actor.username,
-      action: "kitchen.plan_created",
-      targetType: "meal_plan",
-      targetId: planId,
-      metadata: {
         serviceDate,
         mealType,
         plannedResidentCount,
         guestCount,
         finalPreparationCount,
-        status: initialStatus,
-        eligibleCount: eligibleResidents.length,
-      },
-      ipAddress: clientIp,
-    });
+        initialStatus,
+        notes,
+        actor.id,
+        confirmedBy,
+        confirmedAt,
+        now,
+        now,
+      ]);
 
-    if (initialStatus === "CONFIRMED") {
-      recordAuditEvent({
+      // 2. Insert individual resident attendance records
+      for (const rec of residentRecordsToInsert) {
+        await tx.execute(`
+          INSERT INTO resident_meal_records (
+            id, plan_id, resident_id, stay_id, service_date, meal_type,
+            status, notes, created_by, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+        `, [
+          rec.id,
+          planId,
+          rec.residentId,
+          rec.stayId,
+          serviceDate,
+          mealType,
+          rec.status,
+          actor.id,
+          now,
+          now,
+        ]);
+      }
+
+      // 3. Audit log
+      await recordAuditEventAsync({
         actorId: actor.id,
         actorUsername: actor.username,
-        action: "kitchen.plan_confirmed",
+        action: "kitchen.plan_created",
         targetType: "meal_plan",
         targetId: planId,
         metadata: {
           serviceDate,
           mealType,
+          plannedResidentCount,
+          guestCount,
           finalPreparationCount,
+          status: initialStatus,
+          eligibleCount: eligibleResidents.length,
         },
         ipAddress: clientIp,
-      });
-    }
-  });
+      }, tx);
 
-  try {
-    tx();
+      if (initialStatus === "CONFIRMED") {
+        await recordAuditEventAsync({
+          actorId: actor.id,
+          actorUsername: actor.username,
+          action: "kitchen.plan_confirmed",
+          targetType: "meal_plan",
+          targetId: planId,
+          metadata: {
+            serviceDate,
+            mealType,
+            finalPreparationCount,
+          },
+          ipAddress: clientIp,
+        }, tx);
+      }
+    });
   } catch (err: any) {
-    if (err.message && err.message.includes("UNIQUE constraint failed")) {
+    if (
+      err.message &&
+      (err.message.includes("UNIQUE constraint failed") ||
+        err.message.includes("duplicate key value") ||
+        err.code === "23505")
+    ) {
       throw new Error(
         `A meal plan for ${mealType} on ${serviceDate} already exists. Duplicate plans for the same date and meal are prevented.`
       );
@@ -345,7 +348,8 @@ export function createMealPlan(
     throw err;
   }
 
-  return getMealPlanById(actor, planId)!.plan;
+  const createdDetail = await getMealPlanById(actor, planId, db);
+  return createdDetail!.plan;
 }
 
 /**
@@ -353,16 +357,17 @@ export function createMealPlan(
  * Completed plans cannot be modified directly without an explicit adjustment.
  * Requires kitchen.manage permission.
  */
-export function updateMealPlan(
+export async function updateMealPlan(
   actor: AuthenticatedUser,
   planId: string,
   input: UpdateMealPlanInput,
-  clientIp?: string
-): DailyMealPlan {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan> {
   requirePermission(actor, "kitchen.manage", { ip: clientIp, action: "kitchen.plan_updated" });
 
-  const db = getDb();
-  const plan = getMealPlanById(actor, planId);
+  const db = asyncDb || getAsyncDb();
+  const plan = await getMealPlanById(actor, planId, db);
   if (!plan) {
     throw new Error(`Meal plan '${planId}' not found.`);
   }
@@ -383,7 +388,7 @@ export function updateMealPlan(
 
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // If resident opt-outs are provided, update attendance records
     let plannedResidentCount = plan.plan.plannedResidentCount;
 
@@ -392,19 +397,17 @@ export function updateMealPlan(
       const records = plan.residentRecords;
 
       let confirmedCount = 0;
-      const updateRecordStatus = db.prepare(`
-        UPDATE resident_meal_records
-        SET status = ?, updated_at = ?
-        WHERE id = ?
-      `);
-
       for (const rec of records) {
         const newStatus: AttendanceStatus = optOutSet.has(rec.residentId) ? "OPTED_OUT" : "CONFIRMED";
         if (newStatus === "CONFIRMED") {
           confirmedCount++;
         }
         if (newStatus !== rec.status) {
-          updateRecordStatus.run(newStatus, now, rec.id);
+          await tx.execute(`
+            UPDATE resident_meal_records
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+          `, [newStatus, now, rec.id]);
         }
       }
       plannedResidentCount = confirmedCount;
@@ -412,13 +415,13 @@ export function updateMealPlan(
 
     const finalPreparationCount = plannedResidentCount + guestCount;
 
-    db.prepare(`
+    await tx.execute(`
       UPDATE daily_meal_plans
       SET planned_resident_count = ?, guest_count = ?, final_preparation_count = ?, notes = ?, updated_at = ?
       WHERE id = ?
-    `).run(plannedResidentCount, guestCount, finalPreparationCount, notes, now, planId);
+    `, [plannedResidentCount, guestCount, finalPreparationCount, notes, now, planId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "kitchen.plan_updated",
@@ -432,27 +435,36 @@ export function updateMealPlan(
         finalPreparationCount,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getMealPlanById(actor, planId)!.plan;
+  const updatedDetail = await getMealPlanById(actor, planId, db);
+  return updatedDetail!.plan;
 }
 
 /**
  * Confirms a draft meal plan for preparation.
  * Requires kitchen.manage permission.
  */
-export function confirmMealPlan(
+export async function confirmMealPlan(
   actor: AuthenticatedUser,
   planId: string,
-  clientIp?: string
-): DailyMealPlan {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "kitchen.manage", { ip: clientIp, action: "kitchen.plan_confirmed" });
 
-  const db = getDb();
-  const current = getMealPlanById(actor, planId);
+  const current = await getMealPlanById(actor, planId, db);
   if (!current) {
     throw new Error(`Meal plan '${planId}' not found.`);
   }
@@ -467,14 +479,14 @@ export function confirmMealPlan(
 
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE daily_meal_plans
       SET status = 'CONFIRMED', confirmed_by = ?, confirmed_at = ?, updated_at = ?
       WHERE id = ?
-    `).run(actor.id, now, now, planId);
+    `, [actor.id, now, now, planId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "kitchen.plan_confirmed",
@@ -486,36 +498,46 @@ export function confirmMealPlan(
         finalPreparationCount: current.plan.finalPreparationCount,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getMealPlanById(actor, planId)!.plan;
+  const updated = await getMealPlanById(actor, planId, db);
+  return updated!.plan;
 }
 
 /**
  * Completes a meal plan after kitchen service is finished.
  * Requires kitchen.manage permission.
  */
-export function completeMealPlan(
+export async function completeMealPlan(
   actor: AuthenticatedUser,
   planId: string,
-  actualCookedCountOrIp?: number | string,
-  clientIp?: string
-): DailyMealPlan {
+  actualCookedCountOrIp?: number | string | AsyncDb,
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan> {
   let actualCookedCount: number | undefined;
-  let ip = clientIp;
+  let ip: string | undefined;
+  let dbInstance = asyncDb;
+
   if (typeof actualCookedCountOrIp === "number") {
     actualCookedCount = actualCookedCountOrIp;
   } else if (typeof actualCookedCountOrIp === "string") {
     ip = actualCookedCountOrIp;
+  } else if (actualCookedCountOrIp && typeof actualCookedCountOrIp === "object") {
+    dbInstance = actualCookedCountOrIp;
   }
 
+  if (typeof clientIpOrDb === "string") {
+    ip = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+
+  const db = dbInstance ?? getAsyncDb();
   requirePermission(actor, "kitchen.manage", { ip, action: "kitchen.plan_completed" });
 
-  const db = getDb();
-  const current = getMealPlanById(actor, planId);
+  const current = await getMealPlanById(actor, planId, db);
   if (!current) {
     throw new Error(`Meal plan '${planId}' not found.`);
   }
@@ -527,23 +549,23 @@ export function completeMealPlan(
   const now = new Date().toISOString();
   const cookedCount = actualCookedCount !== undefined ? Math.max(0, actualCookedCount) : current.plan.finalPreparationCount;
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // If plan was in DRAFT, also stamp confirmation
     if (current.plan.status === "DRAFT") {
-      db.prepare(`
+      await tx.execute(`
         UPDATE daily_meal_plans
         SET confirmed_by = ?, confirmed_at = ?
         WHERE id = ? AND confirmed_by IS NULL
-      `).run(actor.id, now, planId);
+      `, [actor.id, now, planId]);
     }
 
-    db.prepare(`
+    await tx.execute(`
       UPDATE daily_meal_plans
       SET status = 'COMPLETED', completed_by = ?, completed_at = ?, updated_at = ?, actual_cooked_count = ?
       WHERE id = ?
-    `).run(actor.id, now, now, cookedCount, planId);
+    `, [actor.id, now, now, cookedCount, planId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "kitchen.plan_completed",
@@ -556,12 +578,11 @@ export function completeMealPlan(
         actualCookedCount: cookedCount,
       },
       ipAddress: ip,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getMealPlanById(actor, planId)!.plan;
+  const updated = await getMealPlanById(actor, planId, db);
+  return updated!.plan;
 }
 
 /**
@@ -569,12 +590,23 @@ export function completeMealPlan(
  * Captures previous quantity, new quantity, actor, and mandatory explanation.
  * Requires kitchen.manage permission.
  */
-export function adjustMealPlanQuantity(
+export async function adjustMealPlanQuantity(
   actor: AuthenticatedUser,
   planId: string,
   input: AdjustQuantityInput,
-  clientIp?: string
-): DailyMealPlan {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "kitchen.manage", { ip: clientIp, action: "kitchen.quantity_adjusted" });
 
   const reason = input.reason?.trim();
@@ -582,8 +614,7 @@ export function adjustMealPlanQuantity(
     throw new Error("A clear justification reason of at least 5 characters is required for quantity adjustments.");
   }
 
-  const db = getDb();
-  const current = getMealPlanById(actor, planId);
+  const current = await getMealPlanById(actor, planId, db);
   if (!current) {
     throw new Error(`Meal plan '${planId}' not found.`);
   }
@@ -606,15 +637,15 @@ export function adjustMealPlanQuantity(
   const adjId = `mpa_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // 1. Record append-only adjustment history
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO meal_plan_adjustments (
         id, plan_id, previous_resident_count, new_resident_count,
         previous_guest_count, new_guest_count, previous_total,
         new_total, reason, created_by, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       adjId,
       planId,
       prevRes,
@@ -626,17 +657,17 @@ export function adjustMealPlanQuantity(
       reason,
       actor.id,
       now
-    );
+    ]);
 
     // 2. Update plan preparation counts
-    db.prepare(`
+    await tx.execute(`
       UPDATE daily_meal_plans
       SET planned_resident_count = ?, guest_count = ?, final_preparation_count = ?, updated_at = ?
       WHERE id = ?
-    `).run(newRes, newGuest, newTotal, now, planId);
+    `, [newRes, newGuest, newTotal, now, planId]);
 
     // 3. Emit audit event
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "kitchen.quantity_adjusted",
@@ -651,26 +682,26 @@ export function adjustMealPlanQuantity(
         reason,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getMealPlanById(actor, planId)!.plan;
+  const updated = await getMealPlanById(actor, planId, db);
+  return updated!.plan;
 }
 
 /**
  * Retrieves a meal plan by ID with resident attendance and adjustments.
  * Requires kitchen.read permission.
  */
-export function getMealPlanById(
+export async function getMealPlanById(
   actor: AuthenticatedUser,
-  planId: string
-): { plan: DailyMealPlan; residentRecords: ResidentMealRecord[]; adjustments: MealPlanAdjustment[] } | null {
+  planId: string,
+  asyncDb?: AsyncDb
+): Promise<{ plan: DailyMealPlan; residentRecords: ResidentMealRecord[]; adjustments: MealPlanAdjustment[] } | null> {
   requirePermission(actor, "kitchen.read");
 
-  const db = getDb();
-  const planRow = db.prepare(`
+  const db = asyncDb ?? getAsyncDb();
+  const planRow = await db.queryOne<any>(`
     SELECT
       p.*,
       u1.full_name as created_by_name,
@@ -681,11 +712,11 @@ export function getMealPlanById(
     LEFT JOIN staff_users u2 ON u2.id = p.confirmed_by
     LEFT JOIN staff_users u3 ON u3.id = p.completed_by
     WHERE p.id = ?
-  `).get(planId);
+  `, [planId]);
 
   if (!planRow) return null;
 
-  const residentRows = db.prepare(`
+  const residentRows = await db.query<any>(`
     SELECT
       m.*,
       r.full_name as resident_name,
@@ -696,9 +727,9 @@ export function getMealPlanById(
     JOIN rooms rm ON rm.id = s.room_id
     WHERE m.plan_id = ?
     ORDER BY rm.floor ASC, rm.room_number ASC, r.full_name ASC
-  `).all(planId);
+  `, [planId]);
 
-  const adjustmentRows = db.prepare(`
+  const adjustmentRows = await db.query<any>(`
     SELECT
       a.*,
       u.full_name as created_by_name
@@ -706,7 +737,7 @@ export function getMealPlanById(
     LEFT JOIN staff_users u ON u.id = a.created_by
     WHERE a.plan_id = ?
     ORDER BY a.created_at ASC
-  `).all(planId);
+  `, [planId]);
 
   return {
     plan: mapRowToMealPlan(planRow),
@@ -719,13 +750,14 @@ export function getMealPlanById(
  * Lists meal plans filtered by date range, meal type, or status.
  * Requires kitchen.read permission.
  */
-export function listMealPlans(
+export async function listMealPlans(
   actor: AuthenticatedUser,
-  options?: ListMealPlansOptions
-): DailyMealPlan[] {
+  options?: ListMealPlansOptions,
+  asyncDb?: AsyncDb
+): Promise<DailyMealPlan[]> {
   requirePermission(actor, "kitchen.read");
 
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -750,7 +782,7 @@ export function listMealPlans(
   const limit = Math.min(500, Math.max(1, Number(options?.limit) || 100));
   const offset = Math.max(0, Number(options?.offset) || 0);
 
-  const rows = db.prepare(`
+  const rows = await db.query<any>(`
     SELECT
       p.*,
       u1.full_name as created_by_name,
@@ -764,7 +796,7 @@ export function listMealPlans(
     ORDER BY p.service_date DESC,
       CASE p.meal_type WHEN 'DINNER' THEN 1 WHEN 'LUNCH' THEN 2 WHEN 'BREAKFAST' THEN 3 END
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
+  `, [...params, limit, offset]);
 
   return rows.map(mapRowToMealPlan);
 }
@@ -773,11 +805,12 @@ export function listMealPlans(
  * Retrieves preparation sheet data for a specific plan.
  * Requires kitchen.read permission.
  */
-export function getPreparationSheetData(
+export async function getPreparationSheetData(
   actor: AuthenticatedUser,
-  planId: string
-): PreparationSheetData | null {
-  const detail = getMealPlanById(actor, planId);
+  planId: string,
+  asyncDb?: AsyncDb
+): Promise<PreparationSheetData | null> {
+  const detail = await getMealPlanById(actor, planId, asyncDb);
   if (!detail) return null;
 
   const { plan, residentRecords, adjustments } = detail;
@@ -809,24 +842,25 @@ export function getPreparationSheetData(
  * If serviceDate is not specified, defaults to current local date.
  * Requires kitchen.read permission.
  */
-export function getKitchenDashboardSummary(
+export async function getKitchenDashboardSummary(
   actor: AuthenticatedUser,
-  serviceDate?: string
-): KitchenDashboardSummary {
+  serviceDate?: string,
+  asyncDb?: AsyncDb
+): Promise<KitchenDashboardSummary> {
   requirePermission(actor, "kitchen.read");
 
   const now = new Date();
   const date = serviceDate && DATE_REGEX.test(serviceDate) ? serviceDate : now.toISOString().slice(0, 10);
 
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
-  const plans = listMealPlans(actor, { startDate: date, endDate: date });
+  const plans = await listMealPlans(actor, { startDate: date, endDate: date }, db);
 
   const breakfast = plans.find((p) => p.mealType === "BREAKFAST") || null;
   const lunch = plans.find((p) => p.mealType === "LUNCH") || null;
   const dinner = plans.find((p) => p.mealType === "DINNER") || null;
 
-  const eligible = getEligibleResidentsForDate(actor, date);
+  const eligible = await getEligibleResidentsForDate(actor, date, db);
 
   const bCount = breakfast?.finalPreparationCount || 0;
   const lCount = lunch?.finalPreparationCount || 0;
@@ -853,7 +887,7 @@ export function getKitchenDashboardSummary(
  * Upserts default meal preferences for a resident.
  * Requires kitchen.manage permission.
  */
-export function updateResidentMealPreference(
+export async function updateResidentMealPreference(
   actor: AuthenticatedUser,
   residentId: string,
   input: {
@@ -863,11 +897,21 @@ export function updateResidentMealPreference(
     dietaryPreference?: string;
     notes?: string;
   },
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "kitchen.manage", { ip: clientIp, action: "kitchen.preference_updated" });
 
-  const db = getDb();
   const now = new Date().toISOString();
 
   const bOpt = input.breakfastOptIn !== false ? 1 : 0;
@@ -876,32 +920,34 @@ export function updateResidentMealPreference(
   const diet = input.dietaryPreference?.trim() || "VEG";
   const notes = input.notes?.trim() || null;
 
-  db.prepare(`
-    INSERT INTO resident_meal_preferences (
-      resident_id, breakfast_opt_in, lunch_opt_in, dinner_opt_in,
-      dietary_preference, notes, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(resident_id) DO UPDATE SET
-      breakfast_opt_in = excluded.breakfast_opt_in,
-      lunch_opt_in = excluded.lunch_opt_in,
-      dinner_opt_in = excluded.dinner_opt_in,
-      dietary_preference = excluded.dietary_preference,
-      notes = excluded.notes,
-      updated_at = excluded.updated_at
-  `).run(residentId, bOpt, lOpt, dOpt, diet, notes, now, now);
+  await db.transaction(async (tx) => {
+    await tx.execute(`
+      INSERT INTO resident_meal_preferences (
+        resident_id, breakfast_opt_in, lunch_opt_in, dinner_opt_in,
+        dietary_preference, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(resident_id) DO UPDATE SET
+        breakfast_opt_in = excluded.breakfast_opt_in,
+        lunch_opt_in = excluded.lunch_opt_in,
+        dinner_opt_in = excluded.dinner_opt_in,
+        dietary_preference = excluded.dietary_preference,
+        notes = excluded.notes,
+        updated_at = excluded.updated_at
+    `, [residentId, bOpt, lOpt, dOpt, diet, notes, now, now]);
 
-  recordAuditEvent({
-    actorId: actor.id,
-    actorUsername: actor.username,
-    action: "kitchen.preference_updated",
-    targetType: "resident",
-    targetId: residentId,
-    metadata: {
-      breakfastOptIn: bOpt === 1,
-      lunchOptIn: lOpt === 1,
-      dinnerOptIn: dOpt === 1,
-      dietaryPreference: diet,
-    },
-    ipAddress: clientIp,
+    await recordAuditEventAsync({
+      actorId: actor.id,
+      actorUsername: actor.username,
+      action: "kitchen.preference_updated",
+      targetType: "resident",
+      targetId: residentId,
+      metadata: {
+        breakfastOptIn: bOpt === 1,
+        lunchOptIn: lOpt === 1,
+        dinnerOptIn: dOpt === 1,
+        dietaryPreference: diet,
+      },
+      ipAddress: clientIp,
+    }, tx);
   });
 }

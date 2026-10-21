@@ -3,6 +3,7 @@ import { validateSessionDetailed, ERP_COOKIE_NAME } from "../authentication/auth
 import { hasPermission } from "./permissions";
 import { recordAuditEvent } from "../audit/audit";
 import { AuthenticatedUser, Permission } from "@/types";
+import { AsyncDb } from "../database/db";
 
 export class AuthorizationError extends Error {
   public readonly statusCode: 401 | 403;
@@ -25,13 +26,16 @@ export class AuthorizationError extends Error {
  * Inactive accounts automatically fail session validation and return null.
  * Detects preempted sessions and throws AuthorizationError(401, ..., "SESSION_PREEMPTED").
  */
-export function resolveUserFromRequest(request: NextRequest): AuthenticatedUser | null {
+export async function resolveUserFromRequest(
+  request: NextRequest,
+  asyncDb?: AsyncDb
+): Promise<AuthenticatedUser | null> {
   const sessionToken = request.cookies.get(ERP_COOKIE_NAME)?.value;
   if (!sessionToken || sessionToken.length < 32) {
     return null;
   }
 
-  const { user, isPreempted } = validateSessionDetailed(sessionToken);
+  const { user, isPreempted } = await validateSessionDetailed(sessionToken, asyncDb);
   if (isPreempted) {
     throw new AuthorizationError(
       401,
@@ -47,8 +51,11 @@ export function resolveUserFromRequest(request: NextRequest): AuthenticatedUser 
  * Asserts that the request carries a valid, active session.
  * Throws an AuthorizationError(401) if unauthenticated or inactive.
  */
-export function requireUser(request: NextRequest): AuthenticatedUser {
-  const user = resolveUserFromRequest(request);
+export async function requireUser(
+  request: NextRequest,
+  asyncDb?: AsyncDb
+): Promise<AuthenticatedUser> {
+  const user = await resolveUserFromRequest(request, asyncDb);
   if (!user) {
     throw new AuthorizationError(401, "Authentication required. Please sign in.");
   }

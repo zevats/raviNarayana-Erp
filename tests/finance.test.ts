@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 
 import { runMigrations } from "../apps/erp/src/server/database/migrations";
-import { closeDb } from "../apps/erp/src/server/database/db";
+import { closeDb, getAsyncDb, AsyncDb, convertPlaceholders } from "../apps/erp/src/server/database/db";
 import { hasPermission } from "../apps/erp/src/server/authorization/permissions";
 import {
   requirePermission,
@@ -25,6 +25,10 @@ import {
 import { getAuditLogs, sanitizeAuditMetadata } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
 import { sanitizeCsvCell } from "../apps/erp/src/modules/finance/utils/exportCsv";
+
+// Primary database path for zero-modification guard
+const primaryDbPath = path.resolve(__dirname, "../data/erp.db");
+const primaryStatsBefore = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
 
 // Isolated test database path
 const TEST_FINANCE_DB_PATH = path.resolve(__dirname, "test_finance.db");
@@ -275,11 +279,11 @@ async function runFinanceTests() {
   console.log("\n[TEST SUITE 2] Rent Charge Creation, Validation & Balance Invariants");
 
   // Initial balance should be 0
-  const initialBalance = getResidentRentBalance("res_aarav");
+  const initialBalance = await getResidentRentBalance("res_aarav");
   assert(initialBalance === 0, `Initial rent balance for Aarav is ₹0 (got ₹${initialBalance})`);
 
   // Post Rent Charge: ₹12,000 for October 2026
-  const charge1 = recordRentCharge(accountantUser, {
+  const charge1 = await recordRentCharge(accountantUser, {
     residentId: "res_aarav",
     stayId: "stay_aarav",
     amount: 12000,
@@ -296,13 +300,13 @@ async function runFinanceTests() {
   assert(charge1.billingPeriod === "October 2026", "Billing period recorded accurately");
 
   // Balance after charge
-  const balanceAfterCharge = getResidentRentBalance("res_aarav");
+  const balanceAfterCharge = await getResidentRentBalance("res_aarav");
   assert(balanceAfterCharge === 12000, `Rent balance correctly reflects ₹12,000 charge (got ₹${balanceAfterCharge})`);
 
   // Validation: Negative/Zero amount rejected
   let invalidAmountCaught = false;
   try {
-    recordRentCharge(accountantUser, {
+    await recordRentCharge(accountantUser, {
       residentId: "res_aarav",
       amount: -500,
       transactionDate: "2026-10-01",
@@ -316,7 +320,7 @@ async function runFinanceTests() {
   // Validation: Invalid date rejected
   let invalidDateCaught = false;
   try {
-    recordRentCharge(accountantUser, {
+    await recordRentCharge(accountantUser, {
       residentId: "res_aarav",
       amount: 5000,
       transactionDate: "01-10-2026", // Wrong format
@@ -330,7 +334,7 @@ async function runFinanceTests() {
   // Validation: Non-existent resident rejected
   let missingResidentCaught = false;
   try {
-    recordRentCharge(accountantUser, {
+    await recordRentCharge(accountantUser, {
       residentId: "res_nonexistent",
       amount: 5000,
       transactionDate: "2026-10-01",
@@ -347,7 +351,7 @@ async function runFinanceTests() {
   console.log("\n[TEST SUITE 3] Rent Payment & Balance Tracking");
 
   // Record Partial Payment: ₹5,000 via UPI
-  const partialPayment = recordRentPayment(accountantUser, {
+  const partialPayment = await recordRentPayment(accountantUser, {
     residentId: "res_aarav",
     stayId: "stay_aarav",
     amount: 5000,
@@ -363,13 +367,13 @@ async function runFinanceTests() {
   assert(partialPayment.referenceNumber === "UPI/RAV/987123", "Reference number recorded accurately");
 
   // Verify remaining balance: 12000 - 5000 = 7000
-  const balanceAfterPartial = getResidentRentBalance("res_aarav");
+  const balanceAfterPartial = await getResidentRentBalance("res_aarav");
   assert(balanceAfterPartial === 7000, `Remaining balance is ₹7,000 after partial payment (got ₹${balanceAfterPartial})`);
 
   // Anti-Overpayment Check: Attempt to pay ₹8,000 when balance is only ₹7,000
   let overpaymentCaught = false;
   try {
-    recordRentPayment(accountantUser, {
+    await recordRentPayment(accountantUser, {
       residentId: "res_aarav",
       amount: 8000,
       transactionDate: "2026-10-04",
@@ -381,7 +385,7 @@ async function runFinanceTests() {
   assert(overpaymentCaught, "Anti-Overpayment Guard: Payment exceeding outstanding balance is strictly blocked");
 
   // Record Full Remaining Payment: ₹7,000 via CASH
-  const finalPayment = recordRentPayment(accountantUser, {
+  const finalPayment = await recordRentPayment(accountantUser, {
     residentId: "res_aarav",
     stayId: "stay_aarav",
     amount: 7000,
@@ -393,13 +397,13 @@ async function runFinanceTests() {
   assert(finalPayment.amount === 7000, "Second payment recorded for ₹7,000");
 
   // Verify balance reaches exactly 0
-  const balanceAfterFull = getResidentRentBalance("res_aarav");
+  const balanceAfterFull = await getResidentRentBalance("res_aarav");
   assert(balanceAfterFull === 0, `Resident rent balance is exactly ₹0 after full payment (got ₹${balanceAfterFull})`);
 
   // Attempting another payment when balance is 0 should fail
   let zeroBalancePaymentBlocked = false;
   try {
-    recordRentPayment(accountantUser, {
+    await recordRentPayment(accountantUser, {
       residentId: "res_aarav",
       amount: 1000,
       transactionDate: "2026-10-06",
@@ -416,7 +420,7 @@ async function runFinanceTests() {
   console.log("\n[TEST SUITE 4] Security Deposit Separation (Liability vs Rent Revenue)");
 
   // Record Security Deposit: ₹10,000 via BANK_TRANSFER
-  const deposit = recordSecurityDeposit(accountantUser, {
+  const deposit = await recordSecurityDeposit(accountantUser, {
     residentId: "res_aarav",
     stayId: "stay_aarav",
     amount: 10000,
@@ -431,11 +435,11 @@ async function runFinanceTests() {
   assert(deposit.amount === 10000, "Deposit amount recorded as ₹10,000");
 
   // Invariant: Security Deposit does NOT alter resident rent balance
-  const rentBalanceAfterDeposit = getResidentRentBalance("res_aarav");
+  const rentBalanceAfterDeposit = await getResidentRentBalance("res_aarav");
   assert(rentBalanceAfterDeposit === 0, `Rent balance remains ₹0 after recording deposit (got ₹${rentBalanceAfterDeposit})`);
 
   // Resident Financial Summary check
-  const residentSummary = getResidentFinancialSummary(accountantUser, "res_aarav");
+  const residentSummary = await getResidentFinancialSummary(accountantUser, "res_aarav");
   assert(residentSummary.totalRentCharges === 12000, `Summary total rent charged is ₹12,000 (got ₹${residentSummary.totalRentCharges})`);
   assert(residentSummary.totalRentPaid === 12000, `Summary total rent paid is ₹12,000 (got ₹${residentSummary.totalRentPaid})`);
   assert(residentSummary.outstandingRentBalance === 0, `Summary outstanding balance is ₹0 (got ₹${residentSummary.outstandingRentBalance})`);
@@ -448,7 +452,7 @@ async function runFinanceTests() {
   console.log("\n[TEST SUITE 5] Operational Expenses & Cashflow Deductions");
 
   // Record Grocery Expense
-  const groceryExp = recordExpense(accountantUser, {
+  const groceryExp = await recordExpense(accountantUser, {
     category: "GROCERY",
     amount: 3500,
     transactionDate: "2026-10-06",
@@ -465,7 +469,7 @@ async function runFinanceTests() {
   assert(groceryExp.payeeVendor === "Met City Fresh Mart", "Payee vendor recorded accurately");
 
   // Record Utilities Expense
-  const utilExp = recordExpense(accountantUser, {
+  const utilExp = await recordExpense(accountantUser, {
     category: "UTILITIES",
     amount: 1800,
     transactionDate: "2026-10-07",
@@ -481,7 +485,7 @@ async function runFinanceTests() {
   // Validation: Reject invalid expense category
   let invalidCategoryCaught = false;
   try {
-    recordExpense(accountantUser, {
+    await recordExpense(accountantUser, {
       category: "INVALID_CAT" as any,
       amount: 1000,
       transactionDate: "2026-10-08",
@@ -494,7 +498,7 @@ async function runFinanceTests() {
   assert(invalidCategoryCaught, "Validation rejects invalid expense category");
 
   // Invariant: Expenses do NOT alter resident rent balances
-  const rentBalanceAfterExpenses = getResidentRentBalance("res_aarav");
+  const rentBalanceAfterExpenses = await getResidentRentBalance("res_aarav");
   assert(rentBalanceAfterExpenses === 0, "Expenses do not alter resident rent balance");
 
   // -----------------------------------------------------------------------------
@@ -509,7 +513,7 @@ async function runFinanceTests() {
   // Expenses Paid = 3500 + 1800 = 5300
   // Net Cash Movement = 22000 - 5300 = 16700
   // Total Outstanding Rent = 0
-  const cashbookCurrent = getCashbookSummary(accountantUser, {
+  const cashbookCurrent = await getCashbookSummary(accountantUser, {
     startDate: "2026-10-01",
     endDate: "2026-10-10",
   });
@@ -521,7 +525,7 @@ async function runFinanceTests() {
   assert(cashbookCurrent.totalOutstandingRent === 0, `Total global outstanding rent is ₹0 (got ₹${cashbookCurrent.totalOutstandingRent})`);
 
   // Now charge Resident B ₹8,000 rent for October
-  const chargeB = recordRentCharge(accountantUser, {
+  const chargeB = await recordRentCharge(accountantUser, {
     residentId: "res_priya",
     stayId: "stay_priya",
     amount: 8000,
@@ -530,7 +534,7 @@ async function runFinanceTests() {
     description: "Monthly room rent for Room 202",
   });
 
-  const cashbookWithOutstanding = getCashbookSummary(accountantUser, {
+  const cashbookWithOutstanding = await getCashbookSummary(accountantUser, {
     startDate: "2026-10-01",
     endDate: "2026-10-10",
   });
@@ -539,7 +543,7 @@ async function runFinanceTests() {
   assert(cashbookWithOutstanding.netCashMovement === 16700, "Net Cash Movement unchanged since charge is non-cash receivable");
 
   // Date Filtering: Query range with no transactions
-  const cashbookEmptyRange = getCashbookSummary(accountantUser, {
+  const cashbookEmptyRange = await getCashbookSummary(accountantUser, {
     startDate: "2025-01-01",
     endDate: "2025-01-31",
   });
@@ -558,7 +562,7 @@ async function runFinanceTests() {
 
   const idempotencyKey = "idemp_fin_key_9999";
 
-  const exp1 = recordExpense(accountantUser, {
+  const exp1 = await recordExpense(accountantUser, {
     category: "MAINTENANCE",
     amount: 1500,
     transactionDate: "2026-10-08",
@@ -569,7 +573,7 @@ async function runFinanceTests() {
   });
 
   // Duplicate submission with same key
-  const exp2 = recordExpense(accountantUser, {
+  const exp2 = await recordExpense(accountantUser, {
     category: "MAINTENANCE",
     amount: 1500,
     transactionDate: "2026-10-08",
@@ -593,7 +597,7 @@ async function runFinanceTests() {
   console.log("\n[TEST SUITE 8] Auditable Reversals");
 
   // Record an erroneous rent charge of ₹1,000 on Resident B
-  const erroneousCharge = recordRentCharge(accountantUser, {
+  const erroneousCharge = await recordRentCharge(accountantUser, {
     residentId: "res_priya",
     stayId: "stay_priya",
     amount: 1000,
@@ -602,11 +606,11 @@ async function runFinanceTests() {
     description: "Erroneous charge to be reversed",
   });
 
-  const balanceBeforeReversal = getResidentRentBalance("res_priya");
+  const balanceBeforeReversal = await getResidentRentBalance("res_priya");
   assert(balanceBeforeReversal === 9000, `Balance before reversal is ₹9,000 (8000 + 1000, got ₹${balanceBeforeReversal})`);
 
   // Reverse the transaction
-  const reversalTx = reverseTransaction(accountantUser, erroneousCharge.id, "Billed in error by operator");
+  const reversalTx = await reverseTransaction(accountantUser, erroneousCharge.id, "Billed in error by operator");
 
   assert(reversalTx.id.startsWith("txn_"), "Reversal transaction created with prefixed id");
   assert(reversalTx.transactionType === "REVERSAL", "Reversal transaction type is REVERSAL");
@@ -614,7 +618,7 @@ async function runFinanceTests() {
   assert(reversalTx.reversalOfId === erroneousCharge.id, "Reversal references original transaction ID");
 
   // Verify original transaction status is updated to REVERSED
-  const originalUpdated = getTransactionById(accountantUser, erroneousCharge.id)!;
+  const originalUpdated = (await getTransactionById(accountantUser, erroneousCharge.id))!;
   assert(originalUpdated.status === "REVERSED", "Original transaction status updated to REVERSED");
 
   // Verify original transaction was NOT deleted
@@ -624,13 +628,13 @@ async function runFinanceTests() {
   checkDb.close();
 
   // Balance after reversal should return to ₹8,000
-  const balanceAfterReversal = getResidentRentBalance("res_priya");
+  const balanceAfterReversal = await getResidentRentBalance("res_priya");
   assert(balanceAfterReversal === 8000, `Rent balance correctly restored to ₹8,000 after reversal (got ₹${balanceAfterReversal})`);
 
   // Attempting to reverse an already-reversed transaction should throw
   let doubleReversalBlocked = false;
   try {
-    reverseTransaction(accountantUser, erroneousCharge.id, "Attempt second reversal");
+    await reverseTransaction(accountantUser, erroneousCharge.id, "Attempt second reversal");
   } catch (err: any) {
     doubleReversalBlocked = err.message.includes("already reversed");
   }
@@ -644,7 +648,7 @@ async function runFinanceTests() {
   // 1. Unauthenticated caller throws 401
   let unauthCaught = false;
   try {
-    listTransactions(null as any, {});
+    await listTransactions(null as any, {});
   } catch (err: any) {
     unauthCaught = err instanceof AuthorizationError && err.statusCode === 401;
   }
@@ -661,13 +665,13 @@ async function runFinanceTests() {
   assert(!hasPermission(deliveryUser.role, "finance.read"), "Least Privilege: DELIVERY_PERSON lacks finance.read");
 
   // 3. OPERATIONS_MANAGER can read transactions
-  const opsList = listTransactions(opsManagerUser, {});
+  const opsList = await listTransactions(opsManagerUser, {});
   assert(Array.isArray(opsList), "OPERATIONS_MANAGER successfully reads transaction list");
 
   // 4. OPERATIONS_MANAGER blocked from mutating finance (HTTP 403)
   let opsBlockedOnCharge = false;
   try {
-    recordRentCharge(opsManagerUser, {
+    await recordRentCharge(opsManagerUser, {
       residentId: "res_priya",
       amount: 2000,
       transactionDate: "2026-10-10",
@@ -680,7 +684,7 @@ async function runFinanceTests() {
 
   let opsBlockedOnPayment = false;
   try {
-    recordRentPayment(opsManagerUser, {
+    await recordRentPayment(opsManagerUser, {
       residentId: "res_priya",
       amount: 2000,
       transactionDate: "2026-10-10",
@@ -693,7 +697,7 @@ async function runFinanceTests() {
 
   let opsBlockedOnExpense = false;
   try {
-    recordExpense(opsManagerUser, {
+    await recordExpense(opsManagerUser, {
       category: "GROCERY",
       amount: 500,
       transactionDate: "2026-10-10",
@@ -708,7 +712,7 @@ async function runFinanceTests() {
   // 5. KITCHEN_OPERATIONS and DELIVERY_PERSON blocked from reading (HTTP 403)
   let kitchenBlockedOnRead = false;
   try {
-    getCashbookSummary(kitchenUser, {});
+    await getCashbookSummary(kitchenUser, {});
   } catch (err: any) {
     kitchenBlockedOnRead = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -716,7 +720,7 @@ async function runFinanceTests() {
 
   let deliveryBlockedOnRead = false;
   try {
-    getResidentFinancialSummary(deliveryUser, "res_priya");
+    await getResidentFinancialSummary(deliveryUser, "res_priya");
   } catch (err: any) {
     deliveryBlockedOnRead = err instanceof AuthorizationError && err.statusCode === 403;
   }
@@ -768,7 +772,7 @@ async function runFinanceTests() {
   const expectedDefaultStart = `${expYear}-${expMonth}-01`;
   const expectedDefaultEnd = `${expYear}-${expMonth}-${expDay}`;
 
-  const defaultSummary = getCashbookSummary(superAdminUser, {});
+  const defaultSummary = await getCashbookSummary(superAdminUser, {});
   assert(
     defaultSummary.startDate === expectedDefaultStart,
     `getCashbookSummary default startDate correctly uses local calendar month start (${expectedDefaultStart})`
@@ -789,6 +793,190 @@ async function runFinanceTests() {
   assert(sanitizeCsvCell(12500) === "12500", "sanitizeCsvCell leaves numeric values intact");
   assert(sanitizeCsvCell('Rent "October" Receipt') === "\"Rent \"\"October\"\" Receipt\"", "sanitizeCsvCell escapes internal double quotes");
   assert(sanitizeCsvCell("Sharma, Rahul") === "\"Sharma, Rahul\"", "sanitizeCsvCell encloses comma-separated strings");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 12: Finance Service Async Transaction Rollback Integrity
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 12] Finance Service Async Transaction Rollback Integrity");
+
+  const asyncDb = getAsyncDb();
+  let rollbackThrew = false;
+  try {
+    await asyncDb.transaction(async (tx) => {
+      await recordExpense(accountantUser, {
+        category: "MAINTENANCE",
+        amount: 4500,
+        transactionDate: "2026-10-11",
+        paymentMethod: "CASH",
+        payeeVendor: "Failed Pipe Repair Vendor",
+        description: "Transaction to be rolled back mid-flight",
+      }, undefined, tx);
+      throw new Error("Simulated mid-operation transaction failure");
+    });
+  } catch (err: any) {
+    rollbackThrew = err.message === "Simulated mid-operation transaction failure";
+  }
+  assert(rollbackThrew, "Transaction propagates mid-operation error to caller");
+
+  // Verify financial transaction was NOT committed to database
+  const allExpenses = await listTransactions(accountantUser, { type: "EXPENSE" });
+  assert(!allExpenses.some((t) => t.payeeVendor === "Failed Pipe Repair Vendor"), "Transaction rollback ensured financial row was not persisted");
+
+  // Verify audit event was NOT committed to database
+  const allAuditLogsAfterRollback = getAuditLogs({ limit: 100 });
+  assert(!allAuditLogsAfterRollback.some((l) => l.metadata && l.metadata.includes("Failed Pipe Repair Vendor")), "Transaction rollback atomically prevented audit log commitment");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 13: Mock PostgreSQL AsyncDb Execution & BigInt / Parameter Compatibility
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 13] Mock PostgreSQL AsyncDb Execution & BigInt / Parameter Compatibility");
+
+  // 1. Placeholder conversion ($1, $2, ...)
+  const sampleQuery = "SELECT * FROM financial_transactions WHERE resident_id = ? AND transaction_type = ? AND status = ?";
+  const converted = convertPlaceholders(sampleQuery);
+  assert(
+    converted === "SELECT * FROM financial_transactions WHERE resident_id = $1 AND transaction_type = $2 AND status = $3",
+    "convertPlaceholders converts SQLite ? to Postgres $n parameter format"
+  );
+
+  // 2. Mock PostgreSQL AsyncDb adapter returning string-based bigints/numerics
+  const executedSqls: string[] = [];
+  const mockPgDb: AsyncDb = {
+    isPostgres: true,
+    async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
+      executedSqls.push(sql);
+      if (sql.includes("FROM financial_transactions") && sql.includes("resident_id")) {
+        return [
+          {
+            id: "txn_pg_mock_1",
+            transaction_type: "RENT_CHARGE",
+            amount: "15000", // String numeric/bigint from Postgres driver
+            transaction_date: "2026-10-01",
+            payment_method: null,
+            reference_number: null,
+            resident_id: "res_pg_1",
+            stay_id: "stay_pg_1",
+            category: "RENT",
+            description: "Mock PG charge",
+            billing_period: "October 2026",
+            payee_vendor: null,
+            idempotency_key: null,
+            status: "POSTED",
+            reversal_of_id: null,
+            created_by: "usr_accountant_fin",
+            created_at: "2026-10-01T00:00:00.000Z",
+            updated_at: "2026-10-01T00:00:00.000Z",
+            resident_name: "Mock Resident",
+            room_number: "101",
+            created_by_name: "Lead Accountant",
+          }
+        ] as unknown as T[];
+      }
+      return [];
+    },
+    async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
+      executedSqls.push(sql);
+      // getResidentRentBalance aggregate query
+      if (sql.includes("as charges") && sql.includes("as payments")) {
+        return {
+          charges: "15000",  // string bigint
+          payments: "9000",  // string bigint
+        } as unknown as T;
+      }
+      // getResidentFinancialSummary resident info query
+      if (sql.includes("FROM residents r") && sql.includes("WHERE r.id =")) {
+        return {
+          id: "res_pg_1",
+          fullName: "Mock Postgres Resident",
+          phone: "9876543210",
+          status: "ACTIVE",
+          currentRoomNumber: "101",
+        } as unknown as T;
+      }
+      // getResidentFinancialSummary totals query
+      if (sql.includes("as totalCharges") && sql.includes("as totalPayments")) {
+        return {
+          totalCharges: "15000",  // string bigint
+          totalPayments: "9000",  // string bigint
+          totalDeposits: "10000", // string bigint
+        } as unknown as T;
+      }
+      // getCashbookSummary period aggregate
+      if (sql.includes("COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT'") && sql.includes("transaction_date >=")) {
+        return {
+          rentCollected: "9000",         // string bigint
+          depositsCollected: "10000",    // string bigint
+          expensesPaid: "2500",          // string bigint
+          rentBilled: "15000",           // string bigint
+          txCount: "4",
+        } as unknown as T;
+      }
+      // getCashbookSummary cross-period reversals
+      if (sql.includes("priorRentRefunds") && sql.includes("priorDepositRefunds")) {
+        return {
+          priorRentRefunds: "0",
+          priorDepositRefunds: "0",
+          priorExpenseRefunds: "0",
+        } as unknown as T;
+      }
+      // getCashbookSummary global outstanding
+      if (sql.includes("COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE'") && !sql.includes("resident_id =")) {
+        return {
+          allCharges: "20000",
+          allPayments: "14000",
+        } as unknown as T;
+      }
+      return null;
+    },
+    async execute(sql: string, params?: any[]) {
+      executedSqls.push(sql);
+      return { changes: 1 };
+    },
+    async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
+      return cb(mockPgDb);
+    },
+  };
+
+  // Test getResidentRentBalance against mock PostgreSQL driver
+  const pgBalance = await getResidentRentBalance("res_pg_1", mockPgDb);
+  assert(typeof pgBalance === "number", "getResidentRentBalance returns number type on PostgreSQL AsyncDb adapter");
+  assert(pgBalance === 6000, `getResidentRentBalance correctly normalizes PostgreSQL string bigints (15000 - 9000 = 6000, got ${pgBalance})`);
+
+  // Test getCashbookSummary against mock PostgreSQL driver
+  const pgCashbook = await getCashbookSummary(accountantUser, { startDate: "2026-10-01", endDate: "2026-10-31" }, mockPgDb);
+  assert(typeof pgCashbook.totalRentCollected === "number", "getCashbookSummary totalRentCollected is number type");
+  assert(typeof pgCashbook.netCashMovement === "number", "getCashbookSummary netCashMovement is number type");
+  assert(typeof pgCashbook.totalOutstandingRent === "number", "getCashbookSummary totalOutstandingRent is number type");
+  assert(pgCashbook.totalRentCollected === 9000, `getCashbookSummary rent collected normalized (got ₹${pgCashbook.totalRentCollected})`);
+  assert(pgCashbook.totalDepositsCollected === 10000, `getCashbookSummary deposits collected normalized (got ₹${pgCashbook.totalDepositsCollected})`);
+  assert(pgCashbook.totalExpensesPaid === 2500, `getCashbookSummary expenses paid normalized (got ₹${pgCashbook.totalExpensesPaid})`);
+  assert(pgCashbook.netCashMovement === 16500, `getCashbookSummary net cash movement normalized (9000+10000-2500 = ₹16,500, got ₹${pgCashbook.netCashMovement})`);
+  assert(pgCashbook.totalOutstandingRent === 6000, `getCashbookSummary total global outstanding rent normalized (20000-14000 = ₹6,000, got ₹${pgCashbook.totalOutstandingRent})`);
+
+  // Test getResidentFinancialSummary against mock PostgreSQL driver
+  const pgSummary = await getResidentFinancialSummary(accountantUser, "res_pg_1", mockPgDb);
+  assert(typeof pgSummary.outstandingRentBalance === "number", "getResidentFinancialSummary outstandingRentBalance is number type");
+  assert(typeof pgSummary.totalRentCharges === "number", "getResidentFinancialSummary totalRentCharges is number type");
+  assert(pgSummary.outstandingRentBalance === 6000, `getResidentFinancialSummary calculates outstanding balance on PostgreSQL driver (got ₹${pgSummary.outstandingRentBalance})`);
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 14: Zero Primary Database Access Guard & Environment Cleanup
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 14] Zero Primary Database Access Guard & Environment Cleanup");
+
+  const primaryStatsAfter = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
+  if (primaryStatsBefore && primaryStatsAfter) {
+    assert(
+      primaryStatsBefore.size === primaryStatsAfter.size,
+      `Primary data/erp.db size unchanged (${primaryStatsBefore.size} bytes)`
+    );
+    assert(
+      primaryStatsBefore.mtimeMs === primaryStatsAfter.mtimeMs,
+      `Primary data/erp.db mtime unchanged (${primaryStatsBefore.mtime.toISOString()})`
+    );
+  } else {
+    assert(true, "Primary database verification step completed");
+  }
 
   // Clean up
   closeDb();

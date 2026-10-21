@@ -14,13 +14,13 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
     const body = await request.json().catch(() => ({}));
     const actualCookedCount = typeof body.actualCookedCount === "number" ? body.actualCookedCount : undefined;
-    const plan = completeMealPlan(user, params.id, actualCookedCount, clientIp);
+    const plan = await completeMealPlan(user, params.id, actualCookedCount, clientIp);
 
     return NextResponse.json({ success: true, plan });
   } catch (error: any) {

@@ -14,13 +14,13 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
     const body = await request.json().catch(() => ({}));
 
-    const plan = adjustMealPlanQuantity(
+    const plan = await adjustMealPlanQuantity(
       user,
       params.id,
       {

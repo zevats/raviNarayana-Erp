@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission, AuthorizationError } from "../authorization/authorize";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
   MealType,
@@ -121,11 +121,12 @@ function mapRowToDeliveryEvent(row: any): DeliveryTaskEvent {
  * 4. Captures resident name and room number snapshots so future room updates/checkouts never rewrite past deliveries.
  * 5. Requires delivery.manage permission.
  */
-export function generateDeliveryTasks(
+export async function generateDeliveryTasks(
   actor: AuthenticatedUser,
   input: GenerateDeliveryTasksInput,
-  clientIp?: string
-): DeliveryBatchGenerationResult {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryBatchGenerationResult> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.tasks_generated" });
 
   const serviceDate = input.serviceDate?.trim();
@@ -138,14 +139,14 @@ export function generateDeliveryTasks(
     throw new Error(`Invalid meal type '${mealType}'. Must be BREAKFAST, LUNCH, or DINNER.`);
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
 
   // 1. Verify kitchen meal plan exists and is confirmed
-  const plan = db.prepare(`
+  const plan = await db.queryOne<any>(`
     SELECT id, status, planned_resident_count
     FROM daily_meal_plans
     WHERE service_date = ? AND meal_type = ?
-  `).get(serviceDate, mealType) as any;
+  `, [serviceDate, mealType]);
 
   if (!plan) {
     throw new Error(
@@ -160,7 +161,7 @@ export function generateDeliveryTasks(
   }
 
   // 2. Fetch all resident meal records for this plan, joining current resident and room snapshots
-  const mealRecords = db.prepare(`
+  const mealRecords = await db.query<any>(`
     SELECT
       rmr.id as meal_record_id,
       rmr.resident_id,
@@ -175,7 +176,7 @@ export function generateDeliveryTasks(
     JOIN rooms rm ON rm.id = s.room_id
     WHERE rmr.plan_id = ?
     ORDER BY rm.floor ASC, rm.room_number ASC
-  `).all(plan.id) as any[];
+  `, [plan.id]);
 
   let createdCount = 0;
   let skippedCount = 0;
@@ -183,42 +184,17 @@ export function generateDeliveryTasks(
 
   const now = new Date().toISOString();
 
-  const insertTask = db.prepare(`
-    INSERT INTO delivery_tasks (
-      id, meal_record_id, plan_id, service_date, meal_type,
-      resident_id, resident_name, room_number, floor, stay_id,
-      status, assigned_to, assigned_to_name, assigned_by, assigned_at,
-      dispatched_at, dispatched_by, delivered_at, delivered_by,
-      delivery_notes, recipient_name, exception_type, exception_reason,
-      exception_at, exception_by, created_at, updated_at
-    ) VALUES (
-      ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
-      'PENDING', NULL, NULL, NULL, NULL,
-      NULL, NULL, NULL, NULL,
-      NULL, NULL, NULL, NULL,
-      NULL, NULL, ?, ?
-    )
-  `);
-
-  const insertEvent = db.prepare(`
-    INSERT INTO delivery_task_events (
-      id, task_id, event_type, from_status, to_status,
-      actor_id, actor_name, notes, created_at
-    ) VALUES (?, ?, 'CREATED', NULL, 'PENDING', ?, ?, ?, ?)
-  `);
-
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     for (const rec of mealRecords) {
       if (rec.meal_status === "OPTED_OUT") {
         skippedCount++;
         continue;
       }
 
-      // Check if task already exists for this meal record
-      const existing = db.prepare(`
+      // Check if task already exists for this meal record using scoped tx
+      const existing = await tx.queryOne(`
         SELECT id FROM delivery_tasks WHERE meal_record_id = ?
-      `).get(rec.meal_record_id);
+      `, [rec.meal_record_id]);
 
       if (existing) {
         alreadyExistedCount++;
@@ -228,7 +204,23 @@ export function generateDeliveryTasks(
       const taskId = `del_${crypto.randomUUID()}`;
       const eventId = `devt_${crypto.randomUUID()}`;
 
-      insertTask.run(
+      await tx.execute(`
+        INSERT INTO delivery_tasks (
+          id, meal_record_id, plan_id, service_date, meal_type,
+          resident_id, resident_name, room_number, floor, stay_id,
+          status, assigned_to, assigned_to_name, assigned_by, assigned_at,
+          dispatched_at, dispatched_by, delivered_at, delivered_by,
+          delivery_notes, recipient_name, exception_type, exception_reason,
+          exception_at, exception_by, created_at, updated_at
+        ) VALUES (
+          ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          'PENDING', NULL, NULL, NULL, NULL,
+          NULL, NULL, NULL, NULL,
+          NULL, NULL, NULL, NULL,
+          NULL, NULL, ?, ?
+        )
+      `, [
         taskId,
         rec.meal_record_id,
         plan.id,
@@ -240,22 +232,27 @@ export function generateDeliveryTasks(
         rec.floor,
         rec.stay_id,
         now,
-        now
-      );
+        now,
+      ]);
 
-      insertEvent.run(
+      await tx.execute(`
+        INSERT INTO delivery_task_events (
+          id, task_id, event_type, from_status, to_status,
+          actor_id, actor_name, notes, created_at
+        ) VALUES (?, ?, 'CREATED', NULL, 'PENDING', ?, ?, ?, ?)
+      `, [
         eventId,
         taskId,
         actor.id,
         actor.fullName,
         "Delivery task generated from confirmed kitchen meal plan",
-        now
-      );
+        now,
+      ]);
 
       createdCount++;
     }
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.tasks_generated",
@@ -270,15 +267,13 @@ export function generateDeliveryTasks(
         totalEligible: mealRecords.length,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  const generatedTasks = listDeliveryTasks(actor, {
+  const generatedTasks = await listDeliveryTasks(actor, {
     serviceDate,
     mealType,
-  });
+  }, db);
 
   return {
     planId: plan.id,
@@ -298,11 +293,12 @@ export function generateDeliveryTasks(
  * Captures customer identity, contact details, and delivery address.
  * Requires delivery.manage permission.
  */
-export function createExternalDeliveryTask(
+export async function createExternalDeliveryTask(
   actor: AuthenticatedUser,
   input: CreateExternalDeliveryTaskInput,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.external_order_created" });
 
   const serviceDate = input.serviceDate?.trim();
@@ -328,34 +324,33 @@ export function createExternalDeliveryTask(
     throw new Error("Valid delivery address in the city is required (min 5 characters).");
   }
 
-  const db = getDb();
-
-  // Find or attach to meal plan for that date and meal
-  let planRow = db.prepare(`
-    SELECT id, status FROM daily_meal_plans WHERE service_date = ? AND meal_type = ?
-  `).get(serviceDate, mealType) as { id: string; status: string } | undefined;
-
-  let planId: string;
-  if (planRow) {
-    planId = planRow.id;
-  } else {
-    planId = `dmp_${crypto.randomUUID()}`;
-    const now = new Date().toISOString();
-    db.prepare(`
-      INSERT INTO daily_meal_plans (
-        id, service_date, meal_type, planned_resident_count, guest_count,
-        final_preparation_count, actual_cooked_count, status, notes,
-        created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, 0, 1, 1, 1, 'CONFIRMED', 'Auto-created for external city delivery', ?, ?, ?)
-    `).run(planId, serviceDate, mealType, actor.id, now, now);
-  }
+  const db = asyncDb || getAsyncDb();
 
   const taskId = `del_ext_${crypto.randomUUID()}`;
   const eventId = `devt_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    // Find or attach to meal plan for that date and meal inside transaction
+    const planRow = await tx.queryOne<{ id: string; status: string }>(`
+      SELECT id, status FROM daily_meal_plans WHERE service_date = ? AND meal_type = ?
+    `, [serviceDate, mealType]);
+
+    let planId: string;
+    if (planRow) {
+      planId = planRow.id;
+    } else {
+      planId = `dmp_${crypto.randomUUID()}`;
+      await tx.execute(`
+        INSERT INTO daily_meal_plans (
+          id, service_date, meal_type, planned_resident_count, guest_count,
+          final_preparation_count, actual_cooked_count, status, notes,
+          created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, 0, 1, 1, 1, 'CONFIRMED', 'Auto-created for external city delivery', ?, ?, ?)
+      `, [planId, serviceDate, mealType, actor.id, now, now]);
+    }
+
+    await tx.execute(`
       INSERT INTO delivery_tasks (
         id, order_type, meal_record_id, plan_id, service_date, meal_type,
         resident_id, resident_name, room_number, floor, stay_id,
@@ -367,21 +362,21 @@ export function createExternalDeliveryTask(
         ?, ?, ?, ?,
         'PENDING', ?, ?
       )
-    `).run(
+    `, [
       taskId, planId, serviceDate, mealType,
       customerName,
       customerName, customerPhone, deliveryAddress, notes,
       now, now
-    );
+    ]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'CREATED', NULL, 'PENDING', ?, ?, ?, ?)
-    `).run(eventId, taskId, actor.id, actor.fullName, notes, now);
+    `, [eventId, taskId, actor.id, actor.fullName, notes, now]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.external_order_created",
@@ -396,12 +391,10 @@ export function createExternalDeliveryTask(
         deliveryAddress,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  const createdRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId);
+  const createdRow = await db.queryOne(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   return mapRowToDeliveryTask(createdRow);
 }
 
@@ -409,12 +402,13 @@ export function createExternalDeliveryTask(
  * Assigns or reassigns a delivery task to an active delivery staff member.
  * Requires delivery.manage permission.
  */
-export function assignDeliveryTask(
+export async function assignDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
   input: AssignDeliveryTaskInput,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.task_assigned" });
 
   const assignedToStaffId = input.assignedToStaffId?.trim();
@@ -422,19 +416,19 @@ export function assignDeliveryTask(
     throw new Error("Target delivery person staff ID is required.");
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
 
   // Validate target staff user exists, is active, and holds DELIVERY_PERSON role
-  const staff = db.prepare(`
+  const staff = await db.queryOne<any>(`
     SELECT id, full_name as fullName, role, is_active as isActive
     FROM staff_users
     WHERE id = ?
-  `).get(assignedToStaffId) as any;
+  `, [assignedToStaffId]);
 
   if (!staff) {
     throw new Error(`Staff member '${assignedToStaffId}' not found.`);
   }
-  if (!staff.isActive) {
+  if (!Boolean(staff.isActive)) {
     throw new Error(`Staff member '${staff.fullName}' is currently inactive and cannot receive delivery assignments.`);
   }
   if (staff.role !== "DELIVERY_PERSON") {
@@ -444,7 +438,7 @@ export function assignDeliveryTask(
   }
 
   // Fetch target delivery task
-  const taskRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId) as any;
+  const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!taskRow) {
     throw new Error(`Delivery task '${taskId}' not found.`);
   }
@@ -461,8 +455,8 @@ export function assignDeliveryTask(
   const now = new Date().toISOString();
   const eventId = `devt_${crypto.randomUUID()}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE delivery_tasks
       SET
         status = 'ASSIGNED',
@@ -476,21 +470,21 @@ export function assignDeliveryTask(
         exception_by = NULL,
         updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       staff.id,
       staff.fullName,
       actor.id,
       now,
       now,
-      taskId
-    );
+      taskId,
+    ]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
+    `, [
       eventId,
       taskId,
       eventType,
@@ -501,10 +495,10 @@ export function assignDeliveryTask(
       isReassignment
         ? `Reassigned from ${currentTask.assignedToName || "prior staff"} to ${staff.fullName}`
         : `Assigned to ${staff.fullName}`,
-      now
-    );
+      now,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: isReassignment ? "delivery.task_reassigned" : "delivery.task_assigned",
@@ -518,12 +512,11 @@ export function assignDeliveryTask(
         toStatus,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getDeliveryTaskById(actor, taskId)!.task;
+  const taskDetail = await getDeliveryTaskById(actor, taskId, db);
+  return taskDetail!.task;
 }
 
 /**
@@ -531,15 +524,16 @@ export function assignDeliveryTask(
  * Delivery staff can only dispatch tasks assigned to themselves.
  * Requires delivery.update permission.
  */
-export function dispatchDeliveryTask(
+export async function dispatchDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.update", { ip: clientIp, action: "delivery.task_dispatched" });
 
-  const db = getDb();
-  const taskRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId) as any;
+  const db = asyncDb || getAsyncDb();
+  const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!taskRow) {
     throw new Error(`Delivery task '${taskId}' not found.`);
   }
@@ -571,8 +565,8 @@ export function dispatchDeliveryTask(
   const now = new Date().toISOString();
   const eventId = `devt_${crypto.randomUUID()}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE delivery_tasks
       SET
         status = 'OUT_FOR_DELIVERY',
@@ -580,23 +574,23 @@ export function dispatchDeliveryTask(
         dispatched_by = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(now, actor.id, now, taskId);
+    `, [now, actor.id, now, taskId]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'DISPATCHED', 'ASSIGNED', 'OUT_FOR_DELIVERY', ?, ?, ?, ?)
-    `).run(
+    `, [
       eventId,
       taskId,
       actor.id,
       actor.fullName,
       "Tiffin dispatched from kitchen and out for delivery",
-      now
-    );
+      now,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.task_dispatched",
@@ -608,12 +602,11 @@ export function dispatchDeliveryTask(
         mealType: currentTask.mealType,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getDeliveryTaskById(actor, taskId)!.task;
+  const taskDetail = await getDeliveryTaskById(actor, taskId, db);
+  return taskDetail!.task;
 }
 
 /**
@@ -621,16 +614,17 @@ export function dispatchDeliveryTask(
  * Records delivery timestamp, actor attribution, and optional recipient verification.
  * Requires delivery.update permission.
  */
-export function completeDeliveryTask(
+export async function completeDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
   input?: CompleteDeliveryTaskInput,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.update", { ip: clientIp, action: "delivery.task_delivered" });
 
-  const db = getDb();
-  const taskRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId) as any;
+  const db = asyncDb || getAsyncDb();
+  const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!taskRow) {
     throw new Error(`Delivery task '${taskId}' not found.`);
   }
@@ -660,8 +654,8 @@ export function completeDeliveryTask(
   const now = new Date().toISOString();
   const eventId = `devt_${crypto.randomUUID()}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE delivery_tasks
       SET
         status = 'DELIVERED',
@@ -671,31 +665,31 @@ export function completeDeliveryTask(
         delivery_notes = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       now,
       actor.id,
       recipientName,
       deliveryNotes,
       now,
-      taskId
-    );
+      taskId,
+    ]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'DELIVERED', ?, 'DELIVERED', ?, ?, ?, ?)
-    `).run(
+    `, [
       eventId,
       taskId,
       currentTask.status,
       actor.id,
       actor.fullName,
       recipientName ? `Handed over to ${recipientName}` : "Handed over to resident",
-      now
-    );
+      now,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.task_delivered",
@@ -709,12 +703,11 @@ export function completeDeliveryTask(
         deliveredAt: now,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getDeliveryTaskById(actor, taskId)!.task;
+  const taskDetail = await getDeliveryTaskById(actor, taskId, db);
+  return taskDetail!.task;
 }
 
 /**
@@ -722,12 +715,13 @@ export function completeDeliveryTask(
  * Does NOT delete the task; records exception state and detailed history for review/retry.
  * Requires delivery.update permission.
  */
-export function reportDeliveryException(
+export async function reportDeliveryException(
   actor: AuthenticatedUser,
   taskId: string,
   input: ReportDeliveryExceptionInput,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.update", { ip: clientIp, action: "delivery.task_exception" });
 
   const exceptionType = input.exceptionType;
@@ -742,8 +736,8 @@ export function reportDeliveryException(
     throw new Error("A clear exception reason of at least 5 characters is required.");
   }
 
-  const db = getDb();
-  const taskRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId) as any;
+  const db = asyncDb || getAsyncDb();
+  const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!taskRow) {
     throw new Error(`Delivery task '${taskId}' not found.`);
   }
@@ -762,8 +756,8 @@ export function reportDeliveryException(
   const now = new Date().toISOString();
   const eventId = `devt_${crypto.randomUUID()}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE delivery_tasks
       SET
         status = 'EXCEPTION',
@@ -773,31 +767,31 @@ export function reportDeliveryException(
         exception_by = ?,
         updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       exceptionType,
       reason,
       now,
       actor.id,
       now,
-      taskId
-    );
+      taskId,
+    ]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'EXCEPTION', ?, 'EXCEPTION', ?, ?, ?, ?)
-    `).run(
+    `, [
       eventId,
       taskId,
       currentTask.status,
       actor.id,
       actor.fullName,
       `Exception [${exceptionType}]: ${reason}`,
-      now
-    );
+      now,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.task_exception",
@@ -811,12 +805,11 @@ export function reportDeliveryException(
         mealType: currentTask.mealType,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getDeliveryTaskById(actor, taskId)!.task;
+  const taskDetail = await getDeliveryTaskById(actor, taskId, db);
+  return taskDetail!.task;
 }
 
 /**
@@ -824,16 +817,17 @@ export function reportDeliveryException(
  * Optionally reassigns to another delivery staff member.
  * Requires delivery.manage permission.
  */
-export function retryDeliveryTask(
+export async function retryDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
   input?: RetryDeliveryTaskInput,
-  clientIp?: string
-): DeliveryTask {
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.task_retried" });
 
-  const db = getDb();
-  const taskRow = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId) as any;
+  const db = asyncDb || getAsyncDb();
+  const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!taskRow) {
     throw new Error(`Delivery task '${taskId}' not found.`);
   }
@@ -847,13 +841,13 @@ export function retryDeliveryTask(
   let targetStaffName = currentTask.assignedToName;
 
   if (input?.reassignToStaffId) {
-    const staff = db.prepare(`
+    const staff = await db.queryOne<any>(`
       SELECT id, full_name as fullName, role, is_active as isActive
       FROM staff_users
       WHERE id = ?
-    `).get(input.reassignToStaffId.trim()) as any;
+    `, [input.reassignToStaffId.trim()]);
 
-    if (!staff || !staff.isActive || staff.role !== "DELIVERY_PERSON") {
+    if (!staff || !Boolean(staff.isActive) || staff.role !== "DELIVERY_PERSON") {
       throw new Error(`Staff member '${input.reassignToStaffId}' is not an active delivery person.`);
     }
 
@@ -865,8 +859,8 @@ export function retryDeliveryTask(
   const eventId = `devt_${crypto.randomUUID()}`;
   const notes = input?.notes?.trim() || `Retried by management${input?.reassignToStaffId ? ` and reassigned to ${targetStaffName}` : ""}`;
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       UPDATE delivery_tasks
       SET
         status = 'ASSIGNED',
@@ -882,30 +876,30 @@ export function retryDeliveryTask(
         dispatched_by = NULL,
         updated_at = ?
       WHERE id = ?
-    `).run(
+    `, [
       targetStaffId,
       targetStaffName,
       actor.id,
       now,
       now,
-      taskId
-    );
+      taskId,
+    ]);
 
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'RETRIED', 'EXCEPTION', 'ASSIGNED', ?, ?, ?, ?)
-    `).run(
+    `, [
       eventId,
       taskId,
       actor.id,
       actor.fullName,
       notes,
-      now
-    );
+      now,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "delivery.task_retried",
@@ -917,12 +911,11 @@ export function retryDeliveryTask(
         notes,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getDeliveryTaskById(actor, taskId)!.task;
+  const taskDetail = await getDeliveryTaskById(actor, taskId, db);
+  return taskDetail!.task;
 }
 
 /**
@@ -930,13 +923,14 @@ export function retryDeliveryTask(
  * Delivery personnel are strictly restricted to tasks assigned to themselves.
  * Requires delivery.read permission.
  */
-export function listDeliveryTasks(
+export async function listDeliveryTasks(
   actor: AuthenticatedUser,
-  options?: ListDeliveryTasksOptions
-): DeliveryTask[] {
+  options?: ListDeliveryTasksOptions,
+  asyncDb?: AsyncDb
+): Promise<DeliveryTask[]> {
   requirePermission(actor, "delivery.read");
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -970,13 +964,13 @@ export function listDeliveryTasks(
   const limit = Math.min(500, Math.max(1, Number(options?.limit) || 200));
   const offset = Math.max(0, Number(options?.offset) || 0);
 
-  const rows = db.prepare(`
+  const rows = await db.query<any>(`
     SELECT *
     FROM delivery_tasks
     ${whereClause}
     ORDER BY service_date DESC, floor ASC, room_number ASC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
+  `, [...params, limit, offset]);
 
   return rows.map(mapRowToDeliveryTask);
 }
@@ -986,14 +980,15 @@ export function listDeliveryTasks(
  * Enforces ownership restrictions for delivery personnel.
  * Requires delivery.read permission.
  */
-export function getDeliveryTaskById(
+export async function getDeliveryTaskById(
   actor: AuthenticatedUser,
-  taskId: string
-): { task: DeliveryTask; events: DeliveryTaskEvent[] } | null {
+  taskId: string,
+  asyncDb?: AsyncDb
+): Promise<{ task: DeliveryTask; events: DeliveryTaskEvent[] } | null> {
   requirePermission(actor, "delivery.read");
 
-  const db = getDb();
-  const row = db.prepare(`SELECT * FROM delivery_tasks WHERE id = ?`).get(taskId);
+  const db = asyncDb || getAsyncDb();
+  const row = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
   if (!row) return null;
 
   const task = mapRowToDeliveryTask(row);
@@ -1003,12 +998,12 @@ export function getDeliveryTaskById(
     throw new AuthorizationError(403, "You do not have permission to view this delivery task.");
   }
 
-  const eventRows = db.prepare(`
+  const eventRows = await db.query<any>(`
     SELECT *
     FROM delivery_task_events
     WHERE task_id = ?
     ORDER BY created_at ASC
-  `).all(taskId);
+  `, [taskId]);
 
   return {
     task,
@@ -1020,18 +1015,19 @@ export function getDeliveryTaskById(
  * Calculates delivery dashboard metrics and staff workload breakdown.
  * Requires delivery.read permission.
  */
-export function getDeliveryDashboardSummary(
+export async function getDeliveryDashboardSummary(
   actor: AuthenticatedUser,
   serviceDate: string,
-  mealType?: MealType | "ALL"
-): DeliveryDashboardSummary {
+  mealType?: MealType | "ALL",
+  asyncDb?: AsyncDb
+): Promise<DeliveryDashboardSummary> {
   requirePermission(actor, "delivery.read");
 
   if (!serviceDate || !DATE_REGEX.test(serviceDate)) {
     throw new Error("Valid service date in YYYY-MM-DD format is required.");
   }
 
-  const db = getDb();
+  const db = asyncDb || getAsyncDb();
   const conditions = ["service_date = ?"];
   const params: any[] = [serviceDate];
 
@@ -1042,7 +1038,7 @@ export function getDeliveryDashboardSummary(
 
   const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-  const countsRow = db.prepare(`
+  const countsRow = await db.queryOne<any>(`
     SELECT
       COUNT(*) as totalTasks,
       COALESCE(SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END), 0) as pendingCount,
@@ -1053,10 +1049,10 @@ export function getDeliveryDashboardSummary(
       COALESCE(SUM(CASE WHEN assigned_to IS NULL THEN 1 ELSE 0 END), 0) as unassignedCount
     FROM delivery_tasks
     ${whereClause}
-  `).get(...params) as any;
+  `, params);
 
-  // Active delivery personnel workload
-  const staffRows = db.prepare(`
+  // Active delivery personnel workload (using cross-engine compatible is_active = TRUE)
+  const staffRows = await db.query<any>(`
     SELECT
       u.id as staffId,
       u.full_name as staffName,
@@ -1066,21 +1062,21 @@ export function getDeliveryDashboardSummary(
       COALESCE(SUM(CASE WHEN t.status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exceptionCount
     FROM staff_users u
     LEFT JOIN delivery_tasks t ON t.assigned_to = u.id AND t.service_date = ?
-    WHERE u.role = 'DELIVERY_PERSON' AND u.is_active = 1
+    WHERE u.role = 'DELIVERY_PERSON' AND u.is_active = TRUE
     GROUP BY u.id, u.full_name
     ORDER BY u.full_name ASC
-  `).all(serviceDate) as any[];
+  `, [serviceDate]);
 
   return {
     serviceDate,
     mealType: mealType || "ALL",
-    totalTasks: countsRow?.totalTasks || 0,
-    pendingCount: countsRow?.pendingCount || 0,
-    assignedCount: countsRow?.assignedCount || 0,
-    outForDeliveryCount: countsRow?.outForDeliveryCount || 0,
-    deliveredCount: countsRow?.deliveredCount || 0,
-    exceptionCount: countsRow?.exceptionCount || 0,
-    unassignedCount: countsRow?.unassignedCount || 0,
+    totalTasks: Number(countsRow?.totalTasks) || 0,
+    pendingCount: Number(countsRow?.pendingCount) || 0,
+    assignedCount: Number(countsRow?.assignedCount) || 0,
+    outForDeliveryCount: Number(countsRow?.outForDeliveryCount) || 0,
+    deliveredCount: Number(countsRow?.deliveredCount) || 0,
+    exceptionCount: Number(countsRow?.exceptionCount) || 0,
+    unassignedCount: Number(countsRow?.unassignedCount) || 0,
     staffWorkload: staffRows.map((r) => ({
       staffId: r.staffId,
       staffName: r.staffName,
@@ -1096,20 +1092,23 @@ export function getDeliveryDashboardSummary(
  * Lists all active delivery personnel available for assignment.
  * Requires delivery.read permission.
  */
-export function listActiveDeliveryStaff(actor: AuthenticatedUser): Array<{
+export async function listActiveDeliveryStaff(
+  actor: AuthenticatedUser,
+  asyncDb?: AsyncDb
+): Promise<Array<{
   id: string;
   fullName: string;
   username: string;
-}> {
+}>> {
   requirePermission(actor, "delivery.read");
 
-  const db = getDb();
-  const rows = db.prepare(`
+  const db = asyncDb || getAsyncDb();
+  const rows = await db.query<any>(`
     SELECT id, full_name as fullName, username
     FROM staff_users
-    WHERE role = 'DELIVERY_PERSON' AND is_active = 1
+    WHERE role = 'DELIVERY_PERSON' AND is_active = TRUE
     ORDER BY full_name ASC
-  `).all() as any[];
+  `);
 
   return rows.map((r) => ({
     id: r.id,

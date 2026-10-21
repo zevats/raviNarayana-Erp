@@ -11,14 +11,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
     const serviceDate = url.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
     const mealType = (url.searchParams.get("mealType") as MealType | "ALL") || "ALL";
 
-    const summary = getDeliveryDashboardSummary(user, serviceDate, mealType);
+    const summary = await getDeliveryDashboardSummary(user, serviceDate, mealType);
 
     return NextResponse.json({ success: true, summary });
   } catch (error: any) {

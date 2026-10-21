@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
 
-    const tasks = listDeliveryTasks(user, {
+    const tasks = await listDeliveryTasks(user, {
       serviceDate,
       mealType,
       status,
@@ -48,13 +48,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
     const body = await request.json().catch(() => ({}));
 
-    const task = createExternalDeliveryTask(
+    const task = await createExternalDeliveryTask(
       user,
       {
         serviceDate: body.serviceDate,

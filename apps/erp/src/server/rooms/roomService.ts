@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
   RoomType,
@@ -40,16 +40,18 @@ export function isValidRoomType(type: string): type is RoomType {
  * Lists rooms with server-calculated occupancy.
  * Requires rooms.read permission.
  */
-export function listRooms(
+export async function listRooms(
   actor: AuthenticatedUser,
   options?: {
     floor?: number;
     status?: "VACANT" | "OCCUPIED" | "ALL";
     search?: string;
-  }
-): RoomWithOccupancy[] {
+  },
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<RoomWithOccupancy[]> {
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
   requirePermission(actor, "rooms.read");
-  const db = getDb();
 
   const conditions: string[] = [];
   const params: any[] = [];
@@ -77,39 +79,38 @@ export function listRooms(
     ORDER BY r.floor ASC, r.room_number ASC
   `;
 
-  const rows = db.prepare(query).all(...params) as any[];
+  const rows = await db.query<any>(query, params);
 
-  // Attach occupants for each room
-  const occupantsStmt = db.prepare(`
-    SELECT 
-      res.id as residentId, s.id as stayId, res.full_name as fullName,
-      res.phone, s.check_in_date as checkInDate
-    FROM resident_stays s
-    JOIN residents res ON s.resident_id = res.id
-    WHERE s.room_id = ? AND s.status = 'ACTIVE'
-    ORDER BY s.check_in_date ASC
-  `);
+  const results: RoomWithOccupancy[] = await Promise.all(
+    rows.map(async (r) => {
+      const occupied = Number(r.occupiedBeds || 0);
+      const capacity = Number(r.capacity);
+      const occupants = await db.query<RoomOccupant>(`
+        SELECT
+          res.id as residentId, s.id as stayId, res.full_name as fullName,
+          res.phone, s.check_in_date as checkInDate
+        FROM resident_stays s
+        JOIN residents res ON s.resident_id = res.id
+        WHERE s.room_id = ? AND s.status = 'ACTIVE'
+        ORDER BY s.check_in_date ASC
+      `, [r.id]);
 
-  const results: RoomWithOccupancy[] = rows.map((r) => {
-    const occupied = Number(r.occupiedBeds || 0);
-    const capacity = Number(r.capacity);
-    const occupants = occupantsStmt.all(r.id) as RoomOccupant[];
-
-    return {
-      id: r.id,
-      roomNumber: r.roomNumber,
-      floor: Number(r.floor),
-      type: r.type as RoomType,
-      capacity,
-      occupiedBeds: occupied,
-      availableBeds: Math.max(0, capacity - occupied),
-      baseRentMonthly: Number(r.baseRentMonthly),
-      isActive: Boolean(r.isActive),
-      occupants,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-    };
-  });
+      return {
+        id: r.id,
+        roomNumber: r.roomNumber,
+        floor: Number(r.floor),
+        type: r.type as RoomType,
+        capacity,
+        occupiedBeds: occupied,
+        availableBeds: Math.max(0, capacity - occupied),
+        baseRentMonthly: Number(r.baseRentMonthly),
+        isActive: Boolean(r.isActive),
+        occupants,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    })
+  );
 
   if (options?.status === "VACANT") {
     return results.filter((r) => r.isActive && r.availableBeds > 0);
@@ -124,14 +125,16 @@ export function listRooms(
 /**
  * Retrieves a single room by ID with occupants.
  */
-export function getRoomById(
+export async function getRoomById(
   actor: AuthenticatedUser,
-  roomId: string
-): RoomWithOccupancy | null {
+  roomId: string,
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<RoomWithOccupancy | null> {
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
   requirePermission(actor, "rooms.read");
-  const db = getDb();
 
-  const row = db.prepare(`
+  const row = await db.queryOne<any>(`
     SELECT 
       r.id, r.room_number as roomNumber, r.floor, r.type, r.capacity,
       r.base_rent_monthly as baseRentMonthly, r.is_active as isActive,
@@ -139,11 +142,11 @@ export function getRoomById(
       (SELECT COUNT(*) FROM resident_stays s WHERE s.room_id = r.id AND s.status = 'ACTIVE') as occupiedBeds
     FROM rooms r
     WHERE r.id = ?
-  `).get(roomId) as any;
+  `, [roomId]);
 
   if (!row) return null;
 
-  const occupants = db.prepare(`
+  const occupants = await db.query<RoomOccupant>(`
     SELECT 
       res.id as residentId, s.id as stayId, res.full_name as fullName,
       res.phone, s.check_in_date as checkInDate
@@ -151,7 +154,7 @@ export function getRoomById(
     JOIN residents res ON s.resident_id = res.id
     WHERE s.room_id = ? AND s.status = 'ACTIVE'
     ORDER BY s.check_in_date ASC
-  `).all(roomId) as RoomOccupant[];
+  `, [roomId]);
 
   const occupied = Number(row.occupiedBeds || 0);
   const capacity = Number(row.capacity);
@@ -176,11 +179,15 @@ export function getRoomById(
  * Provisions a new room.
  * Requires rooms.manage permission.
  */
-export function createRoom(
+export async function createRoom(
   actor: AuthenticatedUser,
   input: CreateRoomInput,
-  clientIp?: string
-): RoomWithOccupancy {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<RoomWithOccupancy> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "rooms.manage", { ip: clientIp, action: "room.create" });
 
   const cleanRoomNumber = input.roomNumber?.trim().toUpperCase();
@@ -206,10 +213,8 @@ export function createRoom(
     throw new Error("Monthly base rent cannot be negative.");
   }
 
-  const db = getDb();
-
   // Check unique room number
-  const existing = db.prepare("SELECT id FROM rooms WHERE UPPER(room_number) = ?").get(cleanRoomNumber);
+  const existing = await db.queryOne<{ id: string }>("SELECT id FROM rooms WHERE UPPER(room_number) = ?", [cleanRoomNumber]);
   if (existing) {
     throw new Error("Room number already exists.");
   }
@@ -217,13 +222,13 @@ export function createRoom(
   const id = `room_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO rooms (id, room_number, floor, type, capacity, base_rent_monthly, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, cleanRoomNumber, floor, type, capacity, baseRentMonthly, now, now);
+    `, [id, cleanRoomNumber, floor, type, capacity, baseRentMonthly, now, now]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "room.created",
@@ -237,10 +242,8 @@ export function createRoom(
         baseRentMonthly,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 
   return {
     id,
@@ -262,16 +265,19 @@ export function createRoom(
  * Updates room details, rent, or capacity.
  * Enforces that capacity cannot be reduced below current active occupancy.
  */
-export function updateRoom(
+export async function updateRoom(
   actor: AuthenticatedUser,
   roomId: string,
   input: UpdateRoomInput,
-  clientIp?: string
-): RoomWithOccupancy {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<RoomWithOccupancy> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "rooms.manage", { ip: clientIp, targetId: roomId, action: "room.update" });
 
-  const db = getDb();
-  const current = getRoomById(actor, roomId);
+  const current = await getRoomById(actor, roomId, db);
   if (!current) {
     throw new Error(`Room '${roomId}' not found.`);
   }
@@ -286,7 +292,7 @@ export function updateRoom(
       throw new Error("Room number must be between 1 and 20 characters.");
     }
     if (cleanRoomNumber !== current.roomNumber.toUpperCase()) {
-      const existing = db.prepare("SELECT id FROM rooms WHERE UPPER(room_number) = ? AND id != ?").get(cleanRoomNumber, roomId);
+      const existing = await db.queryOne<{ id: string }>("SELECT id FROM rooms WHERE UPPER(room_number) = ? AND id != ?", [cleanRoomNumber, roomId]);
       if (existing) {
         throw new Error("Room number already exists.");
       }
@@ -349,10 +355,10 @@ export function updateRoom(
   updates.push("updated_at = ?");
   params.push(now, roomId);
 
-  const tx = db.transaction(() => {
-    db.prepare(`UPDATE rooms SET ${updates.join(", ")} WHERE id = ?`).run(...params);
+  await db.transaction(async (tx) => {
+    await tx.execute(`UPDATE rooms SET ${updates.join(", ")} WHERE id = ?`, params);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "room.updated",
@@ -360,28 +366,29 @@ export function updateRoom(
       targetId: roomId,
       metadata: auditMeta,
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getRoomById(actor, roomId)!;
+  return (await getRoomById(actor, roomId, db))!;
 }
 
 /**
  * Activates or deactivates a room.
  * Invariant: Cannot deactivate a room with active residents.
  */
-export function setRoomActiveStatus(
+export async function setRoomActiveStatus(
   actor: AuthenticatedUser,
   roomId: string,
   isActive: boolean,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "rooms.manage", { ip: clientIp, targetId: roomId, action: "room.status" });
 
-  const db = getDb();
-  const current = getRoomById(actor, roomId);
+  const current = await getRoomById(actor, roomId, db);
   if (!current) {
     throw new Error(`Room '${roomId}' not found.`);
   }
@@ -398,14 +405,14 @@ export function setRoomActiveStatus(
 
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare("UPDATE rooms SET is_active = ?, updated_at = ? WHERE id = ?").run(
+  await db.transaction(async (tx) => {
+    await tx.execute("UPDATE rooms SET is_active = ?, updated_at = ? WHERE id = ?", [
       isActive ? 1 : 0,
       now,
-      roomId
-    );
+      roomId,
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: isActive ? "room.activated" : "room.deactivated",
@@ -417,25 +424,26 @@ export function setRoomActiveStatus(
         newStatus: isActive,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
 
 /**
  * Permanently deletes a room if and only if it has zero active occupants and zero historical stay records.
  * If active occupants exist or historical records exist, deletion is safely blocked.
  */
-export function deleteRoom(
+export async function deleteRoom(
   actor: AuthenticatedUser,
   roomId: string,
-  clientIp?: string
-): void {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
   requirePermission(actor, "rooms.manage", { ip: clientIp, targetId: roomId, action: "room.delete" });
 
-  const db = getDb();
-  const current = getRoomById(actor, roomId);
+  const current = await getRoomById(actor, roomId, db);
   if (!current) {
     throw new Error(`Room '${roomId}' not found.`);
   }
@@ -447,17 +455,17 @@ export function deleteRoom(
   }
 
   // Check historical stays
-  const stayHistory = db.prepare("SELECT COUNT(*) as count FROM resident_stays WHERE room_id = ?").get(roomId) as { count: number };
-  if (stayHistory.count > 0) {
+  const stayHistory = await db.queryOne<{ count: number }>("SELECT COUNT(*) as count FROM resident_stays WHERE room_id = ?", [roomId]);
+  if (stayHistory && Number(stayHistory.count) > 0) {
     throw new Error(
       `Cannot delete Room ${current.roomNumber} because it has historical stay and billing records. To preserve audit and financial integrity, deactivate the room instead.`
     );
   }
 
-  const tx = db.transaction(() => {
-    db.prepare("DELETE FROM rooms WHERE id = ?").run(roomId);
+  await db.transaction(async (tx) => {
+    await tx.execute("DELETE FROM rooms WHERE id = ?", [roomId]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "room.deleted",
@@ -471,9 +479,6 @@ export function deleteRoom(
         baseRentMonthly: current.baseRentMonthly,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
-
-  tx();
 }
-

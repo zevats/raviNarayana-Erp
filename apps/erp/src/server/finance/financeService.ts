@@ -1,7 +1,7 @@
 import crypto from "crypto";
-import { getDb } from "../database/db";
+import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { recordAuditEvent } from "../audit/audit";
+import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
   TransactionType,
@@ -118,28 +118,44 @@ function mapRowToTransaction(row: any): FinancialTransaction {
  * Calculates a resident's current outstanding rent balance:
  * (Total POSTED Rent Charges) - (Total POSTED Rent Payments)
  */
-export function getResidentRentBalance(residentId: string): number {
-  const db = getDb();
-  const res = db.prepare(`
+export async function getResidentRentBalance(
+  residentId: string,
+  asyncDb?: AsyncDb
+): Promise<number> {
+  const db = asyncDb ?? getAsyncDb();
+  const res = await db.queryOne<{ charges: number | string; payments: number | string }>(`
     SELECT
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as charges,
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as payments
     FROM financial_transactions
     WHERE resident_id = ?
-  `).get(residentId) as { charges: number; payments: number };
+  `, [residentId]);
 
-  return (res?.charges || 0) - (res?.payments || 0);
+  const charges = Number(res?.charges || 0);
+  const payments = Number(res?.payments || 0);
+  return charges - payments;
 }
 
 /**
  * Records an explicit rent charge for a resident & stay.
  * Requires finance.manage permission.
  */
-export function recordRentCharge(
+export async function recordRentCharge(
   actor: AuthenticatedUser,
   input: RecordRentChargeInput,
-  clientIp?: string
-): FinancialTransaction {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.rent_charge_recorded" });
 
   const residentId = input.residentId?.trim();
@@ -160,15 +176,16 @@ export function recordRentCharge(
     throw new Error("Billing period (e.g. 'October 2026') is required.");
   }
 
-  const db = getDb();
-
   // Idempotency check: if already processed, return existing or reject mismatch
   if (idempotencyKey) {
-    const existing = db.prepare("SELECT * FROM financial_transactions WHERE idempotency_key = ?").get(idempotencyKey) as any;
+    const existing = await db.queryOne<any>(
+      "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
+      [idempotencyKey]
+    );
     if (existing) {
       if (
         existing.transaction_type !== "RENT_CHARGE" ||
-        existing.amount !== amount ||
+        Number(existing.amount) !== amount ||
         existing.resident_id !== residentId ||
         (billingPeriod && existing.billing_period !== billingPeriod)
       ) {
@@ -181,7 +198,10 @@ export function recordRentCharge(
   }
 
   // Validate resident exists
-  const resident = db.prepare("SELECT id, full_name as fullName FROM residents WHERE id = ?").get(residentId) as any;
+  const resident = await db.queryOne<{ id: string; fullName: string }>(
+    "SELECT id, full_name as fullName FROM residents WHERE id = ?",
+    [residentId]
+  );
   if (!resident) {
     throw new Error(`Resident '${residentId}' not found.`);
   }
@@ -189,7 +209,10 @@ export function recordRentCharge(
   // Resolve stayId
   let stayId = input.stayId?.trim() || null;
   if (!stayId) {
-    const activeStay = db.prepare("SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'").get(residentId) as any;
+    const activeStay = await db.queryOne<{ id: string }>(
+      "SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'",
+      [residentId]
+    );
     if (activeStay) {
       stayId = activeStay.id;
     }
@@ -198,8 +221,8 @@ export function recordRentCharge(
   const id = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
         reference_number, resident_id, stay_id, category, description,
@@ -211,7 +234,7 @@ export function recordRentCharge(
         ?, NULL, ?, 'POSTED',
         NULL, ?, ?, ?
       )
-    `).run(
+    `, [
       id,
       amount,
       transactionDate,
@@ -223,9 +246,9 @@ export function recordRentCharge(
       actor.id,
       now,
       now
-    );
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "finance.rent_charge_recorded",
@@ -240,12 +263,10 @@ export function recordRentCharge(
         billingPeriod,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getTransactionById(actor, id)!;
+  return (await getTransactionById(actor, id, db))!;
 }
 
 /**
@@ -253,11 +274,22 @@ export function recordRentCharge(
  * Enforces that payment does not silently exceed outstanding rent balance.
  * Requires finance.manage permission.
  */
-export function recordRentPayment(
+export async function recordRentPayment(
   actor: AuthenticatedUser,
   input: RecordRentPaymentInput,
-  clientIp?: string
-): FinancialTransaction {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.rent_payment_recorded" });
 
   const residentId = input.residentId?.trim();
@@ -279,15 +311,16 @@ export function recordRentPayment(
     throw new Error(`Invalid payment method '${paymentMethod}'. Must be CASH, UPI, BANK_TRANSFER, CHEQUE, or OTHER.`);
   }
 
-  const db = getDb();
-
   // Idempotency check: if already processed, return existing or reject mismatch
   if (idempotencyKey) {
-    const existing = db.prepare("SELECT * FROM financial_transactions WHERE idempotency_key = ?").get(idempotencyKey) as any;
+    const existing = await db.queryOne<any>(
+      "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
+      [idempotencyKey]
+    );
     if (existing) {
       if (
         existing.transaction_type !== "RENT_PAYMENT" ||
-        existing.amount !== amount ||
+        Number(existing.amount) !== amount ||
         existing.resident_id !== residentId ||
         existing.payment_method !== paymentMethod
       ) {
@@ -300,13 +333,16 @@ export function recordRentPayment(
   }
 
   // Validate resident exists
-  const resident = db.prepare("SELECT id, full_name as fullName FROM residents WHERE id = ?").get(residentId) as any;
+  const resident = await db.queryOne<{ id: string; fullName: string }>(
+    "SELECT id, full_name as fullName FROM residents WHERE id = ?",
+    [residentId]
+  );
   if (!resident) {
     throw new Error(`Resident '${residentId}' not found.`);
   }
 
   // Check outstanding rent balance
-  const currentBalance = getResidentRentBalance(residentId);
+  const currentBalance = await getResidentRentBalance(residentId, db);
   if (amount > currentBalance) {
     throw new Error(
       `Payment amount (₹${amount.toLocaleString("en-IN")}) exceeds current outstanding rent balance (₹${Math.max(0, currentBalance).toLocaleString("en-IN")}). Payments cannot exceed outstanding billed charges.`
@@ -316,7 +352,10 @@ export function recordRentPayment(
   // Resolve stayId
   let stayId = input.stayId?.trim() || null;
   if (!stayId) {
-    const activeStay = db.prepare("SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'").get(residentId) as any;
+    const activeStay = await db.queryOne<{ id: string }>(
+      "SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'",
+      [residentId]
+    );
     if (activeStay) {
       stayId = activeStay.id;
     }
@@ -325,8 +364,8 @@ export function recordRentPayment(
   const id = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
         reference_number, resident_id, stay_id, category, description,
@@ -338,7 +377,7 @@ export function recordRentPayment(
         NULL, NULL, ?, 'POSTED',
         NULL, ?, ?, ?
       )
-    `).run(
+    `, [
       id,
       amount,
       transactionDate,
@@ -351,9 +390,9 @@ export function recordRentPayment(
       actor.id,
       now,
       now
-    );
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "finance.rent_payment_recorded",
@@ -369,12 +408,10 @@ export function recordRentPayment(
         transactionDate,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getTransactionById(actor, id)!;
+  return (await getTransactionById(actor, id, db))!;
 }
 
 /**
@@ -382,11 +419,22 @@ export function recordRentPayment(
  * Strictly classified as a held deposit liability, separate from rent revenue.
  * Requires finance.manage permission.
  */
-export function recordSecurityDeposit(
+export async function recordSecurityDeposit(
   actor: AuthenticatedUser,
   input: RecordSecurityDepositInput,
-  clientIp?: string
-): FinancialTransaction {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.security_deposit_recorded" });
 
   const residentId = input.residentId?.trim();
@@ -408,15 +456,16 @@ export function recordSecurityDeposit(
     throw new Error(`Invalid payment method '${paymentMethod}'. Must be CASH, UPI, BANK_TRANSFER, CHEQUE, or OTHER.`);
   }
 
-  const db = getDb();
-
   // Idempotency check: if already processed, return existing or reject mismatch
   if (idempotencyKey) {
-    const existing = db.prepare("SELECT * FROM financial_transactions WHERE idempotency_key = ?").get(idempotencyKey) as any;
+    const existing = await db.queryOne<any>(
+      "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
+      [idempotencyKey]
+    );
     if (existing) {
       if (
         existing.transaction_type !== "SECURITY_DEPOSIT" ||
-        existing.amount !== amount ||
+        Number(existing.amount) !== amount ||
         existing.resident_id !== residentId ||
         existing.payment_method !== paymentMethod
       ) {
@@ -428,14 +477,20 @@ export function recordSecurityDeposit(
     }
   }
 
-  const resident = db.prepare("SELECT id, full_name as fullName FROM residents WHERE id = ?").get(residentId) as any;
+  const resident = await db.queryOne<{ id: string; fullName: string }>(
+    "SELECT id, full_name as fullName FROM residents WHERE id = ?",
+    [residentId]
+  );
   if (!resident) {
     throw new Error(`Resident '${residentId}' not found.`);
   }
 
   let stayId = input.stayId?.trim() || null;
   if (!stayId) {
-    const activeStay = db.prepare("SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'").get(residentId) as any;
+    const activeStay = await db.queryOne<{ id: string }>(
+      "SELECT id FROM resident_stays WHERE resident_id = ? AND status = 'ACTIVE'",
+      [residentId]
+    );
     if (activeStay) {
       stayId = activeStay.id;
     }
@@ -444,8 +499,8 @@ export function recordSecurityDeposit(
   const id = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
         reference_number, resident_id, stay_id, category, description,
@@ -457,7 +512,7 @@ export function recordSecurityDeposit(
         NULL, NULL, ?, 'POSTED',
         NULL, ?, ?, ?
       )
-    `).run(
+    `, [
       id,
       amount,
       transactionDate,
@@ -470,9 +525,9 @@ export function recordSecurityDeposit(
       actor.id,
       now,
       now
-    );
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "finance.security_deposit_recorded",
@@ -488,12 +543,10 @@ export function recordSecurityDeposit(
         transactionDate,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getTransactionById(actor, id)!;
+  return (await getTransactionById(actor, id, db))!;
 }
 
 /**
@@ -501,11 +554,22 @@ export function recordSecurityDeposit(
  * Reduces cashbook net movement; does NOT affect resident rent balances.
  * Requires finance.manage permission.
  */
-export function recordExpense(
+export async function recordExpense(
   actor: AuthenticatedUser,
   input: RecordExpenseInput,
-  clientIp?: string
-): FinancialTransaction {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.expense_recorded" });
 
   const category = input.category;
@@ -533,15 +597,16 @@ export function recordExpense(
     throw new Error("Expense description of at least 3 characters is required.");
   }
 
-  const db = getDb();
-
   // Idempotency check: if already processed, return existing or reject mismatch
   if (idempotencyKey) {
-    const existing = db.prepare("SELECT * FROM financial_transactions WHERE idempotency_key = ?").get(idempotencyKey) as any;
+    const existing = await db.queryOne<any>(
+      "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
+      [idempotencyKey]
+    );
     if (existing) {
       if (
         existing.transaction_type !== "EXPENSE" ||
-        existing.amount !== amount ||
+        Number(existing.amount) !== amount ||
         existing.category !== category ||
         existing.payment_method !== paymentMethod
       ) {
@@ -556,8 +621,8 @@ export function recordExpense(
   const id = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
 
-  const tx = db.transaction(() => {
-    db.prepare(`
+  await db.transaction(async (tx) => {
+    await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
         reference_number, resident_id, stay_id, category, description,
@@ -569,7 +634,7 @@ export function recordExpense(
         NULL, ?, ?, 'POSTED',
         NULL, ?, ?, ?
       )
-    `).run(
+    `, [
       id,
       amount,
       transactionDate,
@@ -582,9 +647,9 @@ export function recordExpense(
       actor.id,
       now,
       now
-    );
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "finance.expense_recorded",
@@ -598,26 +663,25 @@ export function recordExpense(
         transactionDate,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getTransactionById(actor, id)!;
+  return (await getTransactionById(actor, id, db))!;
 }
 
 /**
  * Retrieves a single transaction by ID.
  * Requires finance.read permission.
  */
-export function getTransactionById(
+export async function getTransactionById(
   actor: AuthenticatedUser,
-  transactionId: string
-): FinancialTransaction | null {
+  transactionId: string,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction | null> {
   requirePermission(actor, "finance.read");
 
-  const db = getDb();
-  const row = db.prepare(`
+  const db = asyncDb ?? getAsyncDb();
+  const row = await db.queryOne<any>(`
     SELECT
       t.*,
       r.full_name as resident_name,
@@ -629,7 +693,7 @@ export function getTransactionById(
     LEFT JOIN rooms rm ON rm.id = s.room_id
     LEFT JOIN staff_users u ON u.id = t.created_by
     WHERE t.id = ?
-  `).get(transactionId);
+  `, [transactionId]);
 
   if (!row) return null;
   return mapRowToTransaction(row);
@@ -639,13 +703,14 @@ export function getTransactionById(
  * Lists financial transactions with flexible date, category, and type filters.
  * Requires finance.read permission.
  */
-export function listTransactions(
+export async function listTransactions(
   actor: AuthenticatedUser,
-  options?: ListTransactionsOptions
-): FinancialTransaction[] {
+  options?: ListTransactionsOptions,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction[]> {
   requirePermission(actor, "finance.read");
 
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
   const conditions: string[] = [];
   const params: any[] = [];
 
@@ -678,7 +743,7 @@ export function listTransactions(
   const limit = Math.min(500, Math.max(1, Number(options?.limit) || 100));
   const offset = Math.max(0, Number(options?.offset) || 0);
 
-  const rows = db.prepare(`
+  const rows = await db.query<any>(`
     SELECT
       t.*,
       r.full_name as resident_name,
@@ -692,7 +757,7 @@ export function listTransactions(
     ${whereClause}
     ORDER BY t.transaction_date DESC, t.created_at DESC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset);
+  `, [...params, limit, offset]);
 
   return rows.map(mapRowToTransaction);
 }
@@ -702,41 +767,42 @@ export function listTransactions(
  * rent charges, payments, outstanding balance, deposits held, and ledger entries.
  * Requires finance.read permission.
  */
-export function getResidentFinancialSummary(
+export async function getResidentFinancialSummary(
   actor: AuthenticatedUser,
-  residentId: string
-): ResidentFinancialSummary {
+  residentId: string,
+  asyncDb?: AsyncDb
+): Promise<ResidentFinancialSummary> {
   requirePermission(actor, "finance.read");
 
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
-  const resident = db.prepare(`
+  const resident = await db.queryOne<any>(`
     SELECT r.id, r.full_name as fullName, r.phone, r.status, rm.room_number as currentRoomNumber
     FROM residents r
     LEFT JOIN resident_stays s ON s.resident_id = r.id AND s.status = 'ACTIVE'
     LEFT JOIN rooms rm ON rm.id = s.room_id
     WHERE r.id = ?
-  `).get(residentId) as any;
+  `, [residentId]);
 
   if (!resident) {
     throw new Error(`Resident '${residentId}' not found.`);
   }
 
-  const totals = db.prepare(`
+  const totals = await db.queryOne<any>(`
     SELECT
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalCharges,
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalPayments,
       COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalDeposits
     FROM financial_transactions
     WHERE resident_id = ?
-  `).get(residentId) as { totalCharges: number; totalPayments: number; totalDeposits: number };
+  `, [residentId]);
 
-  const transactions = listTransactions(actor, { residentId, limit: 100 });
+  const transactions = await listTransactions(actor, { residentId, limit: 100 }, db);
 
-  const totalRentCharges = totals?.totalCharges || 0;
-  const totalRentPaid = totals?.totalPayments || 0;
+  const totalRentCharges = Number(totals?.totalCharges || 0);
+  const totalRentPaid = Number(totals?.totalPayments || 0);
   const outstandingRentBalance = totalRentCharges - totalRentPaid;
-  const totalSecurityDepositHeld = totals?.totalDeposits || 0;
+  const totalSecurityDepositHeld = Number(totals?.totalDeposits || 0);
 
   return {
     residentId: resident.id,
@@ -761,13 +827,14 @@ export function getResidentFinancialSummary(
  * - Current total outstanding rent across all residents in the ERP
  * Requires finance.read permission.
  */
-export function getCashbookSummary(
+export async function getCashbookSummary(
   actor: AuthenticatedUser,
-  options?: { startDate?: string; endDate?: string }
-): CashbookSummary {
+  options?: { startDate?: string; endDate?: string },
+  asyncDb?: AsyncDb
+): Promise<CashbookSummary> {
   requirePermission(actor, "finance.read");
 
-  const db = getDb();
+  const db = asyncDb ?? getAsyncDb();
 
   // Default to current calendar month if dates not provided
   const now = new Date();
@@ -781,7 +848,7 @@ export function getCashbookSummary(
   const endDate = options?.endDate && DATE_REGEX.test(options.endDate) ? options.endDate : defaultEnd;
 
   // 1. Period cash movements
-  const periodRows = db.prepare(`
+  const periodRows = await db.queryOne<any>(`
     SELECT
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentCollected,
       COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as depositsCollected,
@@ -790,16 +857,10 @@ export function getCashbookSummary(
       COUNT(*) as txCount
     FROM financial_transactions
     WHERE transaction_date >= ? AND transaction_date <= ?
-  `).get(startDate, endDate) as {
-    rentCollected: number;
-    depositsCollected: number;
-    expensesPaid: number;
-    rentBilled: number;
-    txCount: number;
-  };
+  `, [startDate, endDate]);
 
   // 1b. Cross-period reversals: reversals occurring in this period for transactions from a prior period
-  const crossPeriodReversals = db.prepare(`
+  const crossPeriodReversals = await db.queryOne<any>(`
     SELECT
       COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
       COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
@@ -810,21 +871,17 @@ export function getCashbookSummary(
       AND rev.status = 'POSTED'
       AND rev.transaction_date >= ? AND rev.transaction_date <= ?
       AND orig.transaction_date < ?
-  `).get(startDate, endDate, startDate) as {
-    priorRentRefunds: number;
-    priorDepositRefunds: number;
-    priorExpenseRefunds: number;
-  };
+  `, [startDate, endDate, startDate]);
 
-  const rawRentCollected = periodRows?.rentCollected || 0;
-  const rawDepositsCollected = periodRows?.depositsCollected || 0;
-  const rawExpensesPaid = periodRows?.expensesPaid || 0;
-  const totalRentBilledInPeriod = periodRows?.rentBilled || 0;
-  const transactionCount = periodRows?.txCount || 0;
+  const rawRentCollected = Number(periodRows?.rentCollected || 0);
+  const rawDepositsCollected = Number(periodRows?.depositsCollected || 0);
+  const rawExpensesPaid = Number(periodRows?.expensesPaid || 0);
+  const totalRentBilledInPeriod = Number(periodRows?.rentBilled || 0);
+  const transactionCount = Number(periodRows?.txCount || 0);
 
-  const priorRentRefunds = crossPeriodReversals?.priorRentRefunds || 0;
-  const priorDepositRefunds = crossPeriodReversals?.priorDepositRefunds || 0;
-  const priorExpenseRefunds = crossPeriodReversals?.priorExpenseRefunds || 0;
+  const priorRentRefunds = Number(crossPeriodReversals?.priorRentRefunds || 0);
+  const priorDepositRefunds = Number(crossPeriodReversals?.priorDepositRefunds || 0);
+  const priorExpenseRefunds = Number(crossPeriodReversals?.priorExpenseRefunds || 0);
 
   const totalRentCollected = rawRentCollected - priorRentRefunds;
   const totalDepositsCollected = rawDepositsCollected - priorDepositRefunds;
@@ -834,16 +891,18 @@ export function getCashbookSummary(
   const netCashMovement = totalRentCollected + totalDepositsCollected - totalExpensesPaid;
 
   // 2. Global outstanding rent as of current state across all residents
-  const globalOutstandingRow = db.prepare(`
+  const globalOutstandingRow = await db.queryOne<any>(`
     SELECT
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allCharges,
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allPayments
     FROM financial_transactions
-  `).get() as { allCharges: number; allPayments: number };
+  `);
 
+  const allCharges = Number(globalOutstandingRow?.allCharges || 0);
+  const allPayments = Number(globalOutstandingRow?.allPayments || 0);
   const totalOutstandingRent = Math.max(
     0,
-    (globalOutstandingRow?.allCharges || 0) - (globalOutstandingRow?.allPayments || 0)
+    allCharges - allPayments
   );
 
   return {
@@ -863,12 +922,23 @@ export function getCashbookSummary(
  * Reverses an existing posted transaction with auditable correction tracking.
  * Requires finance.manage permission.
  */
-export function reverseTransaction(
+export async function reverseTransaction(
   actor: AuthenticatedUser,
   transactionId: string,
   reason: string,
-  clientIp?: string
-): FinancialTransaction {
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<FinancialTransaction> {
+  let clientIp: string | undefined;
+  let dbInstance = asyncDb;
+
+  if (typeof clientIpOrDb === "string") {
+    clientIp = clientIpOrDb;
+  } else if (clientIpOrDb && typeof clientIpOrDb === "object") {
+    dbInstance = clientIpOrDb;
+  }
+  const db = dbInstance ?? getAsyncDb();
+
   requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.transaction_reversed" });
 
   const cleanReason = reason?.trim();
@@ -876,8 +946,7 @@ export function reverseTransaction(
     throw new Error("A clear reason of at least 5 characters is required for financial reversals.");
   }
 
-  const db = getDb();
-  const current = getTransactionById(actor, transactionId);
+  const current = await getTransactionById(actor, transactionId, db);
   if (!current) {
     throw new Error(`Transaction '${transactionId}' not found.`);
   }
@@ -888,7 +957,7 @@ export function reverseTransaction(
     throw new Error("Reversal records cannot themselves be reversed. Corrections must be made via new posted transactions.");
   }
   if (current.transactionType === "RENT_CHARGE" && current.residentId) {
-    const currentBalance = getResidentRentBalance(current.residentId);
+    const currentBalance = await getResidentRentBalance(current.residentId, db);
     if (current.amount > currentBalance) {
       throw new Error(
         `Cannot reverse rent charge of ₹${current.amount.toLocaleString("en-IN")} because payments have already been applied against it. Remaining unallocated balance is only ₹${Math.max(0, currentBalance).toLocaleString("en-IN")}. Reverse the corresponding payments first.`
@@ -900,16 +969,16 @@ export function reverseTransaction(
   const now = new Date().toISOString();
   const today = now.slice(0, 10);
 
-  const tx = db.transaction(() => {
+  await db.transaction(async (tx) => {
     // 1. Mark original reversed
-    db.prepare(`
+    await tx.execute(`
       UPDATE financial_transactions
       SET status = 'REVERSED', updated_at = ?
       WHERE id = ?
-    `).run(now, transactionId);
+    `, [now, transactionId]);
 
     // 2. Insert auditable reversal transaction
-    db.prepare(`
+    await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
         reference_number, resident_id, stay_id, category, description,
@@ -921,7 +990,7 @@ export function reverseTransaction(
         NULL, ?, NULL, 'POSTED',
         ?, ?, ?, ?
       )
-    `).run(
+    `, [
       reversalId,
       current.amount,
       today,
@@ -936,9 +1005,9 @@ export function reverseTransaction(
       actor.id,
       now,
       now
-    );
+    ]);
 
-    recordAuditEvent({
+    await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
       action: "finance.transaction_reversed",
@@ -951,10 +1020,8 @@ export function reverseTransaction(
         reason: cleanReason,
       },
       ipAddress: clientIp,
-    });
+    }, tx);
   });
 
-  tx();
-
-  return getTransactionById(actor, reversalId)!;
+  return (await getTransactionById(actor, reversalId, db))!;
 }

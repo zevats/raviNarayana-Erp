@@ -10,13 +10,21 @@ interface GlobalDatabaseContext {
   _rnErpDbInstance?: Database.Database | null;
   _rnErpStatements?: Map<string, Database.Statement>;
   _rnShutdownRegistered?: boolean;
+  _rnErpFixtureDbInstance?: Database.Database | null;
+  _rnErpFixtureDbPath?: string | null;
+  _rnErpFixtureStatements?: Map<string, Database.Statement>;
 }
 
 const globalForDb = globalThis as unknown as GlobalDatabaseContext;
 
 export function resolveDbPath(): string {
-  if (process.env.ERP_DATABASE_PATH) {
-    return path.resolve(process.cwd(), process.env.ERP_DATABASE_PATH);
+  if (process.env.ERP_DATABASE_PATH && process.env.ERP_DATABASE_PATH.trim().length > 0) {
+    const raw = process.env.ERP_DATABASE_PATH.trim();
+    if (path.isAbsolute(raw)) {
+      return path.normalize(raw);
+    }
+    const repoRoot = findRepoRoot();
+    return path.resolve(repoRoot, raw);
   }
 
   // 1. Check if data/erp.db exists in current working directory (repo root)
@@ -44,6 +52,226 @@ export function resolveDbPath(): string {
   }
 
   return path.join(targetDir, "erp.db");
+}
+
+export interface FixturePathValidationResult {
+  valid: boolean;
+  resolvedPath?: string;
+  error?: string;
+}
+
+/**
+ * Discovers the monorepo root directory deterministically by traversing upwards
+ * from startDir looking for the root package.json defining workspaces.
+ */
+export function findRepoRoot(startDir: string = __dirname): string {
+  let curr = path.resolve(startDir);
+  while (true) {
+    const pkgPath = path.join(curr, "package.json");
+    if (fs.existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+        if (pkg.workspaces) {
+          return curr;
+        }
+      } catch {}
+    }
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    curr = parent;
+  }
+  return process.cwd();
+}
+
+/**
+ * Returns canonical representation of a path, resolving existing directory symlinks
+ * even if the final file does not exist yet.
+ */
+function getCanonicalPath(targetPath: string): string {
+  const normalized = path.normalize(targetPath);
+  let curr = normalized;
+  const segments: string[] = [];
+  while (!fs.existsSync(curr)) {
+    const parent = path.dirname(curr);
+    if (parent === curr) break;
+    segments.unshift(path.basename(curr));
+    curr = parent;
+  }
+  if (fs.existsSync(curr)) {
+    try {
+      const real = fs.realpathSync(curr);
+      return segments.length > 0 ? path.join(real, ...segments) : real;
+    } catch {
+      return normalized;
+    }
+  }
+  return normalized;
+}
+
+/**
+ * Validates that a requested database path for synthetic fixtures is safely isolated.
+ * - Requires explicit, non-empty path.
+ * - Resolves deterministically against repo root.
+ * - Rejects any path matching the primary ERP database (data/erp.db) across all representations.
+ * - Requires the target to strictly reside within the approved 'data/fixtures/' directory.
+ * - Rejects path traversal and sibling-prefix directories.
+ */
+export function validateFixturePath(
+  rawPath: string | null | undefined,
+  options?: { repoRoot?: string }
+): FixturePathValidationResult {
+  if (!rawPath || typeof rawPath !== "string" || rawPath.trim().length === 0) {
+    return {
+      valid: false,
+      error: "Fixture path rejected: Explicit, non-empty ERP_DATABASE_PATH configuration is required for fixture operations.",
+    };
+  }
+
+  const repoRoot = options?.repoRoot || findRepoRoot();
+  const trimmed = rawPath.trim();
+
+  // If path is absolute, resolve(trimmed); if relative, resolve from repoRoot
+  const resolved = path.isAbsolute(trimmed)
+    ? path.resolve(trimmed)
+    : path.resolve(repoRoot, trimmed);
+
+  const canonicalTarget = getCanonicalPath(resolved);
+
+  // 1. Disallow targeting data/erp.db directly or canonical equivalent
+  const canonicalPrimaryDb = getCanonicalPath(path.resolve(repoRoot, "data", "erp.db"));
+  if (canonicalTarget.toLowerCase() === canonicalPrimaryDb.toLowerCase()) {
+    return {
+      valid: false,
+      error: "Fixture path rejected: Target path corresponds to the primary ERP database (data/erp.db). Fixtures must not target the primary database.",
+    };
+  }
+
+  // 2. Disallow any file named erp.db inside data/ directly
+  const dataDir = getCanonicalPath(path.resolve(repoRoot, "data"));
+  if (
+    path.dirname(canonicalTarget).toLowerCase() === dataDir.toLowerCase() &&
+    path.basename(canonicalTarget).toLowerCase() === "erp.db"
+  ) {
+    return {
+      valid: false,
+      error: "Fixture path rejected: Target cannot be erp.db within data directory.",
+    };
+  }
+
+  // 3. Must be strictly inside approved fixtures directory
+  const approvedFixturesDir = getCanonicalPath(path.resolve(repoRoot, "data", "fixtures"));
+  const rel = path.relative(approvedFixturesDir.toLowerCase(), canonicalTarget.toLowerCase());
+
+  if (!rel || rel === "" || rel.startsWith("..") || path.isAbsolute(rel)) {
+    return {
+      valid: false,
+      error: `Fixture path rejected: Fixture database must strictly reside within the approved fixtures directory ('data/fixtures/'). Target: '${trimmed}'.`,
+    };
+  }
+
+  return {
+    valid: true,
+    resolvedPath: canonicalTarget,
+  };
+}
+
+/**
+ * Fail-closed fixture path resolver. Throws an error immediately if the path is invalid,
+ * preventing any database initialization from silently targeting the primary database.
+ */
+export function resolveFixtureDbPath(
+  rawPath: string | null | undefined = process.env.ERP_DATABASE_PATH,
+  options?: { repoRoot?: string }
+): string {
+  const result = validateFixturePath(rawPath, options);
+  if (!result.valid || !result.resolvedPath) {
+    throw new Error(result.error || "Fixture database path validation failed.");
+  }
+  return result.resolvedPath;
+}
+
+/**
+ * Opens and initializes a dedicated SQLite database instance for synthetic fixtures.
+ * - Requires a path that strictly passes validateFixturePath().
+ * - Rejects any attempt to target data/erp.db or paths outside data/fixtures/.
+ * - Keeps fixture lifecycle and statement cache completely isolated from the primary DB singleton.
+ * - Ensures that a cached handle for a different path is never returned.
+ */
+export function getFixtureDb(
+  rawPath: string | null | undefined = process.env.ERP_DATABASE_PATH,
+  options?: { repoRoot?: string }
+): Database.Database {
+  // 1. Strictly validate and canonicalize path; throws synchronously on invalid/missing path
+  const validatedPath = resolveFixtureDbPath(rawPath, options);
+
+  // 2. Cache isolation: check if an instance for this exact path is already open
+  if (
+    globalForDb._rnErpFixtureDbInstance &&
+    globalForDb._rnErpFixtureDbInstance.open
+  ) {
+    if (globalForDb._rnErpFixtureDbPath === validatedPath) {
+      return globalForDb._rnErpFixtureDbInstance;
+    }
+    // If a different path was requested, close the existing fixture handle before opening a new one
+    closeFixtureDb();
+  }
+
+  // 3. Ensure target directory exists
+  const dbDir = path.dirname(validatedPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+
+  // 4. Open the validated fixture database
+  const db = new Database(validatedPath);
+
+  // 5. Apply SQLite configuration
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+
+  // 6. Statement cache dedicated to fixtures (isolated from primary DB cache)
+  const statementCache = new Map<string, Database.Statement>();
+  const originalPrepare = db.prepare.bind(db);
+  db.prepare = ((source: string) => {
+    const key = source.trim();
+    let stmt = statementCache.get(key);
+    if (!stmt) {
+      stmt = originalPrepare(source);
+      statementCache.set(key, stmt);
+    }
+    return stmt;
+  }) as any;
+  globalForDb._rnErpFixtureStatements = statementCache;
+
+  // 7. Run migrations and initial setup strictly on this fixture database instance
+  runMigrations(db);
+  seedInitialAdmin(db);
+  performDatabaseCleanup(db);
+
+  // 8. Store in dedicated fixture context
+  globalForDb._rnErpFixtureDbInstance = db;
+  globalForDb._rnErpFixtureDbPath = validatedPath;
+
+  return db;
+}
+
+/**
+ * Closes the active fixture database handle and clears fixture statement caches.
+ */
+export function closeFixtureDb(): void {
+  const db = globalForDb._rnErpFixtureDbInstance;
+  if (db) {
+    if (globalForDb._rnErpFixtureStatements) {
+      globalForDb._rnErpFixtureStatements.clear();
+    }
+    try {
+      if (db.open) {
+        db.close();
+      }
+    } catch {}
+    globalForDb._rnErpFixtureDbInstance = null;
+    globalForDb._rnErpFixtureDbPath = null;
+  }
 }
 
 export function getDb(): Database.Database {
@@ -101,6 +329,7 @@ export function getDb(): Database.Database {
 }
 
 export function closeDb(): void {
+  closeFixtureDb();
   const db = globalForDb._rnErpDbInstance;
   if (db) {
     if (globalForDb._rnErpStatements) {
@@ -144,7 +373,7 @@ function seedInitialAdmin(db: Database.Database): void {
   );
 }
 
-import { getPgSql, isPostgresConfigured } from "./client";
+import { getPgSql, isPostgresConfigured, getDatabaseEngine } from "./client";
 
 export interface AsyncDb {
   query<T = any>(sql: string, params?: any[]): Promise<T[]>;
@@ -158,34 +387,58 @@ export function convertPlaceholders(query: string): string {
   let paramIndex = 1;
   let inSingleQuote = false;
   let inDoubleQuote = false;
+  let currentSegment = "";
   let result = "";
+
+  function processNonQuoted(seg: string): string {
+    // 1. Convert ? to $1, $2, ...
+    seg = seg.replace(/\?/g, () => `$${paramIndex++}`);
+    // 2. Quote unquoted camelCase aliases (preserving case in PostgreSQL)
+    seg = seg.replace(/\b(AS|as)\s+([a-zA-Z_][a-zA-Z0-9_]*[A-Z][a-zA-Z0-9_]*)\b/g, 'as "$2"');
+    return seg;
+  }
 
   for (let i = 0; i < query.length; i++) {
     const char = query[i];
     if (char === "'" && !inDoubleQuote) {
+      if (!inSingleQuote) {
+        result += processNonQuoted(currentSegment);
+        currentSegment = "";
+      }
       inSingleQuote = !inSingleQuote;
       result += char;
     } else if (char === '"' && !inSingleQuote) {
+      if (!inDoubleQuote) {
+        result += processNonQuoted(currentSegment);
+        currentSegment = "";
+      }
       inDoubleQuote = !inDoubleQuote;
       result += char;
-    } else if (char === "?" && !inSingleQuote && !inDoubleQuote) {
-      result += `$${paramIndex++}`;
-    } else {
+    } else if (inSingleQuote || inDoubleQuote) {
       result += char;
+    } else {
+      currentSegment += char;
     }
+  }
+
+  if (currentSegment.length > 0) {
+    result += processNonQuoted(currentSegment);
   }
 
   return result;
 }
 
 export function getAsyncDb(): AsyncDb {
-  if (process.env.NODE_ENV === "production" && !isPostgresConfigured()) {
+  const isProduction = process.env.NODE_ENV === "production";
+  const engine = getDatabaseEngine();
+
+  if (isProduction && !isPostgresConfigured()) {
     throw new Error(
       "[FATAL PRODUCTION CONFIGURATION] PostgreSQL database URL (DATABASE_URL) is required in production (NODE_ENV=production). Silent fallback to local ephemeral SQLite is strictly prohibited."
     );
   }
 
-  if (isPostgresConfigured()) {
+  if (engine === "postgresql" && isPostgresConfigured()) {
     const sqlClient = getPgSql()!;
     const pgDb: AsyncDb = {
       isPostgres: true,
@@ -228,6 +481,15 @@ export function getAsyncDb(): AsyncDb {
 
   // SQLite fallback
   const db = getDb();
+  return createAsyncDbFromSqlite(db);
+}
+
+export function createAsyncDbFromSqlite(db: Database.Database): AsyncDb {
+  const dbWithLock = db as unknown as { _rnAsyncTxLock?: Promise<void> };
+  if (!dbWithLock._rnAsyncTxLock) {
+    dbWithLock._rnAsyncTxLock = Promise.resolve();
+  }
+
   const sqliteDb: AsyncDb = {
     isPostgres: false,
     async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
@@ -243,21 +505,82 @@ export function getAsyncDb(): AsyncDb {
       return { changes: info.changes };
     },
     async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
-      db.exec("BEGIN IMMEDIATE");
+      const prevLock = dbWithLock._rnAsyncTxLock || Promise.resolve();
+      let releaseLock: () => void;
+      dbWithLock._rnAsyncTxLock = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+
+      await prevLock;
       try {
-        const res = await cb(sqliteDb);
-        db.exec("COMMIT");
-        return res;
-      } catch (err) {
+        db.exec("BEGIN IMMEDIATE");
         try {
-          db.exec("ROLLBACK");
-        } catch {
-          // ignore rollback failure if already rolled back
+          const txClient: AsyncDb = {
+            isPostgres: false,
+            query: sqliteDb.query,
+            queryOne: sqliteDb.queryOne,
+            execute: sqliteDb.execute,
+            transaction: (nestedCb) => nestedCb(txClient),
+          };
+          const res = await cb(txClient);
+          db.exec("COMMIT");
+          return res;
+        } catch (err) {
+          try {
+            db.exec("ROLLBACK");
+          } catch {
+            // ignore rollback failure if already rolled back
+          }
+          throw err;
         }
-        throw err;
+      } finally {
+        releaseLock!();
       }
     },
   };
   return sqliteDb;
 }
 
+/**
+ * Engine-aware check to determine if demo data provenance (seed_manifest) is present.
+ * Works seamlessly across PostgreSQL and SQLite without direct schema dependencies.
+ */
+export async function checkDemoProvenance(asyncDb?: AsyncDb): Promise<boolean> {
+  try {
+    const db = asyncDb || getAsyncDb();
+    if (db.isPostgres) {
+      const manifestTable = await db.queryOne<{ count: string | number }>(
+        "SELECT count(*) as count FROM information_schema.tables WHERE table_name = 'seed_manifest'"
+      );
+      const count = manifestTable
+        ? typeof manifestTable.count === "string"
+          ? parseInt(manifestTable.count, 10)
+          : Number(manifestTable.count)
+        : 0;
+      if (count > 0) {
+        const manifestCount = await db.queryOne<{ count: string | number }>(
+          "SELECT count(*) as count FROM seed_manifest"
+        );
+        const rowCount = manifestCount
+          ? typeof manifestCount.count === "string"
+            ? parseInt(manifestCount.count, 10)
+            : Number(manifestCount.count)
+          : 0;
+        return rowCount > 0;
+      }
+    } else {
+      const manifestTable = await db.queryOne<{ count: number }>(
+        "SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='seed_manifest'"
+      );
+      if (manifestTable && Number(manifestTable.count) > 0) {
+        const manifestCount = await db.queryOne<{ count: number }>(
+          "SELECT count(*) as count FROM seed_manifest"
+        );
+        return Boolean(manifestCount && Number(manifestCount.count) > 0);
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}

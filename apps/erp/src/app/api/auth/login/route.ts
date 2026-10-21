@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     const cleanIdentifier = identifier.trim().toLowerCase();
 
     // Layered rate-limiting check
-    const rateLimit = checkRateLimitAndRecord(cleanIdentifier, clientIp);
+    const rateLimit = await checkRateLimitAndRecord(cleanIdentifier, clientIp);
     if (rateLimit.isLimited) {
       return NextResponse.json(
         {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    const user = findStaffByIdentifier(cleanIdentifier);
+    const user = await findStaffByIdentifier(cleanIdentifier);
     if (!user) {
       await verifyPassword(password, DUMMY_PASSWORD_HASH);
       return NextResponse.json(
@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    recordLoginSuccess(cleanIdentifier, clientIp);
+    await recordLoginSuccess(cleanIdentifier, clientIp);
 
     // Generate 6-digit Email OTP Challenge (Do not issue session cookie after password alone)
     const challenge = await createOtpChallenge(user.id, user.email);

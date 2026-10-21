@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const serviceDate = url.searchParams.get("serviceDate");
 
     if (summary === "true") {
-      const dashboard = getKitchenDashboardSummary(user, serviceDate || undefined);
+      const dashboard = await getKitchenDashboardSummary(user, serviceDate || undefined);
       return NextResponse.json({ success: true, dashboard });
     }
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
 
-    const plans = listMealPlans(user, {
+    const plans = await listMealPlans(user, {
       startDate,
       endDate,
       mealType,
@@ -58,13 +58,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = resolveUserFromRequest(request);
+    const user = await resolveUserFromRequest(request);
     if (!user) return unauthorizedResponse();
 
     const clientIp = getClientIp(request);
     const body = await request.json().catch(() => ({}));
 
-    const plan = createMealPlan(
+    const plan = await createMealPlan(
       user,
       {
         serviceDate: body.serviceDate,
