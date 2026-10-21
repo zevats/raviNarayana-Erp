@@ -46,7 +46,13 @@ export function LoginForm() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [isLoading, setIsLoading] = useState(false);
+  // Distinct granular loading states to avoid UI race conditions
+  const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isResendingOtp, setIsResendingOtp] = useState(false);
+  const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
+  const [isSubmittingReset, setIsSubmittingReset] = useState(false);
+
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,7 +81,7 @@ export function LoginForm() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmittingLogin(true);
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -94,7 +100,7 @@ export function LoginForm() {
 
       if (!response.ok) {
         setErrorMessage(data.error || "Invalid username or password. Please verify your credentials.");
-        setIsLoading(false);
+        setIsSubmittingLogin(false);
         return;
       }
 
@@ -103,7 +109,7 @@ export function LoginForm() {
         setMaskedEmail(data.emailMasked);
         setResendCooldown(60);
         setStep("OTP");
-        setIsLoading(false);
+        setIsSubmittingLogin(false);
         return;
       }
 
@@ -113,7 +119,7 @@ export function LoginForm() {
     } catch (err) {
       console.error("Login request error:", err);
       setErrorMessage("Unable to connect to the authentication service. Please check your network connection.");
-      setIsLoading(false);
+      setIsSubmittingLogin(false);
     }
   };
 
@@ -129,7 +135,7 @@ export function LoginForm() {
       return;
     }
 
-    setIsLoading(true);
+    setIsVerifyingOtp(true);
 
     try {
       const response = await fetch("/api/auth/otp/verify", {
@@ -148,7 +154,7 @@ export function LoginForm() {
 
       if (!response.ok) {
         setErrorMessage(data.error || "Invalid verification code. Please check and try again.");
-        setIsLoading(false);
+        setIsVerifyingOtp(false);
         return;
       }
 
@@ -157,16 +163,16 @@ export function LoginForm() {
     } catch (err) {
       console.error("OTP verification error:", err);
       setErrorMessage("Unable to verify code. Please check your network connection.");
-      setIsLoading(false);
+      setIsVerifyingOtp(false);
     }
   };
 
   // Handle OTP Resend
   const handleResendOtp = async () => {
-    if (resendCooldown > 0 || isLoading || !challengeId) return;
+    if (resendCooldown > 0 || isResendingOtp || isVerifyingOtp || !challengeId) return;
     setErrorMessage(null);
     setSuccessMessage(null);
-    setIsLoading(true);
+    setIsResendingOtp(true);
 
     try {
       const response = await fetch("/api/auth/otp/resend", {
@@ -182,7 +188,7 @@ export function LoginForm() {
 
       if (!response.ok) {
         setErrorMessage(data.error || "Failed to resend verification code.");
-        setIsLoading(false);
+        setIsResendingOtp(false);
         return;
       }
 
@@ -197,7 +203,7 @@ export function LoginForm() {
       console.error("OTP resend error:", err);
       setErrorMessage("Unable to connect to the authentication service. Please check your network connection.");
     } finally {
-      setIsLoading(false);
+      setIsResendingOtp(false);
     }
   };
 
@@ -213,7 +219,7 @@ export function LoginForm() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmittingForgot(true);
 
     try {
       const response = await fetch("/api/auth/forgot-password", {
@@ -226,7 +232,7 @@ export function LoginForm() {
       });
 
       const data = await response.json().catch(() => ({}));
-      setIsLoading(false);
+      setIsSubmittingForgot(false);
       setSuccessMessage(
         data.message ||
           "If an account matching that identifier exists, a password reset link has been dispatched."
@@ -234,7 +240,7 @@ export function LoginForm() {
     } catch (err) {
       console.error("Forgot password error:", err);
       setErrorMessage("Unable to process password reset request. Please check your network connection.");
-      setIsLoading(false);
+      setIsSubmittingForgot(false);
     }
   };
 
@@ -254,7 +260,7 @@ export function LoginForm() {
       return;
     }
 
-    setIsLoading(true);
+    setIsSubmittingReset(true);
 
     try {
       const response = await fetch("/api/auth/reset-password", {
@@ -270,7 +276,7 @@ export function LoginForm() {
       });
 
       const data = await response.json().catch(() => ({}));
-      setIsLoading(false);
+      setIsSubmittingReset(false);
 
       if (!response.ok) {
         setErrorMessage(data.error || "Unable to reset password. The link may have expired.");
@@ -283,7 +289,7 @@ export function LoginForm() {
     } catch (err) {
       console.error("Reset password error:", err);
       setErrorMessage("Unable to reset password. Please check your network connection.");
-      setIsLoading(false);
+      setIsSubmittingReset(false);
     }
   };
 
@@ -379,9 +385,12 @@ export function LoginForm() {
                   type="text"
                   autoComplete="username"
                   required
-                  disabled={isLoading}
+                  disabled={isSubmittingLogin}
                   value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="e.g. admin or staff@ravinarayan.in"
                   className="w-full min-w-0 pl-10 pr-4 py-3 bg-transparent text-sm font-sans font-medium text-[#1A2E20] placeholder-[#5E7060] focus:outline-none rounded-xl"
                 />
@@ -418,9 +427,12 @@ export function LoginForm() {
                   type={showPassword ? "text" : "password"}
                   autoComplete="current-password"
                   required
-                  disabled={isLoading}
+                  disabled={isSubmittingLogin}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="Enter password"
                   className="w-full min-w-0 pl-10 pr-11 py-3 bg-transparent text-sm font-sans font-medium text-[#1A2E20] placeholder-[#5E7060] focus:outline-none rounded-xl"
                 />
@@ -438,10 +450,10 @@ export function LoginForm() {
             <div className="pt-2">
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isSubmittingLogin}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
-                {isLoading ? (
+                {isSubmittingLogin ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
                     <span>Verifying Credentials...</span>
@@ -479,9 +491,12 @@ export function LoginForm() {
                   autoComplete="one-time-code"
                   required
                   autoFocus
-                  disabled={isLoading}
+                  disabled={isVerifyingOtp || isResendingOtp}
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                  onChange={(e) => {
+                    setOtp(e.target.value.replace(/\D/g, ""));
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="123456"
                   className="w-full min-w-0 pl-10 pr-4 py-3 bg-transparent text-lg tracking-[0.3em] font-mono font-bold text-[#1A2E20] placeholder-[#B8AF9E] focus:outline-none rounded-xl text-center"
                 />
@@ -494,10 +509,10 @@ export function LoginForm() {
             <div className="pt-2 space-y-3">
               <button
                 type="submit"
-                disabled={isLoading || otp.length !== 6}
+                disabled={isVerifyingOtp || isResendingOtp || otp.length !== 6}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
-                {isLoading ? (
+                {isVerifyingOtp ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
                     <span>Verifying Code...</span>
@@ -514,12 +529,19 @@ export function LoginForm() {
                 <button
                   type="button"
                   onClick={handleResendOtp}
-                  disabled={resendCooldown > 0 || isLoading}
-                  className="text-[#654735] hover:text-[#1A2E20] font-semibold disabled:text-[#8E9F89] disabled:cursor-not-allowed transition-colors"
+                  disabled={resendCooldown > 0 || isResendingOtp || isVerifyingOtp}
+                  className="text-[#654735] hover:text-[#1A2E20] font-semibold disabled:text-[#8E9F89] disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5"
                 >
-                  {resendCooldown > 0
-                    ? `Resend code in ${resendCooldown}s`
-                    : "Resend verification code"}
+                  {isResendingOtp ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#654735]" />
+                      <span>Dispatching code...</span>
+                    </>
+                  ) : resendCooldown > 0 ? (
+                    `Resend code in ${resendCooldown}s`
+                  ) : (
+                    "Resend verification code"
+                  )}
                 </button>
 
                 <button
@@ -558,9 +580,12 @@ export function LoginForm() {
                   type="text"
                   required
                   autoFocus
-                  disabled={isLoading}
+                  disabled={isSubmittingForgot}
                   value={forgotIdentifier}
-                  onChange={(e) => setForgotIdentifier(e.target.value)}
+                  onChange={(e) => {
+                    setForgotIdentifier(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="e.g. admin or staff@ravinarayan.in"
                   className="w-full min-w-0 pl-10 pr-4 py-3 bg-transparent text-sm font-sans font-medium text-[#1A2E20] placeholder-[#5E7060] focus:outline-none rounded-xl"
                 />
@@ -570,10 +595,10 @@ export function LoginForm() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isSubmittingForgot}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
-                {isLoading ? (
+                {isSubmittingForgot ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
                     <span>Sending Recovery Link...</span>
@@ -616,9 +641,12 @@ export function LoginForm() {
                   id="newPassword"
                   type={showNewPassword ? "text" : "password"}
                   required
-                  disabled={isLoading}
+                  disabled={isSubmittingReset}
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="Minimum 12 characters"
                   className="w-full min-w-0 pl-10 pr-11 py-3 bg-transparent text-sm font-sans font-medium text-[#1A2E20] placeholder-[#5E7060] focus:outline-none rounded-xl"
                 />
@@ -648,9 +676,12 @@ export function LoginForm() {
                   id="confirmPassword"
                   type="password"
                   required
-                  disabled={isLoading}
+                  disabled={isSubmittingReset}
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    if (errorMessage) setErrorMessage(null);
+                  }}
                   placeholder="Re-enter password"
                   className="w-full min-w-0 pl-10 pr-4 py-3 bg-transparent text-sm font-sans font-medium text-[#1A2E20] placeholder-[#5E7060] focus:outline-none rounded-xl"
                 />
@@ -660,10 +691,10 @@ export function LoginForm() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isSubmittingReset}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
-                {isLoading ? (
+                {isSubmittingReset ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
                     <span>Updating Password...</span>

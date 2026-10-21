@@ -46,7 +46,7 @@ export function middleware(request: NextRequest) {
     !pathname.startsWith("/api/auth/logout") &&
     !pathname.startsWith("/api/auth/forgot-password") &&
     !pathname.startsWith("/api/auth/reset-password") &&
-    !pathname.startsWith("/api/auth/otp/verify") &&
+    !pathname.startsWith("/api/auth/otp/") &&
     !pathname.startsWith("/api/health")
   ) {
     if (!isAuthenticated) {

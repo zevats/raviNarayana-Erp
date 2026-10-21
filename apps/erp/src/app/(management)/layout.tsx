@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
+import { ERP_COOKIE_NAME } from "@/server/authentication/auth";
+import { validateSessionCached } from "@/server/authentication/cachedAuth";
 import { ErpShell } from "@/components/layout/ErpShell";
 import { checkDemoProvenance } from "@/server/database/db";
 
@@ -18,7 +19,7 @@ export default async function ManagementLayout({
     redirect("/login");
   }
 
-  const user = await validateSession(sessionToken);
+  const user = await validateSessionCached(sessionToken);
 
   if (!user) {
     redirect("/login");

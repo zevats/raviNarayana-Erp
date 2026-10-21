@@ -37,6 +37,7 @@ import {
   ResidentFinancialSummary,
   ResidentStayRecord,
 } from "@/types";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 
 /**
  * Maps database floor integer to human-readable full label.
@@ -48,10 +49,37 @@ function formatFloorLabel(floor: number | null | undefined): string {
 }
 
 export default function ResidentsPage() {
-  const [residents, setResidents] = useState<ResidentListItem[]>([]);
-  const [rooms, setRooms] = useState<RoomWithOccupancy[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: residentsData,
+    error: residentsQueryError,
+    isLoading: isResidentsLoading,
+    isRevalidating: isResidentsRevalidating,
+    refetch: refetchResidents,
+  } = useErpQuery<{ residents: ResidentListItem[]; rooms: RoomWithOccupancy[] }>(
+    "/api/residents-and-rooms",
+    async () => {
+      const [resResidents, resRooms] = await Promise.all([
+        fetch("/api/residents", { cache: "no-store" }),
+        fetch("/api/rooms", { cache: "no-store" }),
+      ]);
+      const dataResidents = await resResidents.json();
+      const dataRooms = await resRooms.json();
+      if (!resResidents.ok) throw new Error(dataResidents.error || "Failed to load residents");
+      if (!resRooms.ok) throw new Error(dataRooms.error || "Failed to load rooms");
+      return {
+        residents: dataResidents.residents || [],
+        rooms: dataRooms.rooms || [],
+      };
+    },
+    { ttl: 60000, tags: ["residents", "rooms"] }
+  );
+
+  const residents = residentsData?.residents || [];
+  const rooms = residentsData?.rooms || [];
+  const loading = isResidentsLoading && residents.length === 0;
+  const isRevalidating = isResidentsRevalidating;
+  const [errorOverride, setErrorOverride] = useState<string | null>(null);
+  const error = errorOverride || (residentsQueryError ? residentsQueryError.message : null);
   const [search, setSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<
     "ALL" | "ACTIVE" | "CHECKED_OUT" | "UNASSIGNED"
@@ -110,36 +138,17 @@ export default function ResidentsPage() {
   const [showEditConfirm, setShowEditConfirm] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // Data Fetching
+  // Data Fetching & Refetch
   // ---------------------------------------------------------------------------
   const fetchData = async () => {
     try {
-      setLoading(true);
-      setError(null);
-
-      const [resResidents, resRooms] = await Promise.all([
-        fetch("/api/residents", { cache: "no-store" }),
-        fetch("/api/rooms", { cache: "no-store" }),
-      ]);
-
-      const dataResidents = await resResidents.json();
-      const dataRooms = await resRooms.json();
-
-      if (!resResidents.ok) throw new Error(dataResidents.error || "Failed to load residents");
-      if (!resRooms.ok) throw new Error(dataRooms.error || "Failed to load rooms");
-
-      setResidents(dataResidents.residents || []);
-      setRooms(dataRooms.rooms || []);
+      setErrorOverride(null);
+      invalidateErpCache(["residents", "rooms", "dashboard"]);
+      await refetchResidents();
     } catch (err: any) {
-      setError(err.message || "Failed to fetch data");
-    } finally {
-      setLoading(false);
+      setErrorOverride(err.message || "Failed to fetch data");
     }
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   // ---------------------------------------------------------------------------
   // Computed KPI Metrics (Accurate, Distinct Database Definitions)
@@ -496,11 +505,11 @@ export default function ResidentsPage() {
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
           <button
             onClick={fetchData}
-            disabled={loading}
+            disabled={loading || isRevalidating}
             className="p-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs"
             title="Refresh resident records"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${loading || isRevalidating ? "animate-spin" : ""}`} />
           </button>
 
           <button

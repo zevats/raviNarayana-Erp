@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from "nodemailer";
+import { renderOtpEmail } from "./emailTemplate";
 
 export interface EmailMessage {
   to: string;
@@ -38,11 +39,12 @@ export function clearMockSentEmails(): void {
  */
 export class MockEmailAdapter implements EmailAdapter {
   async sendOtp(to: string, otp: string): Promise<boolean> {
+    const rendered = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
     mockSentEmails.push({
       to,
-      subject: "Your Ravinarayan ERP Login Verification Code",
-      html: `<p>Your 6-digit verification code is: <strong>${otp}</strong>. It expires in 10 minutes.</p>`,
-      text: `Your 6-digit verification code is: ${otp}. It expires in 10 minutes.`,
+      subject: rendered.subject,
+      html: rendered.html,
+      text: rendered.text,
       timestamp: new Date().toISOString(),
     });
     return true;
@@ -100,12 +102,13 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
 
   async sendOtp(to: string, otp: string): Promise<boolean> {
     try {
+      const rendered = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
       const info = await this.transporter.sendMail({
         from: this.from,
         to,
-        subject: "Your Ravinarayan ERP Verification Code",
-        text: `Your 6-digit verification code is: ${otp}. Valid for 10 minutes.`,
-        html: `<p>Your 6-digit verification code is: <strong>${otp}</strong>.</p><p>This code expires in 10 minutes. Do not share it with anyone.</p>`,
+        subject: rendered.subject,
+        text: rendered.text,
+        html: rendered.html,
       });
       const accepted = Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0);
       return accepted;

@@ -35,6 +35,7 @@ import {
   ResidentDetail,
   ResidentListItem,
 } from "@/types";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   SINGLE: "Single Occupancy",
@@ -53,9 +54,29 @@ function formatFloorLabel(floor: number): string {
 }
 
 export default function RoomsPage() {
-  const [rooms, setRooms] = useState<RoomWithOccupancy[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: cachedRooms,
+    error: queryError,
+    isLoading: isQueryLoading,
+    isRevalidating,
+    refetch,
+  } = useErpQuery<RoomWithOccupancy[]>(
+    "/api/rooms",
+    async () => {
+      const res = await fetch("/api/rooms", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load rooms");
+      }
+      return data.rooms || [];
+    },
+    { ttl: 60000, tags: ["rooms"] }
+  );
+
+  const rooms = cachedRooms || [];
+  const loading = isQueryLoading && rooms.length === 0;
+  const [errorOverride, setErrorOverride] = useState<string | null>(null);
+  const error = errorOverride || (queryError ? queryError.message : null);
   const [search, setSearch] = useState("");
   const [selectedFloor, setSelectedFloor] = useState<string>("ALL");
   const [selectedStatus, setSelectedStatus] = useState<"ALL" | "VACANT" | "OCCUPIED">("ALL");
@@ -143,28 +164,17 @@ export default function RoomsPage() {
   const [showAssignConfirm, setShowAssignConfirm] = useState(false);
 
   // ---------------------------------------------------------------------------
-  // Data Fetching
+  // Data Fetching & Refetch
   // ---------------------------------------------------------------------------
   const fetchRooms = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      const res = await fetch("/api/rooms", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load rooms");
-      }
-      setRooms(data.rooms || []);
+      setErrorOverride(null);
+      invalidateErpCache(["rooms", "residents", "dashboard"]);
+      await refetch();
     } catch (err: any) {
-      setError(err.message || "Failed to fetch room inventory");
-    } finally {
-      setLoading(false);
+      setErrorOverride(err.message || "Failed to fetch room inventory");
     }
   };
-
-  useEffect(() => {
-    fetchRooms();
-  }, []);
 
   // Summary Metrics calculated live from SQLite records
   const stats = useMemo(() => {
@@ -638,11 +648,11 @@ export default function RoomsPage() {
         <div className="flex items-center gap-2.5 shrink-0">
           <button
             onClick={fetchRooms}
-            disabled={loading}
+            disabled={loading || isRevalidating}
             className="p-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs"
             title="Refresh room data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${loading || isRevalidating ? "animate-spin" : ""}`} />
           </button>
 
           <button

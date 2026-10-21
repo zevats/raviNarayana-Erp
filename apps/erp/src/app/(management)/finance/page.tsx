@@ -14,6 +14,7 @@ import {
   ResidentFinancialSummary,
   ResidentListItem,
 } from "@/types";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { FinanceHeader } from "@/modules/finance/components/FinanceHeader";
 import { AccountingPeriodSelector } from "@/modules/finance/components/AccountingPeriodSelector";
 import { FinancialSummaryCards } from "@/modules/finance/components/FinancialSummaryCards";
@@ -38,33 +39,21 @@ export default function FinancePage() {
   const [startDate, setStartDate] = useState(getLocalFirstDayOfMonth());
   const [endDate, setEndDate] = useState(toLocalDateString());
 
-  // Data states
-  const [cashbook, setCashbook] = useState<CashbookSummary | null>(null);
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
-  const [residents, setResidents] = useState<ResidentListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Global notification banners
-  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  // Modal dialog states
-  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [isChargeOpen, setIsChargeOpen] = useState(false);
-  const [isDepositOpen, setIsDepositOpen] = useState(false);
-  const [isExpenseOpen, setIsExpenseOpen] = useState(false);
-  const [paymentResidentId, setPaymentResidentId] = useState<string | undefined>(undefined);
-
-  const [receiptTx, setReceiptTx] = useState<FinancialTransaction | null>(null);
-  const [reversalTarget, setReversalTarget] = useState<FinancialTransaction | null>(null);
-
-  // Fetch financial data for selected date range
-  const fetchData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
+  // Cached data query with background revalidation and instant cache hit
+  const cacheKey = `/api/finance/bundle?startDate=${startDate}&endDate=${endDate}`;
+  const {
+    data: financeData,
+    error: financeQueryError,
+    isLoading: isFinanceLoading,
+    isRevalidating: isFinanceRevalidating,
+    refetch: refetchFinance,
+  } = useErpQuery<{
+    cashbook: CashbookSummary | null;
+    transactions: FinancialTransaction[];
+    residents: ResidentListItem[];
+  }>(
+    cacheKey,
+    async () => {
       const [resSummary, resTx, resResidents] = await Promise.all([
         fetch(`/api/finance/cashbook?startDate=${startDate}&endDate=${endDate}`, { cache: "no-store" }),
         fetch(`/api/finance/transactions?startDate=${startDate}&endDate=${endDate}&limit=500`, { cache: "no-store" }),
@@ -80,19 +69,47 @@ export default function FinancePage() {
       if (!resSummary.ok) throw new Error(dataSummary.error || "Failed to load cashbook.");
       if (!resTx.ok) throw new Error(dataTx.error || "Failed to load transactions.");
 
-      setCashbook(dataSummary.summary);
-      setTransactions(dataTx.transactions || []);
-      setResidents(dataResidents.residents || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to load financial records.");
-    } finally {
-      setLoading(false);
-    }
-  }, [startDate, endDate]);
+      return {
+        cashbook: dataSummary.summary || null,
+        transactions: dataTx.transactions || [],
+        residents: dataResidents.residents || [],
+      };
+    },
+    { ttl: 30000, tags: ["finance"] }
+  );
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const cashbook = financeData?.cashbook || null;
+  const transactions = financeData?.transactions || [];
+  const residents = financeData?.residents || [];
+  const loading = isFinanceLoading && !financeData;
+  const isRevalidating = isFinanceRevalidating;
+  const [errorOverride, setErrorOverride] = useState<string | null>(null);
+  const error = errorOverride || (financeQueryError ? financeQueryError.message : null);
+
+  // Global notification banners
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Modal dialog states
+  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [isChargeOpen, setIsChargeOpen] = useState(false);
+  const [isDepositOpen, setIsDepositOpen] = useState(false);
+  const [isExpenseOpen, setIsExpenseOpen] = useState(false);
+  const [paymentResidentId, setPaymentResidentId] = useState<string | undefined>(undefined);
+
+  const [receiptTx, setReceiptTx] = useState<FinancialTransaction | null>(null);
+  const [reversalTarget, setReversalTarget] = useState<FinancialTransaction | null>(null);
+
+  // Refetch financial data for selected date range and invalidate cache
+  const fetchData = useCallback(async () => {
+    try {
+      setErrorOverride(null);
+      invalidateErpCache(["finance", "dashboard"]);
+      await refetchFinance();
+    } catch (err: any) {
+      setErrorOverride(err.message || "Failed to load financial records.");
+    }
+  }, [refetchFinance]);
 
   // Load single resident financial statement dossier
   const handleLoadStatement = async (residentId: string): Promise<ResidentFinancialSummary | null> => {
@@ -157,7 +174,7 @@ export default function FinancePage() {
       {/* 1. Executive Header & Action Buttons */}
       <FinanceHeader
         onRefresh={fetchData}
-        isLoading={loading}
+        isLoading={loading || isRevalidating}
         onOpenPayment={() => {
           setPaymentResidentId(undefined);
           setIsPaymentOpen(true);

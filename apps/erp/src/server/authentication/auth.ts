@@ -420,6 +420,7 @@ export async function validateSessionDetailed(
   );
 
   if (!row) {
+    let isPreempted = false;
     try {
       const preempted = await db.queryOne<{ staff_id: string }>(
         `SELECT staff_id FROM session_preemptions
@@ -428,12 +429,13 @@ export async function validateSessionDetailed(
       );
 
       if (preempted) {
-        return { user: null, isPreempted: true };
+        isPreempted = true;
       }
     } catch {
       // Table may not exist yet in legacy test isolation
     }
-    return { user: null };
+
+    return { user: null, isPreempted: isPreempted || undefined };
   }
 
   // Periodic throttled cleanup of expired records (non-blocking)
