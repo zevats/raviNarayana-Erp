@@ -236,12 +236,22 @@ export function closeDb(): void {
   globalForDb._rnTestAsyncDb = null;
 }
 
+let cachedDemoProvenance: boolean | null = null;
+
+export function invalidateDemoProvenanceCache(): void {
+  cachedDemoProvenance = null;
+}
+
 /**
  * Engine-aware check to determine if demo data provenance (seed_manifest) is present.
  */
 export async function checkDemoProvenance(asyncDb?: AsyncDb): Promise<boolean> {
+  if (cachedDemoProvenance !== null && !asyncDb) {
+    return cachedDemoProvenance;
+  }
   try {
     const db = asyncDb || getAsyncDb();
+    let result = false;
     if (db.isPostgres) {
       const manifestTable = await db.queryOne<{ count: string | number }>(
         "SELECT count(*) as count FROM information_schema.tables WHERE table_name = 'seed_manifest'"
@@ -260,7 +270,7 @@ export async function checkDemoProvenance(asyncDb?: AsyncDb): Promise<boolean> {
             ? parseInt(manifestCount.count, 10)
             : Number(manifestCount.count)
           : 0;
-        return rowCount > 0;
+        result = rowCount > 0;
       }
     } else {
       const manifestTable = await db.queryOne<{ count: number }>(
@@ -270,10 +280,13 @@ export async function checkDemoProvenance(asyncDb?: AsyncDb): Promise<boolean> {
         const manifestCount = await db.queryOne<{ count: number }>(
           "SELECT count(*) as count FROM seed_manifest"
         );
-        return Boolean(manifestCount && Number(manifestCount.count) > 0);
+        result = Boolean(manifestCount && Number(manifestCount.count) > 0);
       }
     }
-    return false;
+    if (!asyncDb) {
+      cachedDemoProvenance = result;
+    }
+    return result;
   } catch {
     return false;
   }

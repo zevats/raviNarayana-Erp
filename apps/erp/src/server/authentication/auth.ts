@@ -47,19 +47,30 @@ export async function checkRateLimit(
   const cleanIp = ipAddress.trim().toLowerCase();
   const windowStart = new Date(Date.now() - RATE_LIMIT_WINDOW_MINUTES * 60 * 1000).toISOString();
 
-  // Layer 1: IP-based rate limit
-  const ipResult = await db.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
-    `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+  // Unified single SQL query to evaluate Layer 1, Layer 2, and Layer 3 rate-limiting in one DB roundtrip
+  const aggResult = await db.queryOne<{
+    ipFailedCount: number | string;
+    ipOldestAttempt: string | null;
+    pairFailedCount: number | string;
+    pairOldestAttempt: string | null;
+    distFailedCount: number | string;
+  }>(
+    `SELECT
+       COALESCE(SUM(CASE WHEN ip_address = ? THEN 1 ELSE 0 END), 0) as "ipFailedCount",
+       MIN(CASE WHEN ip_address = ? THEN attempted_at ELSE NULL END) as "ipOldestAttempt",
+       COALESCE(SUM(CASE WHEN identifier = ? AND ip_address = ? THEN 1 ELSE 0 END), 0) as "pairFailedCount",
+       MIN(CASE WHEN identifier = ? AND ip_address = ? THEN attempted_at ELSE NULL END) as "pairOldestAttempt",
+       COALESCE(SUM(CASE WHEN identifier = ? THEN 1 ELSE 0 END), 0) as "distFailedCount"
      FROM login_attempts
-     WHERE ip_address = ? AND success = 0 AND attempted_at >= ?`,
-    [cleanIp, windowStart]
+     WHERE (ip_address = ? OR identifier = ?) AND success = 0 AND attempted_at >= ?`,
+    [cleanIp, cleanIp, cleanId, cleanIp, cleanId, cleanIp, cleanId, cleanIp, cleanId, windowStart]
   );
 
-  const ipFailedCount = Number(ipResult?.failedCount || 0);
+  const ipFailedCount = Number(aggResult?.ipFailedCount || 0);
   if (ipFailedCount >= MAX_IP_FAILED_ATTEMPTS) {
     let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-    if (ipResult?.oldestAttempt) {
-      const elapsedMs = Date.now() - new Date(ipResult.oldestAttempt).getTime();
+    if (aggResult?.ipOldestAttempt) {
+      const elapsedMs = Date.now() - new Date(aggResult.ipOldestAttempt).getTime();
       remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
     }
     return {
@@ -70,19 +81,11 @@ export async function checkRateLimit(
     };
   }
 
-  // Layer 2: (Identifier + IP) rate limit
-  const pairResult = await db.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
-    `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
-     FROM login_attempts
-     WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?`,
-    [cleanId, cleanIp, windowStart]
-  );
-
-  const pairFailedCount = Number(pairResult?.failedCount || 0);
+  const pairFailedCount = Number(aggResult?.pairFailedCount || 0);
   if (pairFailedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
     let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-    if (pairResult?.oldestAttempt) {
-      const elapsedMs = Date.now() - new Date(pairResult.oldestAttempt).getTime();
+    if (aggResult?.pairOldestAttempt) {
+      const elapsedMs = Date.now() - new Date(aggResult.pairOldestAttempt).getTime();
       remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
     }
     return {
@@ -93,15 +96,7 @@ export async function checkRateLimit(
     };
   }
 
-  // Layer 3: Distributed account velocity check (avoids account lockout denial-of-service)
-  const distResult = await db.queryOne<{ totalFailures: number | string }>(
-    `SELECT COUNT(*) as "totalFailures"
-     FROM login_attempts
-     WHERE identifier = ? AND success = 0 AND attempted_at >= ?`,
-    [cleanId, windowStart]
-  );
-
-  const totalFailures = Number(distResult?.totalFailures || 0);
+  const totalFailures = Number(aggResult?.distFailedCount || 0);
   const shouldSlowDown = totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
 
   return {
@@ -114,7 +109,7 @@ export async function checkRateLimit(
 /**
  * Atomic rate-limiting evaluation and attempt reservation.
  * Evaluates Layer 1 (IP), Layer 2 (Identifier + IP), and Layer 3 (Distributed velocity)
- * within an atomic database transaction.
+ * using a single unified query, followed by atomic attempt reservation.
  * 
  * If the request is permitted, an initial failed attempt record (success = 0) is atomically
  * reserved in the database. If authentication subsequently succeeds, recordLoginSuccess()
@@ -135,19 +130,30 @@ export async function checkRateLimitAndRecord(
   const now = new Date().toISOString();
 
   return db.transaction(async (tx) => {
-    // Layer 1: IP-based rate limit
-    const ipResult = await tx.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
-      `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
+    // Unified single SQL query to evaluate all 3 layers concurrently in one DB roundtrip
+    const aggResult = await tx.queryOne<{
+      ipFailedCount: number | string;
+      ipOldestAttempt: string | null;
+      pairFailedCount: number | string;
+      pairOldestAttempt: string | null;
+      distFailedCount: number | string;
+    }>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN ip_address = ? THEN 1 ELSE 0 END), 0) as "ipFailedCount",
+         MIN(CASE WHEN ip_address = ? THEN attempted_at ELSE NULL END) as "ipOldestAttempt",
+         COALESCE(SUM(CASE WHEN identifier = ? AND ip_address = ? THEN 1 ELSE 0 END), 0) as "pairFailedCount",
+         MIN(CASE WHEN identifier = ? AND ip_address = ? THEN attempted_at ELSE NULL END) as "pairOldestAttempt",
+         COALESCE(SUM(CASE WHEN identifier = ? THEN 1 ELSE 0 END), 0) as "distFailedCount"
        FROM login_attempts
-       WHERE ip_address = ? AND success = 0 AND attempted_at >= ?`,
-      [cleanIp, windowStart]
+       WHERE (ip_address = ? OR identifier = ?) AND success = 0 AND attempted_at >= ?`,
+      [cleanIp, cleanIp, cleanId, cleanIp, cleanId, cleanIp, cleanId, cleanIp, cleanId, windowStart]
     );
 
-    const ipFailedCount = Number(ipResult?.failedCount || 0);
+    const ipFailedCount = Number(aggResult?.ipFailedCount || 0);
     if (ipFailedCount >= MAX_IP_FAILED_ATTEMPTS) {
       let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-      if (ipResult?.oldestAttempt) {
-        const elapsedMs = Date.now() - new Date(ipResult.oldestAttempt).getTime();
+      if (aggResult?.ipOldestAttempt) {
+        const elapsedMs = Date.now() - new Date(aggResult.ipOldestAttempt).getTime();
         remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
       }
       return {
@@ -158,19 +164,11 @@ export async function checkRateLimitAndRecord(
       };
     }
 
-    // Layer 2: (Identifier + IP) rate limit
-    const pairResult = await tx.queryOne<{ failedCount: number | string; oldestAttempt: string | null }>(
-      `SELECT COUNT(*) as "failedCount", MIN(attempted_at) as "oldestAttempt"
-       FROM login_attempts
-       WHERE identifier = ? AND ip_address = ? AND success = 0 AND attempted_at >= ?`,
-      [cleanId, cleanIp, windowStart]
-    );
-
-    const pairFailedCount = Number(pairResult?.failedCount || 0);
+    const pairFailedCount = Number(aggResult?.pairFailedCount || 0);
     if (pairFailedCount >= MAX_PAIR_FAILED_ATTEMPTS) {
       let remainingMinutes = RATE_LIMIT_WINDOW_MINUTES;
-      if (pairResult?.oldestAttempt) {
-        const elapsedMs = Date.now() - new Date(pairResult.oldestAttempt).getTime();
+      if (aggResult?.pairOldestAttempt) {
+        const elapsedMs = Date.now() - new Date(aggResult.pairOldestAttempt).getTime();
         remainingMinutes = Math.max(1, Math.ceil((RATE_LIMIT_WINDOW_MINUTES * 60 * 1000 - elapsedMs) / 60000));
       }
       return {
@@ -181,15 +179,7 @@ export async function checkRateLimitAndRecord(
       };
     }
 
-    // Layer 3: Distributed account velocity check (avoids account lockout denial-of-service)
-    const distResult = await tx.queryOne<{ totalFailures: number | string }>(
-      `SELECT COUNT(*) as "totalFailures"
-       FROM login_attempts
-       WHERE identifier = ? AND success = 0 AND attempted_at >= ?`,
-      [cleanId, windowStart]
-    );
-
-    const totalFailures = Number(distResult?.totalFailures || 0);
+    const totalFailures = Number(aggResult?.distFailedCount || 0);
     const shouldSlowDown = totalFailures >= DISTRIBUTED_ABUSE_THRESHOLD;
 
     // Atomically reserve attempt record with success = 0
@@ -220,17 +210,18 @@ export async function recordLoginSuccess(
   const id = `att_${crypto.randomUUID()}`;
 
   await db.transaction(async (tx) => {
-    await tx.execute(
-      `DELETE FROM login_attempts
-       WHERE identifier = ? AND ip_address = ? AND success = 0`,
-      [cleanId, cleanIp]
-    );
-
-    await tx.execute(
-      `INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
-       VALUES (?, ?, ?, ?, 1)`,
-      [id, cleanId, cleanIp, now]
-    );
+    await Promise.all([
+      tx.execute(
+        `DELETE FROM login_attempts
+         WHERE identifier = ? AND ip_address = ? AND success = 0`,
+        [cleanId, cleanIp]
+      ),
+      tx.execute(
+        `INSERT INTO login_attempts (id, identifier, ip_address, attempted_at, success)
+         VALUES (?, ?, ?, ?, 1)`,
+        [id, cleanId, cleanIp, now]
+      ),
+    ]);
   });
 }
 
@@ -459,10 +450,10 @@ export async function destroySession(sessionToken: string, asyncDb?: AsyncDb): P
   if (!sessionToken) return;
   const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
-  try {
-    await db.execute("DELETE FROM session_preemptions WHERE token_hash = ?", [tokenHash]);
-  } catch {}
-  await db.execute("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]);
+  await Promise.all([
+    db.execute("DELETE FROM session_preemptions WHERE token_hash = ?", [tokenHash]).catch(() => {}),
+    db.execute("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]),
+  ]);
 }
 
 /**
@@ -471,10 +462,10 @@ export async function destroySession(sessionToken: string, asyncDb?: AsyncDb): P
 export async function revokeAllUserSessions(staffId: string, asyncDb?: AsyncDb): Promise<void> {
   if (!staffId) return;
   const db = asyncDb || getAsyncDb();
-  try {
-    await db.execute("DELETE FROM session_preemptions WHERE staff_id = ?", [staffId]);
-  } catch {}
-  await db.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
+  await Promise.all([
+    db.execute("DELETE FROM session_preemptions WHERE staff_id = ?", [staffId]).catch(() => {}),
+    db.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]),
+  ]);
 }
 
 // -----------------------------------------------------------------------------
@@ -593,16 +584,16 @@ export async function verifyOtpChallenge(
     throw new Error(`Invalid verification code. ${3 - newAttempts} attempts remaining.`);
   }
 
-  // Verification succeeded: delete challenge (single-use)
-  await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
-
-  // Fetch staff user details
-  const staff = await db.queryOne<AuthenticatedUser & { isActive: number }>(
-    `SELECT id, username, email, full_name as "fullName", role, is_active as "isActive"
-     FROM staff_users
-     WHERE id = ? AND is_active = 1`,
-    [challenge.staff_id]
-  );
+  // Verification succeeded: delete challenge (single-use) and fetch staff user details concurrently
+  const [, staff] = await Promise.all([
+    db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]),
+    db.queryOne<AuthenticatedUser & { isActive: number }>(
+      `SELECT id, username, email, full_name as "fullName", role, is_active as "isActive"
+       FROM staff_users
+       WHERE id = ? AND is_active = 1`,
+      [challenge.staff_id]
+    ),
+  ]);
 
   if (!staff) {
     throw new Error("Account is inactive or no longer exists.");

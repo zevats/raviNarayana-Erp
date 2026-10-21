@@ -89,6 +89,9 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         host: config.host || "smtp.gmail.com",
         port,
         secure,
+        pool: true,
+        maxConnections: 3,
+        maxMessages: 100,
         auth: {
           user: config.user,
           pass: config.pass,

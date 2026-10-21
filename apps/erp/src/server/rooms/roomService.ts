@@ -79,38 +79,64 @@ export async function listRooms(
     ORDER BY r.floor ASC, r.room_number ASC
   `;
 
-  const rows = await db.query<any>(query, params);
+  // Single parallel execution to eliminate N+1 occupant queries per room
+  const [rows, allOccupants] = await Promise.all([
+    db.query<any>(query, params),
+    db.query<{
+      roomId: string;
+      residentId: string;
+      stayId: string;
+      fullName: string;
+      phone: string;
+      checkInDate: string;
+    }>(`
+      SELECT
+        s.room_id as "roomId",
+        res.id as "residentId",
+        s.id as "stayId",
+        res.full_name as "fullName",
+        res.phone,
+        s.check_in_date as "checkInDate"
+      FROM resident_stays s
+      JOIN residents res ON s.resident_id = res.id
+      WHERE s.status = 'ACTIVE'
+      ORDER BY s.check_in_date ASC
+    `),
+  ]);
 
-  const results: RoomWithOccupancy[] = await Promise.all(
-    rows.map(async (r) => {
-      const occupied = Number(r.occupiedBeds || 0);
-      const capacity = Number(r.capacity);
-      const occupants = await db.query<RoomOccupant>(`
-        SELECT
-          res.id as residentId, s.id as stayId, res.full_name as fullName,
-          res.phone, s.check_in_date as checkInDate
-        FROM resident_stays s
-        JOIN residents res ON s.resident_id = res.id
-        WHERE s.room_id = ? AND s.status = 'ACTIVE'
-        ORDER BY s.check_in_date ASC
-      `, [r.id]);
+  const occupantsByRoom = new Map<string, RoomOccupant[]>();
+  for (const occ of allOccupants) {
+    const list = occupantsByRoom.get(occ.roomId) || [];
+    list.push({
+      residentId: occ.residentId,
+      stayId: occ.stayId,
+      fullName: occ.fullName,
+      phone: occ.phone,
+      checkInDate: occ.checkInDate,
+    });
+    occupantsByRoom.set(occ.roomId, list);
+  }
 
-      return {
-        id: r.id,
-        roomNumber: r.roomNumber,
-        floor: Number(r.floor),
-        type: r.type as RoomType,
-        capacity,
-        occupiedBeds: occupied,
-        availableBeds: Math.max(0, capacity - occupied),
-        baseRentMonthly: Number(r.baseRentMonthly),
-        isActive: Boolean(r.isActive),
-        occupants,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      };
-    })
-  );
+  const results: RoomWithOccupancy[] = rows.map((r) => {
+    const occupied = Number(r.occupiedBeds || 0);
+    const capacity = Number(r.capacity);
+    const occupants = occupantsByRoom.get(r.id) || [];
+
+    return {
+      id: r.id,
+      roomNumber: r.roomNumber,
+      floor: Number(r.floor),
+      type: r.type as RoomType,
+      capacity,
+      occupiedBeds: occupied,
+      availableBeds: Math.max(0, capacity - occupied),
+      baseRentMonthly: Number(r.baseRentMonthly),
+      isActive: Boolean(r.isActive),
+      occupants,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    };
+  });
 
   if (options?.status === "VACANT") {
     return results.filter((r) => r.isActive && r.availableBeds > 0);

@@ -25,9 +25,8 @@ export default async function ManagementLayout({
     redirect("/login");
   }
 
-  let isDemoData = process.env.NODE_ENV !== "production";
-  const hasDemoManifest = await checkDemoProvenance();
-  isDemoData = hasDemoManifest || isDemoData;
+  const isDev = process.env.NODE_ENV !== "production";
+  const isDemoData = isDev ? true : await checkDemoProvenance();
 
   return <ErpShell user={user} isDemo={isDemoData}>{children}</ErpShell>;
 }

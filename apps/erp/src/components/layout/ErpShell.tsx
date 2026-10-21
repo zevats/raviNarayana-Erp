@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { AuthenticatedUser, ROLE_LABELS, ROLE_BADGE_STYLES } from "@/types";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { clearErpCache } from "@/lib/cache/erpDataCache";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -90,14 +91,15 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     setIsLoggingOut(true);
 
     try {
+      clearErpCache();
       await fetch("/api/auth/logout", {
         method: "POST",
+        headers: { "X-RN-CSRF": "1" },
       });
-      router.push("/login");
-      router.refresh();
+      window.location.href = "/login";
     } catch (err) {
       console.error("Logout error:", err);
-      setIsLoggingOut(false);
+      window.location.href = "/login";
     }
   };
 

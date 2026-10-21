@@ -6,6 +6,26 @@ export interface GetNotificationsOptions {
   unreadOnly?: boolean;
 }
 
+interface NotificationCacheEntry {
+  data: { notifications: NotificationItem[]; unreadCount: number };
+  expiresAt: number;
+}
+
+const notificationsCache = new Map<string, NotificationCacheEntry>();
+const NOTIFICATIONS_CACHE_TTL_MS = 15_000;
+
+export function invalidateNotificationCache(staffId?: string): void {
+  if (staffId) {
+    for (const key of notificationsCache.keys()) {
+      if (key.startsWith(`${staffId}:`)) {
+        notificationsCache.delete(key);
+      }
+    }
+  } else {
+    notificationsCache.clear();
+  }
+}
+
 /**
  * Aggregates live actionable notifications across Finance, Delivery, and Kitchen modules.
  * Tracks per-user read/unread state using staff_notification_reads table.
@@ -14,29 +34,105 @@ export async function getNotifications(
   actor: AuthenticatedUser,
   options?: GetNotificationsOptions
 ): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
+  const cacheKey = `${actor.id}:${options?.limit || 30}:${options?.unreadOnly ? 1 : 0}`;
+  const nowMs = Date.now();
+  const cached = notificationsCache.get(cacheKey);
+  if (cached && cached.expiresAt > nowMs) {
+    return cached.data;
+  }
+
   const db = getAsyncDb();
   const limit = options?.limit || 30;
 
-  // 1. Fetch read notification IDs for this staff user
-  const readRows = await db.query<{ notification_id: string }>(
-    `SELECT notification_id FROM staff_notification_reads WHERE staff_id = ?`,
-    [actor.id]
-  );
+  // Execute all 7 notification aggregation queries concurrently
+  const [
+    readRows,
+    exceptions,
+    pendingSummary,
+    dispatchedSummary,
+    overdueResidents,
+    recentPayments,
+    kitchenPlans,
+  ] = await Promise.all([
+    // 1. Fetch read notification IDs for this staff user
+    db.query<{ notification_id: string }>(
+      `SELECT notification_id FROM staff_notification_reads WHERE staff_id = ?`,
+      [actor.id]
+    ),
+    // 2. Delivery Exceptions (High Alert)
+    db.query<any>(`
+      SELECT dt.id, dt.order_type, dt.customer_name, dt.delivery_address, dt.room_number,
+             dt.exception_reason, dt.service_date, dt.meal_type, dt.updated_at,
+             r.full_name as resident_name
+      FROM delivery_tasks dt
+      LEFT JOIN residents r ON r.id = dt.resident_id
+      WHERE dt.status = 'EXCEPTION'
+      ORDER BY dt.updated_at DESC
+      LIMIT 10
+    `),
+    // 3. Pending Delivery Assignment
+    db.query<any>(`
+      SELECT service_date, meal_type, COUNT(*) as count, MAX(created_at) as latest_created
+      FROM delivery_tasks
+      WHERE status = 'PENDING'
+      GROUP BY service_date, meal_type
+      ORDER BY latest_created DESC
+      LIMIT 3
+    `),
+    // 4. In-Transit / Dispatched Deliveries
+    db.query<any>(`
+      SELECT service_date, meal_type, COUNT(*) as count, MAX(dispatched_at) as latest_dispatched
+      FROM delivery_tasks
+      WHERE status IN ('OUT_FOR_DELIVERY', 'DISPATCHED')
+      GROUP BY service_date, meal_type
+      ORDER BY latest_dispatched DESC
+      LIMIT 2
+    `),
+    // 5. Finance: Overdue Balances (Outstanding Rent)
+    db.query<any>(`
+      SELECT
+        r.id as resident_id,
+        r.full_name,
+        rm.room_number,
+        COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_CHARGE' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) as balance,
+        MAX(ft.created_at) as latest_activity
+      FROM residents r
+      JOIN resident_stays s ON s.resident_id = r.id AND s.status = 'ACTIVE'
+      JOIN rooms rm ON rm.id = s.room_id
+      LEFT JOIN financial_transactions ft ON ft.resident_id = r.id
+      GROUP BY r.id, r.full_name, rm.room_number
+      HAVING (
+        COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_CHARGE' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) -
+        COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0)
+      ) > 0
+      ORDER BY balance DESC
+      LIMIT 5
+    `),
+    // 6. Recent Payments Received
+    db.query<any>(`
+      SELECT ft.id, ft.amount, ft.payment_method, ft.transaction_date, ft.description, ft.created_at,
+             r.full_name as resident_name, rm.room_number
+      FROM financial_transactions ft
+      LEFT JOIN residents r ON r.id = ft.resident_id
+      LEFT JOIN resident_stays s ON s.id = ft.stay_id
+      LEFT JOIN rooms rm ON rm.id = s.room_id
+      WHERE ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED'
+      ORDER BY ft.created_at DESC
+      LIMIT 5
+    `),
+    // 7. Kitchen Plans (Active / Confirmed)
+    db.query<any>(`
+      SELECT id, service_date, meal_type, status, final_preparation_count, actual_cooked_count,
+             confirmed_at, completed_at, updated_at
+      FROM daily_meal_plans
+      ORDER BY service_date DESC, created_at DESC
+      LIMIT 3
+    `),
+  ]);
+
   const readIds = new Set(readRows.map((r) => r.notification_id));
-
   const items: NotificationItem[] = [];
-
-  // 2. Delivery Exceptions (High Alert)
-  const exceptions = await db.query<any>(`
-    SELECT dt.id, dt.order_type, dt.customer_name, dt.delivery_address, dt.room_number,
-           dt.exception_reason, dt.service_date, dt.meal_type, dt.updated_at,
-           r.full_name as resident_name
-    FROM delivery_tasks dt
-    LEFT JOIN residents r ON r.id = dt.resident_id
-    WHERE dt.status = 'EXCEPTION'
-    ORDER BY dt.updated_at DESC
-    LIMIT 10
-  `);
 
   for (const ex of exceptions) {
     const notifId = `notif_del_ex_${ex.id}`;
@@ -56,15 +152,6 @@ export async function getNotifications(
   }
 
   // 3. Pending Delivery Assignment
-  const pendingSummary = await db.query<any>(`
-    SELECT service_date, meal_type, COUNT(*) as count, MAX(created_at) as latest_created
-    FROM delivery_tasks
-    WHERE status = 'PENDING'
-    GROUP BY service_date, meal_type
-    ORDER BY latest_created DESC
-    LIMIT 3
-  `);
-
   for (const p of pendingSummary) {
     if (p.count > 0) {
       const notifId = `notif_del_pending_${p.service_date}_${p.meal_type}`;
@@ -83,15 +170,6 @@ export async function getNotifications(
   }
 
   // 4. In-Transit / Dispatched Deliveries
-  const dispatchedSummary = await db.query<any>(`
-    SELECT service_date, meal_type, COUNT(*) as count, MAX(dispatched_at) as latest_dispatched
-    FROM delivery_tasks
-    WHERE status IN ('OUT_FOR_DELIVERY', 'DISPATCHED')
-    GROUP BY service_date, meal_type
-    ORDER BY latest_dispatched DESC
-    LIMIT 2
-  `);
-
   for (const d of dispatchedSummary) {
     if (d.count > 0) {
       const notifId = `notif_del_dispatched_${d.service_date}_${d.meal_type}`;
@@ -110,27 +188,6 @@ export async function getNotifications(
   }
 
   // 5. Finance: Overdue Balances (Outstanding Rent)
-  const overdueResidents = await db.query<any>(`
-    SELECT
-      r.id as resident_id,
-      r.full_name,
-      rm.room_number,
-      COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_CHARGE' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) -
-      COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) as balance,
-      MAX(ft.created_at) as latest_activity
-    FROM residents r
-    JOIN resident_stays s ON s.resident_id = r.id AND s.status = 'ACTIVE'
-    JOIN rooms rm ON rm.id = s.room_id
-    LEFT JOIN financial_transactions ft ON ft.resident_id = r.id
-    GROUP BY r.id, r.full_name, rm.room_number
-    HAVING (
-      COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_CHARGE' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0) -
-      COALESCE(SUM(CASE WHEN ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED' THEN ft.amount ELSE 0 END), 0)
-    ) > 0
-    ORDER BY balance DESC
-    LIMIT 5
-  `);
-
   for (const res of overdueResidents) {
     const notifId = `notif_fin_overdue_${res.resident_id}`;
     items.push({
@@ -147,18 +204,6 @@ export async function getNotifications(
   }
 
   // 6. Recent Payments Received
-  const recentPayments = await db.query<any>(`
-    SELECT ft.id, ft.amount, ft.payment_method, ft.transaction_date, ft.description, ft.created_at,
-           r.full_name as resident_name, rm.room_number
-    FROM financial_transactions ft
-    LEFT JOIN residents r ON r.id = ft.resident_id
-    LEFT JOIN resident_stays s ON s.id = ft.stay_id
-    LEFT JOIN rooms rm ON rm.id = s.room_id
-    WHERE ft.transaction_type = 'RENT_PAYMENT' AND ft.status = 'POSTED'
-    ORDER BY ft.created_at DESC
-    LIMIT 5
-  `);
-
   for (const pay of recentPayments) {
     const notifId = `notif_fin_pay_${pay.id}`;
     const payer = pay.resident_name ? `${pay.resident_name} (Room ${pay.room_number})` : "Resident";
@@ -176,14 +221,6 @@ export async function getNotifications(
   }
 
   // 7. Kitchen Plans (Active / Confirmed)
-  const kitchenPlans = await db.query<any>(`
-    SELECT id, service_date, meal_type, status, final_preparation_count, actual_cooked_count,
-           confirmed_at, completed_at, updated_at
-    FROM daily_meal_plans
-    ORDER BY service_date DESC, created_at DESC
-    LIMIT 3
-  `);
-
   for (const kp of kitchenPlans) {
     if (kp.status === "CONFIRMED" || kp.status === "COMPLETED") {
       const notifId = `notif_kitch_${kp.id}_${kp.status}`;
@@ -212,10 +249,17 @@ export async function getNotifications(
     filtered = items.filter((i) => !i.isRead);
   }
 
-  return {
+  const result = {
     notifications: filtered.slice(0, limit),
     unreadCount,
   };
+
+  notificationsCache.set(cacheKey, {
+    data: result,
+    expiresAt: nowMs + NOTIFICATIONS_CACHE_TTL_MS,
+  });
+
+  return result;
 }
 
 /**
@@ -229,6 +273,7 @@ export async function markNotificationAsRead(actor: AuthenticatedUser, notificat
     VALUES (?, ?, ?)
     ON CONFLICT (staff_id, notification_id) DO NOTHING
   `, [actor.id, notificationId, now]);
+  invalidateNotificationCache(actor.id);
 }
 
 /**
@@ -248,4 +293,5 @@ export async function markAllNotificationsAsRead(actor: AuthenticatedUser): Prom
       `, [actor.id, n.id, now]);
     }
   });
+  invalidateNotificationCache(actor.id);
 }

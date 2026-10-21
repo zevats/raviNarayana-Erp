@@ -847,31 +847,37 @@ export async function getCashbookSummary(
   const startDate = options?.startDate && DATE_REGEX.test(options.startDate) ? options.startDate : defaultStart;
   const endDate = options?.endDate && DATE_REGEX.test(options.endDate) ? options.endDate : defaultEnd;
 
-  // 1. Period cash movements
-  const periodRows = await db.queryOne<any>(`
-    SELECT
-      COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentCollected,
-      COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as depositsCollected,
-      COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as expensesPaid,
-      COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentBilled,
-      COUNT(*) as txCount
-    FROM financial_transactions
-    WHERE transaction_date >= ? AND transaction_date <= ?
-  `, [startDate, endDate]);
-
-  // 1b. Cross-period reversals: reversals occurring in this period for transactions from a prior period
-  const crossPeriodReversals = await db.queryOne<any>(`
-    SELECT
-      COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
-      COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
-      COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds
-    FROM financial_transactions rev
-    JOIN financial_transactions orig ON rev.reversal_of_id = orig.id
-    WHERE rev.transaction_type = 'REVERSAL'
-      AND rev.status = 'POSTED'
-      AND rev.transaction_date >= ? AND rev.transaction_date <= ?
-      AND orig.transaction_date < ?
-  `, [startDate, endDate, startDate]);
+  // 1. Concurrently fetch period cash movements, cross-period reversals, and global outstanding rent
+  const [periodRows, crossPeriodReversals, globalOutstandingRow] = await Promise.all([
+    db.queryOne<any>(`
+      SELECT
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentCollected,
+        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as depositsCollected,
+        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as expensesPaid,
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentBilled,
+        COUNT(*) as txCount
+      FROM financial_transactions
+      WHERE transaction_date >= ? AND transaction_date <= ?
+    `, [startDate, endDate]),
+    db.queryOne<any>(`
+      SELECT
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds
+      FROM financial_transactions rev
+      JOIN financial_transactions orig ON rev.reversal_of_id = orig.id
+      WHERE rev.transaction_type = 'REVERSAL'
+        AND rev.status = 'POSTED'
+        AND rev.transaction_date >= ? AND rev.transaction_date <= ?
+        AND orig.transaction_date < ?
+    `, [startDate, endDate, startDate]),
+    db.queryOne<any>(`
+      SELECT
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allCharges,
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allPayments
+      FROM financial_transactions
+    `),
+  ]);
 
   const rawRentCollected = Number(periodRows?.rentCollected || 0);
   const rawDepositsCollected = Number(periodRows?.depositsCollected || 0);
@@ -889,14 +895,6 @@ export async function getCashbookSummary(
 
   // Net Cash Movement = Money In (Rent + Deposits) - Money Out (Expenses)
   const netCashMovement = totalRentCollected + totalDepositsCollected - totalExpensesPaid;
-
-  // 2. Global outstanding rent as of current state across all residents
-  const globalOutstandingRow = await db.queryOne<any>(`
-    SELECT
-      COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allCharges,
-      COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allPayments
-    FROM financial_transactions
-  `);
 
   const allCharges = Number(globalOutstandingRow?.allCharges || 0);
   const allPayments = Number(globalOutstandingRow?.allPayments || 0);
