@@ -22,6 +22,9 @@ export interface SmtpConfig {
   from?: string;
 }
 
+export const DEFAULT_SMTP_USER = "zevats@gmail.com";
+export const DEFAULT_EMAIL_FROM = "Ravinarayan ERP <zevats@gmail.com>";
+
 // In-memory mock storage for testing and offline development
 export const mockSentEmails: EmailMessage[] = [];
 
@@ -73,7 +76,7 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
       );
     }
     this.user = config.user;
-    this.from = config.from || `Ravinarayan ERP <${config.user}>`;
+    this.from = config.from || `Ravinarayan ERP <${config.user || DEFAULT_SMTP_USER}>`;
 
     if (customTransporter) {
       this.transporter = customTransporter;
@@ -180,7 +183,7 @@ export function getEmailAdapter(): EmailAdapter {
   }
 
   // 3. SMTP configuration parameters
-  const smtpUser = process.env.SMTP_USER || "otp.zevats@gmail.com";
+  const smtpUser = process.env.SMTP_USER || DEFAULT_SMTP_USER;
   const smtpPass = process.env.SMTP_APP_PASSWORD || process.env.SMTP_PASS || "";
   const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
   const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
@@ -188,7 +191,7 @@ export function getEmailAdapter(): EmailAdapter {
     process.env.SMTP_SECURE !== undefined
       ? process.env.SMTP_SECURE === "true"
       : smtpPort === 465;
-  const emailFrom = process.env.EMAIL_FROM || `Ravinarayan ERP <${smtpUser}>`;
+  const emailFrom = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
 
   // 4. Explicit SMTP selection
   if (adapterType === "smtp" || adapterType === "gmail") {

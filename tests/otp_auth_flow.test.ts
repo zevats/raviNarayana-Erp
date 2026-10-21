@@ -486,9 +486,9 @@ async function runTests() {
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
-      user: "otp.zevats@gmail.com",
+      user: "zevats@gmail.com",
       pass: "mock_google_app_password",
-      from: "Ravinarayan ERP <otp.zevats@gmail.com>",
+      from: "Ravinarayan ERP <zevats@gmail.com>",
     },
     mockTransporter
   );
@@ -500,8 +500,8 @@ async function runTests() {
 
   const sentOptions = capturedMailOptions[0];
   assert(
-    sentOptions.from === "Ravinarayan ERP <otp.zevats@gmail.com>",
-    `Sender identity is Ravinarayan ERP <otp.zevats@gmail.com> (got "${sentOptions.from}")`
+    sentOptions.from === "Ravinarayan ERP <zevats@gmail.com>",
+    `Sender identity is Ravinarayan ERP <zevats@gmail.com> (got "${sentOptions.from}")`
   );
   assert(
     sentOptions.to === "rishabh27kumar2006@gmail.com",
@@ -610,8 +610,8 @@ async function runTests() {
     ".env.example specifies SMTP_PORT=465"
   );
   assert(
-    envExampleContent.includes("SMTP_USER=otp.zevats@gmail.com"),
-    ".env.example specifies sender account otp.zevats@gmail.com"
+    envExampleContent.includes("SMTP_USER=zevats@gmail.com"),
+    ".env.example specifies sender account zevats@gmail.com"
   );
   assert(
     envExampleContent.includes("your_16_char_google_app_password_here"),
