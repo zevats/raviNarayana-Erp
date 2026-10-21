@@ -28,6 +28,7 @@
     "test:integration": "node -r ./tests/register_paths.js tests/dist/tests/integration_audit.test.js",
     "test:delivery": "node -r ./tests/register_paths.js tests/dist/tests/delivery.test.js",
     "test:phase01": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/postgresql_phase01.test.js",
+    "test:postgres:live": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/live_postgresql_integration.test.js",
     "test": "npm run test:security && npm run test:rbac && npm run test:rooms && npm run test:finance && npm run test:kitchen && npm run test:integration && npm run test:delivery",
     "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed"
   },

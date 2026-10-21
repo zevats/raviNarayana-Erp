@@ -23,7 +23,7 @@ export interface PostgresTargetSafetyResult {
 export function validatePostgresTargetSafety(
   targetUrl?: string | null
 ): PostgresTargetSafetyResult {
-  const url = targetUrl || getDatabaseUrl(true);
+  const url = targetUrl !== undefined ? targetUrl : getDatabaseUrl(true);
   if (!url) {
     return {
       safe: false,

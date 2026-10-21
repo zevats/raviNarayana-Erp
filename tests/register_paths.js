@@ -132,6 +132,9 @@ function getOrCreateTestSqlite() {
 }
 
 globalThis._rnTestDbProvider = function () {
+  if (process.env.DATABASE_URL && !process.env.FORCE_SQLITE_TEST_DOUBLE) {
+    return null;
+  }
   const dbPath = process.env.ERP_DATABASE_PATH || path.resolve(__dirname, "test_erp.db");
   const norm = normalizeDbPath(dbPath);
   if (cachedTestDb && currentDbPath === norm) {
