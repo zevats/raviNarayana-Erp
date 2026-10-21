@@ -9,7 +9,7 @@ import {
   checkDemoProvenance,
   AsyncDb,
 } from "../apps/erp/src/server/database/db";
-import { runMigrations } from "../apps/erp/src/server/database/migrations";
+import { runMigrations } from "./helpers/sqliteMigrations";
 import {
   getNotifications,
   markNotificationAsRead,

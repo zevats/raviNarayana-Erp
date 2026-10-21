@@ -88,9 +88,9 @@ async function runIntegrationAndReadinessTests() {
   }
 
   // ---------------------------------------------------------------------------
-  // SUITE 2: Dual-Engine Runtime Configuration
+  // SUITE 2: PostgreSQL Single-Database Engine Enforcement
   // ---------------------------------------------------------------------------
-  console.log("\n[SUITE 2] Dual-Engine Runtime Configuration & Default Fallback");
+  console.log("\n[SUITE 2] PostgreSQL Single-Database Engine Enforcement");
 
   const origEngine = process.env.DATABASE_ENGINE;
   const origNodeEnv = process.env.NODE_ENV;
@@ -98,10 +98,16 @@ async function runIntegrationAndReadinessTests() {
   try {
     delete process.env.DATABASE_ENGINE;
     process.env.NODE_ENV = "development";
-    assert(getDatabaseEngine() === "sqlite", "Default database engine in development is 'sqlite'");
+    assert(getDatabaseEngine() === "postgresql", "Default database engine in development is 'postgresql'");
 
-    process.env.DATABASE_ENGINE = "sqlite";
-    assert(getDatabaseEngine() === "sqlite", "Explicit DATABASE_ENGINE=sqlite selects 'sqlite'");
+    let sqliteEngineThrew = false;
+    try {
+      process.env.DATABASE_ENGINE = "sqlite";
+      getDatabaseEngine();
+    } catch (err: any) {
+      sqliteEngineThrew = err.message.includes("SQLite has been decommissioned");
+    }
+    assert(sqliteEngineThrew, "DATABASE_ENGINE=sqlite throws fatal error (SQLite decommissioned)");
 
     process.env.DATABASE_ENGINE = "postgresql";
     assert(getDatabaseEngine() === "postgresql", "Explicit DATABASE_ENGINE=postgresql selects 'postgresql'");

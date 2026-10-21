@@ -1,5 +1,5 @@
-import { seedSyntheticData } from "../apps/erp/src/server/database/seedSyntheticData";
-import { resolveFixtureDbPath } from "../apps/erp/src/server/database/db";
+import { seedSyntheticData } from "./helpers/seedSyntheticData";
+import { resolveFixtureDbPath } from "./helpers/fixtureUtils";
 
 async function main() {
   const rawPath = process.env.ERP_DATABASE_PATH;

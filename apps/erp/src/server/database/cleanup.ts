@@ -1,4 +1,3 @@
-import Database from "better-sqlite3";
 import { getAsyncDb, AsyncDb } from "./db";
 
 let lastCleanupTimestamp: number = 0;
@@ -15,8 +14,9 @@ export interface CleanupResult {
 /**
  * Perform bounded cleanup of expired sessions and stale login-attempt records.
  * Throttled to run at most once every 30 minutes under active traffic.
+ * Duck-typed for backwards compatibility with offline test fixtures.
  */
-export function performDatabaseCleanup(db: Database.Database, force: boolean = false): CleanupResult {
+export function performDatabaseCleanup(db: any, force: boolean = false): CleanupResult {
   const now = Date.now();
   if (!force && now - lastCleanupTimestamp < CLEANUP_THROTTLE_INTERVAL_MS) {
     return {

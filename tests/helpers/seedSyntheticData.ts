@@ -3,8 +3,8 @@ import path from "path";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import Database from "better-sqlite3";
-import { resolveFixtureDbPath, getFixtureDb } from "./db";
-import type { StaffRole, RoomType, PaymentMethod, ExpenseCategory } from "../../types";
+import { resolveFixtureDbPath, getFixtureDb } from "./fixtureUtils";
+import type { StaffRole, RoomType, PaymentMethod, ExpenseCategory } from "../../apps/erp/src/types";
 
 /**
  * ============================================================================

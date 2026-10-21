@@ -85,7 +85,7 @@ db.prepare(`
 `).run(legacyRawToken);
 
 // Apply Migration V1
-const { runMigrations } = require("../apps/erp/src/server/database/migrations");
+const { runMigrations } = require("./helpers/sqliteMigrations");
 runMigrations(db);
 
 const userVersion = db.pragma("user_version", { simple: true });

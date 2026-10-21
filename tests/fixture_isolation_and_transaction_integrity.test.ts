@@ -8,14 +8,14 @@ import {
   resolveFixtureDbPath,
   getFixtureDb,
   closeFixtureDb,
-} from "../apps/erp/src/server/database/db";
+} from "./helpers/fixtureUtils";
 import {
   validateDestinationTarget,
   migrateSqliteToPostgres,
   rollbackPostgresMigration,
   TABLES_IN_ORDER,
 } from "../apps/erp/src/server/database/migrateSqliteToPg";
-import { seedSyntheticData } from "../apps/erp/src/server/database/seedSyntheticData";
+import { seedSyntheticData } from "./helpers/seedSyntheticData";
 
 let passCount = 0;
 let failCount = 0;

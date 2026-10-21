@@ -3,7 +3,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 
-import { runMigrations } from "../apps/erp/src/server/database/migrations";
+import { runMigrations } from "./helpers/sqliteMigrations";
 import { performDatabaseCleanup } from "../apps/erp/src/server/database/cleanup";
 import { validateAdminEnvironment } from "../apps/erp/src/server/database/env";
 import * as auth from "../apps/erp/src/server/authentication/auth";

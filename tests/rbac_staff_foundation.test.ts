@@ -3,7 +3,7 @@ import crypto from "crypto";
 import path from "path";
 import fs from "fs";
 
-import { runMigrations } from "../apps/erp/src/server/database/migrations";
+import { runMigrations } from "./helpers/sqliteMigrations";
 import { getAsyncDb, closeDb, AsyncDb, convertPlaceholders } from "../apps/erp/src/server/database/db";
 import {
   ALL_ROLES,

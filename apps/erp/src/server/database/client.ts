@@ -21,7 +21,7 @@ export function getDatabaseUrl(direct = false): string | null {
   return process.env.DATABASE_URL || process.env.DIRECT_URL || null;
 }
 
-export type DatabaseEngine = "sqlite" | "postgresql";
+export type DatabaseEngine = "postgresql" | "sqlite";
 
 /**
  * Returns whether a PostgreSQL database URL is configured in the environment.
@@ -31,30 +31,25 @@ export function isPostgresConfigured(): boolean {
 }
 
 /**
- * Returns the configured database engine based on environment variables.
- * - In production: defaults to 'postgresql' (mandatory).
- * - Explicit override: DATABASE_ENGINE='sqlite' | 'postgresql'.
- * - Default in development/test: 'sqlite' unless DATABASE_ENGINE=postgresql is specified.
+ * Returns the configured database engine.
+ * PostgreSQL is the sole supported runtime database.
+ * If DATABASE_ENGINE is explicitly set to 'sqlite', it throws a fatal configuration error.
  */
 export function getDatabaseEngine(): DatabaseEngine {
   const explicit = process.env.DATABASE_ENGINE?.toLowerCase().trim();
-  if (explicit === "postgresql" || explicit === "postgres") {
-    return "postgresql";
-  }
   if (explicit === "sqlite") {
-    return "sqlite";
+    throw new Error(
+      "[FATAL DATABASE CONFIGURATION] SQLite has been decommissioned. PostgreSQL is the sole supported application database."
+    );
   }
-  if (process.env.NODE_ENV === "production") {
-    return "postgresql";
-  }
-  return "sqlite";
+  return "postgresql";
 }
 
 /**
  * Returns true if PostgreSQL is the active runtime database engine.
  */
 export function isPostgresActive(): boolean {
-  return getDatabaseEngine() === "postgresql" && isPostgresConfigured();
+  return isPostgresConfigured();
 }
 
 /**
@@ -120,6 +115,8 @@ export async function closePg(): Promise<void> {
 
 /**
  * Pings the database to verify connectivity and measure latency.
+ * SQLite fallback has been decommissioned. In production or development,
+ * PostgreSQL is required. Retains offline test double ping support.
  */
 export async function pingDatabase(): Promise<{
   ok: boolean;
@@ -128,24 +125,48 @@ export async function pingDatabase(): Promise<{
   error?: string;
 }> {
   const start = performance.now();
-  const engine = getDatabaseEngine();
 
-  if (engine === "postgresql") {
-    const sqlClient = getPgSql();
-    if (sqlClient) {
-      try {
-        await sqlClient`SELECT 1`;
-        const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-        return { ok: true, latencyMs, engine: "postgresql" };
-      } catch (err: any) {
-        const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-        return {
-          ok: false,
-          latencyMs,
-          engine: "postgresql",
-          error: err?.message || "PostgreSQL connection failed",
-        };
-      }
+  // Test double ping support for isolated offline test environments (never in production)
+  const testDb =
+    (globalThis as any)._rnTestAsyncDb ||
+    (typeof (globalThis as any)._rnTestDbProvider === "function"
+      ? (globalThis as any)._rnTestDbProvider()
+      : null);
+
+  if (testDb && process.env.NODE_ENV !== "production") {
+    try {
+      await testDb.queryOne("SELECT 1");
+      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+      return {
+        ok: true,
+        latencyMs,
+        engine: testDb.isPostgres ? "postgresql" : "sqlite",
+      };
+    } catch (err: any) {
+      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+      return {
+        ok: false,
+        latencyMs,
+        engine: "none",
+        error: err?.message || "Test database ping failed",
+      };
+    }
+  }
+
+  const sqlClient = getPgSql();
+  if (sqlClient) {
+    try {
+      await sqlClient`SELECT 1`;
+      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+      return { ok: true, latencyMs, engine: "postgresql" };
+    } catch (err: any) {
+      const latencyMs = Math.round((performance.now() - start) * 100) / 100;
+      return {
+        ok: false,
+        latencyMs,
+        engine: "postgresql",
+        error: err?.message || "PostgreSQL connection failed",
+      };
     }
   }
 
@@ -158,20 +179,10 @@ export async function pingDatabase(): Promise<{
     };
   }
 
-  // Fallback check on SQLite in non-production development/test modes
-  try {
-    const { getAsyncDb } = await import("./db");
-    const db = getAsyncDb();
-    await db.queryOne("SELECT 1");
-    const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-    return { ok: true, latencyMs, engine: "sqlite" };
-  } catch (err: any) {
-    const latencyMs = Math.round((performance.now() - start) * 100) / 100;
-    return {
-      ok: false,
-      latencyMs,
-      engine: "none",
-      error: "No database available",
-    };
-  }
+  return {
+    ok: false,
+    latencyMs: 0,
+    engine: "none",
+    error: "PostgreSQL required: DATABASE_URL is not configured. SQLite runtime has been decommissioned.",
+  };
 }

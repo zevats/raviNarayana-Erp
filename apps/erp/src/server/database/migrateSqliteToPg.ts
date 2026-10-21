@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import Database from "better-sqlite3";
 import postgres from "postgres";
 import { resolveDbPath, validateFixturePath } from "./db";
 import { getDatabaseUrl } from "./client";
@@ -223,7 +222,8 @@ export async function migrateSqliteToPostgres(options?: MigrationOptions): Promi
   }
 
   // 3. Open source SQLite database in readonly mode
-  const sqliteDb = new Database(sqlitePath, { readonly: true });
+  const BetterSqlite3 = require("better-sqlite3");
+  const sqliteDb = new BetterSqlite3(sqlitePath, { readonly: true });
 
   // 4. Connect to PostgreSQL target to verify connectivity
   let pgSql: postgres.Sql | null = null;

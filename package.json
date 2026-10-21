@@ -30,5 +30,9 @@
     "test:phase01": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/postgresql_phase01.test.js",
     "test": "npm run test:security && npm run test:rbac && npm run test:rooms && npm run test:finance && npm run test:kitchen && npm run test:integration && npm run test:delivery",
     "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.8.1"
   }
 }

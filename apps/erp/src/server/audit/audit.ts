@@ -29,28 +29,18 @@ export function sanitizeAuditMetadata(metadata?: Record<string, any> | null): st
 
 /**
  * Records an immutable audit log entry for security and operational events.
+ * Persists asynchronously to PostgreSQL via recordAuditEventAsync without blocking the caller.
  * Never stores raw credentials, password hashes, or session tokens.
  */
 export function recordAuditEvent(input: AuditEventInput): AuditLogRecord {
-  const db = getDb();
   const id = `aud_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const sanitizedMeta = sanitizeAuditMetadata(input.metadata);
 
-  db.prepare(`
-    INSERT INTO audit_logs (id, actor_id, actor_username, action, target_type, target_id, metadata, ip_address, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    input.actorId || null,
-    input.actorUsername || null,
-    input.action,
-    input.targetType,
-    input.targetId || null,
-    sanitizedMeta,
-    input.ipAddress || null,
-    now
-  );
+  // Asynchronously record event without blocking synchronous caller
+  recordAuditEventAsync(input).catch((err) => {
+    console.error("[Audit Error] Failed to persist audit event:", err);
+  });
 
   return {
     id,
