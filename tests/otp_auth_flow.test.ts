@@ -12,6 +12,8 @@ import {
   mockSentEmails,
   clearMockSentEmails,
   EmailAdapter,
+  GmailSmtpEmailAdapter,
+  MockEmailAdapter,
 } from "../apps/erp/src/server/notifications/emailAdapter";
 import { AsyncDb } from "../apps/erp/src/server/database/db";
 
@@ -436,6 +438,184 @@ async function runTests() {
   assert(
     !globalsCssContent.includes("@import url('https://fonts.googleapis.com"),
     "globals.css does not include remote @import url for Google Fonts (system font stack used)"
+  );
+
+  // ---------------------------------------------------------------------------
+  // SUITE 11: Gmail SMTP Adapter & Transport Verification
+  // ---------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 11] Gmail SMTP Adapter & Transport Verification");
+
+  // 1. Missing credentials throw error
+  let missingCredsError = "";
+  try {
+    new GmailSmtpEmailAdapter({ user: "", pass: "" });
+  } catch (err: any) {
+    missingCredsError = err.message;
+  }
+  assert(
+    missingCredsError.includes("SMTP_USER and SMTP_APP_PASSWORD are required"),
+    `GmailSmtpEmailAdapter constructor validates credentials (got "${missingCredsError}")`
+  );
+
+  // 2. Custom mock nodemailer transporter to verify sent message payload
+  const capturedMailOptions: any[] = [];
+  let shouldTransporterSucceed = true;
+
+  const mockTransporter: any = {
+    async sendMail(options: any) {
+      capturedMailOptions.push(options);
+      if (!shouldTransporterSucceed) {
+        throw new Error("SMTP connection refused by host: 535 5.7.8 Bad credentials");
+      }
+      return {
+        messageId: "<test-msg-12345@gmail.com>",
+        accepted: [options.to],
+        rejected: [],
+      };
+    },
+    async verify() {
+      if (!shouldTransporterSucceed) {
+        throw new Error("535-5.7.8 Username and Password not accepted");
+      }
+      return true;
+    },
+  };
+
+  const smtpAdapter = new GmailSmtpEmailAdapter(
+    {
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      user: "otp.zevats@gmail.com",
+      pass: "mock_google_app_password",
+      from: "Ravinarayan ERP <otp.zevats@gmail.com>",
+    },
+    mockTransporter
+  );
+
+  // 3. sendOtp verification
+  const sendResult = await smtpAdapter.sendOtp("rishabh27kumar2006@gmail.com", "482910");
+  assert(sendResult === true, "sendOtp returns true on SMTP server acceptance");
+  assert(capturedMailOptions.length === 1, "Transporter received sendMail call");
+
+  const sentOptions = capturedMailOptions[0];
+  assert(
+    sentOptions.from === "Ravinarayan ERP <otp.zevats@gmail.com>",
+    `Sender identity is Ravinarayan ERP <otp.zevats@gmail.com> (got "${sentOptions.from}")`
+  );
+  assert(
+    sentOptions.to === "rishabh27kumar2006@gmail.com",
+    `Recipient is authoritative address rishabh27kumar2006@gmail.com (got "${sentOptions.to}")`
+  );
+  assert(
+    sentOptions.subject === "Your Ravinarayan ERP Verification Code",
+    `Email subject correctly formatted (got "${sentOptions.subject}")`
+  );
+  assert(
+    sentOptions.text.includes("482910") && sentOptions.html.includes("482910"),
+    "Email text and HTML contain the 6-digit OTP code"
+  );
+  assert(
+    sentOptions.text.includes("10 minutes"),
+    "Email text includes 10-minute validity notice"
+  );
+
+  // 4. Transport failure handling
+  shouldTransporterSucceed = false;
+  const failResult = await smtpAdapter.sendOtp("rishabh27kumar2006@gmail.com", "999999");
+  assert(failResult === false, "sendOtp returns false when SMTP transport throws error");
+
+  const connResult = await smtpAdapter.verifyConnection();
+  assert(
+    connResult.success === false && typeof connResult.error === "string",
+    `verifyConnection reports connection error safely without crashing (got "${connResult.error}")`
+  );
+
+  // ---------------------------------------------------------------------------
+  // SUITE 12: Fail-Safe Provider Selection & Production Guard
+  // ---------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 12] Fail-Safe Provider Selection & Production Guard");
+
+  // Save current process.env
+  const origEnv = { ...process.env };
+
+  try {
+    // 1. EMAIL_ADAPTER=smtp with missing password throws clear error
+    process.env.EMAIL_ADAPTER = "smtp";
+    delete process.env.SMTP_APP_PASSWORD;
+    delete process.env.SMTP_PASS;
+    setEmailAdapterForTesting(null);
+
+    let smtpMissingPassError = "";
+    try {
+      getEmailAdapter();
+    } catch (err: any) {
+      smtpMissingPassError = err.message;
+    }
+    assert(
+      smtpMissingPassError.includes("SMTP_APP_PASSWORD is required when EMAIL_ADAPTER=smtp"),
+      `Explicit EMAIL_ADAPTER=smtp fails fast if password is missing (got "${smtpMissingPassError}")`
+    );
+
+    // 2. Production with EMAIL_ADAPTER=mock is forbidden
+    process.env.NODE_ENV = "production";
+    process.env.EMAIL_ADAPTER = "mock";
+    setEmailAdapterForTesting(null);
+
+    let prodMockError = "";
+    try {
+      getEmailAdapter();
+    } catch (err: any) {
+      prodMockError = err.message;
+    }
+    assert(
+      prodMockError.includes("MockEmailAdapter is strictly forbidden in production"),
+      `Production forbids MockEmailAdapter (got "${prodMockError}")`
+    );
+
+    // 3. Production with missing password throws error
+    delete process.env.EMAIL_ADAPTER;
+    setEmailAdapterForTesting(null);
+
+    let prodMissingPassError = "";
+    try {
+      getEmailAdapter();
+    } catch (err: any) {
+      prodMissingPassError = err.message;
+    }
+    assert(
+      prodMissingPassError.includes("Production requires valid SMTP_APP_PASSWORD"),
+      `Production enforces real SMTP delivery configuration (got "${prodMissingPassError}")`
+    );
+  } finally {
+    // Restore environment
+    process.env = origEnv;
+    setEmailAdapterForTesting(null);
+  }
+
+  // 4. Verify .env.example contains SMTP variables with placeholder values
+  const envExamplePath = path.resolve(projectRoot, ".env.example");
+  const envExampleContent = fs.readFileSync(envExamplePath, "utf-8");
+
+  assert(
+    envExampleContent.includes("EMAIL_ADAPTER=smtp"),
+    ".env.example specifies EMAIL_ADAPTER=smtp"
+  );
+  assert(
+    envExampleContent.includes("SMTP_HOST=smtp.gmail.com"),
+    ".env.example specifies SMTP_HOST=smtp.gmail.com"
+  );
+  assert(
+    envExampleContent.includes("SMTP_PORT=465"),
+    ".env.example specifies SMTP_PORT=465"
+  );
+  assert(
+    envExampleContent.includes("SMTP_USER=otp.zevats@gmail.com"),
+    ".env.example specifies sender account otp.zevats@gmail.com"
+  );
+  assert(
+    envExampleContent.includes("your_16_char_google_app_password_here"),
+    ".env.example uses placeholder for SMTP_APP_PASSWORD (no hardcoded secret)"
   );
 
   // ---------------------------------------------------------------------------
