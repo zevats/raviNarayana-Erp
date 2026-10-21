@@ -37,6 +37,7 @@ export function LoginForm() {
   const [challengeId, setChallengeId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otp, setOtp] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Forgot / Reset Password State
   const [forgotIdentifier, setForgotIdentifier] = useState("");
@@ -53,6 +54,14 @@ export function LoginForm() {
       setStep("RESET");
     }
   }, [resetTokenParam]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const interval = setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [resendCooldown]);
 
   // Handle Step 1: Username/Email + Password
   const handlePrimaryLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -92,6 +101,7 @@ export function LoginForm() {
       if (data.status === "OTP_REQUIRED") {
         setChallengeId(data.challengeId);
         setMaskedEmail(data.emailMasked);
+        setResendCooldown(60);
         setStep("OTP");
         setIsLoading(false);
         return;
@@ -147,6 +157,46 @@ export function LoginForm() {
     } catch (err) {
       console.error("OTP verification error:", err);
       setErrorMessage("Unable to verify code. Please check your network connection.");
+      setIsLoading(false);
+    }
+  };
+
+  // Handle OTP Resend
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || isLoading || !challengeId) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/otp/resend", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-RN-CSRF": "1",
+        },
+        body: JSON.stringify({ challengeId }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setErrorMessage(data.error || "Failed to resend verification code.");
+        setIsLoading(false);
+        return;
+      }
+
+      setChallengeId(data.challengeId);
+      if (data.emailMasked) {
+        setMaskedEmail(data.emailMasked);
+      }
+      setResendCooldown(60);
+      setSuccessMessage("A fresh verification code has been dispatched to your email.");
+      setOtp("");
+    } catch (err) {
+      console.error("OTP resend error:", err);
+      setErrorMessage("Unable to connect to the authentication service. Please check your network connection.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -441,7 +491,7 @@ export function LoginForm() {
               </p>
             </div>
 
-            <div className="pt-2 space-y-2">
+            <div className="pt-2 space-y-3">
               <button
                 type="submit"
                 disabled={isLoading || otp.length !== 6}
@@ -460,17 +510,31 @@ export function LoginForm() {
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setStep("LOGIN");
-                  setOtp("");
-                  setErrorMessage(null);
-                }}
-                className="w-full text-center text-xs font-sans font-semibold text-[#654735] hover:text-[#1A2E20] py-1.5 transition-colors"
-              >
-                &larr; Back to credential login
-              </button>
+              <div className="flex items-center justify-between text-xs font-sans pt-1">
+                <button
+                  type="button"
+                  onClick={handleResendOtp}
+                  disabled={resendCooldown > 0 || isLoading}
+                  className="text-[#654735] hover:text-[#1A2E20] font-semibold disabled:text-[#8E9F89] disabled:cursor-not-allowed transition-colors"
+                >
+                  {resendCooldown > 0
+                    ? `Resend code in ${resendCooldown}s`
+                    : "Resend verification code"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStep("LOGIN");
+                    setOtp("");
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  className="text-[#654735] hover:text-[#1A2E20] font-semibold transition-colors"
+                >
+                  &larr; Back to login
+                </button>
+              </div>
             </div>
           </form>
         )}

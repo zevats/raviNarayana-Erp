@@ -5,6 +5,7 @@ import { performDatabaseCleanupAsync } from "../database/cleanup";
 import { StaffUser, AuthenticatedUser } from "../../types";
 import { getEmailAdapter } from "../notifications/emailAdapter";
 import { recordAuditEventAsync } from "../audit/audit";
+import { getAdminEmail } from "../database/env";
 
 const SESSION_TTL_DAYS = 7;
 const MAX_IP_FAILED_ATTEMPTS = 20; // Layer 1: Max failed attempts from single IP across all accounts
@@ -269,16 +270,30 @@ export async function findStaffByIdentifier(
 ): Promise<(StaffUser & { password_hash: string }) | null> {
   const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
+  const targetAdminEmail = getAdminEmail();
+  const isAdminEmailInput = cleanId === targetAdminEmail;
 
-  const row = await db.queryOne<StaffUser & { password_hash: string }>(
+  let row = await db.queryOne<StaffUser & { password_hash: string }>(
     `SELECT
        id, username, email, full_name as "fullName", password_hash,
        role, is_active as "isActive", created_at as "createdAt",
        updated_at as "updatedAt", last_login_at as "lastLoginAt"
      FROM staff_users
-     WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1`,
+     WHERE (LOWER(username) = ? OR LOWER(email) = ? ${isAdminEmailInput ? "OR LOWER(username) = 'admin' OR role = 'SUPER_ADMIN'" : ""}) AND is_active = 1`,
     [cleanId, cleanId]
   );
+
+  // If this is the administrator account, ensure its email is synchronized to targetAdminEmail
+  if (row && (row.role === "SUPER_ADMIN" || row.username.toLowerCase() === "admin")) {
+    if (row.email.toLowerCase() !== targetAdminEmail) {
+      const now = new Date().toISOString();
+      await db.execute(
+        `UPDATE staff_users SET email = ?, updated_at = ? WHERE id = ?`,
+        [targetAdminEmail, now, row.id]
+      );
+      row.email = targetAdminEmail;
+    }
+  }
 
   return row || null;
 }
@@ -504,7 +519,17 @@ export async function createOtpChallenge(
   );
 
   // Dispatch OTP via Email Adapter
-  await getEmailAdapter().sendOtp(email, rawOtp);
+  let sent = false;
+  try {
+    sent = await getEmailAdapter().sendOtp(email, rawOtp);
+  } catch {
+    sent = false;
+  }
+
+  if (!sent) {
+    await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
+    throw new Error("Unable to deliver verification code. Please check your email configuration or contact system administrator.");
+  }
 
   return {
     challengeId,
@@ -550,8 +575,13 @@ export async function verifyOtpChallenge(
   }
 
   const presentedHash = crypto.createHash("sha256").update(cleanOtp).digest("hex");
+  const presentedBuf = Buffer.from(presentedHash, "hex");
+  const storedBuf = Buffer.from(challenge.otp_hash, "hex");
+  const isMatch =
+    presentedBuf.length === storedBuf.length &&
+    crypto.timingSafeEqual(presentedBuf, storedBuf);
 
-  if (presentedHash !== challenge.otp_hash) {
+  if (!isMatch) {
     const newAttempts = challenge.attempts + 1;
     if (newAttempts >= 3) {
       await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
@@ -592,6 +622,45 @@ export async function verifyOtpChallenge(
   };
 }
 
+/**
+ * Resends a verification OTP for an active challenge, respecting 60-second cooldown throttling.
+ */
+export async function resendOtpChallenge(
+  challengeId: string,
+  asyncDb?: AsyncDb
+): Promise<{ challengeId: string; maskedEmail: string }> {
+  const db = asyncDb || getAsyncDb();
+  const now = new Date().toISOString();
+
+  const challenge = await db.queryOne<{
+    id: string;
+    staff_id: string;
+    expires_at: string;
+  }>(
+    `SELECT id, staff_id, expires_at
+     FROM auth_challenges
+     WHERE id = ?`,
+    [challengeId]
+  );
+
+  if (!challenge || challenge.expires_at <= now) {
+    throw new Error("Verification session has expired. Please log in again.");
+  }
+
+  const staff = await db.queryOne<{ id: string; email: string; isActive: number }>(
+    `SELECT id, email, is_active as "isActive"
+     FROM staff_users
+     WHERE id = ? AND is_active = 1`,
+    [challenge.staff_id]
+  );
+
+  if (!staff) {
+    throw new Error("Account is inactive or no longer exists.");
+  }
+
+  return createOtpChallenge(staff.id, staff.email, db);
+}
+
 // -----------------------------------------------------------------------------
 // Password Recovery Flow (256-bit token, 1-hour expiry, single-use, session wipe)
 // -----------------------------------------------------------------------------
@@ -612,12 +681,7 @@ export async function initiatePasswordReset(
     return genericResponse;
   }
 
-  const staff = await db.queryOne<{ id: string; email: string; isActive: number }>(
-    `SELECT id, email, is_active as "isActive"
-     FROM staff_users
-     WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1`,
-    [cleanId, cleanId]
-  );
+  const staff = await findStaffByIdentifier(cleanId, db);
 
   if (!staff) {
     // Timing-safe: return generic response without leaking existence

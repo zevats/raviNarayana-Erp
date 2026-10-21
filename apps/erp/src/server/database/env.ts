@@ -12,6 +12,16 @@ export interface ValidatedAdminConfig {
 const DEMO_PASSWORD = "Ravinarayan@2026";
 const MIN_PASSWORD_LENGTH = 12;
 
+export const DEFAULT_ADMIN_EMAIL = "rishabh27kumar2006@gmail.com";
+
+/**
+ * Returns the authoritative administrator email address.
+ * Prefers ERP_ADMIN_EMAIL if explicitly set, defaulting to DEFAULT_ADMIN_EMAIL.
+ */
+export function getAdminEmail(): string {
+  return (process.env.ERP_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+}
+
 export function validateAdminEnvironment(staffCount: number): ValidatedAdminConfig | null {
   // If staff users already exist in the database, seeding is not needed.
   if (staffCount > 0) {
@@ -50,7 +60,7 @@ export function validateAdminEnvironment(staffCount: number): ValidatedAdminConf
   }
 
   const username = process.env.ERP_ADMIN_USERNAME || "admin";
-  const email = process.env.ERP_ADMIN_EMAIL || "admin@ravinarayan.in";
+  const email = getAdminEmail();
   const fullName = process.env.ERP_ADMIN_NAME || "Dr. Ravinder Gulia";
 
   return {
