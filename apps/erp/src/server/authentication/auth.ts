@@ -329,42 +329,47 @@ export async function createSession(
           [staffId]
         );
 
-        for (const s of existing) {
-          await tx.execute(
-            `INSERT INTO session_preemptions (id, token_hash, staff_id, preempted_at, expires_at, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [
-              `prm_${crypto.randomUUID()}`,
-              s.token_hash,
-              staffId,
-              now,
-              s.expires_at || expiresAt.toISOString(),
-              now,
-            ]
+        if (existing.length > 0) {
+          await Promise.all(
+            existing.map((s) =>
+              tx.execute(
+                `INSERT INTO session_preemptions (id, token_hash, staff_id, preempted_at, expires_at, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [
+                  `prm_${crypto.randomUUID()}`,
+                  s.token_hash,
+                  staffId,
+                  now,
+                  s.expires_at || expiresAt.toISOString(),
+                  now,
+                ]
+              )
+            )
           );
+          await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
         }
       } catch {
         // Fallback if session_preemptions is not yet migrated in test runner
+        await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
       }
-
-      await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
     }
 
-    await tx.execute(
-      `INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        tokenHash,
-        staffId,
-        expiresAt.toISOString(),
-        now,
-        metadata?.ip || null,
-        metadata?.userAgent || null,
-      ]
-    );
-
-    await tx.execute("UPDATE staff_users SET last_login_at = ? WHERE id = ?", [now, staffId]);
+    await Promise.all([
+      tx.execute(
+        `INSERT INTO sessions (id, token_hash, staff_id, expires_at, created_at, ip_address, user_agent)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          tokenHash,
+          staffId,
+          expiresAt.toISOString(),
+          now,
+          metadata?.ip || null,
+          metadata?.userAgent || null,
+        ]
+      ),
+      tx.execute("UPDATE staff_users SET last_login_at = ? WHERE id = ?", [now, staffId]),
+    ]);
   });
 
   // Throttled background cleanup for expired records (non-blocking)
@@ -574,21 +579,35 @@ export async function verifyOtpChallenge(
   const cleanOtp = (otp || "").trim();
   const now = new Date().toISOString();
 
+  // Unified single-roundtrip query joining auth_challenges and staff_users
   const challenge = await db.queryOne<{
     id: string;
     staff_id: string;
     otp_hash: string;
     attempts: number;
     expires_at: string;
+    username: string;
+    email: string;
+    fullName: string;
+    role: string;
+    isActive: number;
   }>(
-    `SELECT id, staff_id, otp_hash, attempts, expires_at
-     FROM auth_challenges
-     WHERE id = ?`,
+    `SELECT
+       c.id, c.staff_id, c.otp_hash, c.attempts, c.expires_at,
+       u.username, u.email, u.full_name as "fullName", u.role, u.is_active as "isActive"
+     FROM auth_challenges c
+     JOIN staff_users u ON c.staff_id = u.id
+     WHERE c.id = ?`,
     [challengeId]
   );
 
   if (!challenge) {
     throw new Error("Invalid or expired verification challenge. Please log in again.");
+  }
+
+  if (Number(challenge.isActive) !== 1) {
+    await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
+    throw new Error("Account is inactive or no longer exists.");
   }
 
   if (challenge.expires_at <= now) {
@@ -618,31 +637,23 @@ export async function verifyOtpChallenge(
     throw new Error(`Invalid verification code. ${3 - newAttempts} attempts remaining.`);
   }
 
-  // Verification succeeded: delete challenge (single-use) and fetch staff user details concurrently
-  const [, staff] = await Promise.all([
-    db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]),
-    db.queryOne<AuthenticatedUser & { isActive: number }>(
-      `SELECT id, username, email, full_name as "fullName", role, is_active as "isActive"
-       FROM staff_users
-       WHERE id = ? AND is_active = 1`,
-      [challenge.staff_id]
-    ),
-  ]);
-
-  if (!staff) {
-    throw new Error("Account is inactive or no longer exists.");
-  }
-
-  // Create session with Single Active Session Preemption
-  const { sessionToken, expiresAt } = await createSession(staff.id, { ...metadata, preempt: true }, db);
+  // Verification succeeded:
+  // Atomically claim challenge and create session inside a single transaction
+  const { sessionToken, expiresAt } = await db.transaction(async (tx) => {
+    const delRes = await tx.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
+    if (!delRes || delRes.changes === 0) {
+      throw new Error("Invalid or expired verification challenge. Please log in again.");
+    }
+    return createSession(challenge.staff_id, { ...metadata, preempt: true }, tx);
+  });
 
   return {
     user: {
-      id: staff.id,
-      username: staff.username,
-      email: staff.email,
-      fullName: staff.fullName,
-      role: staff.role as any,
+      id: challenge.staff_id,
+      username: challenge.username,
+      email: challenge.email,
+      fullName: challenge.fullName,
+      role: challenge.role as any,
     },
     sessionToken,
     expiresAt,

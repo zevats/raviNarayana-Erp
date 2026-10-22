@@ -130,8 +130,7 @@ export function LoginForm() {
 
       // Direct session login fallback if OTP is not required
       setLoginPhase("IDLE");
-      router.push(nextUrl);
-      router.refresh();
+      router.replace(nextUrl);
     } catch (err) {
       clearTimeout(phaseTimer);
       setLoginPhase("IDLE");
@@ -176,8 +175,8 @@ export function LoginForm() {
         return;
       }
 
-      router.push(nextUrl);
-      router.refresh();
+      // Verification succeeded: navigate cleanly to destination
+      router.replace(nextUrl);
     } catch (err) {
       console.error("OTP verification error:", err);
       setErrorMessage("Unable to verify code. Please check your network connection.");

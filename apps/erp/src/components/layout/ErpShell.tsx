@@ -80,16 +80,31 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     border: "border-[#1A2E20]/25",
   };
 
+  const [isPendingTransition, startTransition] = React.useTransition();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   useEffect(() => {
     setPendingHref(null);
   }, [pathname]);
 
-  const handleNavClick = (href: string) => {
-    if (pathname !== href) {
-      setPendingHref(href);
+  // Fallback safety timeout so pending states can never freeze the UI if a request is delayed
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timer = setTimeout(() => {
+      setPendingHref(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [pendingHref]);
+
+  const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (pathname === href) {
+      e.preventDefault();
+      return;
     }
+    setPendingHref(href);
+    startTransition(() => {
+      router.push(href);
+    });
   };
 
   const currentDateStr = new Intl.DateTimeFormat("en-IN", {
@@ -181,7 +196,9 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               <Link
                 key={item.name}
                 href={item.href}
-                onClick={() => handleNavClick(item.href)}
+                prefetch={true}
+                onMouseEnter={() => router.prefetch(item.href)}
+                onClick={(e) => handleNavClick(e, item.href)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                   isActive
                     ? "bg-[#263B2D] text-white shadow-xs border-l-4 border-[#B58A57] pl-3"
@@ -191,15 +208,15 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  {isPending ? (
-                    <Loader2 className="w-4 h-4 shrink-0 animate-spin text-[#C89F6B]" />
-                  ) : (
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${
-                        isActive ? "text-[#C89F6B]" : "text-white/60"
-                      }`}
-                    />
-                  )}
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-colors ${
+                      isActive
+                        ? "text-[#C89F6B]"
+                        : isPending
+                        ? "text-[#C89F6B] animate-pulse"
+                        : "text-white/60"
+                    }`}
+                  />
                   <span className="truncate">{item.name}</span>
                 </div>
                 {isActive && (
@@ -319,8 +336,9 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                   <Link
                     key={item.name}
                     href={item.href}
-                    onClick={() => {
-                      handleNavClick(item.href);
+                    prefetch={true}
+                    onClick={(e) => {
+                      handleNavClick(e, item.href);
                       setIsMobileMenuOpen(false);
                     }}
                     className={`flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium ${
@@ -332,11 +350,15 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      {isPending ? (
-                        <Loader2 className="w-4 h-4 shrink-0 animate-spin text-[#C89F6B]" />
-                      ) : (
-                        <Icon className={`w-4 h-4 ${isActive ? "text-[#C89F6B]" : "text-white/60"}`} />
-                      )}
+                      <Icon
+                        className={`w-4 h-4 shrink-0 transition-colors ${
+                          isActive
+                            ? "text-[#C89F6B]"
+                            : isPending
+                            ? "text-[#C89F6B] animate-pulse"
+                            : "text-white/60"
+                        }`}
+                      />
                       <span>{item.name}</span>
                     </div>
                     {isPending && !isActive && (

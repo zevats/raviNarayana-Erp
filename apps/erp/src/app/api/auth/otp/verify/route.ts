@@ -25,10 +25,14 @@ export async function POST(request: NextRequest) {
     const clientIp = getClientIp(request);
     const userAgent = request.headers.get("user-agent") || undefined;
 
+    const tVerifyStart = Date.now();
     const { user, sessionToken, expiresAt } = await verifyOtpChallenge(challengeId, otp, {
       ip: clientIp,
       userAgent,
     });
+    const verifyElapsedMs = Date.now() - tVerifyStart;
+
+    console.log(`[OTP Verification] challengeId=${challengeId} completed in ${verifyElapsedMs}ms`);
 
     const isProduction = process.env.NODE_ENV === "production";
     const response = NextResponse.json(
