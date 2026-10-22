@@ -40,9 +40,23 @@ export function NotificationBell() {
   };
 
   useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    // Defer initial notification fetch so primary route data gets immediate connection priority
+    const initialTimer = setTimeout(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        fetchNotifications();
+      }
+    }, 500);
+
+    const interval = setInterval(() => {
+      if (typeof document === "undefined" || document.visibilityState === "visible") {
+        fetchNotifications();
+      }
+    }, 30000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   // Close dropdown on click outside

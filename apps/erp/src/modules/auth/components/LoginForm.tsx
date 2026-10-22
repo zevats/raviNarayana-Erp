@@ -48,6 +48,7 @@ export function LoginForm() {
 
   // Distinct granular loading states to avoid UI race conditions
   const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
+  const [loginPhase, setLoginPhase] = useState<"IDLE" | "SIGNING_IN" | "SENDING_CODE" | "CODE_SENT">("IDLE");
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [isSubmittingForgot, setIsSubmittingForgot] = useState(false);
@@ -82,6 +83,12 @@ export function LoginForm() {
     }
 
     setIsSubmittingLogin(true);
+    setLoginPhase("SIGNING_IN");
+
+    // Progression timer: credential verification -> dispatching email via SMTP
+    const phaseTimer = setTimeout(() => {
+      setLoginPhase("SENDING_CODE");
+    }, 1100);
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -97,26 +104,37 @@ export function LoginForm() {
       });
 
       const data = await response.json().catch(() => ({}));
+      clearTimeout(phaseTimer);
 
       if (!response.ok) {
+        setLoginPhase("IDLE");
         setErrorMessage(data.error || "Invalid username or password. Please verify your credentials.");
         setIsSubmittingLogin(false);
         return;
       }
 
       if (data.status === "OTP_REQUIRED") {
+        setLoginPhase("CODE_SENT");
         setChallengeId(data.challengeId);
         setMaskedEmail(data.emailMasked);
         setResendCooldown(60);
-        setStep("OTP");
-        setIsSubmittingLogin(false);
+
+        // Brief affirmative transition before displaying OTP input
+        setTimeout(() => {
+          setStep("OTP");
+          setIsSubmittingLogin(false);
+          setLoginPhase("IDLE");
+        }, 350);
         return;
       }
 
       // Direct session login fallback if OTP is not required
+      setLoginPhase("IDLE");
       router.push(nextUrl);
       router.refresh();
     } catch (err) {
+      clearTimeout(phaseTimer);
+      setLoginPhase("IDLE");
       console.error("Login request error:", err);
       setErrorMessage("Unable to connect to the authentication service. Please check your network connection.");
       setIsSubmittingLogin(false);
@@ -447,16 +465,26 @@ export function LoginForm() {
               </div>
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 space-y-2">
               <button
                 type="submit"
                 disabled={isSubmittingLogin}
-                className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
+                className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-75 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
-                {isSubmittingLogin ? (
+                {loginPhase === "SIGNING_IN" ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
-                    <span>Verifying Credentials...</span>
+                    <span>Signing in…</span>
+                  </>
+                ) : loginPhase === "SENDING_CODE" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-[#D4AF37]" />
+                    <span>Sending verification code…</span>
+                  </>
+                ) : loginPhase === "CODE_SENT" ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-[#8E9F89]" />
+                    <span>Code sent</span>
                   </>
                 ) : (
                   <>
@@ -465,6 +493,12 @@ export function LoginForm() {
                   </>
                 )}
               </button>
+              {loginPhase === "SENDING_CODE" && (
+                <div className="flex items-center justify-center gap-2 text-xs font-sans text-[#5E7060] bg-[#1A2E20]/5 rounded-lg py-1.5 px-3">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#B58A57] animate-ping" />
+                  <span>Submitting OTP to your authorized email address…</span>
+                </div>
+              )}
             </div>
           </form>
         )}
@@ -515,7 +549,7 @@ export function LoginForm() {
                 {isVerifyingOtp ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
-                    <span>Verifying Code...</span>
+                    <span>Verifying code…</span>
                   </>
                 ) : (
                   <>
@@ -535,7 +569,7 @@ export function LoginForm() {
                   {isResendingOtp ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-[#654735]" />
-                      <span>Dispatching code...</span>
+                      <span>Sending new code…</span>
                     </>
                   ) : resendCooldown > 0 ? (
                     `Resend code in ${resendCooldown}s`

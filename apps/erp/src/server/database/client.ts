@@ -67,8 +67,8 @@ export function getPgSql(direct = false): postgres.Sql | null {
 
   const sqlClient = postgres(url, {
     max: 20,
-    idle_timeout: 30,
-    connect_timeout: 10,
+    idle_timeout: 120,
+    connect_timeout: 15,
   });
 
   globalForPg._rnPgSql = sqlClient;

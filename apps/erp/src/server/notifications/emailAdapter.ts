@@ -92,6 +92,8 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         pool: true,
         maxConnections: 3,
         maxMessages: 100,
+        rateDelta: 1000,
+        rateLimit: 5,
         auth: {
           user: config.user,
           pass: config.pass,
@@ -160,11 +162,15 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
   }
 }
 
-let activeAdapter: EmailAdapter | null = null;
+interface GlobalEmailContext {
+  _rnActiveEmailAdapter?: EmailAdapter | null;
+}
+
+const globalForEmail = globalThis as unknown as GlobalEmailContext;
 
 export function getEmailAdapter(): EmailAdapter {
-  if (activeAdapter) {
-    return activeAdapter;
+  if (globalForEmail._rnActiveEmailAdapter) {
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
   const adapterType = (process.env.EMAIL_ADAPTER || "").trim().toLowerCase();
@@ -178,14 +184,14 @@ export function getEmailAdapter(): EmailAdapter {
         "Configuration error: MockEmailAdapter is strictly forbidden in production environments."
       );
     }
-    activeAdapter = new MockEmailAdapter();
-    return activeAdapter;
+    globalForEmail._rnActiveEmailAdapter = new MockEmailAdapter();
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
   // 2. Automated test suite default (unless testing SMTP explicitly)
   if (isTest && adapterType !== "smtp") {
-    activeAdapter = new MockEmailAdapter();
-    return activeAdapter;
+    globalForEmail._rnActiveEmailAdapter = new MockEmailAdapter();
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
   // 3. SMTP configuration parameters
@@ -206,7 +212,7 @@ export function getEmailAdapter(): EmailAdapter {
         "Email configuration error: SMTP_APP_PASSWORD is required when EMAIL_ADAPTER=smtp."
       );
     }
-    activeAdapter = new GmailSmtpEmailAdapter({
+    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -214,7 +220,7 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
-    return activeAdapter;
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
   // 5. Production requirement: must configure real email delivery
@@ -224,7 +230,7 @@ export function getEmailAdapter(): EmailAdapter {
         "Email configuration error: Production requires valid SMTP_APP_PASSWORD for Gmail SMTP delivery."
       );
     }
-    activeAdapter = new GmailSmtpEmailAdapter({
+    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -232,12 +238,12 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
-    return activeAdapter;
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
   // 6. Local development: use SMTP if password is provided, otherwise fall back to mock
   if (smtpPass) {
-    activeAdapter = new GmailSmtpEmailAdapter({
+    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -245,13 +251,13 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
-    return activeAdapter;
+    return globalForEmail._rnActiveEmailAdapter;
   }
 
-  activeAdapter = new MockEmailAdapter();
-  return activeAdapter;
+  globalForEmail._rnActiveEmailAdapter = new MockEmailAdapter();
+  return globalForEmail._rnActiveEmailAdapter;
 }
 
 export function setEmailAdapterForTesting(adapter: EmailAdapter | null): void {
-  activeAdapter = adapter;
+  globalForEmail._rnActiveEmailAdapter = adapter;
 }

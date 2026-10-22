@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
@@ -16,6 +16,7 @@ import {
   X,
   ExternalLink,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import { AuthenticatedUser, ROLE_LABELS, ROLE_BADGE_STYLES } from "@/types";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
@@ -79,6 +80,18 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     border: "border-[#1A2E20]/25",
   };
 
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname]);
+
+  const handleNavClick = (href: string) => {
+    if (pathname !== href) {
+      setPendingHref(href);
+    }
+  };
+
   const currentDateStr = new Intl.DateTimeFormat("en-IN", {
     weekday: "short",
     day: "numeric",
@@ -89,6 +102,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
+    setPendingHref("/login");
 
     try {
       clearErpCache();
@@ -96,15 +110,35 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
         method: "POST",
         headers: { "X-RN-CSRF": "1" },
       });
-      window.location.href = "/login";
     } catch (err) {
       console.error("Logout error:", err);
+    } finally {
       window.location.href = "/login";
     }
   };
 
   return (
     <div className="min-h-screen bg-[#FAF8F5] flex flex-col lg:flex-row font-sans">
+      
+      {/* Sleek Botanical Top Route Progress Bar */}
+      {pendingHref && (
+        <div className="fixed top-0 left-0 right-0 h-[3px] z-50 bg-[#1A2E20]/20 overflow-hidden pointer-events-none">
+          <div className="h-full w-full bg-gradient-to-r from-[#B58A57] via-[#D4AF37] to-[#C89F6B] animate-pulse" />
+        </div>
+      )}
+
+      {/* Immediate Logout Revocation Feedback Modal */}
+      {isLoggingOut && (
+        <div className="fixed inset-0 z-50 bg-[#1A2E20]/60 backdrop-blur-xs flex items-center justify-center transition-all animate-fadeIn">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-[#8E9F89]/30 flex items-center gap-4 max-w-sm mx-4">
+            <Loader2 className="w-5 h-5 animate-spin text-[#B58A57] shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-[#1A2E20]">Signing out safely…</p>
+              <p className="text-xs text-[#5E7060]">Revoking active session credentials</p>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* ============================================================== */}
       {/* DESKTOP SIDEBAR (Botanical Deep Evergreen Luxury)              */}
@@ -140,28 +174,39 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
           {navItems.map((item) => {
             const isActive = pathname === item.href;
+            const isPending = pendingHref === item.href;
             const Icon = item.icon;
 
             return (
               <Link
                 key={item.name}
                 href={item.href}
+                onClick={() => handleNavClick(item.href)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                   isActive
                     ? "bg-[#263B2D] text-white shadow-xs border-l-4 border-[#B58A57] pl-3"
+                    : isPending
+                    ? "bg-[#263B2D]/80 text-[#C89F6B] border-l-4 border-[#C89F6B]/60 pl-3"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <Icon
-                    className={`w-4 h-4 shrink-0 ${
-                      isActive ? "text-[#C89F6B]" : "text-white/60"
-                    }`}
-                  />
+                  {isPending ? (
+                    <Loader2 className="w-4 h-4 shrink-0 animate-spin text-[#C89F6B]" />
+                  ) : (
+                    <Icon
+                      className={`w-4 h-4 shrink-0 ${
+                        isActive ? "text-[#C89F6B]" : "text-white/60"
+                      }`}
+                    />
+                  )}
                   <span className="truncate">{item.name}</span>
                 </div>
                 {isActive && (
                   <span className="w-1.5 h-1.5 rounded-full bg-[#C89F6B] shrink-0" />
+                )}
+                {isPending && !isActive && (
+                  <span className="text-[10px] text-[#C89F6B] font-mono font-medium animate-pulse">Loading</span>
                 )}
               </Link>
             );
@@ -267,23 +312,36 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
+                const isPending = pendingHref === item.href;
                 const Icon = item.icon;
 
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    onClick={() => setIsMobileMenuOpen(false)}
+                    onClick={() => {
+                      handleNavClick(item.href);
+                      setIsMobileMenuOpen(false);
+                    }}
                     className={`flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium ${
                       isActive
                         ? "bg-[#263B2D] text-white border-l-4 border-[#B58A57] pl-3"
+                        : isPending
+                        ? "bg-[#263B2D]/80 text-[#C89F6B] border-l-4 border-[#C89F6B]/60 pl-3"
                         : "text-white/80 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <Icon className={`w-4 h-4 ${isActive ? "text-[#C89F6B]" : "text-white/60"}`} />
+                      {isPending ? (
+                        <Loader2 className="w-4 h-4 shrink-0 animate-spin text-[#C89F6B]" />
+                      ) : (
+                        <Icon className={`w-4 h-4 ${isActive ? "text-[#C89F6B]" : "text-white/60"}`} />
+                      )}
                       <span>{item.name}</span>
                     </div>
+                    {isPending && !isActive && (
+                      <span className="text-[10px] text-[#C89F6B] font-mono">Loading</span>
+                    )}
                   </Link>
                 );
               })}
