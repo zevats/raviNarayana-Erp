@@ -79,7 +79,10 @@ export async function POST(request: NextRequest) {
     const cleanIdentifier = identifier.trim().toLowerCase();
 
     // Layered rate-limiting check
+    const tReqStart = Date.now();
+    const tRateStart = Date.now();
     const rateLimit = await checkRateLimitAndRecord(cleanIdentifier, clientIp);
+    const rateLimitMs = Date.now() - tRateStart;
     if (rateLimit.isLimited) {
       return NextResponse.json(
         {
@@ -95,7 +98,9 @@ export async function POST(request: NextRequest) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
+    const tUserStart = Date.now();
     const user = await findStaffByIdentifier(cleanIdentifier);
+    const findUserMs = Date.now() - tUserStart;
     if (!user) {
       await verifyPassword(password, DUMMY_PASSWORD_HASH);
       return NextResponse.json(
@@ -104,7 +109,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const tBcryptStart = Date.now();
     const isPasswordValid = await verifyPassword(password, user.password_hash);
+    const bcryptMs = Date.now() - tBcryptStart;
     if (!isPasswordValid) {
       return NextResponse.json(
         { error: "Invalid username or password. Please verify your credentials." },
@@ -112,10 +119,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await recordLoginSuccess(cleanIdentifier, clientIp);
+    // Run recordLoginSuccess concurrently with createOtpChallenge
+    const tOtpStart = Date.now();
+    const [, challenge] = await Promise.all([
+      recordLoginSuccess(cleanIdentifier, clientIp),
+      createOtpChallenge(user.id, user.email),
+    ]);
+    const otpFlowMs = Date.now() - tOtpStart;
+    const totalLoginMs = Date.now() - tReqStart;
 
-    // Generate 6-digit Email OTP Challenge (Do not issue session cookie after password alone)
-    const challenge = await createOtpChallenge(user.id, user.email);
+    console.log(
+      `[ERP Login Request] total=${totalLoginMs}ms | rateLimit=${rateLimitMs}ms | findUser=${findUserMs}ms | bcrypt=${bcryptMs}ms | otpFlow=${otpFlowMs}ms`
+    );
 
     return NextResponse.json(
       {

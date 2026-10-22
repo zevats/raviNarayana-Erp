@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/modules/auth/components/LoginForm";
 import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
+import { getEmailAdapter } from "@/server/notifications/emailAdapter";
 import { Loader2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,16 @@ export default async function LoginPage() {
     if (user) {
       redirect("/dashboard");
     }
+  }
+
+  // Pre-warm SMTP pool in background so OTP submission experiences zero connection setup delay
+  try {
+    const adapter = getEmailAdapter();
+    if (typeof adapter?.warmUp === "function") {
+      adapter.warmUp().catch(() => {});
+    }
+  } catch {
+    // Non-fatal if offline/mock
   }
 
   return (

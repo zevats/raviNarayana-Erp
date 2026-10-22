@@ -471,21 +471,33 @@ export async function revokeAllUserSessions(staffId: string, asyncDb?: AsyncDb):
 // -----------------------------------------------------------------------------
 // Email OTP Challenge Flow (10-minute expiry, max 3 attempts)
 // -----------------------------------------------------------------------------
+export interface OtpPersistenceMetrics {
+  throttleCheckMs: number;
+  cleanupPriorMs: number;
+  insertChallengeMs: number;
+  totalPersistenceMs: number;
+  smtpDispatchMs: number;
+  totalChallengeFlowMs: number;
+}
+
 export async function createOtpChallenge(
   staffId: string,
   email: string,
   asyncDb?: AsyncDb
-): Promise<{ challengeId: string; maskedEmail: string }> {
+): Promise<{ challengeId: string; maskedEmail: string; metrics?: OtpPersistenceMetrics }> {
+  const tFlowStart = Date.now();
   const db = asyncDb || getAsyncDb();
   const now = new Date();
 
   // Resend throttling: check if a challenge was created in the last 60 seconds
+  const tCheckStart = Date.now();
   const recent = await db.queryOne<{ created_at: string }>(
     `SELECT created_at FROM auth_challenges
      WHERE staff_id = ? AND expires_at > ?
      ORDER BY created_at DESC LIMIT 1`,
     [staffId, now.toISOString()]
   );
+  const throttleCheckMs = Date.now() - tCheckStart;
 
   if (recent) {
     const elapsedSec = (now.getTime() - new Date(recent.created_at).getTime()) / 1000;
@@ -496,7 +508,9 @@ export async function createOtpChallenge(
   }
 
   // Clear prior challenges for this staff member
+  const tCleanStart = Date.now();
   await db.execute("DELETE FROM auth_challenges WHERE staff_id = ?", [staffId]);
+  const cleanupPriorMs = Date.now() - tCleanStart;
 
   // Generate cryptographically secure 6-digit numeric OTP (100000 - 999999)
   const rawOtp = crypto.randomInt(100000, 1000000).toString();
@@ -505,28 +519,48 @@ export async function createOtpChallenge(
   const challengeId = `chl_${crypto.randomUUID()}`;
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
 
+  const tInsStart = Date.now();
   await db.execute(
     `INSERT INTO auth_challenges (id, staff_id, otp_hash, attempts, expires_at, created_at)
      VALUES (?, ?, ?, 0, ?, ?)`,
     [challengeId, staffId, otpHash, expiresAt, now.toISOString()]
   );
+  const insertChallengeMs = Date.now() - tInsStart;
+  const totalPersistenceMs = throttleCheckMs + cleanupPriorMs + insertChallengeMs;
 
   // Dispatch OTP via Email Adapter
+  const tSmtpStart = Date.now();
   let sent = false;
   try {
     sent = await getEmailAdapter().sendOtp(email, rawOtp);
   } catch {
     sent = false;
   }
+  const smtpDispatchMs = Date.now() - tSmtpStart;
 
   if (!sent) {
     await db.execute("DELETE FROM auth_challenges WHERE id = ?", [challengeId]);
     throw new Error("Unable to deliver verification code. Please check your email configuration or contact system administrator.");
   }
 
+  const totalChallengeFlowMs = Date.now() - tFlowStart;
+  const metrics: OtpPersistenceMetrics = {
+    throttleCheckMs,
+    cleanupPriorMs,
+    insertChallengeMs,
+    totalPersistenceMs,
+    smtpDispatchMs,
+    totalChallengeFlowMs,
+  };
+
+  console.log(
+    `[OTP Lifecycle] total=${totalChallengeFlowMs}ms | persistence=${totalPersistenceMs}ms (check=${throttleCheckMs}ms, clean=${cleanupPriorMs}ms, ins=${insertChallengeMs}ms) | smtp=${smtpDispatchMs}ms`
+  );
+
   return {
     challengeId,
     maskedEmail: maskEmail(email),
+    metrics,
   };
 }
 

@@ -9,9 +9,38 @@ export interface EmailMessage {
   timestamp: string;
 }
 
+export interface SmtpLifecycleMetrics {
+  adapterId: string;
+  isAdapterReused: boolean;
+  transporterId: string;
+  connectionId?: number;
+  isConnectionReused: boolean;
+  poolConnectionCounter: number;
+  poolActiveConnections: number;
+  connectionAcquireMs: number;
+  submissionMs: number;
+  totalSmtpMs: number;
+  accepted: boolean;
+  responseSummary?: string;
+  timestamp: string;
+}
+
 export interface EmailAdapter {
   sendOtp(to: string, otp: string): Promise<boolean>;
   sendPasswordReset(to: string, resetUrl: string): Promise<boolean>;
+  verifyConnection?(): Promise<{ success: boolean; error?: string }>;
+  verifyDetailed?(): Promise<{
+    success: boolean;
+    timings: {
+      tcpTlsMs: number;
+      authGreetingMs: number;
+      totalVerifyMs: number;
+    };
+    error?: string;
+  }>;
+  warmUp?(): Promise<boolean>;
+  getLastMetrics?(): SmtpLifecycleMetrics | null;
+  getPoolStats?(): { connectionCounter: number; activeConnections: number; availableConnections: number };
 }
 
 export interface SmtpConfig {
@@ -38,6 +67,8 @@ export function clearMockSentEmails(): void {
  * Never persists or exposes plain text secrets outside of test inspection.
  */
 export class MockEmailAdapter implements EmailAdapter {
+  public isReusedInstance = false;
+
   async sendOtp(to: string, otp: string): Promise<boolean> {
     const rendered = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
     mockSentEmails.push({
@@ -60,16 +91,51 @@ export class MockEmailAdapter implements EmailAdapter {
     });
     return true;
   }
+
+  async warmUp(): Promise<boolean> {
+    return true;
+  }
+
+  getLastMetrics(): SmtpLifecycleMetrics | null {
+    return null;
+  }
+
+  getPoolStats() {
+    return { connectionCounter: 0, activeConnections: 0, availableConnections: 0 };
+  }
+}
+
+interface LastSendMeta {
+  connId: number;
+  reused: boolean;
+  connectMs: number;
+  submissionMs: number;
+  accepted: boolean;
+  response?: string;
 }
 
 /**
  * Production-ready Gmail SMTP Email Adapter using Nodemailer.
  * Uses smtp.gmail.com over TLS (port 465) or STARTTLS (port 587) with App Passwords.
+ * Features structured SMTP lifecycle timing, pool connection reuse, and optional pre-warming.
  */
 export class GmailSmtpEmailAdapter implements EmailAdapter {
   private transporter: Transporter;
   private from: string;
   private user: string;
+  private pass: string;
+  private host: string;
+  private port: number;
+  private secure: boolean;
+
+  public readonly adapterId: string;
+  public readonly transporterId: string;
+  public readonly initTimestamp: string;
+  public isReusedInstance = false;
+
+  private latestMetrics: SmtpLifecycleMetrics | null = null;
+  private lastSendMeta: LastSendMeta | null = null;
+  private warmingPromise: Promise<boolean> | null = null;
 
   constructor(config: SmtpConfig, customTransporter?: Transporter) {
     if (!config.user || !config.pass) {
@@ -78,22 +144,32 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
       );
     }
     this.user = config.user;
+    this.pass = config.pass;
+    this.host = config.host || "smtp.gmail.com";
+    this.port = config.port ?? 465;
+    this.secure = config.secure ?? (this.port === 465);
     this.from = config.from || `Ravinarayan ERP <${config.user || DEFAULT_SMTP_USER}>`;
+
+    this.adapterId = `adapter_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this.transporterId = `txp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    this.initTimestamp = new Date().toISOString();
 
     if (customTransporter) {
       this.transporter = customTransporter;
     } else {
-      const port = config.port ?? 465;
-      const secure = config.secure ?? (port === 465);
       this.transporter = nodemailer.createTransport({
-        host: config.host || "smtp.gmail.com",
-        port,
-        secure,
+        host: this.host,
+        port: this.port,
+        secure: this.secure,
         pool: true,
         maxConnections: 3,
         maxMessages: 100,
         rateDelta: 1000,
         rateLimit: 5,
+        idleTimeout: 120000, // 2 minutes (safely below Gmail idle disconnect limit)
+        socketTimeout: 30000, // 30 seconds socket read/write timeout
+        connectionTimeout: 15000, // 15 seconds connection acquisition timeout
+        greetingTimeout: 10000, // 10 seconds greeting timeout
         auth: {
           user: config.user,
           pass: config.pass,
@@ -103,9 +179,64 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         },
       });
     }
+
+    // Attach structured timing hooks to the internal Nodemailer pool
+    this.attachPoolInstrumentation();
+  }
+
+  private attachPoolInstrumentation(): void {
+    const innerPool = (this.transporter as any)?.transporter;
+    if (!innerPool || typeof innerPool._createConnection !== "function") {
+      return;
+    }
+
+    const origCreate = innerPool._createConnection.bind(innerPool);
+    innerPool._createConnection = () => {
+      const resource = origCreate();
+      const connId = resource.id;
+
+      // Wrap resource.connect to record socket acquisition, greeting, and auth
+      const origConnect = resource.connect.bind(resource);
+      resource.connect = (cb: any) => {
+        const connectStart = Date.now();
+        return origConnect((err: any, res: any) => {
+          resource._lastConnectMs = Date.now() - connectStart;
+          return cb(err, res);
+        });
+      };
+
+      // Wrap resource.send to record message transmission and detect socket reuse
+      const origSend = resource.send.bind(resource);
+      resource.send = (mail: any, cb: any) => {
+        const reused = resource.messages > 0;
+        const sendStart = Date.now();
+        return origSend(mail, (err: any, info: any) => {
+          const sendDuration = Date.now() - sendStart;
+          this.lastSendMeta = {
+            connId,
+            reused,
+            connectMs: resource._lastConnectMs || 0,
+            submissionMs: sendDuration,
+            accepted: Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0),
+            response: typeof info?.response === "string" ? info.response.slice(0, 100).trim() : undefined,
+          };
+          return cb(err, info);
+        });
+      };
+
+      return resource;
+    };
   }
 
   async sendOtp(to: string, otp: string): Promise<boolean> {
+    const t0 = Date.now();
+    this.lastSendMeta = null;
+    const innerPool = (this.transporter as any)?.transporter;
+    const poolStatsBefore = {
+      counter: innerPool?._connectionCounter || 0,
+      active: innerPool?._connections?.length || 0,
+    };
+
     try {
       const rendered = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
       const info = await this.transporter.sendMail({
@@ -115,12 +246,40 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         text: rendered.text,
         html: rendered.html,
       });
+
+      const totalSmtpMs = Date.now() - t0;
+      const sendMeta = this.lastSendMeta as LastSendMeta | null;
       const accepted = Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0);
+      const isReused = Boolean(sendMeta?.reused);
+      const connAcquireMs = isReused ? 0 : (sendMeta?.connectMs || 0);
+      const submissionMs = sendMeta?.submissionMs ?? (totalSmtpMs - connAcquireMs);
+
+      this.latestMetrics = {
+        adapterId: this.adapterId,
+        isAdapterReused: this.isReusedInstance,
+        transporterId: this.transporterId,
+        connectionId: sendMeta?.connId,
+        isConnectionReused: isReused,
+        poolConnectionCounter: innerPool?._connectionCounter || poolStatsBefore.counter,
+        poolActiveConnections: innerPool?._connections?.length || poolStatsBefore.active,
+        connectionAcquireMs: connAcquireMs,
+        submissionMs,
+        totalSmtpMs,
+        accepted,
+        responseSummary: sendMeta?.response || (accepted ? "250 OK" : "Rejected"),
+        timestamp: new Date().toISOString(),
+      };
+
+      // Structured logging without secrets
+      console.log(
+        `[SMTP Delivery] cid=#${this.latestMetrics.connectionId || 1} | reused=${isReused} | acquire=${connAcquireMs}ms | submission=${submissionMs}ms | total=${totalSmtpMs}ms | accepted=${accepted}`
+      );
+
       return accepted;
     } catch (err: any) {
-      // Safe sanitized logging: NEVER log OTP code, credentials, or auth headers
+      const totalSmtpMs = Date.now() - t0;
       console.error(
-        "[SMTP Delivery Error] Failed to send OTP email:",
+        `[SMTP Delivery Error] Failed after ${totalSmtpMs}ms:`,
         err?.message || "Unknown SMTP transport error"
       );
       return false;
@@ -160,6 +319,148 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
       };
     }
   }
+
+  /**
+   * Diagnostic verification helper that measures individual SMTP stages
+   * (TCP/TLS connect, EHLO greeting, AUTH LOGIN) without sending an email.
+   */
+  async verifyDetailed(): Promise<{
+    success: boolean;
+    timings: {
+      tcpTlsMs: number;
+      authGreetingMs: number;
+      totalVerifyMs: number;
+    };
+    error?: string;
+  }> {
+    const v0 = Date.now();
+    try {
+      // Direct fine-grained measurement using SMTPConnection
+      const SMTPConnection = require(require.resolve("nodemailer/lib/smtp-connection", { paths: [process.cwd()] }));
+      const conn = new SMTPConnection({
+        host: this.host,
+        port: this.port,
+        secure: this.secure,
+        tls: { rejectUnauthorized: true },
+      });
+
+      const tConnectStart = Date.now();
+      await new Promise<void>((resolve, reject) => {
+        conn.connect((err: any) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+      const tcpTlsMs = Date.now() - tConnectStart;
+
+      const tAuthStart = Date.now();
+      await new Promise<void>((resolve, reject) => {
+        conn.login({ user: this.user, pass: this.pass }, (err: any) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+      const authGreetingMs = Date.now() - tAuthStart;
+
+      conn.quit();
+      const totalVerifyMs = Date.now() - v0;
+
+      return {
+        success: true,
+        timings: {
+          tcpTlsMs,
+          authGreetingMs,
+          totalVerifyMs,
+        },
+      };
+    } catch (err: any) {
+      try {
+        await this.transporter.verify();
+        const totalVerifyMs = Date.now() - v0;
+        return {
+          success: true,
+          timings: {
+            tcpTlsMs: 0,
+            authGreetingMs: totalVerifyMs,
+            totalVerifyMs,
+          },
+        };
+      } catch (fallbackErr: any) {
+        return {
+          success: false,
+          timings: {
+            tcpTlsMs: 0,
+            authGreetingMs: 0,
+            totalVerifyMs: Date.now() - v0,
+          },
+          error: fallbackErr?.message || err?.message || "Verification failed",
+        };
+      }
+    }
+  }
+
+  /**
+   * Safe background pre-warming for SMTP connection pool.
+   * Ensures an authenticated connection is standing by in the pool,
+   * eliminating connection acquisition overhead from user OTP requests.
+   */
+  async warmUp(): Promise<boolean> {
+    const innerPool = (this.transporter as any)?.transporter;
+    if (!innerPool || innerPool._closed || typeof innerPool._createConnection !== "function") {
+      return false;
+    }
+
+    const hasAvailable =
+      Array.isArray(innerPool._connections) &&
+      innerPool._connections.some((c: any) => c.available && c._connected);
+    if (hasAvailable) {
+      return true;
+    }
+
+    if (this.warmingPromise) {
+      return this.warmingPromise;
+    }
+
+    this.warmingPromise = (async () => {
+      try {
+        const conn = innerPool._createConnection();
+        await new Promise<void>((resolve, reject) => {
+          conn.connect((err: any) => {
+            if (err) return reject(err);
+            conn.available = true;
+            conn._startIdleTimer();
+            conn.emit("available");
+            resolve();
+          });
+        });
+        return true;
+      } catch (err: any) {
+        console.warn("[SMTP Warmup] Non-fatal warmup failure:", err?.message || "Connection failed");
+        return false;
+      } finally {
+        this.warmingPromise = null;
+      }
+    })();
+
+    return this.warmingPromise;
+  }
+
+  getLastMetrics(): SmtpLifecycleMetrics | null {
+    return this.latestMetrics;
+  }
+
+  getPoolStats(): { connectionCounter: number; activeConnections: number; availableConnections: number } {
+    const innerPool = (this.transporter as any)?.transporter;
+    if (!innerPool || !Array.isArray(innerPool._connections)) {
+      return { connectionCounter: 0, activeConnections: 0, availableConnections: 0 };
+    }
+    const available = innerPool._connections.filter((c: any) => c.available && c._connected).length;
+    return {
+      connectionCounter: innerPool._connectionCounter || 0,
+      activeConnections: innerPool._connections.length,
+      availableConnections: available,
+    };
+  }
 }
 
 interface GlobalEmailContext {
@@ -170,6 +471,9 @@ const globalForEmail = globalThis as unknown as GlobalEmailContext;
 
 export function getEmailAdapter(): EmailAdapter {
   if (globalForEmail._rnActiveEmailAdapter) {
+    if ("isReusedInstance" in (globalForEmail._rnActiveEmailAdapter as any)) {
+      (globalForEmail._rnActiveEmailAdapter as any).isReusedInstance = true;
+    }
     return globalForEmail._rnActiveEmailAdapter;
   }
 
@@ -212,7 +516,7 @@ export function getEmailAdapter(): EmailAdapter {
         "Email configuration error: SMTP_APP_PASSWORD is required when EMAIL_ADAPTER=smtp."
       );
     }
-    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
+    const adapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -220,6 +524,11 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
+    // Trigger non-blocking pool warmup
+    if (!isTest) {
+      adapter.warmUp().catch(() => {});
+    }
+    globalForEmail._rnActiveEmailAdapter = adapter;
     return globalForEmail._rnActiveEmailAdapter;
   }
 
@@ -230,7 +539,7 @@ export function getEmailAdapter(): EmailAdapter {
         "Email configuration error: Production requires valid SMTP_APP_PASSWORD for Gmail SMTP delivery."
       );
     }
-    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
+    const adapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -238,12 +547,14 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
+    adapter.warmUp().catch(() => {});
+    globalForEmail._rnActiveEmailAdapter = adapter;
     return globalForEmail._rnActiveEmailAdapter;
   }
 
   // 6. Local development: use SMTP if password is provided, otherwise fall back to mock
   if (smtpPass) {
-    globalForEmail._rnActiveEmailAdapter = new GmailSmtpEmailAdapter({
+    const adapter = new GmailSmtpEmailAdapter({
       host: smtpHost,
       port: smtpPort,
       secure: smtpSecure,
@@ -251,6 +562,10 @@ export function getEmailAdapter(): EmailAdapter {
       pass: smtpPass,
       from: emailFrom,
     });
+    if (!isTest) {
+      adapter.warmUp().catch(() => {});
+    }
+    globalForEmail._rnActiveEmailAdapter = adapter;
     return globalForEmail._rnActiveEmailAdapter;
   }
 
