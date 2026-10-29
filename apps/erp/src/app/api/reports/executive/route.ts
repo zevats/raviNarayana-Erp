@@ -34,8 +34,15 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getAsyncDb();
+    const url = new URL(request.url);
+    const startDateParam = url.searchParams.get("startDate") || undefined;
+    const endDateParam = url.searchParams.get("endDate") || undefined;
+    const division = (url.searchParams.get("division") as "COMBINED" | "PG" | "TIFFIN") || "COMBINED";
+
     const todayIso = new Date().toISOString().slice(0, 10);
     const currentMonthPrefix = todayIso.slice(0, 7);
+    const startDate = startDateParam || `${currentMonthPrefix}-01`;
+    const endDate = endDateParam || todayIso;
 
     // 1. Rooms & Occupancy
     const roomRow = await db.queryOne<{ totalRooms: number | string; totalCapacity: number | string }>(`
@@ -52,9 +59,9 @@ export async function GET(request: NextRequest) {
       WHERE status = 'ACTIVE'
     `);
 
-    const totalRooms = Number(roomRow?.totalRooms || 0);
-    const totalCapacity = Number(roomRow?.totalCapacity || 0);
-    const occupiedBeds = Number(activeStaysRow?.occupiedBeds || 0);
+    const totalRooms = division === "TIFFIN" ? 0 : Number(roomRow?.totalRooms || 0);
+    const totalCapacity = division === "TIFFIN" ? 0 : Number(roomRow?.totalCapacity || 0);
+    const occupiedBeds = division === "TIFFIN" ? 0 : Number(activeStaysRow?.occupiedBeds || 0);
     const availableBeds = Math.max(0, totalCapacity - occupiedBeds);
     const occupancyRate = totalCapacity > 0 ? ((occupiedBeds / totalCapacity) * 100).toFixed(1) : "0.0";
 
@@ -63,27 +70,33 @@ export async function GET(request: NextRequest) {
       totalRentCollected: number | string;
       totalRentBilled: number | string;
       totalExpensesPaid: number | string;
+      pgExpensesPaid: number | string;
+      tiffinExpensesPaid: number | string;
       totalDepositsHeld: number | string;
+      totalTiffinCollected: number | string;
     }>(`
       SELECT
         COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
         COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
         COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
-        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld"
+        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
+        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
+        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld",
+        COALESCE(SUM(CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
       FROM financial_transactions
     `);
 
     const rentMonthRow = await db.queryOne<{ rentMonth: number | string }>(`
       SELECT COALESCE(SUM(amount), 0) as "rentMonth"
       FROM financial_transactions
-      WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date LIKE ?
-    `, [`${currentMonthPrefix}%`]);
+      WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+    `, [startDate, endDate]);
 
     const expMonthRow = await db.queryOne<{ expMonth: number | string }>(`
       SELECT COALESCE(SUM(amount), 0) as "expMonth"
       FROM financial_transactions
-      WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date LIKE ?
-    `, [`${currentMonthPrefix}%`]);
+      WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+    `, [startDate, endDate]);
 
     const overdueCountRow = await db.queryOne<{ count: number | string }>(`
       SELECT COUNT(*) as count FROM (
@@ -104,27 +117,33 @@ export async function GET(request: NextRequest) {
       FROM financial_transactions
       WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' 
         AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') 
-        AND transaction_date LIKE ?
-    `, [`${currentMonthPrefix}%`]);
+        AND transaction_date >= ? AND transaction_date <= ?
+    `, [startDate, endDate]);
 
     const tiffinRevRow = await db.queryOne<{ tiffinRev: number | string }>(`
       SELECT COALESCE(SUM(amount), 0) as "tiffinRev"
       FROM financial_transactions
-      WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED'
-        AND (category = 'TIFFIN' OR description LIKE '%tiffin%')
-        AND transaction_date LIKE ?
-    `, [`${currentMonthPrefix}%`]);
+      WHERE (
+        transaction_type = 'TIFFIN_PAYMENT'
+        OR (transaction_type = 'RENT_PAYMENT' AND (category = 'TIFFIN' OR description LIKE '%tiffin%'))
+      ) AND status = 'POSTED'
+        AND transaction_date >= ? AND transaction_date <= ?
+    `, [startDate, endDate]);
 
-    const totalRentCollected = Number(finSummary?.totalRentCollected || 0);
-    const totalRentBilled = Number(finSummary?.totalRentBilled || 0);
-    const totalExpensesPaid = Number(finSummary?.totalExpensesPaid || 0);
-    const totalDepositsHeld = Number(finSummary?.totalDepositsHeld || 0);
-    const currentMonthRent = Number(rentMonthRow?.rentMonth || 0);
+    const totalRentCollected = division === "TIFFIN" ? 0 : Number(finSummary?.totalRentCollected || 0);
+    const totalRentBilled = division === "TIFFIN" ? 0 : Number(finSummary?.totalRentBilled || 0);
+    const totalExpensesPaid = division === "PG"
+      ? Number(finSummary?.pgExpensesPaid || 0)
+      : division === "TIFFIN"
+      ? Number(finSummary?.tiffinExpensesPaid || 0)
+      : Number(finSummary?.totalExpensesPaid || 0);
+    const totalDepositsHeld = division === "TIFFIN" ? 0 : Number(finSummary?.totalDepositsHeld || 0);
+    const currentMonthRent = division === "TIFFIN" ? 0 : Number(rentMonthRow?.rentMonth || 0);
     const currentMonthExp = Number(expMonthRow?.expMonth || 0);
-    const outstandingRent = Math.max(0, totalRentBilled - totalRentCollected);
-    const overdueCount = Number(overdueCountRow?.count || 0);
-    const kitchenCosts = Number(kitchenCostRow?.kitchenCost || 0);
-    const tiffinRevenue = Number(tiffinRevRow?.tiffinRev || 0);
+    const outstandingRent = division === "TIFFIN" ? 0 : Math.max(0, totalRentBilled - totalRentCollected);
+    const overdueCount = division === "TIFFIN" ? 0 : Number(overdueCountRow?.count || 0);
+    const kitchenCosts = division === "PG" ? 0 : Number(kitchenCostRow?.kitchenCost || 0);
+    const tiffinRevenue = division === "PG" ? 0 : Number(tiffinRevRow?.tiffinRev || 0);
     const tiffinNetResult = tiffinRevenue - kitchenCosts;
 
     // 3. Kitchen Operations
@@ -205,7 +224,7 @@ export async function GET(request: NextRequest) {
       ["Ravinarayan PG Guesthouse - Executive Operations & Financial Summary"],
       ["Generated At", new Date().toISOString(), "ISO-8601 Timestamp"],
       ["Prepared For", "Dr. Ravinder Gulia - Owner", "Super Admin"],
-      ["Reporting Period", "Current Month (" + currentMonthPrefix + ")", "Active Operational Period"],
+      ["Reporting Period", `${startDate} to ${endDate}`, `Division: ${division}`],
       [],
       ["SECTION", "METRIC", "VALUE", "UNIT / NOTES"],
       // Occupancy

@@ -1,0 +1,26 @@
+# Isolated Local Development PostgreSQL
+# For Ravi Narayana ERP local offline development only.
+# Binds strictly to 127.0.0.1 on the host machine. Remote connections are prohibited.
+
+services:
+  postgres-local:
+    image: postgres:16-alpine
+    container_name: ravinarayana-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LOCAL_DB_USER:-erp_local_user}
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:-erp_local_password}
+      POSTGRES_DB: ${LOCAL_DB_NAME:-ravinarayana_erp_local}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ravinarayana_pgdata_local:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_DB_USER:-erp_local_user} -d ${LOCAL_DB_NAME:-ravinarayana_erp_local}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ravinarayana_pgdata_local:
+    name: ravinarayana_pgdata_local

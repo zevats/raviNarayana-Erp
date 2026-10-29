@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import { X, Receipt, Check, Copy, Printer } from "lucide-react";
-import { FinancialTransaction } from "@/types";
+import React, { useState, useEffect } from "react";
+import { X, Receipt, Check, Copy, Printer, FileText, ExternalLink } from "lucide-react";
+import { FinancialTransaction, DocumentAttachment } from "@/types";
 import { formatINR } from "../../utils/formatUtils";
 import { formatIndianDate } from "../../utils/dateUtils";
 
@@ -13,6 +13,18 @@ interface ReceiptModalProps {
 
 export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
   const [copied, setCopied] = useState(false);
+  const [attachedDocs, setAttachedDocs] = useState<DocumentAttachment[]>([]);
+
+  useEffect(() => {
+    if (transaction?.id) {
+      fetch(`/api/documents?transactionId=${transaction.id}`)
+        .then((res) => (res.ok ? res.json() : { documents: [] }))
+        .then((data) => setAttachedDocs(data.documents || []))
+        .catch(() => setAttachedDocs([]));
+    } else {
+      setAttachedDocs([]);
+    }
+  }, [transaction?.id]);
 
   if (!transaction) return null;
 
@@ -147,6 +159,34 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
             <div className="flex items-center justify-between pb-2.5 border-b border-[#8E9F89]/20">
               <span className="text-[#5E715C]">Description</span>
               <span className="text-[#1A2E20] text-right max-w-[220px]">{transaction.description}</span>
+            </div>
+          )}
+
+          {/* Attached Document Evidence (Task 01B.57) */}
+          {attachedDocs.length > 0 && (
+            <div className="p-2.5 bg-stone-50 border border-[#8E9F89]/25 rounded-xl space-y-1.5 print:hidden">
+              <span className="text-[10px] font-semibold text-[#5E715C] uppercase tracking-wider block">
+                Attached Receipt Evidence ({attachedDocs.length})
+              </span>
+              {attachedDocs.map((doc) => (
+                <div key={doc.id} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <FileText className="w-3.5 h-3.5 text-[#1A2E20] shrink-0" />
+                    <span className="text-[11px] font-medium text-[#1A2E20] truncate">
+                      {doc.displayFilename}
+                    </span>
+                  </div>
+                  <a
+                    href={`/api/documents/${doc.id}/download?disposition=inline`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border border-stone-200 hover:bg-stone-100 rounded text-[10px] font-medium text-[#1A2E20] transition-colors"
+                  >
+                    <span>View</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              ))}
             </div>
           )}
 

@@ -78,14 +78,34 @@ async function runIntegrationAndReadinessTests() {
     assert(!rehearsalBlocked.safe, "Blocks rehearsal database connection when ALLOW_TEST_MIGRATION=true is missing");
     assert(rehearsalBlocked.isRehearsalDatabase === true, "Correctly identifies designated rehearsal target host and db");
 
+    // Since Task 01B.73 the rehearsal database is permanently blocked; the opt-in flag is not an override.
     process.env.ALLOW_TEST_MIGRATION = "true";
-    const rehearsalAllowed = validatePostgresTargetSafety(`postgres://user:pw@${rehearsalHost}:5432/neondb`);
-    assert(rehearsalAllowed.safe, "Permits rehearsal database access when ALLOW_TEST_MIGRATION=true is explicitly set");
+    const rehearsalWithFlag = validatePostgresTargetSafety(`postgres://user:pw@${rehearsalHost}:5432/neondb`);
+    assert(!rehearsalWithFlag.safe, "Rehearsal database stays blocked even when ALLOW_TEST_MIGRATION=true is set");
   } finally {
     if (origHost) process.env.EXPECTED_NEON_HOST = origHost; else delete process.env.EXPECTED_NEON_HOST;
     if (origDb) process.env.EXPECTED_NEON_DATABASE = origDb; else delete process.env.EXPECTED_NEON_DATABASE;
     if (origOptIn) process.env.ALLOW_TEST_MIGRATION = origOptIn; else delete process.env.ALLOW_TEST_MIGRATION;
   }
+
+  // Default-deny: remote hosts are rejected even when no EXPECTED_NEON_HOST is configured (ISSUE-003).
+  delete process.env.EXPECTED_NEON_HOST;
+  const remoteNeon = validatePostgresTargetSafety("postgres://user:pw@ep-other-999.us-east-2.aws.neon.tech:5432/neondb");
+  assert(!remoteNeon.safe, "Rejects an unconfigured remote Neon host (no fail-open when EXPECTED_NEON_HOST is unset)");
+  const remoteLocalName = validatePostgresTargetSafety("postgres://user:pw@db.example.com:5432/ravinarayana_erp_local");
+  assert(!remoteLocalName.safe, "Rejects a remote host even when the database name looks local");
+  const protectedOnLoopback = validatePostgresTargetSafety("postgres://user:pw@127.0.0.1:5432/ravi-narayana-erp-phase01b-test");
+  assert(!protectedOnLoopback.safe && protectedOnLoopback.isRehearsalDatabase, "Rejects the protected rehearsal name on any host");
+  const encodedProtected = validatePostgresTargetSafety("postgres://user:pw@127.0.0.1:5432/ravi-narayana-erp-phase01b%2Dtest");
+  assert(!encodedProtected.safe, "Rejects a percent-encoded protected rehearsal name");
+  const loopbackNeondb = validatePostgresTargetSafety("postgres://user:pw@127.0.0.1:5432/neondb");
+  assert(!loopbackNeondb.safe, "Rejects generic database names (neondb) even on loopback");
+  const httpTarget = validatePostgresTargetSafety("http://127.0.0.1:5432/ravinarayana_erp_local");
+  assert(!httpTarget.safe, "Rejects non-postgres protocols");
+  const localTarget = validatePostgresTargetSafety("postgres://user:pw@127.0.0.1:5432/ravinarayana_erp_local");
+  assert(localTarget.safe, "Accepts the loopback local development database");
+  const verifyTarget = validatePostgresTargetSafety("postgresql://u:p@localhost:55432/rn_erp_verify_test");
+  assert(verifyTarget.safe, "Accepts a loopback disposable verification database");
 
   // ---------------------------------------------------------------------------
   // SUITE 2: PostgreSQL Single-Database Engine Enforcement

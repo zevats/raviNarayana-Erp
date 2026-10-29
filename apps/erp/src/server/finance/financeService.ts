@@ -6,22 +6,19 @@ import {
   AuthenticatedUser,
   TransactionType,
   PaymentMethod,
+  CANONICAL_PAYMENT_METHODS,
+  normalizePaymentMethod,
   ExpenseCategory,
   TransactionStatus,
   FinancialTransaction,
   ResidentFinancialSummary,
   CashbookSummary,
+  ClosingDivision,
 } from "@/types";
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-const VALID_PAYMENT_METHODS: readonly PaymentMethod[] = [
-  "CASH",
-  "UPI",
-  "BANK_TRANSFER",
-  "CHEQUE",
-  "OTHER",
-];
+const VALID_PAYMENT_METHODS: readonly PaymentMethod[] = CANONICAL_PAYMENT_METHODS;
 
 const VALID_EXPENSE_CATEGORIES: readonly ExpenseCategory[] = [
   "GROCERY",
@@ -49,7 +46,7 @@ export interface RecordRentPaymentInput {
   stayId?: string;
   amount: number;
   transactionDate: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: PaymentMethod | string;
   referenceNumber?: string;
   description?: string;
   idempotencyKey?: string;
@@ -60,7 +57,7 @@ export interface RecordSecurityDepositInput {
   stayId?: string;
   amount: number;
   transactionDate: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: PaymentMethod | string;
   referenceNumber?: string;
   description?: string;
   idempotencyKey?: string;
@@ -70,7 +67,7 @@ export interface RecordExpenseInput {
   category: ExpenseCategory;
   amount: number;
   transactionDate: string;
-  paymentMethod: PaymentMethod;
+  paymentMethod: PaymentMethod | string;
   payeeVendor?: string;
   description: string;
   referenceNumber?: string;
@@ -80,10 +77,13 @@ export interface RecordExpenseInput {
 export interface ListTransactionsOptions {
   type?: TransactionType;
   category?: string;
+  paymentMethod?: PaymentMethod | string;
   residentId?: string;
+  customerId?: string;
   stayId?: string;
   startDate?: string;
   endDate?: string;
+  division?: ClosingDivision;
   limit?: number;
   offset?: number;
 }
@@ -98,6 +98,8 @@ function mapRowToTransaction(row: any): FinancialTransaction {
     referenceNumber: row.reference_number || null,
     residentId: row.resident_id || null,
     residentName: row.resident_name || null,
+    customerId: row.customer_id || null,
+    customerName: row.customer_name || null,
     stayId: row.stay_id || null,
     roomNumber: row.room_number || null,
     category: row.category,
@@ -107,6 +109,7 @@ function mapRowToTransaction(row: any): FinancialTransaction {
     idempotencyKey: row.idempotency_key || null,
     status: row.status as TransactionStatus,
     reversalOfId: row.reversal_of_id || null,
+    invoiceId: row.invoice_id || null,
     createdBy: row.created_by,
     createdByName: row.created_by_name || null,
     createdAt: row.created_at,
@@ -134,6 +137,109 @@ export async function getResidentRentBalance(
   const charges = Number(res?.charges || 0);
   const payments = Number(res?.payments || 0);
   return charges - payments;
+}
+
+/**
+ * Authoritative Indian Standard Time (Asia/Kolkata) date string formatter (YYYY-MM-DD).
+ * Ensures consistency around midnight in India and prevents UTC calendar drift.
+ */
+export function getBusinessDateString(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(date);
+}
+
+/**
+ * Canonical acquisition order for closing advisory locks. Every shared and exclusive
+ * acquisition must follow this order, otherwise a division writer (holding PG, wanting
+ * COMBINED) and a COMBINED finalizer (holding COMBINED, wanting PG) deadlock (40P01).
+ */
+const CLOSING_LOCK_ORDER = ["COMBINED", "PG", "TIFFIN"] as const;
+
+function closingLockKeys(date: string, divisions: ReadonlyArray<"PG" | "TIFFIN" | "COMBINED">): string[] {
+  return CLOSING_LOCK_ORDER.filter((d) => divisions.includes(d)).map((d) => `closing:${date}:${d}`);
+}
+
+/**
+ * Acquires a PostgreSQL transactional advisory shared lock on the closing date/division.
+ * Ensures concurrent finalizations wait for active ledger writes, and new ledger writes
+ * wait for active finalization.
+ *
+ * Lock failures (including 40P01) propagate: on PostgreSQL a failed statement aborts the
+ * transaction, so continuing would only surface a misleading error later.
+ */
+export async function acquireClosingSharedLock(
+  tx: AsyncDb,
+  transactionDate: string,
+  division: "PG" | "TIFFIN" | "COMBINED"
+): Promise<void> {
+  if (!tx.isPostgres) return;
+  const divisions = division === "COMBINED" ? CLOSING_LOCK_ORDER : [division, "COMBINED" as const];
+  for (const key of closingLockKeys(transactionDate, divisions)) {
+    await tx.query("SELECT pg_advisory_xact_lock_shared(4201, hashtext($1))", [key]);
+  }
+}
+
+/**
+ * Acquires a PostgreSQL transactional advisory exclusive lock on the closing date/division.
+ * Blocks all concurrent ledger writers for this date until the closing snapshot is frozen and committed.
+ */
+export async function acquireClosingExclusiveLock(
+  tx: AsyncDb,
+  closingDate: string,
+  division: "PG" | "TIFFIN" | "COMBINED"
+): Promise<void> {
+  if (!tx.isPostgres) return;
+  const divisions = division === "COMBINED" ? CLOSING_LOCK_ORDER : [division];
+  for (const key of closingLockKeys(closingDate, divisions)) {
+    await tx.query("SELECT pg_advisory_xact_lock(4201, hashtext($1))", [key]);
+  }
+}
+
+/**
+ * Shared, race-safe closing lock policy.
+ * Asserts that the transactionDate is not locked by a FINALIZED daily cashbook closing
+ * for the given division (or COMBINED).
+ * Uses Postgres 'FOR SHARE' row locks (or serialized transactions on SQLite) to ensure
+ * concurrent finalizations cannot interleave.
+ */
+export async function assertClosingDateNotFinalized(
+  tx: AsyncDb,
+  transactionDate: string,
+  division: "PG" | "TIFFIN" | "COMBINED"
+): Promise<void> {
+  await acquireClosingSharedLock(tx, transactionDate, division);
+
+  const forShare = tx.isPostgres ? " FOR SHARE" : "";
+  let query: string;
+  let params: any[];
+
+  if (division === "COMBINED") {
+    query = `
+      SELECT id, closing_date, division, status
+      FROM daily_cashbook_closings
+      WHERE closing_date = ? AND status = 'FINALIZED'
+      LIMIT 1${forShare}
+    `;
+    params = [transactionDate];
+  } else {
+    query = `
+      SELECT id, closing_date, division, status
+      FROM daily_cashbook_closings
+      WHERE closing_date = ? AND division IN (?, 'COMBINED') AND status = 'FINALIZED'
+      LIMIT 1${forShare}
+    `;
+    params = [transactionDate, division];
+  }
+
+  const locked = await tx.queryOne<{ id: string; closing_date: string; division: string; status: string }>(
+    query,
+    params
+  );
+
+  if (locked) {
+    throw new Error(
+      `Cannot record transaction on ${transactionDate}. The daily cashbook closing for this date (${locked.division}) is FINALIZED and locked. An authorized manager must reopen the daily closing first.`
+    );
+  }
 }
 
 /**
@@ -222,6 +328,8 @@ export async function recordRentCharge(
   const now = new Date().toISOString();
 
   await db.transaction(async (tx) => {
+    await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
     await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
@@ -295,7 +403,7 @@ export async function recordRentPayment(
   const residentId = input.residentId?.trim();
   const amount = Number(input.amount);
   const transactionDate = input.transactionDate?.trim();
-  const paymentMethod = input.paymentMethod;
+  const paymentMethod = normalizePaymentMethod(input.paymentMethod);
   const referenceNumber = input.referenceNumber?.trim() || null;
   const description = input.description?.trim() || null;
   const idempotencyKey = input.idempotencyKey?.trim() || null;
@@ -306,9 +414,6 @@ export async function recordRentPayment(
   }
   if (!transactionDate || !DATE_REGEX.test(transactionDate)) {
     throw new Error("Valid transaction date in YYYY-MM-DD format is required.");
-  }
-  if (!VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-    throw new Error(`Invalid payment method '${paymentMethod}'. Must be CASH, UPI, BANK_TRANSFER, CHEQUE, or OTHER.`);
   }
 
   // Idempotency check: if already processed, return existing or reject mismatch
@@ -365,6 +470,8 @@ export async function recordRentPayment(
   const now = new Date().toISOString();
 
   await db.transaction(async (tx) => {
+    await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
     await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
@@ -440,7 +547,7 @@ export async function recordSecurityDeposit(
   const residentId = input.residentId?.trim();
   const amount = Number(input.amount);
   const transactionDate = input.transactionDate?.trim();
-  const paymentMethod = input.paymentMethod;
+  const paymentMethod = normalizePaymentMethod(input.paymentMethod);
   const referenceNumber = input.referenceNumber?.trim() || null;
   const description = input.description?.trim() || null;
   const idempotencyKey = input.idempotencyKey?.trim() || null;
@@ -451,9 +558,6 @@ export async function recordSecurityDeposit(
   }
   if (!transactionDate || !DATE_REGEX.test(transactionDate)) {
     throw new Error("Valid transaction date in YYYY-MM-DD format is required.");
-  }
-  if (!VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-    throw new Error(`Invalid payment method '${paymentMethod}'. Must be CASH, UPI, BANK_TRANSFER, CHEQUE, or OTHER.`);
   }
 
   // Idempotency check: if already processed, return existing or reject mismatch
@@ -500,6 +604,8 @@ export async function recordSecurityDeposit(
   const now = new Date().toISOString();
 
   await db.transaction(async (tx) => {
+    await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
     await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
@@ -575,7 +681,7 @@ export async function recordExpense(
   const category = input.category;
   const amount = Number(input.amount);
   const transactionDate = input.transactionDate?.trim();
-  const paymentMethod = input.paymentMethod;
+  const paymentMethod = normalizePaymentMethod(input.paymentMethod);
   const payeeVendor = input.payeeVendor?.trim() || null;
   const description = input.description?.trim();
   const referenceNumber = input.referenceNumber?.trim() || null;
@@ -589,9 +695,6 @@ export async function recordExpense(
   }
   if (!transactionDate || !DATE_REGEX.test(transactionDate)) {
     throw new Error("Valid transaction date in YYYY-MM-DD format is required.");
-  }
-  if (!VALID_PAYMENT_METHODS.includes(paymentMethod)) {
-    throw new Error(`Invalid payment method '${paymentMethod}'. Must be CASH, UPI, BANK_TRANSFER, CHEQUE, or OTHER.`);
   }
   if (!description || description.length < 3) {
     throw new Error("Expense description of at least 3 characters is required.");
@@ -622,6 +725,9 @@ export async function recordExpense(
   const now = new Date().toISOString();
 
   await db.transaction(async (tx) => {
+    const expenseDivision = category === "GROCERY" || category === "KITCHEN_SUPPLIES" ? "TIFFIN" : "PG";
+    await assertClosingDateNotFinalized(tx, transactionDate, expenseDivision);
+
     await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
@@ -685,10 +791,12 @@ export async function getTransactionById(
     SELECT
       t.*,
       r.full_name as resident_name,
+      tc.full_name as customer_name,
       rm.room_number,
       u.full_name as created_by_name
     FROM financial_transactions t
     LEFT JOIN residents r ON r.id = t.resident_id
+    LEFT JOIN tiffin_customers tc ON tc.id = t.customer_id
     LEFT JOIN resident_stays s ON s.id = t.stay_id
     LEFT JOIN rooms rm ON rm.id = s.room_id
     LEFT JOIN staff_users u ON u.id = t.created_by
@@ -722,9 +830,18 @@ export async function listTransactions(
     conditions.push("t.category = ?");
     params.push(options.category);
   }
+  if (options?.paymentMethod) {
+    const normalizedMethod = normalizePaymentMethod(options.paymentMethod);
+    conditions.push("t.payment_method = ?");
+    params.push(normalizedMethod);
+  }
   if (options?.residentId) {
     conditions.push("t.resident_id = ?");
     params.push(options.residentId);
+  }
+  if (options?.customerId) {
+    conditions.push("t.customer_id = ?");
+    params.push(options.customerId);
   }
   if (options?.stayId) {
     conditions.push("t.stay_id = ?");
@@ -738,6 +855,11 @@ export async function listTransactions(
     conditions.push("t.transaction_date <= ?");
     params.push(options.endDate);
   }
+  if (options?.division === "PG") {
+    conditions.push("(t.resident_id IS NOT NULL OR t.transaction_type IN ('RENT_PAYMENT', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND', 'RENT_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')))");
+  } else if (options?.division === "TIFFIN") {
+    conditions.push("(t.customer_id IS NOT NULL OR t.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES')))");
+  }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
   const limit = Math.min(500, Math.max(1, Number(options?.limit) || 100));
@@ -747,10 +869,12 @@ export async function listTransactions(
     SELECT
       t.*,
       r.full_name as resident_name,
+      tc.full_name as customer_name,
       rm.room_number,
       u.full_name as created_by_name
     FROM financial_transactions t
     LEFT JOIN residents r ON r.id = t.resident_id
+    LEFT JOIN tiffin_customers tc ON tc.id = t.customer_id
     LEFT JOIN resident_stays s ON s.id = t.stay_id
     LEFT JOIN rooms rm ON rm.id = s.room_id
     LEFT JOIN staff_users u ON u.id = t.created_by
@@ -792,7 +916,8 @@ export async function getResidentFinancialSummary(
     SELECT
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalCharges,
       COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalPayments,
-      COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalDeposits
+      COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) -
+      COALESCE(SUM(CASE WHEN (transaction_type = 'DEPOSIT_REFUND' OR (transaction_type = 'RENT_PAYMENT' AND COALESCE(category, '') = 'DEPOSIT_APPLICATION')) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as totalDeposits
     FROM financial_transactions
     WHERE resident_id = ?
   `, [residentId]);
@@ -829,12 +954,13 @@ export async function getResidentFinancialSummary(
  */
 export async function getCashbookSummary(
   actor: AuthenticatedUser,
-  options?: { startDate?: string; endDate?: string },
+  options?: { startDate?: string; endDate?: string; division?: ClosingDivision },
   asyncDb?: AsyncDb
 ): Promise<CashbookSummary> {
   requirePermission(actor, "finance.read");
 
   const db = asyncDb ?? getAsyncDb();
+  const division = options?.division || "COMBINED";
 
   // Default to current calendar month if dates not provided
   const now = new Date();
@@ -851,19 +977,28 @@ export async function getCashbookSummary(
   const [periodRows, crossPeriodReversals, globalOutstandingRow] = await Promise.all([
     db.queryOne<any>(`
       SELECT
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentCollected,
-        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as depositsCollected,
-        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as expensesPaid,
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as rentBilled,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' AND COALESCE(t.category, '') != 'DEPOSIT_APPLICATION' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as rentCollected,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'SECURITY_DEPOSIT' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as depositsCollected,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'DEPOSIT_REFUND' AND t.status = 'POSTED' THEN t.amount ELSE 0 END), 0) as depositRefunds,
+        COALESCE(SUM(CASE WHEN (t.transaction_type = 'TIFFIN_PAYMENT' OR (t.transaction_type = 'RENT_PAYMENT' AND (t.customer_id IS NOT NULL OR t.category = 'TIFFIN' OR t.description LIKE '%tiffin%'))) AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinCollected,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as expensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as allExpensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as pgExpensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinExpensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'RENT_CHARGE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as rentBilled,
         COUNT(*) as txCount
-      FROM financial_transactions
-      WHERE transaction_date >= ? AND transaction_date <= ?
-    `, [startDate, endDate]),
+      FROM financial_transactions t
+      LEFT JOIN financial_transactions rev ON rev.reversal_of_id = t.id AND rev.transaction_type = 'REVERSAL'
+      WHERE t.transaction_date >= ? AND t.transaction_date <= ?
+    `, [endDate, endDate, endDate, endDate, endDate, endDate, endDate, endDate, startDate, endDate]),
     db.queryOne<any>(`
       SELECT
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' AND COALESCE(orig.category, '') != 'DEPOSIT_APPLICATION' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'TIFFIN_PAYMENT' OR (orig.transaction_type = 'RENT_PAYMENT' AND orig.customer_id IS NOT NULL) THEN rev.amount ELSE 0 END), 0) as priorTiffinRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorPgExpenseRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorTiffinExpenseRefunds
       FROM financial_transactions rev
       JOIN financial_transactions orig ON rev.reversal_of_id = orig.id
       WHERE rev.transaction_type = 'REVERSAL'
@@ -873,41 +1008,75 @@ export async function getCashbookSummary(
     `, [startDate, endDate, startDate]),
     db.queryOne<any>(`
       SELECT
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allCharges,
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as allPayments
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' THEN amount ELSE 0 END), 0) as allCharges,
+        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' THEN amount ELSE 0 END), 0) as allPayments
       FROM financial_transactions
+      WHERE status = 'POSTED' AND transaction_type IN ('RENT_CHARGE', 'RENT_PAYMENT')
     `),
   ]);
 
   const rawRentCollected = Number(periodRows?.rentCollected || 0);
   const rawDepositsCollected = Number(periodRows?.depositsCollected || 0);
-  const rawExpensesPaid = Number(periodRows?.expensesPaid || 0);
-  const totalRentBilledInPeriod = Number(periodRows?.rentBilled || 0);
+  const rawTiffinCollected = Number(periodRows?.tiffinCollected || 0);
+  const rawAllExpensesPaid = Number(periodRows?.allExpensesPaid ?? periodRows?.expensesPaid ?? 0);
+  const rawPgExpensesPaid = Number(periodRows?.pgExpensesPaid ?? (division === "TIFFIN" ? 0 : (periodRows?.expensesPaid ?? 0)));
+  const rawTiffinExpensesPaid = Number(periodRows?.tiffinExpensesPaid ?? (division === "PG" ? 0 : (periodRows?.expensesPaid ?? 0)));
+  const rawDepositRefunds = Number(periodRows?.depositRefunds || 0);
+  const rawRentBilledInPeriod = Number(periodRows?.rentBilled || 0);
   const transactionCount = Number(periodRows?.txCount || 0);
 
   const priorRentRefunds = Number(crossPeriodReversals?.priorRentRefunds || 0);
   const priorDepositRefunds = Number(crossPeriodReversals?.priorDepositRefunds || 0);
-  const priorExpenseRefunds = Number(crossPeriodReversals?.priorExpenseRefunds || 0);
+  const priorTiffinRefunds = Number(crossPeriodReversals?.priorTiffinRefunds || 0);
+  const priorAllExpenseRefunds = Number(crossPeriodReversals?.priorExpenseRefunds || 0);
+  const priorPgExpenseRefunds = Number(crossPeriodReversals?.priorPgExpenseRefunds || 0);
+  const priorTiffinExpenseRefunds = Number(crossPeriodReversals?.priorTiffinExpenseRefunds || 0);
 
-  const totalRentCollected = rawRentCollected - priorRentRefunds;
-  const totalDepositsCollected = rawDepositsCollected - priorDepositRefunds;
-  const totalExpensesPaid = Math.max(0, rawExpensesPaid - priorExpenseRefunds);
+  let totalRentCollected = 0;
+  let totalDepositsCollected = 0;
+  let totalTiffinCollected = 0;
+  let totalExpensesPaid = 0;
+  let totalRentBilledInPeriod = 0;
+  let totalOutstandingRent = 0;
 
-  // Net Cash Movement = Money In (Rent + Deposits) - Money Out (Expenses)
-  const netCashMovement = totalRentCollected + totalDepositsCollected - totalExpensesPaid;
+  if (division === "PG") {
+    totalRentCollected = Math.max(0, rawRentCollected - priorRentRefunds);
+    totalDepositsCollected = rawDepositsCollected - priorDepositRefunds - rawDepositRefunds;
+    totalTiffinCollected = 0;
+    totalExpensesPaid = Math.max(0, rawPgExpensesPaid - priorPgExpenseRefunds);
+    totalRentBilledInPeriod = rawRentBilledInPeriod;
+    const allCharges = Number(globalOutstandingRow?.allCharges || 0);
+    const allPayments = Number(globalOutstandingRow?.allPayments || 0);
+    totalOutstandingRent = Math.max(0, allCharges - allPayments);
+  } else if (division === "TIFFIN") {
+    totalRentCollected = 0;
+    totalDepositsCollected = 0;
+    totalTiffinCollected = Math.max(0, rawTiffinCollected - priorTiffinRefunds);
+    totalExpensesPaid = Math.max(0, rawTiffinExpensesPaid - priorTiffinExpenseRefunds);
+    totalRentBilledInPeriod = 0;
+    totalOutstandingRent = 0;
+  } else {
+    // COMBINED
+    totalRentCollected = Math.max(0, rawRentCollected - priorRentRefunds);
+    totalDepositsCollected = rawDepositsCollected - priorDepositRefunds - rawDepositRefunds;
+    totalTiffinCollected = Math.max(0, rawTiffinCollected - priorTiffinRefunds);
+    totalExpensesPaid = Math.max(0, rawAllExpensesPaid - priorAllExpenseRefunds);
+    totalRentBilledInPeriod = rawRentBilledInPeriod;
+    const allCharges = Number(globalOutstandingRow?.allCharges || 0);
+    const allPayments = Number(globalOutstandingRow?.allPayments || 0);
+    totalOutstandingRent = Math.max(0, allCharges - allPayments);
+  }
 
-  const allCharges = Number(globalOutstandingRow?.allCharges || 0);
-  const allPayments = Number(globalOutstandingRow?.allPayments || 0);
-  const totalOutstandingRent = Math.max(
-    0,
-    allCharges - allPayments
-  );
+  // Net Cash Movement = Money In (Rent + Deposits + Tiffin) - Money Out (Expenses)
+  const netCashMovement = totalRentCollected + totalDepositsCollected + totalTiffinCollected - totalExpensesPaid;
 
   return {
     startDate,
     endDate,
+    division,
     totalRentCollected,
     totalDepositsCollected,
+    totalTiffinCollected,
     totalExpensesPaid,
     netCashMovement,
     totalOutstandingRent,
@@ -962,12 +1131,29 @@ export async function reverseTransaction(
       );
     }
   }
+  if (current.transactionType === "TIFFIN_CHARGE" && current.customerId) {
+    const { getTiffinCustomerBalance } = await import("../tiffin/tiffinBillingService");
+    const balance = await getTiffinCustomerBalance(actor, current.customerId, db);
+    if (current.amount > balance.outstandingBalance) {
+      throw new Error(
+        `Cannot reverse tiffin charge of ₹${current.amount.toLocaleString("en-IN")} because payments have already been applied against it. Remaining balance is only ₹${Math.max(0, balance.outstandingBalance).toLocaleString("en-IN")}. Reverse the corresponding payments first.`
+      );
+    }
+  }
 
   const reversalId = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
-  const today = now.slice(0, 10);
+  const today = getBusinessDateString(new Date());
+  const reversalDivision =
+    current.transactionType === "TIFFIN_PAYMENT" ||
+    current.transactionType === "TIFFIN_CHARGE" ||
+    (current.transactionType === "EXPENSE" && (current.category === "GROCERY" || current.category === "KITCHEN_SUPPLIES"))
+      ? "TIFFIN"
+      : "PG";
 
   await db.transaction(async (tx) => {
+    await assertClosingDateNotFinalized(tx, today, reversalDivision);
+
     // 1. Mark original reversed
     await tx.execute(`
       UPDATE financial_transactions
@@ -975,16 +1161,47 @@ export async function reverseTransaction(
       WHERE id = ?
     `, [now, transactionId]);
 
+    // If reversing a RENT_PAYMENT or TIFFIN_PAYMENT, deallocate any linked invoice payments
+    if (current.transactionType === "RENT_PAYMENT" || current.transactionType === "TIFFIN_PAYMENT") {
+      const allocations = await tx.query<{ id: string; invoiceId: string; amount: number }>(`
+        SELECT id, invoice_id as "invoiceId", amount
+        FROM invoice_payment_allocations
+        WHERE payment_transaction_id = ?
+      `, [transactionId]);
+
+      for (const alloc of allocations) {
+        const inv = await tx.queryOne<{ id: string; amountPaid: number; balanceDue: number }>(`
+          SELECT id, amount_paid as "amountPaid", balance_due as "balanceDue"
+          FROM invoices
+          WHERE id = ?
+        `, [alloc.invoiceId]);
+
+        if (inv) {
+          const newPaid = Math.max(0, Number(inv.amountPaid) - Number(alloc.amount));
+          const newDue = Number(inv.balanceDue) + Number(alloc.amount);
+          const newStatus = newPaid === 0 ? "ISSUED" : "PARTIALLY_PAID";
+          await tx.execute(`
+            UPDATE invoices
+            SET amount_paid = ?, balance_due = ?, status = ?, updated_at = ?
+            WHERE id = ?
+          `, [newPaid, newDue, newStatus, now, inv.id]);
+        }
+
+        await tx.execute("DELETE FROM invoice_payment_allocations WHERE id = ?", [alloc.id]);
+      }
+    }
+
+
     // 2. Insert auditable reversal transaction
     await tx.execute(`
       INSERT INTO financial_transactions (
         id, transaction_type, amount, transaction_date, payment_method,
-        reference_number, resident_id, stay_id, category, description,
+        reference_number, resident_id, customer_id, stay_id, category, description,
         billing_period, payee_vendor, idempotency_key, status,
         reversal_of_id, created_by, created_at, updated_at
       ) VALUES (
         ?, 'REVERSAL', ?, ?, ?,
-        ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         NULL, ?, NULL, 'POSTED',
         ?, ?, ?, ?
       )
@@ -995,6 +1212,7 @@ export async function reverseTransaction(
       current.paymentMethod,
       current.referenceNumber,
       current.residentId,
+      current.customerId,
       current.stayId,
       current.category,
       `Correction / Reversal of ${current.id}: ${cleanReason}`,

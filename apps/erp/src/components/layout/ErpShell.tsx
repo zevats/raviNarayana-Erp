@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -11,16 +11,22 @@ import {
   CreditCard,
   UtensilsCrossed,
   Truck,
+  ShoppingBag,
+  UserCog,
   LogOut,
   Menu,
   X,
   ExternalLink,
   Calendar,
   Loader2,
+  Wifi,
+  WifiOff,
+  RefreshCw,
 } from "lucide-react";
-import { AuthenticatedUser, ROLE_LABELS, ROLE_BADGE_STYLES } from "@/types";
+import { AuthenticatedUser, StaffRole, ROLE_LABELS, ROLE_BADGE_STYLES } from "@/types";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { clearErpCache } from "@/lib/cache/erpDataCache";
+import { processOfflineQueue } from "@/modules/delivery/offlineQueue";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -32,6 +38,7 @@ interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
+  requiredRoles?: StaffRole[];
 }
 
 const navItems: NavItem[] = [
@@ -39,39 +46,78 @@ const navItems: NavItem[] = [
     name: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER"],
   },
   {
     name: "Rooms & Inventory",
     href: "/rooms",
     icon: BedDouble,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER"],
   },
   {
     name: "Residents & Stays",
     href: "/residents",
     icon: Users,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER"],
   },
   {
     name: "Finance & Cashbook",
     href: "/finance",
     icon: CreditCard,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER"],
   },
   {
-    name: "Kitchen & Meals",
-    href: "/kitchen",
-    icon: UtensilsCrossed,
+    name: "Orders",
+    href: "/orders",
+    icon: ShoppingBag,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER"],
   },
   {
-    name: "Tiffin Delivery",
+    name: "Delivery",
     href: "/delivery",
     icon: Truck,
+    requiredRoles: ["SUPER_ADMIN", "OPERATIONS_MANAGER", "DELIVERY_PERSON"],
+  },
+  {
+    name: "Staff Administration",
+    href: "/staff",
+    icon: UserCog,
+    requiredRoles: ["SUPER_ADMIN"],
   },
 ];
 
 export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
+
+  const visibleNavItems = navItems.filter(
+    (item) => !item.requiredRoles || item.requiredRoles.includes(user.role)
+  );
+
+  // Role-optimized bottom navigation items for mobile devices
+  const mobileBarItems = useMemo(() => {
+    if (user.role === "DELIVERY_PERSON") {
+      return visibleNavItems.filter((i) => i.href === "/delivery");
+    }
+    if (user.role === "OPERATIONS_MANAGER") {
+      const preferred = ["/dashboard", "/residents", "/orders", "/delivery"];
+      const matched = preferred
+        .map((href) => visibleNavItems.find((i) => i.href === href))
+        .filter(Boolean) as NavItem[];
+      return matched.length === 4 ? matched : visibleNavItems.slice(0, 4);
+    }
+    if (user.role === "SUPER_ADMIN") {
+      const preferred = ["/dashboard", "/residents", "/orders", "/delivery"];
+      const matched = preferred
+        .map((href) => visibleNavItems.find((i) => i.href === href))
+        .filter(Boolean) as NavItem[];
+      return matched.length === 4 ? matched : visibleNavItems.slice(0, 4);
+    }
+    return visibleNavItems.slice(0, 4);
+  }, [user.role, visibleNavItems]);
 
   const roleLabel = ROLE_LABELS[user.role] || user.role;
   const roleStyle = ROLE_BADGE_STYLES[user.role] || {
@@ -80,31 +126,79 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     border: "border-[#1A2E20]/25",
   };
 
-  const [isPendingTransition, startTransition] = React.useTransition();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-
   useEffect(() => {
-    setPendingHref(null);
+    setIsMobileMenuOpen(false);
   }, [pathname]);
 
-  // Fallback safety timeout so pending states can never freeze the UI if a request is delayed
+  // Track connectivity & offline queue depth for mobile bar
   useEffect(() => {
-    if (!pendingHref) return;
-    const timer = setTimeout(() => {
-      setPendingHref(null);
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [pendingHref]);
+    if (typeof window === "undefined") return;
+
+    const updateStatus = () => {
+      setIsOnline(navigator.onLine);
+      try {
+        const raw = localStorage.getItem("erp_delivery_offline_queue_v1");
+        if (raw) {
+          const q = JSON.parse(raw);
+          setOfflineQueueCount(
+            q.filter(
+              (i: any) =>
+                (!i.userId || i.userId === user.id) &&
+                (i.status === "PENDING" || i.status === "FAILED")
+            ).length
+          );
+        } else {
+          setOfflineQueueCount(0);
+        }
+      } catch {
+        setOfflineQueueCount(0);
+      }
+    };
+
+    // Replay queued delivery actions as soon as connectivity returns, without requiring
+    // the driver to open the Offline Sync page.
+    let syncing = false;
+    const syncQueuedActions = async () => {
+      updateStatus();
+      if (syncing || !navigator.onLine) return;
+      syncing = true;
+      try {
+        await processOfflineQueue(user.id);
+      } catch {
+        // Items stay queued (FAILED with retry count) and remain visible on /offline.
+      } finally {
+        syncing = false;
+        updateStatus();
+      }
+    };
+
+    updateStatus();
+    if (navigator.onLine) void syncQueuedActions();
+    window.addEventListener("online", syncQueuedActions);
+    window.addEventListener("offline", updateStatus);
+    const interval = setInterval(updateStatus, 3000);
+
+    return () => {
+      window.removeEventListener("online", syncQueuedActions);
+      window.removeEventListener("offline", updateStatus);
+      clearInterval(interval);
+    };
+  }, [user.id]);
 
   const handleNavClick = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    // Preserve standard browser behaviors for modified clicks (e.g. open in new tab)
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.button !== 0) {
+      return;
+    }
+
+    // Ignore clicks to the currently active page
     if (pathname === href) {
       e.preventDefault();
       return;
     }
-    setPendingHref(href);
-    startTransition(() => {
-      router.push(href);
-    });
+
+    // Allow Next.js native <Link> routing to execute immediately on the fast path
+    // without startTransition holding the current view or redundant manual router.push
   };
 
   const currentDateStr = new Intl.DateTimeFormat("en-IN", {
@@ -117,7 +211,6 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
-    setPendingHref("/login");
 
     try {
       clearErpCache();
@@ -135,13 +228,6 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
   return (
     <div className="min-h-screen bg-[#FAF8F5] flex flex-col lg:flex-row font-sans">
       
-      {/* Sleek Botanical Top Route Progress Bar */}
-      {pendingHref && (
-        <div className="fixed top-0 left-0 right-0 h-[3px] z-50 bg-[#1A2E20]/20 overflow-hidden pointer-events-none">
-          <div className="h-full w-full bg-gradient-to-r from-[#B58A57] via-[#D4AF37] to-[#C89F6B] animate-pulse" />
-        </div>
-      )}
-
       {/* Immediate Logout Revocation Feedback Modal */}
       {isLoggingOut && (
         <div className="fixed inset-0 z-50 bg-[#1A2E20]/60 backdrop-blur-xs flex items-center justify-center transition-all animate-fadeIn">
@@ -187,9 +273,8 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
             OPERATIONS
           </div>
 
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = pathname === item.href;
-            const isPending = pendingHref === item.href;
             const Icon = item.icon;
 
             return (
@@ -197,33 +282,23 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                 key={item.name}
                 href={item.href}
                 prefetch={true}
-                onMouseEnter={() => router.prefetch(item.href)}
                 onClick={(e) => handleNavClick(e, item.href)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
                   isActive
                     ? "bg-[#263B2D] text-white shadow-xs border-l-4 border-[#B58A57] pl-3"
-                    : isPending
-                    ? "bg-[#263B2D]/80 text-[#C89F6B] border-l-4 border-[#C89F6B]/60 pl-3"
                     : "text-white/80 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <Icon
                     className={`w-4 h-4 shrink-0 transition-colors ${
-                      isActive
-                        ? "text-[#C89F6B]"
-                        : isPending
-                        ? "text-[#C89F6B] animate-pulse"
-                        : "text-white/60"
+                      isActive ? "text-[#C89F6B]" : "text-white/60"
                     }`}
                   />
                   <span className="truncate">{item.name}</span>
                 </div>
                 {isActive && (
                   <span className="w-1.5 h-1.5 rounded-full bg-[#C89F6B] shrink-0" />
-                )}
-                {isPending && !isActive && (
-                  <span className="text-[10px] text-[#C89F6B] font-mono font-medium animate-pulse">Loading</span>
                 )}
               </Link>
             );
@@ -272,9 +347,9 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
       </aside>
 
       {/* ============================================================== */}
-      {/* MOBILE TOP BAR                                                 */}
+      {/* MOBILE TOP BAR (Safe Area & Touch Ready)                       */}
       {/* ============================================================== */}
-      <header className="lg:hidden bg-[#1A2E20] text-white border-b border-[#263B2D] p-4 flex items-center justify-between sticky top-0 z-40">
+      <header className="lg:hidden bg-[#1A2E20] text-white border-b border-[#263B2D] px-4 py-3 flex items-center justify-between sticky top-0 z-40 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center shrink-0 shadow-xs">
             <Image
@@ -290,18 +365,39 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               Ravinarayan
             </h1>
             <span className="text-[10px] text-[#C89F6B] font-medium">
-              Management ERP
+              {roleLabel}
             </span>
           </div>
         </div>
 
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          aria-label="Toggle navigation menu"
-          className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
-        >
-          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Connection & Queue Badge */}
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium ${
+              isOnline
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+            }`}
+          >
+            {isOnline ? <Wifi className="w-2.5 h-2.5" /> : <WifiOff className="w-2.5 h-2.5" />}
+            <span>{isOnline ? "Online" : "Offline"}</span>
+            {offlineQueueCount > 0 && (
+              <span className="bg-amber-400 text-[#1A2E20] font-bold px-1 rounded-full text-[9px]">
+                {offlineQueueCount}
+              </span>
+            )}
+          </span>
+
+          <NotificationBell />
+
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle navigation menu"
+            className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center"
+          >
+            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Drawer */}
@@ -327,9 +423,8 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
             </div>
 
             <nav className="space-y-1">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const isActive = pathname === item.href;
-                const isPending = pendingHref === item.href;
                 const Icon = item.icon;
 
                 return (
@@ -337,33 +432,21 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                     key={item.name}
                     href={item.href}
                     prefetch={true}
-                    onClick={(e) => {
-                      handleNavClick(e, item.href);
-                      setIsMobileMenuOpen(false);
-                    }}
+                    onClick={(e) => handleNavClick(e, item.href)}
                     className={`flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium ${
                       isActive
                         ? "bg-[#263B2D] text-white border-l-4 border-[#B58A57] pl-3"
-                        : isPending
-                        ? "bg-[#263B2D]/80 text-[#C89F6B] border-l-4 border-[#C89F6B]/60 pl-3"
                         : "text-white/80 hover:bg-white/10"
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       <Icon
                         className={`w-4 h-4 shrink-0 transition-colors ${
-                          isActive
-                            ? "text-[#C89F6B]"
-                            : isPending
-                            ? "text-[#C89F6B] animate-pulse"
-                            : "text-white/60"
+                          isActive ? "text-[#C89F6B]" : "text-white/60"
                         }`}
                       />
                       <span>{item.name}</span>
                     </div>
-                    {isPending && !isActive && (
-                      <span className="text-[10px] text-[#C89F6B] font-mono">Loading</span>
-                    )}
                   </Link>
                 );
               })}
@@ -431,12 +514,12 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
         </header>
 
         {/* Content Container */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0 pb-24 lg:pb-8">
           {children}
         </main>
 
         {/* Footer */}
-        <footer className="px-6 py-4 bg-white border-t border-[#8E9F89]/20 text-xs text-[#5A6C5E] flex flex-col sm:flex-row items-center justify-between gap-2">
+        <footer className="hidden lg:flex px-6 py-4 bg-white border-t border-[#8E9F89]/20 text-xs text-[#5A6C5E] items-center justify-between gap-2">
           <p>
             &copy; {new Date().getFullYear()} Ravinarayan PG Guesthouse. Internal Management ERP.
           </p>
@@ -444,6 +527,105 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
             Operational Management Portal
           </p>
         </footer>
+
+        {/* ============================================================== */}
+        {/* MOBILE BOTTOM NAVIGATION BAR (Role-Aware & Touch-Optimized)     */}
+        {/* ============================================================== */}
+        <nav
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#8E9F89]/20 shadow-lg pb-safe"
+          aria-label="Mobile Navigation"
+        >
+          {user.role === "DELIVERY_PERSON" ? (
+            /* Dedicated Driver Action Bar */
+            <div className="grid grid-cols-3 h-16 max-w-md mx-auto items-stretch">
+              <Link
+                href="/delivery"
+                prefetch={true}
+                onClick={(e) => handleNavClick(e, "/delivery")}
+                className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ${
+                  pathname === "/delivery"
+                    ? "text-[#1A2E20] font-semibold"
+                    : "text-[#5E7060] hover:text-[#1A2E20]"
+                }`}
+              >
+                <div className={`p-1 rounded-lg ${pathname === "/delivery" ? "bg-[#1A2E20]/10 text-[#1A2E20]" : ""}`}>
+                  <Truck className="w-5 h-5" />
+                </div>
+                <span>Stops</span>
+              </Link>
+
+              <Link
+                href="/offline"
+                prefetch={true}
+                onClick={(e) => handleNavClick(e, "/offline")}
+                className={`relative flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ${
+                  pathname === "/offline"
+                    ? "text-[#1A2E20] font-semibold"
+                    : "text-[#5E7060] hover:text-[#1A2E20]"
+                }`}
+              >
+                <div className={`relative p-1 rounded-lg ${pathname === "/offline" ? "bg-[#1A2E20]/10 text-[#1A2E20]" : ""}`}>
+                  <RefreshCw className="w-5 h-5" />
+                  {offlineQueueCount > 0 && (
+                    <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
+                      {offlineQueueCount}
+                    </span>
+                  )}
+                </div>
+                <span>Offline Sync</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                className="flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-[#5E7060] hover:text-red-700 transition-colors"
+              >
+                <div className="p-1 rounded-lg">
+                  <LogOut className="w-5 h-5" />
+                </div>
+                <span>Sign Out</span>
+              </button>
+            </div>
+          ) : (
+            /* Management Staff Mobile Bottom Bar (Role-Aware) */
+            <div className="grid grid-cols-5 h-16 max-w-lg mx-auto items-stretch">
+              {mobileBarItems.map((item) => {
+                const isActive = pathname === item.href;
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    prefetch={true}
+                    onClick={(e) => handleNavClick(e, item.href)}
+                    className={`flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
+                      isActive
+                        ? "text-[#1A2E20] font-semibold"
+                        : "text-[#5E7060] hover:text-[#1A2E20]"
+                    }`}
+                  >
+                    <div className={`p-1 rounded-lg ${isActive ? "bg-[#1A2E20]/10 text-[#1A2E20]" : ""}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <span className="truncate max-w-[56px] text-center">{item.name}</span>
+                  </Link>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="flex flex-col items-center justify-center gap-1 text-[10px] font-medium text-[#5E7060] hover:text-[#1A2E20] transition-colors"
+              >
+                <div className="p-1 rounded-lg">
+                  <Menu className="w-4 h-4" />
+                </div>
+                <span>More</span>
+              </button>
+            </div>
+          )}
+        </nav>
 
       </div>
     </div>

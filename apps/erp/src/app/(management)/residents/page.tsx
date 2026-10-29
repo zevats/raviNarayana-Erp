@@ -29,6 +29,7 @@ import {
   ShieldCheck,
   FileText,
   User,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   ResidentListItem,
@@ -36,7 +37,13 @@ import {
   RoomWithOccupancy,
   ResidentFinancialSummary,
   ResidentStayRecord,
+  ResidentSettlementPreview,
+  ResidentSettlementDeduction,
+  PaymentMethod,
+  CANONICAL_PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
 } from "@/types";
+import { ResidentKycSection } from "@/modules/residents/components/ResidentKycSection";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 
 /**
@@ -120,6 +127,18 @@ export default function ResidentsPage() {
     new Date().toISOString().slice(0, 10)
   );
   const [targetOutstandingBalance, setTargetOutstandingBalance] = useState<number | null>(null);
+  const [settlementPreview, setSettlementPreview] = useState<ResidentSettlementPreview | null>(null);
+  const [loadingSettlementPreview, setLoadingSettlementPreview] = useState(false);
+  const [deductions, setDeductions] = useState<ResidentSettlementDeduction[]>([]);
+  const [newDeductionReason, setNewDeductionReason] = useState("");
+  const [newDeductionAmount, setNewDeductionAmount] = useState("");
+  const [depositAppliedAmount, setDepositAppliedAmount] = useState(0);
+  const [refundPaymentMethod, setRefundPaymentMethod] = useState<PaymentMethod>("UPI");
+  const [refundReference, setRefundReference] = useState("");
+  const [remainingPaymentMethod, setRemainingPaymentMethod] = useState<PaymentMethod>("UPI");
+  const [remainingPaymentReference, setRemainingPaymentReference] = useState("");
+  const [recordRemainingPaymentNow, setRecordRemainingPaymentNow] = useState(false);
+  const [settlementNotes, setSettlementNotes] = useState("");
 
   // 4. Resident Detail View & Stay History Modal
   const [viewHistoryResident, setViewHistoryResident] = useState<ResidentDetail | null>(null);
@@ -136,6 +155,16 @@ export default function ResidentsPage() {
     notes: "",
   });
   const [showEditConfirm, setShowEditConfirm] = useState(false);
+
+  // 6. Transfer Room Modal (Task 01B.54)
+  const [transferTargetResident, setTransferTargetResident] = useState<ResidentListItem | null>(null);
+  const [transferForm, setTransferForm] = useState({
+    targetRoomId: "",
+    transferDate: new Date().toISOString().slice(0, 10),
+    newMonthlyRent: 8500,
+    reason: "",
+  });
+  const [showTransferConfirm, setShowTransferConfirm] = useState(false);
 
   // ---------------------------------------------------------------------------
   // Data Fetching & Refetch
@@ -426,26 +455,105 @@ export default function ResidentsPage() {
     }
   };
 
+  // Calculation helpers for checkout settlement
+  const totalDeductionsAmount = useMemo(() => {
+    return deductions.reduce((sum, d) => sum + d.amount, 0);
+  }, [deductions]);
+
+  const availableDepositAfterDeductions = useMemo(() => {
+    if (!settlementPreview) return 0;
+    return Math.max(0, settlementPreview.totalDepositHeld - totalDeductionsAmount);
+  }, [settlementPreview, totalDeductionsAmount]);
+
+  useEffect(() => {
+    if (settlementPreview) {
+      const suggestedApplied = Math.min(
+        settlementPreview.outstandingRentDue,
+        availableDepositAfterDeductions
+      );
+      setDepositAppliedAmount(suggestedApplied);
+    }
+  }, [settlementPreview, availableDepositAfterDeductions]);
+
+  const calculatedRefundAmount = useMemo(() => {
+    return Math.max(0, availableDepositAfterDeductions - depositAppliedAmount);
+  }, [availableDepositAfterDeductions, depositAppliedAmount]);
+
+  const calculatedRemainingRentPayable = useMemo(() => {
+    if (!settlementPreview) return 0;
+    return Math.max(0, settlementPreview.outstandingRentDue - depositAppliedAmount);
+  }, [settlementPreview, depositAppliedAmount]);
+
+  const fetchSettlementPreview = async (residentId: string, date: string) => {
+    setLoadingSettlementPreview(true);
+    try {
+      const res = await fetch(
+        `/api/residents/check-out/preview?residentId=${encodeURIComponent(residentId)}&checkOutDate=${encodeURIComponent(date)}`,
+        { cache: "no-store" }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setSettlementPreview(data.preview);
+        setTargetOutstandingBalance(data.preview.outstandingRentDue);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setActionError(data.error || "Failed to load settlement preview.");
+      }
+    } catch (err: any) {
+      console.warn("Could not fetch preview", err);
+    } finally {
+      setLoadingSettlementPreview(false);
+    }
+  };
+
   // Open Check Out Dialog
   const handleOpenCheckOut = async (resItem: ResidentListItem) => {
     setActionError(null);
     setCheckOutResidentTarget(resItem);
-    setCheckOutDate(new Date().toISOString().slice(0, 10));
-    setTargetOutstandingBalance(null);
-
-    // Fetch financial balance for informative context
-    try {
-      const finRes = await fetch(`/api/finance/residents/${resItem.id}`, { cache: "no-store" });
-      if (finRes.ok) {
-        const finData = await finRes.json();
-        setTargetOutstandingBalance(finData.summary?.outstandingRentBalance ?? 0);
-      }
-    } catch (err) {
-      console.warn("Could not fetch balance before checkout", err);
-    }
+    const today = new Date().toISOString().slice(0, 10);
+    setCheckOutDate(today);
+    setDeductions([]);
+    setNewDeductionReason("");
+    setNewDeductionAmount("");
+    setRefundPaymentMethod("UPI");
+    setRefundReference("");
+    setRemainingPaymentMethod("UPI");
+    setRemainingPaymentReference("");
+    setRecordRemainingPaymentNow(false);
+    setSettlementNotes("");
+    await fetchSettlementPreview(resItem.id, today);
   };
 
-  // Submit Check-Out
+  const handleAddDeduction = () => {
+    const reason = newDeductionReason.trim();
+    const amount = parseInt(newDeductionAmount, 10);
+    if (!reason) {
+      setActionError("Please provide a reason for the deduction.");
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      setActionError("Please enter a valid positive integer amount for the deduction.");
+      return;
+    }
+    const potentialTotal = totalDeductionsAmount + amount;
+    if (settlementPreview && potentialTotal > settlementPreview.totalDepositHeld) {
+      setActionError(
+        `Total deductions (₹${potentialTotal.toLocaleString("en-IN")}) cannot exceed security deposit held (₹${settlementPreview.totalDepositHeld.toLocaleString("en-IN")}).`
+      );
+      return;
+    }
+    setDeductions((prev) => [...prev, { reason, amount }]);
+    setNewDeductionReason("");
+    setNewDeductionAmount("");
+    setActionError(null);
+  };
+
+  const handleRemoveDeduction = (index: number) => {
+    setDeductions((prev) => prev.filter((_, i) => i !== index));
+    setActionError(null);
+  };
+
+  // Submit Check-Out & Settlement
   const handleCheckOut = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!checkOutResidentTarget) return;
@@ -454,20 +562,38 @@ export default function ResidentsPage() {
     setSubmitting(true);
 
     try {
+      const payload = {
+        finalizeSettlement: true,
+        residentId: checkOutResidentTarget.id,
+        checkOutDate,
+        deductions,
+        depositAppliedAmount,
+        refundAmount: calculatedRefundAmount,
+        refundPaymentMethod: calculatedRefundAmount > 0 ? refundPaymentMethod : undefined,
+        refundReference: calculatedRefundAmount > 0 ? refundReference.trim() || undefined : undefined,
+        remainingPayableAmount: calculatedRemainingRentPayable,
+        paymentMethod:
+          calculatedRemainingRentPayable > 0 && recordRemainingPaymentNow
+            ? remainingPaymentMethod
+            : undefined,
+        paymentReference:
+          calculatedRemainingRentPayable > 0 && recordRemainingPaymentNow
+            ? remainingPaymentReference.trim() || undefined
+            : undefined,
+        notes: settlementNotes.trim() || undefined,
+      };
+
       const res = await fetch("/api/residents/check-out", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          residentId: checkOutResidentTarget.id,
-          checkOutDate,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to check out resident");
 
       setActionSuccess(
-        `Resident ${checkOutResidentTarget.fullName} checked out successfully. Bed released.`
+        `Resident ${checkOutResidentTarget.fullName} checked out and settlement finalized successfully. Bed in Room ${checkOutResidentTarget.currentRoomNumber} released.`
       );
       setCheckOutResidentTarget(null);
 
@@ -478,9 +604,82 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to check out resident");
+      setActionError(err.message || "Failed to finalize checkout and settlement");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // Room Transfer Handlers (Task 01B.54)
+  // ---------------------------------------------------------------------------
+  const handleOpenTransferModal = (res: ResidentListItem) => {
+    setActionError(null);
+    setActionSuccess(null);
+    setTransferTargetResident(res);
+    // Find available active rooms excluding the resident's current room
+    const availableRooms = rooms.filter(
+      (r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== res.currentRoomNumber
+    );
+    const initialTarget = availableRooms.length > 0 ? availableRooms[0] : null;
+    setTransferForm({
+      targetRoomId: initialTarget ? initialTarget.id : "",
+      transferDate: new Date().toISOString().slice(0, 10),
+      newMonthlyRent: initialTarget ? initialTarget.baseRentMonthly : 8500,
+      reason: "",
+    });
+    setShowTransferConfirm(false);
+  };
+
+  const handleTargetRoomChange = (roomId: string) => {
+    const rm = rooms.find((r) => r.id === roomId);
+    setTransferForm((prev) => ({
+      ...prev,
+      targetRoomId: roomId,
+      newMonthlyRent: rm ? rm.baseRentMonthly : prev.newMonthlyRent,
+    }));
+  };
+
+  const handleTransferSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferTargetResident) return;
+    setActionError(null);
+    setSubmitting(true);
+
+    try {
+      const res = await fetch("/api/residents/transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          residentId: transferTargetResident.id,
+          targetRoomId: transferForm.targetRoomId,
+          transferDate: transferForm.transferDate,
+          newMonthlyRent: Number(transferForm.newMonthlyRent),
+          reason: transferForm.reason.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to transfer resident room.");
+      }
+
+      setActionSuccess(
+        `Successfully transferred ${transferTargetResident.fullName} from Room ${data.transfer.previousRoomNumber} to Room ${data.transfer.newRoomNumber}.`
+      );
+      setTransferTargetResident(null);
+
+      if (viewHistoryResident && viewHistoryResident.id === transferTargetResident.id) {
+        handleViewDetails(transferTargetResident.id);
+      }
+
+      await fetchData();
+      setTimeout(() => setActionSuccess(null), 5000);
+    } catch (err: any) {
+      setActionError(err.message || "Failed to transfer room.");
+    } finally {
+      setSubmitting(false);
+      setShowTransferConfirm(false);
     }
   };
 
@@ -794,6 +993,18 @@ export default function ResidentsPage() {
                             </button>
                           )}
 
+                          {/* Room Transfer action if in-house (Task 01B.54) */}
+                          {isInHouse && (
+                            <button
+                              onClick={() => handleOpenTransferModal(res)}
+                              className="px-2.5 py-1 rounded-lg border border-[#B58A57]/40 bg-[#FAF8F5] text-[#654735] text-xs font-semibold hover:bg-[#B58A57]/15 transition-colors shadow-2xs inline-flex items-center gap-1"
+                              title="Transfer resident to another room"
+                            >
+                              <ArrowRightLeft className="w-3 h-3 text-[#B58A57]" />
+                              <span>Transfer</span>
+                            </button>
+                          )}
+
                           {/* Check-Out action if in-house */}
                           {isInHouse && (
                             <button
@@ -889,7 +1100,7 @@ export default function ResidentsPage() {
 
               {/* Current Active Room Assignment if in-house */}
               {viewHistoryResident.currentRoom ? (
-                <div className="pt-2 border-t border-[#8E9F89]/20 flex items-center justify-between">
+                <div className="pt-2 border-t border-[#8E9F89]/20 flex items-center justify-between gap-3">
                   <div>
                     <span className="text-[10px] uppercase tracking-wider text-emerald-800 font-semibold block">
                       Active Accommodation
@@ -898,9 +1109,24 @@ export default function ResidentsPage() {
                       Room {viewHistoryResident.currentRoom.roomNumber} ({formatFloorLabel(viewHistoryResident.currentRoom.floor)}) &bull; Checked In {viewHistoryResident.currentRoom.checkInDate}
                     </span>
                   </div>
-                  <span className="text-xs font-serif font-bold text-[#1A2E20] tabular-nums">
-                    ₹{viewHistoryResident.currentRoom.monthlyRent.toLocaleString("en-IN")} / mo
-                  </span>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs font-serif font-bold text-[#1A2E20] tabular-nums">
+                      ₹{viewHistoryResident.currentRoom.monthlyRent.toLocaleString("en-IN")} / mo
+                    </span>
+                    <button
+                      onClick={() => {
+                        const matched = residents.find((r) => r.id === viewHistoryResident.id);
+                        if (matched) {
+                          handleOpenTransferModal(matched);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-[#B58A57]/40 text-xs font-semibold text-[#654735] hover:bg-[#B58A57]/15 shadow-2xs transition-colors"
+                      title="Transfer resident to another room"
+                    >
+                      <ArrowRightLeft className="w-3 h-3 text-[#B58A57]" />
+                      <span>Transfer</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="pt-2 border-t border-[#8E9F89]/20 flex items-center justify-between">
@@ -1040,6 +1266,15 @@ export default function ResidentsPage() {
                   })
                 )}
               </div>
+            </div>
+
+            {/* Government ID & KYC Section (Task 01B.57) */}
+            <div className="pt-2">
+              <ResidentKycSection
+                residentId={viewHistoryResident.id}
+                residentName={viewHistoryResident.fullName}
+                canManage={true}
+              />
             </div>
 
             <div className="pt-2 text-right border-t border-[#8E9F89]/20">
@@ -1468,16 +1703,16 @@ export default function ResidentsPage() {
       )}
 
       {/* ============================================================== */}
-      {/* MODAL 4: CHECK-OUT CONFIRMATION DIALOG                         */}
+      {/* MODAL 4: CHECKOUT & FINAL FINANCIAL SETTLEMENT                 */}
       {/* ============================================================== */}
       {checkOutResidentTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <LogOut className="w-5 h-5 text-amber-700" />
                 <h3 className="font-serif text-xl text-[#1A2E20] font-bold">
-                  Check Out Resident
+                  Resident Checkout & Final Settlement
                 </h3>
               </div>
               <button
@@ -1494,42 +1729,26 @@ export default function ResidentsPage() {
               </div>
             )}
 
-            <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#8E9F89]/20 space-y-1.5 text-xs text-[#1A2E20]">
-              <div className="flex justify-between">
-                <span className="text-[#5A6C5E]">Resident:</span>
-                <strong className="text-[#1A2E20]">{checkOutResidentTarget.fullName}</strong>
+            {/* Resident & Room Identity Banner */}
+            <div className="bg-[#FAF8F5] p-3.5 rounded-2xl border border-[#8E9F89]/20 grid grid-cols-2 gap-3 text-xs text-[#1A2E20]">
+              <div>
+                <span className="text-[#5A6C5E] block text-[11px]">Resident Name</span>
+                <strong className="text-[#1A2E20] text-sm">{checkOutResidentTarget.fullName}</strong>
+                <span className="block text-[11px] text-[#5A6C5E] mt-0.5">{checkOutResidentTarget.phone}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-[#5A6C5E]">Current Room:</span>
-                <strong className="text-[#1A2E20] tabular-nums">
+              <div>
+                <span className="text-[#5A6C5E] block text-[11px]">Assigned Room</span>
+                <strong className="text-[#1A2E20] text-sm tabular-nums">
                   Room {checkOutResidentTarget.currentRoomNumber} ({formatFloorLabel(checkOutResidentTarget.currentFloor)})
                 </strong>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-[#5A6C5E]">Check-In Date:</span>
-                <span className="font-sans tabular-nums text-[#1A2E20]">
-                  {checkOutResidentTarget.checkInDate}
+                <span className="block text-[11px] text-[#5A6C5E] mt-0.5">
+                  Checked in: {checkOutResidentTarget.checkInDate}
                 </span>
               </div>
-              {targetOutstandingBalance !== null && (
-                <div className="flex justify-between pt-1 border-t border-[#8E9F89]/15">
-                  <span className="text-[#5A6C5E]">Outstanding Rent Balance:</span>
-                  <span
-                    className={`font-bold tabular-nums font-serif ${
-                      targetOutstandingBalance > 0 ? "text-amber-800" : "text-emerald-800"
-                    }`}
-                  >
-                    ₹{targetOutstandingBalance.toLocaleString("en-IN")}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed">
-              <strong>Capacity Release:</strong> Confirming check-out completes this stay, immediately releases 1 bed in Room {checkOutResidentTarget.currentRoomNumber} back to available inventory, and strictly preserves all historical billing, meal, delivery, and audit records.
             </div>
 
             <form onSubmit={handleCheckOut} className="space-y-4">
+              {/* Checkout Date Input */}
               <div>
                 <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                   Official Check-Out Date *
@@ -1538,9 +1757,294 @@ export default function ResidentsPage() {
                   type="date"
                   required
                   value={checkOutDate}
-                  onChange={(e) => setCheckOutDate(e.target.value)}
+                  onChange={(e) => {
+                    const newDate = e.target.value;
+                    setCheckOutDate(newDate);
+                    if (checkOutResidentTarget) {
+                      fetchSettlementPreview(checkOutResidentTarget.id, newDate);
+                    }
+                  }}
                   className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden"
                 />
+              </div>
+
+              {/* Settlement Preview Card */}
+              {loadingSettlementPreview ? (
+                <div className="p-6 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/20 text-center text-xs text-[#5A6C5E] flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-800" />
+                  Calculating live financial settlement...
+                </div>
+              ) : settlementPreview ? (
+                <div className="space-y-4">
+                  {/* Financial Dossier Section */}
+                  <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/25 space-y-3 text-xs">
+                    <h4 className="font-semibold text-[#1A2E20] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5 text-emerald-800" />
+                      1. Financial Position as of Checkout Date
+                    </h4>
+
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      {/* Rent Column */}
+                      <div className="bg-white p-3 rounded-xl border border-[#8E9F89]/20 space-y-1">
+                        <span className="text-[#5A6C5E] block text-[11px]">Rent Liability</span>
+                        <div className="flex justify-between text-[11px]">
+                          <span>Billed Charges:</span>
+                          <span className="tabular-nums font-semibold">₹{settlementPreview.totalRentCharged.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-emerald-700">
+                          <span>Paid to Date:</span>
+                          <span className="tabular-nums font-semibold">-₹{settlementPreview.totalRentPaid.toLocaleString("en-IN")}</span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-[#8E9F89]/20 font-bold text-xs">
+                          <span>Outstanding Rent:</span>
+                          <span className={`tabular-nums ${settlementPreview.outstandingRentDue > 0 ? "text-amber-800" : "text-emerald-800"}`}>
+                            ₹{settlementPreview.outstandingRentDue.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Security Deposit Column */}
+                      <div className="bg-white p-3 rounded-xl border border-[#8E9F89]/20 space-y-1">
+                        <span className="text-[#5A6C5E] block text-[11px]">Security Deposit Held</span>
+                        <div className="flex justify-between text-[11px]">
+                          <span>Gross Deposits Held:</span>
+                          <span className="tabular-nums font-semibold">₹{(settlementPreview.totalDepositHeld + settlementPreview.priorRefunds).toLocaleString("en-IN")}</span>
+                        </div>
+                        {settlementPreview.priorRefunds > 0 && (
+                          <div className="flex justify-between text-[11px] text-amber-700">
+                            <span>Prior Refunds:</span>
+                            <span className="tabular-nums font-semibold">-₹{settlementPreview.priorRefunds.toLocaleString("en-IN")}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between pt-1 border-t border-[#8E9F89]/20 font-bold text-xs">
+                          <span>Active Deposit Held:</span>
+                          <span className="tabular-nums text-emerald-900">
+                            ₹{settlementPreview.totalDepositHeld.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Deductions Section */}
+                  <div className="p-4 rounded-2xl bg-white border border-[#8E9F89]/30 space-y-3 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-[#1A2E20] uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                        <CreditCard className="w-3.5 h-3.5 text-amber-700" />
+                        2. Authorized Deposit Deductions
+                      </h4>
+                      <span className="text-[11px] font-semibold text-[#5A6C5E]">
+                        Total Deductions: <strong className="text-rose-700">₹{totalDeductionsAmount.toLocaleString("en-IN")}</strong>
+                      </span>
+                    </div>
+
+                    {deductions.length > 0 ? (
+                      <div className="space-y-1.5">
+                        {deductions.map((ded, idx) => (
+                          <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/20 text-xs">
+                            <span className="text-[#1A2E20] font-medium">{ded.reason}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-rose-700 tabular-nums">₹{ded.amount.toLocaleString("en-IN")}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDeduction(idx)}
+                                className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-[#5A6C5E] italic">
+                        No deductions applied. Security deposit is fully eligible for refund or rent application.
+                      </p>
+                    )}
+
+                    {/* Add Deduction Form */}
+                    <div className="pt-2 border-t border-[#8E9F89]/15 flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Deduction reason (e.g. Deep cleaning, Room painting, Lost keys)"
+                        value={newDeductionReason}
+                        onChange={(e) => setNewDeductionReason(e.target.value)}
+                        className="flex-1 px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
+                      />
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Amount (₹)"
+                        value={newDeductionAmount}
+                        onChange={(e) => setNewDeductionAmount(e.target.value)}
+                        className="w-24 px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-lg text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddDeduction}
+                        className="px-3 py-1.5 bg-[#1A2E20] text-white rounded-lg text-xs font-semibold hover:bg-[#263B2D] transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Settlement Application & Resolution */}
+                  <div className="p-4 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/25 space-y-3 text-xs">
+                    <h4 className="font-semibold text-[#1A2E20] uppercase tracking-wider text-[11px]">
+                      3. Settlement Resolution & Net Balance
+                    </h4>
+
+                    {/* Deposit application slider/input if outstanding rent > 0 and deposit > 0 */}
+                    {settlementPreview.outstandingRentDue > 0 && availableDepositAfterDeductions > 0 && (
+                      <div className="p-3 bg-white rounded-xl border border-[#8E9F89]/20 space-y-1.5">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-[#5A6C5E]">Apply Deposit Towards Outstanding Rent:</span>
+                          <span className="font-bold text-[#1A2E20] tabular-nums">₹{depositAppliedAmount.toLocaleString("en-IN")}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.min(settlementPreview.outstandingRentDue, availableDepositAfterDeductions)}
+                          step={100}
+                          value={depositAppliedAmount}
+                          onChange={(e) => setDepositAppliedAmount(Number(e.target.value))}
+                          className="w-full accent-emerald-800"
+                        />
+                        <div className="flex justify-between text-[10px] text-[#5A6C5E]">
+                          <span>₹0 (Don't apply)</span>
+                          <span>Max: ₹{Math.min(settlementPreview.outstandingRentDue, availableDepositAfterDeductions).toLocaleString("en-IN")}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Net Refund Due Card */}
+                    {calculatedRefundAmount > 0 && (
+                      <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-emerald-900 text-xs">
+                            Security Deposit Refund Due to Resident:
+                          </span>
+                          <span className="text-base font-bold text-emerald-900 font-serif tabular-nums">
+                            ₹{calculatedRefundAmount.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-emerald-950 mb-1">
+                              Refund Payment Method *
+                            </label>
+                            <select
+                              value={refundPaymentMethod}
+                              onChange={(e) => setRefundPaymentMethod(e.target.value as PaymentMethod)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
+                            >
+                              {CANONICAL_PAYMENT_METHODS.map((method) => (
+                                <option key={method} value={method}>
+                                  {PAYMENT_METHOD_LABELS[method]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-emerald-950 mb-1">
+                              Refund Reference / UTR
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g. UPI Ref / Cheque No."
+                              value={refundReference}
+                              onChange={(e) => setRefundReference(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Remaining Payable Card */}
+                    {calculatedRemainingRentPayable > 0 && (
+                      <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-amber-900 text-xs">
+                            Remaining Rent Due from Resident:
+                          </span>
+                          <span className="text-base font-bold text-amber-900 font-serif tabular-nums">
+                            ₹{calculatedRemainingRentPayable.toLocaleString("en-IN")}
+                          </span>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer text-xs text-amber-950">
+                          <input
+                            type="checkbox"
+                            checked={recordRemainingPaymentNow}
+                            onChange={(e) => setRecordRemainingPaymentNow(e.target.checked)}
+                            className="rounded accent-amber-800"
+                          />
+                          <span>Resident is paying this balance now at checkout</span>
+                        </label>
+                        {recordRemainingPaymentNow && (
+                          <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-amber-950 mb-1">
+                                Payment Method *
+                              </label>
+                              <select
+                                value={remainingPaymentMethod}
+                                onChange={(e) => setRemainingPaymentMethod(e.target.value as PaymentMethod)}
+                                className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
+                              >
+                                {CANONICAL_PAYMENT_METHODS.map((method) => (
+                                  <option key={method} value={method}>
+                                    {PAYMENT_METHOD_LABELS[method]}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-amber-950 mb-1">
+                                Reference Number
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Cash receipt / UPI ID"
+                                value={remainingPaymentReference}
+                                onChange={(e) => setRemainingPaymentReference(e.target.value)}
+                                className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Zero-balance settlement notice */}
+                    {calculatedRefundAmount === 0 && calculatedRemainingRentPayable === 0 && (
+                      <div className="p-3 bg-stone-100 rounded-xl border border-stone-200 text-xs text-stone-700 flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                        <span>Account is completely settled. No refund or additional payment required.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Notes Field */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                      Settlement Notes (Inspection, Key Handover, Remarks)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. Room inspected, keys returned in good condition, settlement verified."
+                      value={settlementNotes}
+                      onChange={(e) => setSettlementNotes(e.target.value)}
+                      className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Capacity Release Assurance */}
+              <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed">
+                <strong>Capacity Release:</strong> Confirming checkout completes this stay, immediately releases 1 bed in Room {checkOutResidentTarget.currentRoomNumber} back to available inventory, and records an auditable settlement record.
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
@@ -1553,10 +2057,17 @@ export default function ResidentsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold disabled:opacity-50 shadow-md"
+                  disabled={submitting || loadingSettlementPreview}
+                  className="px-5 py-2.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold disabled:opacity-50 shadow-md flex items-center gap-1.5"
                 >
-                  {submitting ? "Checking out..." : "Confirm Check-Out"}
+                  {submitting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Finalizing Settlement...
+                    </>
+                  ) : (
+                    "Finalize Checkout & Settlement"
+                  )}
                 </button>
               </div>
             </form>
@@ -1689,6 +2200,241 @@ export default function ResidentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 6: ATOMIC ROOM TRANSFER (Task 01B.54)                   */}
+      {/* ============================================================== */}
+      {transferTargetResident && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-5 h-5 text-[#B58A57]" />
+                <h3 className="font-serif text-xl text-[#1A2E20] font-bold">
+                  Transfer Resident Room
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setTransferTargetResident(null);
+                  setShowTransferConfirm(false);
+                }}
+                className="p-1 rounded-lg text-stone-400 hover:text-stone-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {actionError && (
+              <div className="p-3 rounded-xl bg-rose-50 text-rose-800 text-xs border border-rose-200">
+                {actionError}
+              </div>
+            )}
+
+            {/* Current Stay & Resident Summary Strip */}
+            <div className="p-3.5 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/25 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-[#1A2E20] text-sm block">
+                    {transferTargetResident.fullName}
+                  </span>
+                  <span className="text-[#5A6C5E] font-sans tabular-nums text-[11px]">
+                    {transferTargetResident.phone}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-semibold text-[#6E7F70] block">
+                    Current Room
+                  </span>
+                  <span className="font-bold text-xs text-[#1A2E20]">
+                    Room {transferTargetResident.currentRoomNumber} ({formatFloorLabel(transferTargetResident.currentFloor)})
+                  </span>
+                </div>
+              </div>
+              <div className="pt-2 border-t border-[#8E9F89]/15 flex items-center justify-between text-[11px] text-[#5A6C5E]">
+                <span>Checked In: <strong className="text-[#1A2E20]">{transferTargetResident.checkInDate || "Active"}</strong></span>
+                <span className="text-emerald-700 font-semibold">Security Deposit: Carried Forward</span>
+              </div>
+            </div>
+
+            {!showTransferConfirm ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!transferForm.targetRoomId) {
+                    setActionError("Please select a valid destination room.");
+                    return;
+                  }
+                  if (!transferForm.reason.trim() || transferForm.reason.trim().length < 5) {
+                    setActionError("Transfer reason is required (minimum 5 characters).");
+                    return;
+                  }
+                  setActionError(null);
+                  setShowTransferConfirm(true);
+                }}
+                className="space-y-3.5"
+              >
+                {/* Select Destination Room */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                    Destination Room *
+                  </label>
+                  <select
+                    required
+                    value={transferForm.targetRoomId}
+                    onChange={(e) => handleTargetRoomChange(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
+                  >
+                    <option value="" disabled>-- Select Destination Room --</option>
+                    {rooms
+                      .filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber)
+                      .map((rm) => (
+                        <option key={rm.id} value={rm.id}>
+                          Room {rm.roomNumber} ({formatFloorLabel(rm.floor)}) &bull; {rm.type.replace(/_/g, " ")} &bull; {rm.availableBeds} bed(s) available &bull; ₹{rm.baseRentMonthly.toLocaleString("en-IN")}/mo
+                        </option>
+                      ))}
+                  </select>
+                  {rooms.filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber).length === 0 && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      No other rooms currently have available beds.
+                    </p>
+                  )}
+                </div>
+
+                {/* Transfer Date */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                    Effective Transfer Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={transferForm.transferDate}
+                    min={transferTargetResident.checkInDate || undefined}
+                    onChange={(e) => setTransferForm({ ...transferForm, transferDate: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans focus:outline-hidden focus:border-[#1A2E20]"
+                  />
+                  <p className="text-[10px] text-[#5A6C5E] mt-0.5">
+                    Previous room occupancy ends on this date; new room occupancy begins.
+                  </p>
+                </div>
+
+                {/* New Monthly Rent */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                    Monthly Rent for New Room (₹) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    step={100}
+                    value={transferForm.newMonthlyRent}
+                    onChange={(e) => setTransferForm({ ...transferForm, newMonthlyRent: Number(e.target.value) })}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                  />
+                  <p className="text-[10px] text-[#5A6C5E] mt-0.5">
+                    Defaults to base rent of destination room. You may adjust if a special rate applies.
+                  </p>
+                </div>
+
+                {/* Transfer Reason */}
+                <div>
+                  <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                    Reason for Transfer * (Min. 5 characters)
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    placeholder="e.g. Resident requested upgrade to single occupancy / Floor maintenance relocation"
+                    value={transferForm.reason}
+                    onChange={(e) => setTransferForm({ ...transferForm, reason: e.target.value })}
+                    className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setTransferTargetResident(null)}
+                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || rooms.filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber).length === 0}
+                    className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs disabled:opacity-50"
+                  >
+                    Review Transfer
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Review & Confirm Screen */
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/25 text-xs space-y-2.5">
+                  <p className="font-semibold text-[#1A2E20]">Confirm Room Transfer Details:</p>
+                  <div className="space-y-1.5 text-[#5A6C5E]">
+                    <div className="flex items-center justify-between">
+                      <span>Resident:</span>
+                      <strong className="text-[#1A2E20]">{transferTargetResident.fullName}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Current Assignment:</span>
+                      <strong className="text-[#1A2E20]">Room {transferTargetResident.currentRoomNumber}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Destination Assignment:</span>
+                      <strong className="text-[#1A2E20]">
+                        Room {rooms.find((r) => r.id === transferForm.targetRoomId)?.roomNumber || "Selected"}
+                      </strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Effective Transfer Date:</span>
+                      <strong className="text-[#1A2E20] font-sans tabular-nums">{transferForm.transferDate}</strong>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>New Monthly Rent:</span>
+                      <strong className="text-[#1A2E20] font-sans tabular-nums">
+                        ₹{Number(transferForm.newMonthlyRent).toLocaleString("en-IN")} / mo
+                      </strong>
+                    </div>
+                    <div className="pt-1.5 border-t border-[#8E9F89]/20">
+                      <span className="block text-[10px] uppercase font-semibold text-[#6E7F70]">Reason:</span>
+                      <span className="text-[#1A2E20] italic block mt-0.5">{transferForm.reason}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200/80 text-[11px] text-amber-900 leading-relaxed">
+                  <strong>Atomic Capacity Rebalance:</strong> Upon confirmation, Room {transferTargetResident.currentRoomNumber}&apos;s bed is immediately released and Room {rooms.find((r) => r.id === transferForm.targetRoomId)?.roomNumber}&apos;s bed is occupied. The existing security deposit is carried forward automatically.
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowTransferConfirm(false)}
+                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
+                  >
+                    Back to Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTransferSubmit}
+                    disabled={submitting}
+                    className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold disabled:opacity-50 shadow-md inline-flex items-center gap-1.5"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-[#B58A57]" />
+                    <span>{submitting ? "Transferring..." : "Confirm & Execute Transfer"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

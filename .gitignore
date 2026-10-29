@@ -8,6 +8,7 @@ coverage/
 
 # next.js
 .next/
+.next-dev/
 out/
 
 # production
@@ -35,6 +36,10 @@ yarn-error.log*
 *.backup*
 /data/*.db*
 /tests/*.db*
+
+# private document storage
+/storage/
+/tests/temp_storage/
 
 # typescript
 *.tsbuildinfo

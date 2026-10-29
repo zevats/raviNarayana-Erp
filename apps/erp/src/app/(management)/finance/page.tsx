@@ -7,6 +7,8 @@ import {
   AlertCircle,
   CheckCircle2,
   X,
+  FileText,
+  Lock,
 } from "lucide-react";
 import {
   FinancialTransaction,
@@ -20,6 +22,9 @@ import { AccountingPeriodSelector } from "@/modules/finance/components/Accountin
 import { FinancialSummaryCards } from "@/modules/finance/components/FinancialSummaryCards";
 import { CashbookLedger } from "@/modules/finance/components/CashbookLedger";
 import { ResidentStatementsView } from "@/modules/finance/components/ResidentStatementsView";
+import { InvoiceLedgerView } from "@/modules/finance/components/InvoiceLedgerView";
+import { DailyClosingView } from "@/modules/finance/components/DailyClosingView";
+
 import { PaymentModal } from "@/modules/finance/components/modals/PaymentModal";
 import { RentChargeModal } from "@/modules/finance/components/modals/RentChargeModal";
 import { SecurityDepositModal } from "@/modules/finance/components/modals/SecurityDepositModal";
@@ -33,7 +38,7 @@ import {
 import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
 
 export default function FinancePage() {
-  const [activeTab, setActiveTab] = useState<"cashbook" | "residents">("cashbook");
+  const [activeTab, setActiveTab] = useState<"cashbook" | "residents" | "invoices" | "closing">("cashbook");
 
   // Local calendar date filters (defaults to current calendar month)
   const [startDate, setStartDate] = useState(getLocalFirstDayOfMonth());
@@ -271,6 +276,32 @@ export default function FinancePage() {
               {residents.length}
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("invoices")}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
+              activeTab === "invoices"
+                ? "bg-[#1A2E20] text-white shadow-xs"
+                : "text-[#5A6C5E] hover:text-[#1A2E20]"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 text-[#B58A57]" />
+            <span>Invoices &amp; Billing</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("closing")}
+            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
+              activeTab === "closing"
+                ? "bg-[#1A2E20] text-white shadow-xs"
+                : "text-[#5A6C5E] hover:text-[#1A2E20]"
+            }`}
+          >
+            <Lock className="w-3.5 h-3.5 text-[#B58A57]" />
+            <span>Daily Closing &amp; Reconciliation</span>
+          </button>
         </div>
 
         {/* Accounting Period Selector (only in Cashbook tab) */}
@@ -306,13 +337,29 @@ export default function FinancePage() {
             onOpenExpense={() => setIsExpenseOpen(true)}
           />
         </div>
-      ) : (
+      ) : activeTab === "residents" ? (
         /* Resident Statements Directory */
         <ResidentStatementsView
           residents={residents}
           isLoading={loading}
           onOpenPaymentForResident={handleOpenPaymentForResident}
           onLoadStatement={handleLoadStatement}
+        />
+      ) : activeTab === "invoices" ? (
+        /* Invoices & Billing Engine */
+        <InvoiceLedgerView
+          residents={residents}
+          onOpenRecordPayment={handleOpenPaymentForResident}
+          onRefreshParentFinance={fetchData}
+        />
+      ) : (
+        /* Daily Closing & Multi-Channel Reconciliation Engine */
+        <DailyClosingView
+          onMutationSuccess={(msg) => {
+            setActionSuccess(msg);
+            fetchData();
+          }}
+          onMutationError={(err) => setActionError(err)}
         />
       )}
 

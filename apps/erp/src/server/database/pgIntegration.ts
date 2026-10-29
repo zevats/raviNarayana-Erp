@@ -15,10 +15,16 @@ export interface PostgresTargetSafetyResult {
   reason?: string;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const PROTECTED_DATABASE_PATTERN = /phase01b-test/i;
+const FORBIDDEN_TEST_DATABASE_NAMES = new Set(["neondb", "postgres", "template0", "template1", "production", "prod"]);
+
 /**
- * Validates that a target PostgreSQL connection is safe for test or integration operations.
- * Fails closed if the target points to a production database or the populated rehearsal database
- * without explicit, separate authorization.
+ * Validates that a target PostgreSQL connection is safe for test, seed or migration harnesses.
+ *
+ * Default-deny: only loopback hosts with a non-protected database name pass. Remote hosts
+ * (including any Neon host, whether or not EXPECTED_NEON_HOST is configured), production
+ * targets and the protected rehearsal database are always rejected. There is no override flag.
  */
 export function validatePostgresTargetSafety(
   targetUrl?: string | null
@@ -45,48 +51,57 @@ export function validatePostgresTargetSafety(
     };
   }
 
-  const hostname = parsed.hostname.toLowerCase();
-  const dbName = parsed.pathname.replace(/^\//, "").toLowerCase();
+  if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:") {
+    return {
+      safe: false,
+      isProduction: false,
+      isRehearsalDatabase: false,
+      reason: `Unsupported connection protocol '${parsed.protocol}'.`,
+    };
+  }
 
-  // 1. Detect Production Target
+  const hostname = parsed.hostname.toLowerCase();
+  let dbName: string;
+  try {
+    dbName = decodeURIComponent(parsed.pathname.replace(/^\/+/, "")).toLowerCase().trim();
+  } catch {
+    dbName = parsed.pathname.replace(/^\/+/, "").toLowerCase().trim();
+  }
+
   const isProduction =
     process.env.NODE_ENV === "production" ||
     hostname.includes("production") ||
     hostname.includes("prod-") ||
+    hostname.startsWith("prod.") ||
     dbName.includes("prod");
 
-  // 2. Detect Populated Rehearsal Target
   const expectedNeonHost = (process.env.EXPECTED_NEON_HOST || "").toLowerCase().trim();
   const expectedNeonDb = (process.env.EXPECTED_NEON_DATABASE || "neondb").toLowerCase().trim();
-  const isRehearsalDatabase = Boolean(
-    expectedNeonHost &&
-      hostname === expectedNeonHost &&
-      (!expectedNeonDb || dbName === expectedNeonDb)
-  );
+  const isRehearsalDatabase =
+    PROTECTED_DATABASE_PATTERN.test(url) ||
+    PROTECTED_DATABASE_PATTERN.test(dbName) ||
+    Boolean(expectedNeonHost && hostname === expectedNeonHost && (!expectedNeonDb || dbName === expectedNeonDb));
 
-  // If target is rehearsal database, require explicit test-migration authorization
-  const allowTestMigration = process.env.ALLOW_TEST_MIGRATION === "true";
-  if (isRehearsalDatabase && !allowTestMigration) {
-    return {
-      safe: false,
-      isProduction,
-      isRehearsalDatabase,
-      hostname,
-      database: dbName,
-      reason: "Target matches designated rehearsal database, but ALLOW_TEST_MIGRATION=true is not set.",
-    };
+  const reject = (reason: string): PostgresTargetSafetyResult => ({
+    safe: false,
+    isProduction,
+    isRehearsalDatabase,
+    hostname,
+    database: dbName,
+    reason,
+  });
+
+  if (isRehearsalDatabase) {
+    return reject("Target is the protected rehearsal database. Access is permanently prohibited.");
   }
-
-  // Production connections are never safe for automated integration tests
-  if (isProduction && process.env.ALLOW_PRODUCTION_TEST !== "true") {
-    return {
-      safe: false,
-      isProduction: true,
-      isRehearsalDatabase,
-      hostname,
-      database: dbName,
-      reason: "Connection to production database is strictly blocked for test and integration harnesses.",
-    };
+  if (isProduction) {
+    return reject("Connection to a production database is strictly blocked for test and integration harnesses.");
+  }
+  if (!LOOPBACK_HOSTS.has(hostname)) {
+    return reject(`Remote database host '${hostname}' rejected. Only loopback targets are permitted.`);
+  }
+  if (!dbName || FORBIDDEN_TEST_DATABASE_NAMES.has(dbName)) {
+    return reject(`Database name '${dbName}' is not an approved local database.`);
   }
 
   return {

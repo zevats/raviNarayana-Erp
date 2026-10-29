@@ -1,6 +1,7 @@
 import React from "react";
 import { cookies } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
   BedDouble,
   Users,
@@ -19,11 +20,16 @@ import {
   Sparkles,
   ChevronRight,
   ShieldAlert,
+  Layers,
+  Info,
+  UserCog,
+  FileText,
+  Lock,
 } from "lucide-react";
 import { ERP_COOKIE_NAME } from "@/server/authentication/auth";
 import { validateSessionCached } from "@/server/authentication/cachedAuth";
 import { getDashboardMetrics } from "@/server/dashboard/dashboardService";
-import { NotificationItem } from "@/types";
+import { NotificationItem, ClosingDivision } from "@/types";
 import { getNotifications } from "@/server/notifications/notificationService";
 import { ExportReportModal } from "./ExportReportModal";
 import { MonthlyRevenueChart } from "./MonthlyRevenueChart";
@@ -48,14 +54,28 @@ function formatRelativeTime(isoString: string): string {
   }
 }
 
-export default async function DashboardPage() {
+interface DashboardPageProps {
+  searchParams?: {
+    division?: ClosingDivision;
+    startDate?: string;
+    endDate?: string;
+  };
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const cookieStore = cookies();
   const sessionToken = cookieStore.get(ERP_COOKIE_NAME)?.value || "";
   const user = await validateSessionCached(sessionToken);
 
+  // Delivery personnel land directly on the mobile Driver Run interface
+  if (user?.role === "DELIVERY_PERSON") {
+    redirect("/delivery");
+  }
+
   const ownerName = user?.fullName || "Dr. Ravinder Gulia";
   const todayIsoDate = new Date().toISOString().slice(0, 10);
   const currentMonthPrefix = todayIsoDate.slice(0, 7);
+  const activeDivision: ClosingDivision = searchParams?.division === "PG" || searchParams?.division === "TIFFIN" ? searchParams.division : "COMBINED";
 
   // Default metric containers
   let occupancy = {
@@ -104,7 +124,11 @@ export default async function DashboardPage() {
 
   try {
     const [metrics, notifs] = await Promise.all([
-      getDashboardMetrics(),
+      getDashboardMetrics({
+        division: activeDivision,
+        startDate: searchParams?.startDate,
+        endDate: searchParams?.endDate,
+      }),
       user ? getNotifications(user, { limit: 4 }) : Promise.resolve({ notifications: [], unreadCount: 0 }),
     ]);
 
@@ -141,21 +165,197 @@ export default async function DashboardPage() {
     <div className="space-y-7 pb-12">
       
       {/* ============================================================== */}
-      {/* 1. EXECUTIVE HEADER (Reference-Led Layout)                     */}
+      {/* 1. EXECUTIVE HEADER & DIVISION FILTER CONTROLS                 */}
       {/* ============================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-2">
         <div className="border-l-4 border-[#B58A57] pl-3.5">
           <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1A2E20]">
             Executive Overview
           </h1>
           <p className="text-xs sm:text-sm text-[#5A6C5E] mt-1 font-sans">
-            Namaste, <strong className="font-semibold text-[#1A2E20]">{ownerName}</strong>. Here is your property&apos;s operational and financial summary for today.
+            Namaste, <strong className="font-semibold text-[#1A2E20]">{ownerName}</strong>. Here is your property&apos;s operational and financial summary.
           </p>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-3 shrink-0">
-          <ExportReportModal summary={exportSummary} />
+        {/* Division Selector & Action Controls */}
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {/* Canonical 3-Way Division Filter */}
+          <div className="inline-flex rounded-xl bg-[#FAF8F5] p-1 border border-[#8E9F89]/30 text-xs font-semibold shadow-2xs">
+            <Link
+              href="/dashboard?division=COMBINED"
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeDivision === "COMBINED"
+                  ? "bg-[#1A2E20] text-white shadow-2xs"
+                  : "text-[#5A6C5E] hover:text-[#1A2E20]"
+              }`}
+            >
+              All Operations
+            </Link>
+            <Link
+              href="/dashboard?division=PG"
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeDivision === "PG"
+                  ? "bg-[#1A2E20] text-white shadow-2xs"
+                  : "text-[#5A6C5E] hover:text-[#1A2E20]"
+              }`}
+            >
+              PG Guesthouse
+            </Link>
+            <Link
+              href="/dashboard?division=TIFFIN"
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeDivision === "TIFFIN"
+                  ? "bg-[#1A2E20] text-white shadow-2xs"
+                  : "text-[#5A6C5E] hover:text-[#1A2E20]"
+              }`}
+            >
+              Tiffin Service
+            </Link>
+          </div>
+
+          <ExportReportModal
+            summary={exportSummary}
+            division={activeDivision}
+            startDate={searchParams?.startDate}
+            endDate={searchParams?.endDate}
+          />
+        </div>
+      </div>
+
+      {/* Property Capacity & Room Audit Badge */}
+      <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/25 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-[#5A6C5E]">
+        <div className="flex items-center gap-2.5">
+          <Info className="w-4 h-4 text-[#B58A57] shrink-0" />
+          <span>
+            <strong>Property Capacity:</strong> 39 Confirmed Physical Beds across 21 rooms &bull; 41 Total Provisioned Beds in DB (Suite M01 has 1 or 2 beds pending physical owner confirmation).
+          </span>
+        </div>
+        <div className="shrink-0 flex items-center gap-3 text-[11px] font-medium text-[#1A2E20]">
+          <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+            {occupancy.occupiedBeds} Beds Occupied
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 border border-stone-200">
+            {occupancy.vacantBeds} Beds Available
+          </span>
+        </div>
+      </div>
+
+      {/* ============================================================== */}
+      {/* ROLE-AWARE MOBILE WORKFLOW BAR (Touch-Optimized for Phone)      */}
+      {/* ============================================================== */}
+      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#B58A57]" />
+            <h2 className="text-xs font-serif font-bold uppercase tracking-wider text-[#1A2E20]">
+              {user?.role === "ACCOUNTANT"
+                ? "Accountant Workflows"
+                : user?.role === "OPERATIONS_MANAGER"
+                ? "Operations Workflows"
+                : "Owner & Executive Workflows"}
+            </h2>
+          </div>
+          <span className="text-[10px] font-mono text-[#5A6C5E] uppercase tracking-wider">
+            {user?.role || "Staff"}
+          </span>
+        </div>
+
+        {/* Quick-Access Touch Action Pills */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+          {user?.role === "ACCOUNTANT" ? (
+            <>
+              <Link
+                href="/finance"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <Lock className="w-4 h-4 text-[#B58A57] shrink-0" />
+                <span className="truncate">Daily Closing</span>
+              </Link>
+              <Link
+                href="/finance"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="truncate">Cashbook</span>
+              </Link>
+              <Link
+                href="/finance"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <FileText className="w-4 h-4 text-[#B58A57] shrink-0" />
+                <span className="truncate">Invoices &amp; Tax</span>
+              </Link>
+              <Link
+                href="/tiffin"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <Users className="w-4 h-4 text-[#5D7656] shrink-0" />
+                <span className="truncate">Tiffin Billing</span>
+              </Link>
+            </>
+          ) : user?.role === "OPERATIONS_MANAGER" ? (
+            <>
+              <Link
+                href="/kitchen"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <UtensilsCrossed className="w-4 h-4 text-[#B58A57] shrink-0" />
+                <span className="truncate">Kitchen Plan</span>
+              </Link>
+              <Link
+                href="/delivery"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <Truck className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="truncate">Dispatch Board</span>
+              </Link>
+              <Link
+                href="/residents"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <Users className="w-4 h-4 text-[#5D7656] shrink-0" />
+                <span className="truncate">Residents</span>
+              </Link>
+              <Link
+                href="/rooms"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <BedDouble className="w-4 h-4 text-[#654735] shrink-0" />
+                <span className="truncate">Room Inventory</span>
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                href="/finance"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <CreditCard className="w-4 h-4 text-emerald-700 shrink-0" />
+                <span className="truncate">Finance &amp; Closing</span>
+              </Link>
+              <Link
+                href="/residents"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <Users className="w-4 h-4 text-[#5D7656] shrink-0" />
+                <span className="truncate">Resident Stays</span>
+              </Link>
+              <Link
+                href="/kitchen"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <UtensilsCrossed className="w-4 h-4 text-[#B58A57] shrink-0" />
+                <span className="truncate">Kitchen &amp; Meals</span>
+              </Link>
+              <Link
+                href="/staff"
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
+              >
+                <UserCog className="w-4 h-4 text-[#654735] shrink-0" />
+                <span className="truncate">Staff Admin</span>
+              </Link>
+            </>
+          )}
         </div>
       </div>
 

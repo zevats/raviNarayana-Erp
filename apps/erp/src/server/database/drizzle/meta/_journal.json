@@ -15,6 +15,76 @@
       "when": 1792179783049,
       "tag": "0001_faithful_gorgon",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792182000000,
+      "tag": "0002_invoices",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792185000000,
+      "tag": "0003_tiffin_directory",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792188000000,
+      "tag": "0004_tiffin_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792191000000,
+      "tag": "0005_kitchen_demand_and_production",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792194000000,
+      "tag": "0006_tiffin_billing_and_invoicing",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792197000000,
+      "tag": "0007_kitchen_inventory_and_recipes",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792200000000,
+      "tag": "0008_resident_checkout_settlement",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792203000000,
+      "tag": "0009_daily_cashbook_closing",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792206000000,
+      "tag": "0010_document_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792209000000,
+      "tag": "0011_delivery_handover",
+      "breakpoints": true
     }
   ]
 }

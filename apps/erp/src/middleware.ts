@@ -19,17 +19,24 @@ export function middleware(request: NextRequest) {
   const sessionCookie = request.cookies.get(ERP_COOKIE_NAME)?.value;
   const isAuthenticated = Boolean(sessionCookie && sessionCookie.length >= 32);
 
-  // 2. Root route: allow app/page.tsx to perform database-backed validation
-  if (pathname === "/") {
+  // 2. Public PWA assets, offline fallback, and unauthenticated recovery routes
+  if (
+    pathname === "/" ||
+    pathname === "/login" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/manifest.json" ||
+    pathname === "/sw.js" ||
+    pathname === "/offline" ||
+    pathname === "/favicon.ico" ||
+    pathname === "/logo.png" ||
+    pathname.startsWith("/icons/") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password")
+  ) {
     return NextResponse.next();
   }
 
-  // 3. Login route: allow page.tsx to render or redirect based on verified DB session
-  if (pathname === "/login") {
-    return NextResponse.next();
-  }
-
-  // 4. Protected management pages (e.g. /dashboard, /staff, /rooms, etc.)
+  // 3. Protected management pages (e.g. /dashboard, /staff, /rooms, etc.)
   if (pathname.startsWith("/dashboard") || (!pathname.startsWith("/api") && !pathname.startsWith("/login"))) {
     if (!isAuthenticated) {
       const loginUrl = new URL("/login", request.url);
@@ -62,6 +69,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:jpg|jpeg|gif|png|svg|webp|ico)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|manifest.json|sw.js|.*\\.(?:jpg|jpeg|gif|png|svg|webp|ico)).*)",
   ],
 };

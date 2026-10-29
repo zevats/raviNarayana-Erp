@@ -7,12 +7,12 @@ export interface GetNotificationsOptions {
 }
 
 interface NotificationCacheEntry {
-  data: { notifications: NotificationItem[]; unreadCount: number };
+  data: { items: NotificationItem[]; unreadCount: number };
   expiresAt: number;
 }
 
 const notificationsCache = new Map<string, NotificationCacheEntry>();
-const NOTIFICATIONS_CACHE_TTL_MS = 15_000;
+const NOTIFICATIONS_CACHE_TTL_MS = 30_000;
 
 export function invalidateNotificationCache(staffId?: string): void {
   if (staffId) {
@@ -34,15 +34,22 @@ export async function getNotifications(
   actor: AuthenticatedUser,
   options?: GetNotificationsOptions
 ): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
-  const cacheKey = `${actor.id}:${options?.limit || 30}:${options?.unreadOnly ? 1 : 0}`;
+  const cacheKey = `${actor.id}:${options?.unreadOnly ? 1 : 0}`;
+  const limit = options?.limit || 30;
   const nowMs = Date.now();
   const cached = notificationsCache.get(cacheKey);
   if (cached && cached.expiresAt > nowMs) {
-    return cached.data;
+    let filtered = cached.data.items;
+    if (options?.unreadOnly) {
+      filtered = filtered.filter((i) => !i.isRead);
+    }
+    return {
+      notifications: filtered.slice(0, limit),
+      unreadCount: cached.data.unreadCount,
+    };
   }
 
   const db = getAsyncDb();
-  const limit = options?.limit || 30;
 
   // Execute all 7 notification aggregation queries concurrently
   const [
@@ -244,22 +251,20 @@ export async function getNotifications(
 
   const unreadCount = items.filter((i) => !i.isRead).length;
 
+  notificationsCache.set(cacheKey, {
+    data: { items, unreadCount },
+    expiresAt: nowMs + NOTIFICATIONS_CACHE_TTL_MS,
+  });
+
   let filtered = items;
   if (options?.unreadOnly) {
     filtered = items.filter((i) => !i.isRead);
   }
 
-  const result = {
+  return {
     notifications: filtered.slice(0, limit),
     unreadCount,
   };
-
-  notificationsCache.set(cacheKey, {
-    data: result,
-    expiresAt: nowMs + NOTIFICATIONS_CACHE_TTL_MS,
-  });
-
-  return result;
 }
 
 /**

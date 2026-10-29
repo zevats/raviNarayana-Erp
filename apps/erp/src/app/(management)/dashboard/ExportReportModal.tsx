@@ -4,6 +4,9 @@ import React, { useState } from "react";
 import { Download, Printer, FileText, X, Check, ArrowRight } from "lucide-react";
 
 interface ExportReportModalProps {
+  division?: string;
+  startDate?: string;
+  endDate?: string;
   summary: {
     occupiedBeds: number;
     totalCapacity: number;
@@ -23,21 +26,27 @@ interface ExportReportModalProps {
   };
 }
 
-export function ExportReportModal({ summary }: ExportReportModalProps) {
+export function ExportReportModal({ summary, division, startDate, endDate }: ExportReportModalProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
   const handleDownloadCsv = async () => {
     try {
       setDownloading(true);
-      const res = await fetch("/api/reports/executive");
+      const params = new URLSearchParams();
+      if (division) params.set("division", division);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+
+      const res = await fetch(`/api/reports/executive${queryString}`);
       if (!res.ok) throw new Error("Export failed");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       const todayIso = new Date().toISOString().slice(0, 10);
-      a.download = `ravinarayan_executive_report_${todayIso}.csv`;
+      a.download = `ravinarayan_executive_report_${division ? division.toLowerCase() + "_" : ""}${todayIso}.csv`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

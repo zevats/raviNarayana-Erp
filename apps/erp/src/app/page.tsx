@@ -8,9 +8,16 @@ export default async function RootPage() {
   const cookieStore = cookies();
   const sessionToken = cookieStore.get(ERP_COOKIE_NAME)?.value;
 
-  if (sessionToken && (await validateSession(sessionToken))) {
-    redirect("/dashboard");
-  } else {
-    redirect("/login");
+  if (sessionToken) {
+    const user = await validateSession(sessionToken);
+    if (user) {
+      // Role-aware primary landing
+      if (user.role === "DELIVERY_PERSON") {
+        redirect("/delivery");
+      }
+      redirect("/dashboard");
+    }
   }
+
+  redirect("/login");
 }

@@ -14,7 +14,11 @@ import {
   Wallet,
   AlertCircle,
 } from "lucide-react";
-import { FinancialTransaction } from "@/types";
+import {
+  FinancialTransaction,
+  formatPaymentMethodLabel,
+  tryNormalizePaymentMethod,
+} from "@/types";
 import { formatINRWithSign } from "../utils/formatUtils";
 
 interface CashbookLedgerProps {
@@ -39,7 +43,9 @@ export function CashbookLedger({
   onOpenCharge,
 }: CashbookLedgerProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [methodFilter, setMethodFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -54,9 +60,33 @@ export function CashbookLedger({
   // Filtered transactions
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
+      // Division filter
+      if (divisionFilter === "PG") {
+        const isPg = Boolean(
+          tx.residentId ||
+          ["RENT_PAYMENT", "SECURITY_DEPOSIT", "DEPOSIT_REFUND", "RENT_CHARGE"].includes(tx.transactionType) ||
+          (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+        );
+        if (!isPg) return false;
+      } else if (divisionFilter === "TIFFIN") {
+        const isTiffin = Boolean(
+          tx.customerId ||
+          ["TIFFIN_PAYMENT", "TIFFIN_CHARGE"].includes(tx.transactionType) ||
+          (tx.transactionType === "EXPENSE" && ["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+        );
+        if (!isTiffin) return false;
+      }
+
       // Type filter
       if (typeFilter !== "ALL" && tx.transactionType !== typeFilter) {
         return false;
+      }
+      // Method filter
+      if (methodFilter !== "ALL") {
+        const txNormMethod = tx.paymentMethod ? tryNormalizePaymentMethod(tx.paymentMethod) : null;
+        if (txNormMethod !== methodFilter) {
+          return false;
+        }
       }
       // Status filter
       if (statusFilter !== "ALL" && tx.status !== statusFilter) {
@@ -65,7 +95,7 @@ export function CashbookLedger({
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const party = (tx.residentName || tx.payeeVendor || "").toLowerCase();
+        const party = (tx.residentName || tx.customerName || tx.payeeVendor || "").toLowerCase();
         const desc = (tx.description || "").toLowerCase();
         const ref = (tx.referenceNumber || "").toLowerCase();
         const room = (tx.roomNumber || "").toLowerCase();
@@ -85,12 +115,12 @@ export function CashbookLedger({
       }
       return true;
     });
-  }, [transactions, typeFilter, statusFilter, searchQuery]);
+  }, [transactions, divisionFilter, typeFilter, methodFilter, statusFilter, searchQuery]);
 
   // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [typeFilter, statusFilter, searchQuery]);
+  }, [divisionFilter, typeFilter, methodFilter, statusFilter, searchQuery]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
@@ -126,8 +156,19 @@ export function CashbookLedger({
           )}
         </div>
 
-        {/* Type & Status Filters */}
+        {/* Division, Type, Method & Status Filters */}
         <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Division:</span>
+          <select
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-semibold focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Divisions</option>
+            <option value="PG">PG Guesthouse</option>
+            <option value="TIFFIN">Tiffin Service</option>
+          </select>
+
           <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Type:</span>
           <select
             value={typeFilter}
@@ -138,8 +179,24 @@ export function CashbookLedger({
             <option value="RENT_PAYMENT">Rent Payment</option>
             <option value="RENT_CHARGE">Rent Charge (Billed)</option>
             <option value="SECURITY_DEPOSIT">Security Deposit</option>
+            <option value="TIFFIN_PAYMENT">Tiffin Payment</option>
+            <option value="TIFFIN_CHARGE">Tiffin Charge</option>
             <option value="EXPENSE">Expense</option>
             <option value="REVERSAL">Reversal</option>
+          </select>
+
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Method:</span>
+          <select
+            value={methodFilter}
+            onChange={(e) => setMethodFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Methods</option>
+            <option value="CASH">Cash</option>
+            <option value="UPI">UPI / QR</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="CHEQUE">Cheque</option>
+            <option value="OTHER">Card / Other</option>
           </select>
 
           <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
@@ -198,8 +255,173 @@ export function CashbookLedger({
           </div>
         ) : (
           <>
-            {/* Dedicated Horizontally Scrollable Transaction Table */}
-            <div className="overflow-x-auto w-full min-w-0">
+            {/* Mobile Card List (< md screens) - Prevents Wide Table Viewport Overflow */}
+            <div className="block md:hidden divide-y divide-[#8E9F89]/15">
+              {paginated.map((tx) => {
+                const isPayment = tx.transactionType === "RENT_PAYMENT";
+                const isCharge = tx.transactionType === "RENT_CHARGE";
+                const isDeposit = tx.transactionType === "SECURITY_DEPOSIT";
+                const isTiffinPayment = tx.transactionType === "TIFFIN_PAYMENT";
+                const isTiffinCharge = tx.transactionType === "TIFFIN_CHARGE";
+                const isExpense = tx.transactionType === "EXPENSE";
+                const isReversal = tx.transactionType === "REVERSAL";
+                const isReversed = tx.status === "REVERSED";
+
+                const { formatted, isPositive, isNegative } = formatINRWithSign(
+                  tx.amount,
+                  tx.transactionType,
+                  tx.status
+                );
+
+                return (
+                  <div
+                    key={`mobile-${tx.id}`}
+                    className={`p-4 space-y-2.5 transition-colors ${
+                      isReversed ? "bg-stone-50/70 opacity-75" : "hover:bg-[#FAF8F5]/40"
+                    }`}
+                  >
+                    {/* Top Row: Type Badges & Amount */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {isPayment && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <TrendingUp className="w-3 h-3" />
+                            <span>Rent Payment</span>
+                          </span>
+                        )}
+                        {isCharge && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#FAF8F5] text-[#654735] border border-[#B58A57]/35">
+                            <Receipt className="w-3 h-3 text-[#B58A57]" />
+                            <span>Rent Charge</span>
+                          </span>
+                        )}
+                        {isDeposit && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                            <Wallet className="w-3 h-3 text-amber-800" />
+                            <span>Deposit</span>
+                          </span>
+                        )}
+                        {isTiffinPayment && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                            <TrendingUp className="w-3 h-3" />
+                            <span>Tiffin Payment</span>
+                          </span>
+                        )}
+                        {isTiffinCharge && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                            <Receipt className="w-3 h-3 text-amber-800" />
+                            <span>Tiffin Charge</span>
+                          </span>
+                        )}
+                        {isExpense && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                            <TrendingDown className="w-3 h-3" />
+                            <span>Expense</span>
+                          </span>
+                        )}
+                        {isReversal && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-700 border border-stone-300">
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Reversal</span>
+                          </span>
+                        )}
+                        {isReversed && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-200 text-stone-600">
+                            REVERSED
+                          </span>
+                        )}
+                      </div>
+
+                      <span
+                        className={`text-base font-bold tabular-nums font-sans ${
+                          isReversed
+                            ? "line-through text-stone-400"
+                            : isPositive
+                            ? "text-emerald-700"
+                            : isNegative
+                            ? "text-rose-700"
+                            : "text-[#1A2E20]"
+                        }`}
+                      >
+                        {formatted}
+                      </span>
+                    </div>
+
+                    {/* Middle Row: Party / Room & Date */}
+                    <div className="flex items-center justify-between text-xs text-[#1A2E20]">
+                      <span className="font-semibold truncate max-w-[200px]">
+                        {tx.residentName || tx.customerName || tx.payeeVendor || "General Transaction"}
+                      </span>
+                      <span className="text-[#5A6C5E] text-[11px] font-medium font-sans shrink-0">
+                        {tx.transactionDate}
+                      </span>
+                    </div>
+
+                    {/* Category & Payment Method */}
+                    <div className="flex items-center justify-between text-[11px] text-[#5A6C5E]">
+                      <span>
+                        {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.category ? `${tx.category} Expense` : "PG Operation"}
+                      </span>
+                      <span className="font-sans font-medium text-[#1A2E20]">
+                        {formatPaymentMethodLabel(tx.paymentMethod)}
+                        {tx.referenceNumber ? ` • ${tx.referenceNumber}` : ""}
+                      </span>
+                    </div>
+
+                    {/* Description if present */}
+                    {tx.description && (
+                      <p className="text-[11px] text-[#5A6C5E] bg-[#FAF8F5] p-2 rounded-lg border border-[#8E9F89]/15">
+                        {tx.description}
+                      </p>
+                    )}
+
+                    {/* Mobile Action Bar */}
+                    <div className="flex items-center justify-between pt-2 border-t border-[#8E9F89]/15 text-xs">
+                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#6E7F70]">
+                        <span>{tx.id.slice(0, 16)}...</span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopyId(tx.id, e)}
+                          className="p-1 rounded hover:bg-stone-200/60 transition-colors"
+                          title="Copy ID"
+                        >
+                          {copiedId === tx.id ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onViewReceipt(tx)}
+                          className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs font-medium flex items-center gap-1.5 shadow-2xs"
+                        >
+                          <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
+                          <span>Receipt</span>
+                        </button>
+
+                        {!isReversed && !isReversal && (
+                          <button
+                            type="button"
+                            onClick={() => onInitiateReversal(tx)}
+                            className="min-h-[36px] px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-medium flex items-center gap-1 shadow-2xs"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Reverse</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Dedicated Horizontally Scrollable Transaction Table (Desktop/Tablet) */}
+            <div className="hidden md:block overflow-x-auto w-full min-w-0">
               <table className="w-full min-w-[760px] text-left border-collapse">
                 <thead>
                   <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
@@ -217,6 +439,8 @@ export function CashbookLedger({
                     const isPayment = tx.transactionType === "RENT_PAYMENT";
                     const isCharge = tx.transactionType === "RENT_CHARGE";
                     const isDeposit = tx.transactionType === "SECURITY_DEPOSIT";
+                    const isTiffinPayment = tx.transactionType === "TIFFIN_PAYMENT";
+                    const isTiffinCharge = tx.transactionType === "TIFFIN_CHARGE";
                     const isExpense = tx.transactionType === "EXPENSE";
                     const isReversal = tx.transactionType === "REVERSAL";
                     const isReversed = tx.status === "REVERSED";
@@ -279,6 +503,18 @@ export function CashbookLedger({
                                 <span>Deposit</span>
                               </span>
                             )}
+                            {isTiffinPayment && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-teal-50 text-teal-800 border border-teal-200">
+                                <TrendingUp className="w-3 h-3" />
+                                <span>Tiffin Payment</span>
+                              </span>
+                            )}
+                            {isTiffinCharge && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-900 border border-amber-300">
+                                <Receipt className="w-3 h-3 text-amber-800" />
+                                <span>Tiffin Charge</span>
+                              </span>
+                            )}
                             {isExpense && (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-700 border border-stone-200">
                                 <TrendingDown className="w-3 h-3" />
@@ -302,18 +538,18 @@ export function CashbookLedger({
 
                         {/* 3. Party / Room */}
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-xs text-[#1A2E20] truncate max-w-[150px]" title={tx.residentName || tx.payeeVendor || "General Operations"}>
-                            {tx.residentName || tx.payeeVendor || "General Operations"}
+                          <div className="font-semibold text-xs text-[#1A2E20] truncate max-w-[150px]" title={tx.residentName || tx.customerName || tx.payeeVendor || "General Operations"}>
+                            {tx.residentName || tx.customerName || tx.payeeVendor || "General Operations"}
                           </div>
                           <div className="text-[11px] text-[#5A6C5E] mt-0.5 truncate max-w-[150px]">
-                            {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.payeeVendor ? `${tx.category} Vendor` : "Operations"}
+                            {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.customerName ? "Tiffin Customer" : tx.payeeVendor ? `${tx.category} Vendor` : "Operations"}
                           </div>
                         </td>
 
                         {/* 4. Payment Method & Ref */}
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="text-xs text-[#1A2E20] font-medium font-sans">
-                            {tx.paymentMethod || "—"}
+                            {formatPaymentMethodLabel(tx.paymentMethod)}
                           </div>
                           <div className="text-[11px] text-[#6E7F70] font-sans mt-0.5 truncate max-w-[130px]" title={tx.referenceNumber ? `Ref: ${tx.referenceNumber}` : ""}>
                             {tx.referenceNumber ? `Ref: ${tx.referenceNumber}` : "—"}

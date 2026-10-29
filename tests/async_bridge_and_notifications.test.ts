@@ -7,6 +7,7 @@ import {
   findRepoRoot,
   createAsyncDbFromSqlite,
   checkDemoProvenance,
+  invalidateDemoProvenanceCache,
   AsyncDb,
 } from "../apps/erp/src/server/database/db";
 import { runMigrations } from "./helpers/sqliteMigrations";
@@ -74,6 +75,7 @@ async function runTestSuite() {
   rawDb2.exec("CREATE TABLE seed_manifest (id TEXT PRIMARY KEY, timestamp TEXT)");
   rawDb2.close();
   closeDb(); // reset cached db
+  invalidateDemoProvenanceCache(); // the result is memoized per process; each case must re-evaluate
   const provEmptyTable = await checkDemoProvenance();
   assert(provEmptyTable === false, "Returns false when seed_manifest exists but is empty");
 
@@ -82,6 +84,7 @@ async function runTestSuite() {
   rawDb3.exec("INSERT INTO seed_manifest (id, timestamp) VALUES ('manifest_1', datetime('now'))");
   rawDb3.close();
   closeDb(); // reset cached db
+  invalidateDemoProvenanceCache();
   const provWithRows = await checkDemoProvenance();
   assert(provWithRows === true, "Returns true when seed_manifest contains records in SQLite");
 

@@ -4,6 +4,7 @@ import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { isValidRole } from "../authorization/permissions";
 import { recordAuditEventAsync } from "../audit/audit";
+import { getEmailAdapter } from "../notifications/emailAdapter";
 import { AuthenticatedUser, StaffRole, StaffUser } from "@/types";
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,30}$/;
@@ -22,15 +23,60 @@ export interface UpdateStaffProfileInput {
   email?: string;
 }
 
+export interface StaffListFilter {
+  search?: string;
+  role?: StaffRole;
+  isActive?: boolean;
+}
+
+export interface StaffStats {
+  totalStaff: number;
+  activeStaff: number;
+  deactivatedStaff: number;
+  superAdmins: number;
+}
+
 /**
- * List all staff users. Requires staff.read permission.
+ * List staff users with optional filters (search, role, status).
+ * Requires staff.read permission.
  */
 export async function listStaffUsers(
   actor: AuthenticatedUser,
+  filterOrDb?: StaffListFilter | AsyncDb,
   asyncDb?: AsyncDb
 ): Promise<StaffUser[]> {
   requirePermission(actor, "staff.read");
-  const db = asyncDb ?? getAsyncDb();
+
+  const isFilter = Boolean(
+    filterOrDb &&
+    typeof filterOrDb === "object" &&
+    !("query" in filterOrDb) &&
+    !("execute" in filterOrDb)
+  );
+
+  const filter: StaffListFilter | undefined = isFilter ? (filterOrDb as StaffListFilter) : undefined;
+  const db = (isFilter ? asyncDb : (filterOrDb as AsyncDb)) ?? getAsyncDb();
+
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (filter?.role) {
+    conditions.push("role = ?");
+    params.push(filter.role);
+  }
+
+  if (filter?.isActive !== undefined) {
+    conditions.push("is_active = ?");
+    params.push(filter.isActive ? 1 : 0);
+  }
+
+  if (filter?.search) {
+    const term = `%${filter.search.trim().toLowerCase()}%`;
+    conditions.push("(LOWER(username) LIKE ? OR LOWER(email) LIKE ? OR LOWER(full_name) LIKE ?)");
+    params.push(term, term, term);
+  }
+
+  const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
   const rows = await db.query<any>(`
     SELECT
@@ -44,8 +90,9 @@ export async function listStaffUsers(
       updated_at as "updatedAt",
       last_login_at as "lastLoginAt"
     FROM staff_users
+    ${whereClause}
     ORDER BY created_at ASC
-  `);
+  `, params);
 
   return rows.map((r) => ({
     ...r,
@@ -129,6 +176,11 @@ export async function createStaffUser(
     throw new Error(`Invalid role '${role}'.`);
   }
 
+  // Privilege escalation protection: only Super Administrator can assign SUPER_ADMIN
+  if (role === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN") {
+    throw new Error("Privilege escalation blocked: Only Super Administrators can assign the SUPER_ADMIN role.");
+  }
+
   // Check unique constraints
   const existing = await db.queryOne<{ username: string; email: string }>(`
     SELECT username, email FROM staff_users 
@@ -203,6 +255,11 @@ export async function updateStaffRole(
 
   if (!isValidRole(newRole)) {
     throw new Error(`Invalid role '${newRole}'.`);
+  }
+
+  // Privilege escalation protection: only Super Administrator can assign SUPER_ADMIN
+  if (newRole === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN") {
+    throw new Error("Privilege escalation blocked: Only Super Administrators can assign the SUPER_ADMIN role.");
   }
 
   const target = await db.queryOne<{ id: string; username: string; role: StaffRole; isActive: number | boolean }>(`
@@ -336,6 +393,10 @@ export async function resetStaffPassword(
 
   requirePermission(actor, "staff.update", { ip: clientIp, targetId: targetUserId, action: "staff.password_reset" });
 
+  if (actor.role !== "SUPER_ADMIN") {
+    throw new Error("Privilege restriction: Only Super Administrators can directly reset a staff member's password.");
+  }
+
   if (!newPassword || newPassword.length < 12) {
     throw new Error("Password must be at least 12 characters long.");
   }
@@ -448,4 +509,155 @@ export async function updateStaffProfile(
       ipAddress: clientIp,
     }, tx);
   });
+}
+
+/**
+ * Administrator-initiated password recovery link dispatch.
+ * Requires staff.update permission.
+ * Generates an unpredictable 256-bit single-use recovery token (1-hour expiry)
+ * and dispatches it via email to the staff member's registered email address.
+ * Plaintext passwords are NEVER handled or exposed to the administrator.
+ */
+export async function initiateStaffPasswordRecovery(
+  actor: AuthenticatedUser,
+  targetUserId: string,
+  origin?: string,
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<{ success: true; message: string }> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
+  requirePermission(actor, "staff.update", { ip: clientIp, targetId: targetUserId, action: "staff.recovery_initiated" });
+
+  const target = await db.queryOne<{ id: string; username: string; email: string; isActive: number | boolean }>(`
+    SELECT id, username, email, is_active as "isActive" FROM staff_users WHERE id = ?
+  `, [targetUserId]);
+
+  if (!target) {
+    throw new Error(`Staff user '${targetUserId}' not found.`);
+  }
+
+  if (!Boolean(target.isActive)) {
+    throw new Error("Cannot initiate password recovery for a deactivated staff account. Please activate the account first.");
+  }
+
+  // Invalidate any previous unused password resets for this staff member
+  await db.execute("DELETE FROM password_resets WHERE staff_id = ?", [target.id]);
+
+  // Generate cryptographically secure 256-bit token (32 random bytes)
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const resetId = `pr_${crypto.randomUUID()}`;
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+
+  await db.execute(
+    `INSERT INTO password_resets (id, staff_id, token_hash, expires_at, used_at, created_at)
+     VALUES (?, ?, ?, ?, NULL, ?)`,
+    [resetId, target.id, tokenHash, expiresAt, now.toISOString()]
+  );
+
+  const baseUrl = origin || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001";
+  const resetUrl = `${baseUrl}/login?token=${rawToken}`;
+
+  await getEmailAdapter().sendPasswordReset(target.email, resetUrl);
+
+  await recordAuditEventAsync({
+    actorId: actor.id,
+    actorUsername: actor.username,
+    action: "staff.recovery_initiated",
+    targetType: "staff_user",
+    targetId: target.id,
+    metadata: {
+      initiatedBy: actor.username,
+      targetUsername: target.username,
+      targetEmail: target.email,
+    },
+    ipAddress: clientIp,
+  }, db);
+
+  return {
+    success: true,
+    message: `Password recovery link successfully dispatched to ${target.email}.`,
+  };
+}
+
+/**
+ * Retrieves the 360-degree security and operational audit trail for a staff account.
+ * Requires audit.read or staff.read permission (or self-lookup).
+ */
+export async function getStaffAuditHistory(
+  actor: AuthenticatedUser,
+  targetUserId: string,
+  limit: number = 30,
+  asyncDb?: AsyncDb
+): Promise<any[]> {
+  if (actor.id !== targetUserId) {
+    requirePermission(actor, "staff.read");
+  }
+
+  const db = asyncDb ?? getAsyncDb();
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+  const rows = await db.query<any>(`
+    SELECT
+      id,
+      actor_id as "actorId",
+      actor_username as "actorUsername",
+      action,
+      target_type as "targetType",
+      target_id as "targetId",
+      metadata,
+      ip_address as "ipAddress",
+      created_at as "createdAt"
+    FROM audit_logs
+    WHERE target_id = ? OR actor_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `, [targetUserId, targetUserId, safeLimit]);
+
+  return rows.map((r) => {
+    let parsedMeta: any = null;
+    if (r.metadata) {
+      try {
+        parsedMeta = typeof r.metadata === "string" ? JSON.parse(r.metadata) : r.metadata;
+      } catch {
+        parsedMeta = r.metadata;
+      }
+    }
+    return {
+      ...r,
+      metadata: parsedMeta,
+    };
+  });
+}
+
+/**
+ * Summary metrics for staff directory dashboard:
+ * Total staff, active staff, deactivated staff, and super administrators count.
+ * Requires staff.read permission.
+ */
+export async function getStaffStats(
+  actor: AuthenticatedUser,
+  asyncDb?: AsyncDb
+): Promise<StaffStats> {
+  requirePermission(actor, "staff.read");
+  const db = asyncDb ?? getAsyncDb();
+
+  const row = await db.queryOne<any>(`
+    SELECT
+      COUNT(*) as "totalStaff",
+      COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) as "activeStaff",
+      COALESCE(SUM(CASE WHEN is_active = 0 THEN 1 ELSE 0 END), 0) as "deactivatedStaff",
+      COALESCE(SUM(CASE WHEN role = 'SUPER_ADMIN' AND is_active = 1 THEN 1 ELSE 0 END), 0) as "superAdmins"
+    FROM staff_users
+  `);
+
+  return {
+    totalStaff: Number(row?.totalStaff || 0),
+    activeStaff: Number(row?.activeStaff || 0),
+    deactivatedStaff: Number(row?.deactivatedStaff || 0),
+    superAdmins: Number(row?.superAdmins || 0),
+  };
 }

@@ -4,7 +4,12 @@ import {
   unauthorizedResponse,
   handleAuthorizationError,
 } from "@/server/authorization/authorize";
-import { listDeliveryTasks, createExternalDeliveryTask } from "@/server/delivery/deliveryService";
+import {
+  listDeliveryTasks,
+  createExternalDeliveryTask,
+  getDeliveryDashboardSummary,
+  listActiveDeliveryStaff,
+} from "@/server/delivery/deliveryService";
 import { MealType, DeliveryStatus, DeliveryOrderType } from "@/types";
 import { getClientIp } from "@/server/authentication/ip";
 
@@ -21,20 +26,35 @@ export async function GET(request: NextRequest) {
     const status = (url.searchParams.get("status") as DeliveryStatus) || undefined;
     const assignedTo = url.searchParams.get("assignedTo") || undefined;
     const orderType = (url.searchParams.get("orderType") as DeliveryOrderType) || undefined;
+    const search = url.searchParams.get("search") || undefined;
     const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
+    const includeSummary = url.searchParams.get("includeSummary") === "true";
+    const includeStaff = url.searchParams.get("includeStaff") === "true";
 
-    const tasks = await listDeliveryTasks(user, {
-      serviceDate,
-      mealType,
-      status,
-      assignedTo,
-      orderType,
-      limit,
-      offset,
+    const [tasks, summary, staff] = await Promise.all([
+      listDeliveryTasks(user, {
+        serviceDate,
+        mealType,
+        status,
+        assignedTo,
+        orderType,
+        search,
+        limit,
+        offset,
+      }),
+      includeSummary && serviceDate
+        ? getDeliveryDashboardSummary(user, serviceDate, mealType || "ALL")
+        : Promise.resolve(null),
+      includeStaff ? listActiveDeliveryStaff(user) : Promise.resolve(null),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      tasks,
+      ...(summary ? { summary } : {}),
+      ...(staff ? { staff } : {}),
     });
-
-    return NextResponse.json({ success: true, tasks });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;

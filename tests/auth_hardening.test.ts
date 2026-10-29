@@ -371,15 +371,33 @@ assert(resetCheck.count === 0, "recordLoginSuccess cleared failed attempts atomi
 // -----------------------------------------------------------------------------
 console.log("\n[TEST SUITE 9] Database Backup Restoration & Disaster Recovery");
 
-const backupSourcePath = path.resolve(process.cwd(), "data/erp.db.backup.20261015192957");
+// The backup is a synthetic fixture built here. Earlier revisions copied a real backup from
+// data/, which is protected production data and must never be read by tests (ISSUE-004).
+const backupSourcePath = path.resolve(process.cwd(), "tests/backup_fixture.db");
 const restoreDbPath = path.resolve(process.cwd(), "tests/restore_verification.db");
 
-// Ensure clean slate for restore db
-if (fs.existsSync(restoreDbPath)) fs.unlinkSync(restoreDbPath);
-if (fs.existsSync(`${restoreDbPath}-wal`)) fs.unlinkSync(`${restoreDbPath}-wal`);
-if (fs.existsSync(`${restoreDbPath}-shm`)) fs.unlinkSync(`${restoreDbPath}-shm`);
+// Ensure clean slate for fixture and restore db
+for (const p of [backupSourcePath, restoreDbPath]) {
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  if (fs.existsSync(`${p}-wal`)) fs.unlinkSync(`${p}-wal`);
+  if (fs.existsSync(`${p}-shm`)) fs.unlinkSync(`${p}-shm`);
+}
 
-assert(fs.existsSync(backupSourcePath), `Verified backup file exists in data directory (${path.basename(backupSourcePath)})`);
+{
+  const fixtureDb = new Database(backupSourcePath);
+  runMigrations(fixtureDb);
+  const fixtureNow = new Date().toISOString();
+  fixtureDb
+    .prepare(
+      `INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
+       VALUES ('stf_backup_fixture', 'backup_fixture', 'backup.fixture@example.invalid', 'Backup Fixture', 'x', 'SUPER_ADMIN', 1, ?, ?)`
+    )
+    .run(fixtureNow, fixtureNow);
+  fixtureDb.pragma("wal_checkpoint(TRUNCATE)");
+  fixtureDb.close();
+}
+
+assert(fs.existsSync(backupSourcePath), `Synthetic backup fixture created (${path.basename(backupSourcePath)})`);
 
 // Perform restore copy to isolated verification environment
 fs.copyFileSync(backupSourcePath, restoreDbPath);
@@ -416,9 +434,11 @@ const reMigratedVersion = restoreDb.pragma("user_version", { simple: true });
 assert(reMigratedVersion === migratedVersion, "Rerunning runMigrations() on restored database is strictly idempotent");
 
 restoreDb.close();
-if (fs.existsSync(restoreDbPath)) fs.unlinkSync(restoreDbPath);
-if (fs.existsSync(`${restoreDbPath}-wal`)) fs.unlinkSync(`${restoreDbPath}-wal`);
-if (fs.existsSync(`${restoreDbPath}-shm`)) fs.unlinkSync(`${restoreDbPath}-shm`);
+for (const p of [backupSourcePath, restoreDbPath]) {
+  if (fs.existsSync(p)) fs.unlinkSync(p);
+  if (fs.existsSync(`${p}-wal`)) fs.unlinkSync(`${p}-wal`);
+  if (fs.existsSync(`${p}-shm`)) fs.unlinkSync(`${p}-shm`);
+}
 
 // -----------------------------------------------------------------------------
 // TEST SUITE 10: Timing Side-Channel Mitigation & User Enumeration (Verification Gate #1)

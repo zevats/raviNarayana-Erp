@@ -902,7 +902,7 @@ async function runFinanceTests() {
         } as unknown as T;
       }
       // getCashbookSummary period aggregate
-      if (sql.includes("COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT'") && sql.includes("transaction_date >=")) {
+      if (sql.includes("transaction_type = 'RENT_PAYMENT'") && sql.includes("transaction_date >=")) {
         return {
           rentCollected: "9000",         // string bigint
           depositsCollected: "10000",    // string bigint

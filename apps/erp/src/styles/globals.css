@@ -35,6 +35,33 @@ html {
 body {
   font-family: var(--font-sans);
   min-height: 100vh;
+  /* Prevent pull-to-refresh overscroll bounce from interfering with PWA app feel */
+  overscroll-behavior-y: contain;
+}
+
+/* Mobile Touch & Safe Area Inset Support */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right);
+  }
+  .min-h-screen-safe {
+    min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+/* Touch responsiveness: eliminate 300ms tap delay and tap highlights */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Custom Scrollbar for Management tables & sidebars */

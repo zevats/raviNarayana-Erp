@@ -26,6 +26,13 @@ export async function POST(
       {
         recipientName: body.recipientName,
         notes: body.notes,
+        collectedAmount: body.collectedAmount,
+        paymentMethod: body.paymentMethod,
+        idempotencyKey: body.idempotencyKey,
+        deliveredQuantity: body.deliveredQuantity !== undefined ? Number(body.deliveredQuantity) : undefined,
+        undeliveredQuantity: body.undeliveredQuantity !== undefined ? Number(body.undeliveredQuantity) : undefined,
+        undeliveredReason: body.undeliveredReason,
+        itemsReconciliation: body.itemsReconciliation,
       },
       clientIp
     );

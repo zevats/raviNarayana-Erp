@@ -35,6 +35,36 @@ export function runMigrations(db: Database.Database): void {
   if (currentVersion < 10) {
     applyMigrationV10(db);
   }
+  if (currentVersion < 11) {
+    applyMigrationV11(db);
+  }
+  if (currentVersion < 12) {
+    applyMigrationV12(db);
+  }
+  if (currentVersion < 13) {
+    applyMigrationV13(db);
+  }
+  if (currentVersion < 14) {
+    applyMigrationV14(db);
+  }
+  if (currentVersion < 15) {
+    applyMigrationV15(db);
+  }
+  if (currentVersion < 16) {
+    applyMigrationV16(db);
+  }
+  if (currentVersion < 17) {
+    applyMigrationV17(db);
+  }
+  if (currentVersion < 18) {
+    applyMigrationV18(db);
+  }
+  if (currentVersion < 19) {
+    applyMigrationV19(db);
+  }
+  if (currentVersion < 20) {
+    applyMigrationV20(db);
+  }
 }
 
 /**
@@ -720,5 +750,835 @@ function applyMigrationV10(db: Database.Database): void {
 
   tx();
 }
+
+/**
+ * Migration V11: Resident Invoicing & Billing Engine, Phase 1
+ * 1. Alter financial_transactions to add invoice_id TEXT column.
+ * 2. Create invoice_counters table for sequential gapless invoice numbers.
+ * 3. Create invoices table.
+ * 4. Create invoice_items table.
+ * 5. Create invoice_payment_allocations table.
+ * 6. Advance user_version to 11.
+ */
+function applyMigrationV11(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Alter financial_transactions table if column doesn't exist
+    const columns = db.prepare("PRAGMA table_info(financial_transactions)").all() as Array<{ name: string }>;
+    const hasInvoiceId = columns.some((c) => c.name === "invoice_id");
+    if (!hasInvoiceId) {
+      db.exec("ALTER TABLE financial_transactions ADD COLUMN invoice_id TEXT;");
+    }
+    db.exec("CREATE INDEX IF NOT EXISTS idx_fin_tx_invoice ON financial_transactions(invoice_id);");
+
+    // 2. Invoice counters table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_counters (
+        year INTEGER PRIMARY KEY,
+        last_number INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    // 3. Invoices table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS invoices (
+        id TEXT PRIMARY KEY,
+        invoice_number TEXT UNIQUE,
+        invoice_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'DRAFT',
+        resident_id TEXT NOT NULL REFERENCES residents(id) ON DELETE RESTRICT,
+        stay_id TEXT REFERENCES resident_stays(id) ON DELETE RESTRICT,
+        issue_date TEXT NOT NULL,
+        due_date TEXT NOT NULL,
+        billing_period TEXT NOT NULL,
+        subtotal INTEGER NOT NULL DEFAULT 0,
+        cgst_amount INTEGER NOT NULL DEFAULT 0,
+        sgst_amount INTEGER NOT NULL DEFAULT 0,
+        igst_amount INTEGER NOT NULL DEFAULT 0,
+        total_tax INTEGER NOT NULL DEFAULT 0,
+        total_amount INTEGER NOT NULL DEFAULT 0,
+        amount_paid INTEGER NOT NULL DEFAULT 0,
+        balance_due INTEGER NOT NULL DEFAULT 0,
+        company_name TEXT NOT NULL,
+        company_address TEXT NOT NULL,
+        company_gstin TEXT,
+        company_state_code TEXT NOT NULL DEFAULT '06',
+        recipient_name TEXT NOT NULL,
+        recipient_phone TEXT NOT NULL,
+        recipient_email TEXT,
+        recipient_address TEXT,
+        recipient_gstin TEXT,
+        recipient_state_code TEXT NOT NULL DEFAULT '06',
+        rent_charge_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+        notes TEXT,
+        cancelled_at TEXT,
+        cancellation_reason TEXT,
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+      CREATE INDEX IF NOT EXISTS idx_invoices_resident ON invoices(resident_id);
+      CREATE INDEX IF NOT EXISTS idx_invoices_stay ON invoices(stay_id);
+      CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+      CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date);
+      CREATE INDEX IF NOT EXISTS idx_invoices_billing_period ON invoices(billing_period);
+    `);
+
+    // 4. Invoice items table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_items (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        sac_hsn_code TEXT,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        unit_price INTEGER NOT NULL,
+        amount INTEGER NOT NULL,
+        tax_rate INTEGER NOT NULL DEFAULT 0,
+        cgst_rate INTEGER NOT NULL DEFAULT 0,
+        sgst_rate INTEGER NOT NULL DEFAULT 0,
+        igst_rate INTEGER NOT NULL DEFAULT 0,
+        cgst_amount INTEGER NOT NULL DEFAULT 0,
+        sgst_amount INTEGER NOT NULL DEFAULT 0,
+        igst_amount INTEGER NOT NULL DEFAULT 0,
+        total_item_amount INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+    `);
+
+    // 5. Invoice payment allocations table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS invoice_payment_allocations (
+        id TEXT PRIMARY KEY,
+        invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE RESTRICT,
+        payment_transaction_id TEXT NOT NULL REFERENCES financial_transactions(id) ON DELETE RESTRICT,
+        amount INTEGER NOT NULL,
+        allocated_at TEXT NOT NULL,
+        allocated_by TEXT NOT NULL REFERENCES staff_users(id),
+        notes TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_inv_alloc_invoice ON invoice_payment_allocations(invoice_id);
+      CREATE INDEX IF NOT EXISTS idx_inv_alloc_payment ON invoice_payment_allocations(payment_transaction_id);
+    `);
+
+    db.pragma("user_version = 11");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V12: Tiffin Customer Directory & Pricing Catalog (Task 01B.43)
+ * 1. Create tiffin_customers table with phone index, status index, name index.
+ * 2. Create tiffin_products table with unique code index, category index, status index.
+ * 3. Advance user_version to 12.
+ */
+function applyMigrationV12(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tiffin_customers (
+        id TEXT PRIMARY KEY,
+        full_name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        alternate_phone TEXT,
+        delivery_address TEXT NOT NULL,
+        landmark TEXT,
+        delivery_instructions TEXT,
+        customer_type TEXT NOT NULL DEFAULT 'INDIVIDUAL',
+        dietary_preference TEXT NOT NULL DEFAULT 'VEG',
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        notes TEXT,
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        updated_by TEXT REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tiffin_cust_phone ON tiffin_customers(phone);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_cust_status ON tiffin_customers(status);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_cust_name ON tiffin_customers(full_name);
+
+      CREATE TABLE IF NOT EXISTS tiffin_products (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL,
+        billing_unit TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'INR',
+        status TEXT NOT NULL DEFAULT 'ACTIVE',
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tiffin_prod_code ON tiffin_products(code);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_prod_category ON tiffin_products(category);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_prod_status ON tiffin_products(status);
+    `);
+
+    db.pragma("user_version = 12");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V13: Tiffin Subscription Management & Service Scheduling (Task 01B.44)
+ * 1. Create tiffin_subscriptions table with indices on customer_id, product_id, status, start_date.
+ * 2. Advance user_version to 13.
+ */
+function applyMigrationV13(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tiffin_subscriptions (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT NOT NULL REFERENCES tiffin_customers(id) ON DELETE RESTRICT,
+        product_id TEXT NOT NULL REFERENCES tiffin_products(id) ON DELETE RESTRICT,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PAUSED', 'CANCELLED', 'COMPLETED')),
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        price INTEGER NOT NULL CHECK (price >= 0),
+        currency TEXT NOT NULL DEFAULT 'INR',
+        meal_types TEXT NOT NULL DEFAULT 'BOTH' CHECK (meal_types IN ('LUNCH', 'DINNER', 'BOTH', 'BREAKFAST')),
+        service_days TEXT NOT NULL DEFAULT 'ALL_DAYS' CHECK (service_days IN ('ALL_DAYS', 'MON_SAT', 'MON_FRI')),
+        quantity_per_meal INTEGER NOT NULL DEFAULT 1 CHECK (quantity_per_meal >= 1),
+        pause_start_date TEXT,
+        pause_resume_date TEXT,
+        pause_reason TEXT,
+        cancelled_at TEXT,
+        cancellation_reason TEXT,
+        cancelled_by TEXT REFERENCES staff_users(id),
+        delivery_address TEXT NOT NULL,
+        delivery_instructions TEXT,
+        notes TEXT,
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        updated_by TEXT REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tiffin_sub_customer ON tiffin_subscriptions(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_sub_product ON tiffin_subscriptions(product_id);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_sub_status ON tiffin_subscriptions(status);
+      CREATE INDEX IF NOT EXISTS idx_tiffin_sub_start_date ON tiffin_subscriptions(start_date);
+    `);
+
+    db.pragma("user_version = 13");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V14: Kitchen Demand & Production Tracking (Task 01B.45)
+ * 1. Add planned_tiffin_count, dispatched_count, leftover_count, waste_count, reconciled_by, reconciled_at to daily_meal_plans.
+ * 2. Add subscription_id to delivery_tasks.
+ * 3. Create index idx_del_tasks_sub on delivery_tasks(subscription_id).
+ * 4. Advance user_version to 14.
+ */
+function applyMigrationV14(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Add columns to daily_meal_plans if not present
+    const planCols = (db.prepare("PRAGMA table_info(daily_meal_plans)").all() as any[]).map(c => c.name);
+    if (!planCols.includes("planned_tiffin_count")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN planned_tiffin_count INTEGER NOT NULL DEFAULT 0 CHECK (planned_tiffin_count >= 0);");
+    }
+    if (!planCols.includes("dispatched_count")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN dispatched_count INTEGER DEFAULT 0 CHECK (dispatched_count IS NULL OR dispatched_count >= 0);");
+    }
+    if (!planCols.includes("leftover_count")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN leftover_count INTEGER DEFAULT 0 CHECK (leftover_count IS NULL OR leftover_count >= 0);");
+    }
+    if (!planCols.includes("waste_count")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN waste_count INTEGER DEFAULT 0 CHECK (waste_count IS NULL OR waste_count >= 0);");
+    }
+    if (!planCols.includes("reconciled_by")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN reconciled_by TEXT REFERENCES staff_users(id);");
+    }
+    if (!planCols.includes("reconciled_at")) {
+      db.exec("ALTER TABLE daily_meal_plans ADD COLUMN reconciled_at TEXT;");
+    }
+
+    // 2. Add subscription_id to delivery_tasks if not present
+    const delCols = (db.prepare("PRAGMA table_info(delivery_tasks)").all() as any[]).map(c => c.name);
+    if (!delCols.includes("subscription_id")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN subscription_id TEXT REFERENCES tiffin_subscriptions(id) ON DELETE SET NULL;");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_del_tasks_sub ON delivery_tasks(subscription_id);");
+    }
+
+    db.pragma("user_version = 14");
+  });
+
+  tx();
+}
+
+function applyMigrationV15(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Invoices table: make resident_id nullable, add customer_id, subscription_id, invoice_category
+    const invCols = (db.prepare("PRAGMA table_info(invoices)").all() as any[]).map(c => c.name);
+    if (!invCols.includes("customer_id")) {
+      db.exec(`
+        CREATE TABLE invoices_v15 (
+          id TEXT PRIMARY KEY,
+          invoice_number TEXT UNIQUE,
+          invoice_type TEXT NOT NULL,
+          invoice_category TEXT NOT NULL DEFAULT 'RESIDENT',
+          status TEXT NOT NULL DEFAULT 'DRAFT',
+          resident_id TEXT REFERENCES residents(id) ON DELETE RESTRICT,
+          customer_id TEXT REFERENCES tiffin_customers(id) ON DELETE RESTRICT,
+          subscription_id TEXT REFERENCES tiffin_subscriptions(id) ON DELETE SET NULL,
+          stay_id TEXT REFERENCES resident_stays(id) ON DELETE RESTRICT,
+          issue_date TEXT NOT NULL,
+          due_date TEXT NOT NULL,
+          billing_period TEXT NOT NULL,
+          subtotal INTEGER NOT NULL DEFAULT 0,
+          cgst_amount INTEGER NOT NULL DEFAULT 0,
+          sgst_amount INTEGER NOT NULL DEFAULT 0,
+          igst_amount INTEGER NOT NULL DEFAULT 0,
+          total_tax INTEGER NOT NULL DEFAULT 0,
+          total_amount INTEGER NOT NULL DEFAULT 0,
+          amount_paid INTEGER NOT NULL DEFAULT 0,
+          balance_due INTEGER NOT NULL DEFAULT 0,
+          company_name TEXT NOT NULL,
+          company_address TEXT NOT NULL,
+          company_gstin TEXT,
+          company_state_code TEXT NOT NULL DEFAULT '06',
+          recipient_name TEXT NOT NULL,
+          recipient_phone TEXT NOT NULL,
+          recipient_email TEXT,
+          recipient_address TEXT,
+          recipient_gstin TEXT,
+          recipient_state_code TEXT NOT NULL DEFAULT '06',
+          rent_charge_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+          notes TEXT,
+          cancelled_at TEXT,
+          cancellation_reason TEXT,
+          created_by TEXT NOT NULL REFERENCES staff_users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK (invoice_type IN ('REGULAR_BILL', 'GST_TAX_INVOICE')),
+          CHECK (invoice_category IN ('RESIDENT', 'TIFFIN')),
+          CHECK (status IN ('DRAFT', 'ISSUED', 'PARTIALLY_PAID', 'PAID', 'CANCELLED')),
+          CHECK (subtotal >= 0),
+          CHECK (cgst_amount >= 0),
+          CHECK (sgst_amount >= 0),
+          CHECK (igst_amount >= 0),
+          CHECK (total_tax >= 0),
+          CHECK (total_amount >= 0),
+          CHECK (amount_paid >= 0),
+          CHECK (balance_due >= 0)
+        );
+        INSERT INTO invoices_v15 (
+          id, invoice_number, invoice_type, invoice_category, status,
+          resident_id, customer_id, subscription_id, stay_id, issue_date,
+          due_date, billing_period, subtotal, cgst_amount, sgst_amount,
+          igst_amount, total_tax, total_amount, amount_paid, balance_due,
+          company_name, company_address, company_gstin, company_state_code,
+          recipient_name, recipient_phone, recipient_email, recipient_address,
+          recipient_gstin, recipient_state_code, rent_charge_id, notes,
+          cancelled_at, cancellation_reason, created_by, created_at, updated_at
+        ) SELECT
+          id, invoice_number, invoice_type, 'RESIDENT', status,
+          resident_id, NULL, NULL, stay_id, issue_date,
+          due_date, billing_period, subtotal, cgst_amount, sgst_amount,
+          igst_amount, total_tax, total_amount, amount_paid, balance_due,
+          company_name, company_address, company_gstin, company_state_code,
+          recipient_name, recipient_phone, recipient_email, recipient_address,
+          recipient_gstin, recipient_state_code, rent_charge_id, notes,
+          cancelled_at, cancellation_reason, created_by, created_at, updated_at
+        FROM invoices;
+        DROP TABLE invoices;
+        ALTER TABLE invoices_v15 RENAME TO invoices;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_number ON invoices(invoice_number);
+        CREATE INDEX IF NOT EXISTS idx_invoices_resident ON invoices(resident_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_sub ON invoices(subscription_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_category ON invoices(invoice_category);
+        CREATE INDEX IF NOT EXISTS idx_invoices_stay ON invoices(stay_id);
+        CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
+        CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date);
+        CREATE INDEX IF NOT EXISTS idx_invoices_billing_period ON invoices(billing_period);
+      `);
+    }
+
+    // 2. Delivery tasks: add invoice_id, invoice_item_id, billed_at
+    const delCols = (db.prepare("PRAGMA table_info(delivery_tasks)").all() as any[]).map(c => c.name);
+    if (!delCols.includes("invoice_id")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL;");
+      db.exec("CREATE INDEX IF NOT EXISTS idx_del_tasks_inv ON delivery_tasks(invoice_id);");
+    }
+    if (!delCols.includes("invoice_item_id")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN invoice_item_id TEXT REFERENCES invoice_items(id) ON DELETE SET NULL;");
+    }
+    if (!delCols.includes("billed_at")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN billed_at TEXT;");
+    }
+
+    // 3. Invoice items: add subscription_id, service_start_date, service_end_date
+    const itemCols = (db.prepare("PRAGMA table_info(invoice_items)").all() as any[]).map(c => c.name);
+    if (!itemCols.includes("subscription_id")) {
+      db.exec("ALTER TABLE invoice_items ADD COLUMN subscription_id TEXT REFERENCES tiffin_subscriptions(id) ON DELETE SET NULL;");
+    }
+    if (!itemCols.includes("service_start_date")) {
+      db.exec("ALTER TABLE invoice_items ADD COLUMN service_start_date TEXT;");
+    }
+    if (!itemCols.includes("service_end_date")) {
+      db.exec("ALTER TABLE invoice_items ADD COLUMN service_end_date TEXT;");
+    }
+
+    // 4. Financial transactions: add customer_id and expand check constraint
+    const txCols = (db.prepare("PRAGMA table_info(financial_transactions)").all() as any[]).map(c => c.name);
+    if (!txCols.includes("customer_id")) {
+      db.exec(`
+        CREATE TABLE financial_transactions_v15 (
+          id TEXT PRIMARY KEY,
+          transaction_type TEXT NOT NULL CHECK (transaction_type IN ('RENT_CHARGE', 'RENT_PAYMENT', 'SECURITY_DEPOSIT', 'EXPENSE', 'REVERSAL', 'TIFFIN_CHARGE', 'TIFFIN_PAYMENT')),
+          amount INTEGER NOT NULL CHECK (amount > 0),
+          transaction_date TEXT NOT NULL,
+          payment_method TEXT CHECK (payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER') OR payment_method IS NULL),
+          reference_number TEXT,
+          resident_id TEXT REFERENCES residents(id) ON DELETE RESTRICT,
+          customer_id TEXT REFERENCES tiffin_customers(id) ON DELETE RESTRICT,
+          stay_id TEXT REFERENCES resident_stays(id) ON DELETE RESTRICT,
+          category TEXT NOT NULL,
+          description TEXT,
+          billing_period TEXT,
+          payee_vendor TEXT,
+          idempotency_key TEXT UNIQUE,
+          status TEXT NOT NULL DEFAULT 'POSTED' CHECK (status IN ('POSTED', 'REVERSED')),
+          reversal_of_id TEXT REFERENCES financial_transactions(id) ON DELETE RESTRICT,
+          invoice_id TEXT,
+          created_by TEXT NOT NULL REFERENCES staff_users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO financial_transactions_v15 (
+          id, transaction_type, amount, transaction_date, payment_method,
+          reference_number, resident_id, customer_id, stay_id, category,
+          description, billing_period, payee_vendor, idempotency_key, status,
+          reversal_of_id, invoice_id, created_by, created_at, updated_at
+        ) SELECT
+          id, transaction_type, amount, transaction_date, payment_method,
+          reference_number, resident_id, NULL, stay_id, category,
+          description, billing_period, payee_vendor, idempotency_key, status,
+          reversal_of_id, invoice_id, created_by, created_at, updated_at
+        FROM financial_transactions;
+        DROP TABLE financial_transactions;
+        ALTER TABLE financial_transactions_v15 RENAME TO financial_transactions;
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_type ON financial_transactions(transaction_type);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_date ON financial_transactions(transaction_date);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_resident ON financial_transactions(resident_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_customer ON financial_transactions(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_stay ON financial_transactions(stay_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_category ON financial_transactions(category);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_status ON financial_transactions(status);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_invoice ON financial_transactions(invoice_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_tx_idempotency ON financial_transactions(idempotency_key);
+      `);
+    }
+
+    db.pragma("user_version = 15");
+  });
+
+  tx();
+}
+
+function applyMigrationV16(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Kitchen Raw Materials
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS kitchen_raw_materials (
+        id TEXT PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        description TEXT,
+        category TEXT NOT NULL CHECK (category IN ('GRAINS', 'PULSES', 'VEGETABLES', 'DAIRY', 'SPICES', 'OILS', 'PACKAGING', 'OTHER')),
+        base_unit TEXT NOT NULL CHECK (base_unit IN ('G', 'ML', 'PCS')),
+        current_stock INTEGER NOT NULL DEFAULT 0,
+        reorder_threshold INTEGER NOT NULL DEFAULT 0 CHECK (reorder_threshold >= 0),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        updated_by TEXT REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_krm_code ON kitchen_raw_materials(code);
+      CREATE INDEX IF NOT EXISTS idx_krm_category ON kitchen_raw_materials(category);
+      CREATE INDEX IF NOT EXISTS idx_krm_active ON kitchen_raw_materials(is_active);
+    `);
+
+    // 2. Kitchen Recipes
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS kitchen_recipes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        meal_type TEXT CHECK (meal_type IS NULL OR meal_type IN ('BREAKFAST', 'LUNCH', 'DINNER')),
+        product_id TEXT REFERENCES tiffin_products(id) ON DELETE SET NULL,
+        yield_servings INTEGER NOT NULL DEFAULT 1 CHECK (yield_servings >= 1),
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+        created_by TEXT NOT NULL REFERENCES staff_users(id),
+        updated_by TEXT REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_kr_meal_type ON kitchen_recipes(meal_type);
+      CREATE INDEX IF NOT EXISTS idx_kr_product ON kitchen_recipes(product_id);
+      CREATE INDEX IF NOT EXISTS idx_kr_active ON kitchen_recipes(is_active);
+    `);
+
+    // 3. Kitchen Recipe Ingredients
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS kitchen_recipe_ingredients (
+        id TEXT PRIMARY KEY,
+        recipe_id TEXT NOT NULL REFERENCES kitchen_recipes(id) ON DELETE CASCADE,
+        recipe_version INTEGER NOT NULL DEFAULT 1,
+        material_id TEXT NOT NULL REFERENCES kitchen_raw_materials(id) ON DELETE RESTRICT,
+        quantity_base INTEGER NOT NULL CHECK (quantity_base > 0),
+        display_unit TEXT NOT NULL,
+        display_quantity INTEGER NOT NULL,
+        loss_percent INTEGER NOT NULL DEFAULT 0 CHECK (loss_percent >= 0 AND loss_percent <= 100),
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_kri_recipe ON kitchen_recipe_ingredients(recipe_id);
+      CREATE INDEX IF NOT EXISTS idx_kri_material ON kitchen_recipe_ingredients(material_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_kri_recipe_ver_mat ON kitchen_recipe_ingredients(recipe_id, recipe_version, material_id);
+    `);
+
+    // 4. Kitchen Stock Movements
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS kitchen_stock_movements (
+        id TEXT PRIMARY KEY,
+        material_id TEXT NOT NULL REFERENCES kitchen_raw_materials(id) ON DELETE RESTRICT,
+        movement_type TEXT NOT NULL CHECK (movement_type IN ('OPENING_BALANCE', 'RECEIPT', 'ADJUSTMENT_ADD', 'ADJUSTMENT_SUB', 'PRODUCTION_CONSUMPTION', 'PRODUCTION_REVERSAL', 'WASTE')),
+        quantity_base INTEGER NOT NULL,
+        unit TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK (source_type IN ('MANUAL', 'PRODUCTION_PLAN', 'WASTE_REPORT')),
+        source_id TEXT,
+        reason TEXT NOT NULL,
+        actor_id TEXT NOT NULL REFERENCES staff_users(id),
+        actor_name TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_ksm_material ON kitchen_stock_movements(material_id);
+      CREATE INDEX IF NOT EXISTS idx_ksm_type ON kitchen_stock_movements(movement_type);
+      CREATE INDEX IF NOT EXISTS idx_ksm_source ON kitchen_stock_movements(source_type, source_id);
+      CREATE INDEX IF NOT EXISTS idx_ksm_created ON kitchen_stock_movements(created_at);
+    `);
+
+    // 5. Kitchen Production Consumptions
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS kitchen_production_consumptions (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL REFERENCES daily_meal_plans(id) ON DELETE RESTRICT,
+        meal_type TEXT NOT NULL,
+        service_date TEXT NOT NULL,
+        recipe_id TEXT NOT NULL REFERENCES kitchen_recipes(id) ON DELETE RESTRICT,
+        recipe_version INTEGER NOT NULL DEFAULT 1,
+        produced_servings INTEGER NOT NULL CHECK (produced_servings > 0),
+        status TEXT NOT NULL DEFAULT 'POSTED' CHECK (status IN ('POSTED', 'REVERSED')),
+        notes TEXT,
+        posted_by TEXT NOT NULL REFERENCES staff_users(id),
+        posted_at TEXT NOT NULL,
+        reversed_by TEXT REFERENCES staff_users(id),
+        reversed_at TEXT,
+        reversal_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_kpc_plan ON kitchen_production_consumptions(plan_id);
+      CREATE INDEX IF NOT EXISTS idx_kpc_date ON kitchen_production_consumptions(service_date);
+      CREATE INDEX IF NOT EXISTS idx_kpc_status ON kitchen_production_consumptions(status);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_kpc_plan_posted ON kitchen_production_consumptions(plan_id, status);
+    `);
+
+    db.pragma("user_version = 16");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V17 (Task 01B.52):
+ * 1. Allow DEPOSIT_REFUND in financial_transactions transaction_type CHECK constraint.
+ * 2. Create resident_settlements table with unique constraint on stay_id.
+ * 3. Advance user_version to 17.
+ */
+function applyMigrationV17(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Recreate financial_transactions to include DEPOSIT_REFUND
+    const finTableExists = db.prepare(`
+      SELECT count(*) as count FROM sqlite_master WHERE type='table' AND name='financial_transactions'
+    `).get() as { count: number };
+
+    if (finTableExists.count > 0) {
+      db.exec(`
+        CREATE TABLE financial_transactions_v17 (
+          id TEXT PRIMARY KEY,
+          transaction_type TEXT NOT NULL CHECK (transaction_type IN ('RENT_CHARGE', 'RENT_PAYMENT', 'SECURITY_DEPOSIT', 'EXPENSE', 'REVERSAL', 'TIFFIN_CHARGE', 'TIFFIN_PAYMENT', 'DEPOSIT_REFUND')),
+          amount INTEGER NOT NULL CHECK (amount > 0),
+          transaction_date TEXT NOT NULL,
+          payment_method TEXT CHECK (payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER') OR payment_method IS NULL),
+          reference_number TEXT,
+          resident_id TEXT REFERENCES residents(id) ON DELETE RESTRICT,
+          customer_id TEXT REFERENCES tiffin_customers(id) ON DELETE RESTRICT,
+          stay_id TEXT REFERENCES resident_stays(id) ON DELETE RESTRICT,
+          category TEXT NOT NULL,
+          description TEXT,
+          billing_period TEXT,
+          payee_vendor TEXT,
+          idempotency_key TEXT UNIQUE,
+          status TEXT NOT NULL DEFAULT 'POSTED' CHECK (status IN ('POSTED', 'REVERSED')),
+          reversal_of_id TEXT REFERENCES financial_transactions(id) ON DELETE RESTRICT,
+          invoice_id TEXT,
+          created_by TEXT NOT NULL REFERENCES staff_users(id),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO financial_transactions_v17 (
+          id, transaction_type, amount, transaction_date, payment_method,
+          reference_number, resident_id, customer_id, stay_id, category,
+          description, billing_period, payee_vendor, idempotency_key, status,
+          reversal_of_id, invoice_id, created_by, created_at, updated_at
+        ) SELECT
+          id, transaction_type, amount, transaction_date, payment_method,
+          reference_number, resident_id, customer_id, stay_id, category,
+          description, billing_period, payee_vendor, idempotency_key, status,
+          reversal_of_id, invoice_id, created_by, created_at, updated_at
+        FROM financial_transactions;
+        DROP TABLE financial_transactions;
+        ALTER TABLE financial_transactions_v17 RENAME TO financial_transactions;
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_type ON financial_transactions(transaction_type);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_date ON financial_transactions(transaction_date);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_resident ON financial_transactions(resident_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_customer ON financial_transactions(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_stay ON financial_transactions(stay_id);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_category ON financial_transactions(category);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_status ON financial_transactions(status);
+        CREATE INDEX IF NOT EXISTS idx_fin_tx_invoice ON financial_transactions(invoice_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_tx_idempotency ON financial_transactions(idempotency_key);
+      `);
+    }
+
+    // 2. Create resident_settlements table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS resident_settlements (
+        id TEXT PRIMARY KEY,
+        resident_id TEXT NOT NULL REFERENCES residents(id) ON DELETE RESTRICT,
+        stay_id TEXT NOT NULL UNIQUE REFERENCES resident_stays(id) ON DELETE RESTRICT,
+        room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE RESTRICT,
+        checkout_date TEXT NOT NULL,
+        outstanding_rent_amount INTEGER NOT NULL DEFAULT 0 CHECK (outstanding_rent_amount >= 0),
+        deposit_held_amount INTEGER NOT NULL DEFAULT 0 CHECK (deposit_held_amount >= 0),
+        deductions_amount INTEGER NOT NULL DEFAULT 0 CHECK (deductions_amount >= 0),
+        deductions_breakdown TEXT,
+        deposit_applied_amount INTEGER NOT NULL DEFAULT 0 CHECK (deposit_applied_amount >= 0),
+        refund_amount INTEGER NOT NULL DEFAULT 0 CHECK (refund_amount >= 0),
+        refund_payment_method TEXT CHECK (refund_payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER') OR refund_payment_method IS NULL),
+        refund_transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+        remaining_payable_amount INTEGER NOT NULL DEFAULT 0 CHECK (remaining_payable_amount >= 0),
+        payment_transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+        settlement_status TEXT NOT NULL DEFAULT 'SETTLED' CHECK (settlement_status IN ('SETTLED', 'PENDING_PAYMENT')),
+        notes TEXT,
+        settled_by TEXT NOT NULL REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_resident_settlements_resident ON resident_settlements(resident_id);
+      CREATE INDEX IF NOT EXISTS idx_resident_settlements_status ON resident_settlements(settlement_status);
+      CREATE INDEX IF NOT EXISTS idx_resident_settlements_checkout_date ON resident_settlements(checkout_date);
+    `);
+
+    db.pragma("user_version = 17");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V18:
+ * 1. Create daily_cashbook_closings table for multi-channel closing and reconciliation.
+ * 2. Advance user_version to 18.
+ */
+function applyMigrationV18(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS daily_cashbook_closings (
+        id TEXT PRIMARY KEY,
+        closing_date TEXT NOT NULL,
+        division TEXT NOT NULL DEFAULT 'COMBINED',
+        opening_balance INTEGER NOT NULL DEFAULT 0,
+        opening_cash_balance INTEGER NOT NULL DEFAULT 0,
+        cash_inflow INTEGER NOT NULL DEFAULT 0,
+        upi_inflow INTEGER NOT NULL DEFAULT 0,
+        bank_transfer_inflow INTEGER NOT NULL DEFAULT 0,
+        cheque_inflow INTEGER NOT NULL DEFAULT 0,
+        other_inflow INTEGER NOT NULL DEFAULT 0,
+        cash_outflow INTEGER NOT NULL DEFAULT 0,
+        upi_outflow INTEGER NOT NULL DEFAULT 0,
+        bank_transfer_outflow INTEGER NOT NULL DEFAULT 0,
+        cheque_outflow INTEGER NOT NULL DEFAULT 0,
+        other_outflow INTEGER NOT NULL DEFAULT 0,
+        total_inflow INTEGER NOT NULL DEFAULT 0,
+        total_outflow INTEGER NOT NULL DEFAULT 0,
+        expected_closing_balance INTEGER NOT NULL DEFAULT 0,
+        expected_cash_balance INTEGER NOT NULL DEFAULT 0,
+        actual_cash_counted INTEGER,
+        actual_bank_verified INTEGER,
+        actual_total_balance INTEGER,
+        cash_discrepancy INTEGER NOT NULL DEFAULT 0,
+        total_discrepancy INTEGER NOT NULL DEFAULT 0,
+        discrepancy_reason TEXT,
+        status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'FINALIZED', 'REOPENED')),
+        prepared_by TEXT NOT NULL REFERENCES staff_users(id),
+        finalized_by TEXT REFERENCES staff_users(id),
+        finalized_at TEXT,
+        reopened_by TEXT REFERENCES staff_users(id),
+        reopened_at TEXT,
+        reopen_reason TEXT,
+        notes TEXT,
+        snapshot_data TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (closing_date, division)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_closing_date ON daily_cashbook_closings(closing_date);
+      CREATE INDEX IF NOT EXISTS idx_closing_status ON daily_cashbook_closings(status);
+      CREATE INDEX IF NOT EXISTS idx_closing_division ON daily_cashbook_closings(division);
+    `);
+
+    db.pragma("user_version = 18");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V19:
+ * 1. Create document_attachments table for secure KYC & financial receipt management.
+ * 2. Advance user_version to 19.
+ */
+function applyMigrationV19(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS document_attachments (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL CHECK (category IN ('RESIDENT_KYC', 'RESIDENT_ADDRESS_PROOF', 'RENT_RECEIPT', 'SECURITY_DEPOSIT_RECEIPT', 'CHECKOUT_SETTLEMENT_RECEIPT', 'EXPENSE_RECEIPT', 'OPERATIONAL_ATTACHMENT')),
+        resident_id TEXT REFERENCES residents(id) ON DELETE RESTRICT,
+        stay_id TEXT REFERENCES resident_stays(id) ON DELETE SET NULL,
+        transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+        invoice_id TEXT REFERENCES invoices(id) ON DELETE SET NULL,
+        settlement_id TEXT REFERENCES resident_settlements(id) ON DELETE SET NULL,
+        display_filename TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        file_size INTEGER NOT NULL CHECK (file_size > 0 AND file_size <= 5242880),
+        file_hash TEXT NOT NULL,
+        storage_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'SUPERSEDED', 'ARCHIVED')),
+        superseded_by TEXT REFERENCES document_attachments(id),
+        notes TEXT,
+        uploaded_by TEXT NOT NULL REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_docs_category ON document_attachments(category);
+      CREATE INDEX IF NOT EXISTS idx_docs_resident ON document_attachments(resident_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_stay ON document_attachments(stay_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_tx ON document_attachments(transaction_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_invoice ON document_attachments(invoice_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_settlement ON document_attachments(settlement_id);
+      CREATE INDEX IF NOT EXISTS idx_docs_status ON document_attachments(status);
+    `);
+
+    db.pragma("user_version = 19");
+  });
+
+  tx();
+}
+
+/**
+ * Migration V20:
+ * 1. Add collection fields to delivery_tasks (collection_status, collected_amount, collected_payment_method, collection_transaction_id, collection_idempotency_key, handover_id).
+ * 2. Create driver_cash_handovers table for formal driver cash custody settlements.
+ * 3. Advance user_version to 20.
+ */
+function applyMigrationV20(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    // 1. Check existing columns on delivery_tasks
+    const columns = db.prepare("PRAGMA table_info(delivery_tasks)").all() as Array<{ name: string }>;
+    const colNames = new Set(columns.map((c) => c.name));
+
+    if (!colNames.has("collection_status")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN collection_status TEXT NOT NULL DEFAULT 'NONE' CHECK (collection_status IN ('NONE', 'COLLECTED', 'HANDED_OVER'))");
+    }
+    if (!colNames.has("collected_amount")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN collected_amount INTEGER NOT NULL DEFAULT 0 CHECK (collected_amount >= 0)");
+    }
+    if (!colNames.has("collected_payment_method")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN collected_payment_method TEXT CHECK (collected_payment_method IS NULL OR collected_payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER'))");
+    }
+    if (!colNames.has("collection_transaction_id")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN collection_transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL");
+    }
+    if (!colNames.has("collection_idempotency_key")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN collection_idempotency_key TEXT");
+    }
+    if (!colNames.has("handover_id")) {
+      db.exec("ALTER TABLE delivery_tasks ADD COLUMN handover_id TEXT REFERENCES driver_cash_handovers(id) ON DELETE SET NULL");
+    }
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_del_tasks_collection_status ON delivery_tasks(collection_status);
+      CREATE INDEX IF NOT EXISTS idx_del_tasks_handover ON delivery_tasks(handover_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_del_tasks_coll_idempotency ON delivery_tasks(collection_idempotency_key);
+
+      CREATE TABLE IF NOT EXISTS driver_cash_handovers (
+        id TEXT PRIMARY KEY,
+        driver_id TEXT NOT NULL REFERENCES staff_users(id) ON DELETE RESTRICT,
+        shift_date TEXT NOT NULL,
+        declared_cash INTEGER NOT NULL DEFAULT 0 CHECK (declared_cash >= 0),
+        accepted_cash INTEGER NOT NULL DEFAULT 0 CHECK (accepted_cash >= 0),
+        variance INTEGER NOT NULL DEFAULT 0,
+        variance_reason TEXT,
+        status TEXT NOT NULL DEFAULT 'DECLARED' CHECK (status IN ('DECLARED', 'ACCEPTED', 'DISCREPANCY_FLAGGED')),
+        transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL,
+        accepted_by TEXT REFERENCES staff_users(id) ON DELETE SET NULL,
+        accepted_at TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_dch_driver ON driver_cash_handovers(driver_id);
+      CREATE INDEX IF NOT EXISTS idx_dch_shift_date ON driver_cash_handovers(shift_date);
+      CREATE INDEX IF NOT EXISTS idx_dch_status ON driver_cash_handovers(status);
+      CREATE INDEX IF NOT EXISTS idx_dch_tx ON driver_cash_handovers(transaction_id);
+    `);
+
+    db.pragma("user_version = 20");
+  });
+
+  tx();
+}
+
+
+
+
+
+
+
+
 
 

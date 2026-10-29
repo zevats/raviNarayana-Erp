@@ -25,20 +25,26 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const type = (url.searchParams.get("type") as TransactionType) || undefined;
     const category = url.searchParams.get("category") || undefined;
+    const paymentMethod = url.searchParams.get("paymentMethod") || undefined;
     const residentId = url.searchParams.get("residentId") || undefined;
+    const customerId = url.searchParams.get("customerId") || undefined;
     const stayId = url.searchParams.get("stayId") || undefined;
     const startDate = url.searchParams.get("startDate") || undefined;
     const endDate = url.searchParams.get("endDate") || undefined;
+    const division = (url.searchParams.get("division") as any) || undefined;
     const limit = url.searchParams.get("limit") ? Number(url.searchParams.get("limit")) : undefined;
     const offset = url.searchParams.get("offset") ? Number(url.searchParams.get("offset")) : undefined;
 
     const transactions = await listTransactions(user, {
       type,
       category,
+      paymentMethod,
       residentId,
+      customerId,
       stayId,
       startDate,
       endDate,
+      division,
       limit,
       offset,
     });

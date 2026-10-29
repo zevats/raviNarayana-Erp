@@ -8,6 +8,12 @@ export const ALL_ROLES: readonly StaffRole[] = [
   "DELIVERY_PERSON",
 ] as const;
 
+export const CANONICAL_ROLES: readonly StaffRole[] = [
+  "SUPER_ADMIN",
+  "OPERATIONS_MANAGER",
+  "DELIVERY_PERSON",
+] as const;
+
 export const ALL_PERMISSIONS: readonly Permission[] = [
   // Staff Administration
   "staff.read",

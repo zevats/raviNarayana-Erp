@@ -31,6 +31,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
   const [transactionDate, setTransactionDate] = useState(toLocalDateString());
   const [referenceNumber, setReferenceNumber] = useState("");
   const [description, setDescription] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -78,6 +79,20 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Failed to record expense.");
+      }
+
+      // If user provided a receipt document, upload and link it to the transaction
+      if (receiptFile) {
+        try {
+          const docFormData = new FormData();
+          docFormData.append("file", receiptFile);
+          docFormData.append("category", "EXPENSE_RECEIPT");
+          docFormData.append("transactionId", data.transaction.id);
+          docFormData.append("notes", `Receipt for ${category}: ${payeeVendor || description}`);
+          await fetch("/api/documents", { method: "POST", body: docFormData });
+        } catch (uploadErr) {
+          console.warn("Expense recorded, but receipt upload failed:", uploadErr);
+        }
       }
 
       onSuccess(
@@ -240,6 +255,35 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
             />
+          </div>
+
+          {/* Receipt / Invoice Attachment (Task 01B.57) */}
+          <div>
+            <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
+              Attach Receipt / Vendor Invoice (Optional, PDF/Image &le; 5MB)
+            </label>
+            <input
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png,.webp"
+              onChange={(e) => {
+                setError(null);
+                if (e.target.files && e.target.files[0]) {
+                  const f = e.target.files[0];
+                  if (f.size > 5 * 1024 * 1024) {
+                    setError("Receipt file size exceeds 5.00 MB limit.");
+                    setReceiptFile(null);
+                    return;
+                  }
+                  setReceiptFile(f);
+                }
+              }}
+              className="w-full px-3.5 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] file:mr-3 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:bg-[#1A2E20]/10 file:text-[#1A2E20]"
+            />
+            {receiptFile && (
+              <p className="mt-1 text-[10px] text-emerald-700">
+                Attached: {receiptFile.name} ({(receiptFile.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
           </div>
 
           {/* Action Buttons */}

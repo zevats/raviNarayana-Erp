@@ -83,3 +83,34 @@ export function validateProductionDatabaseEnvironment(): void {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Invoicing & Tax Billing Configuration
+// -----------------------------------------------------------------------------
+
+export interface CompanyBillingConfig {
+  companyName: string;
+  companyAddress: string;
+  companyGstin: string | null;
+  companyStateCode: string;
+}
+
+export const DEFAULT_COMPANY_NAME = "Ravinarayan PG Guesthouse";
+export const DEFAULT_COMPANY_ADDRESS = "Met City, Yakubpur, Jhajjar, Haryana 124103";
+export const DEFAULT_COMPANY_STATE_CODE = "06"; // Haryana state code for GST
+
+export function getCompanyBillingConfig(): CompanyBillingConfig {
+  const companyName = (process.env.ERP_COMPANY_NAME || DEFAULT_COMPANY_NAME).trim();
+  const companyAddress = (process.env.ERP_COMPANY_ADDRESS || DEFAULT_COMPANY_ADDRESS).trim();
+  const rawGstin = process.env.ERP_COMPANY_GSTIN?.trim();
+  const companyGstin = rawGstin && rawGstin.length > 0 ? rawGstin : null;
+  const companyStateCode = (process.env.ERP_COMPANY_STATE_CODE || DEFAULT_COMPANY_STATE_CODE).trim();
+
+  return {
+    companyName,
+    companyAddress,
+    companyGstin,
+    companyStateCode,
+  };
+}
+
+

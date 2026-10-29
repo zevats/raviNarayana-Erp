@@ -1,4 +1,5 @@
 import { getAsyncDb, AsyncDb } from "../database/db";
+import { ClosingDivision } from "@/types";
 
 export interface OccupancyMetrics {
   totalRooms: number;
@@ -52,16 +53,22 @@ export interface DashboardMetricsResult {
   monthlyData: MonthlyRevenueData[];
 }
 
+export interface DashboardMetricsOptions {
+  division?: ClosingDivision;
+  startDate?: string;
+  endDate?: string;
+}
+
 interface CacheEntry {
   data: DashboardMetricsResult;
   expiresAt: number;
 }
 
-let dashboardCache: CacheEntry | null = null;
+const dashboardCaches = new Map<string, CacheEntry>();
 const DASHBOARD_CACHE_TTL_MS = 15_000; // 15 seconds freshness
 
 export function invalidateDashboardCache(): void {
-  dashboardCache = null;
+  dashboardCaches.clear();
 }
 
 /**
@@ -70,19 +77,55 @@ export function invalidateDashboardCache(): void {
  */
 export async function getDashboardMetrics(
   forcedDb?: AsyncDb,
+  bypassCache?: boolean
+): Promise<DashboardMetricsResult>;
+export async function getDashboardMetrics(
+  options?: DashboardMetricsOptions,
+  forcedDb?: AsyncDb,
+  bypassCache?: boolean
+): Promise<DashboardMetricsResult>;
+export async function getDashboardMetrics(
+  optionsOrDb?: DashboardMetricsOptions | AsyncDb,
+  forcedDbOrBypass?: AsyncDb | boolean,
   bypassCache = false
 ): Promise<DashboardMetricsResult> {
-  const nowMs = Date.now();
-  if (!bypassCache && dashboardCache && dashboardCache.expiresAt > nowMs) {
-    return dashboardCache.data;
+  let options: DashboardMetricsOptions = {};
+  let db: AsyncDb;
+  let effectiveBypass = bypassCache;
+
+  if (optionsOrDb && typeof (optionsOrDb as any).query === "function") {
+    db = optionsOrDb as AsyncDb;
+    if (typeof forcedDbOrBypass === "boolean") {
+      effectiveBypass = forcedDbOrBypass;
+    }
+  } else {
+    options = (optionsOrDb as DashboardMetricsOptions) || {};
+    if (forcedDbOrBypass && typeof (forcedDbOrBypass as any).query === "function") {
+      db = forcedDbOrBypass as AsyncDb;
+    } else {
+      db = getAsyncDb();
+    }
   }
 
-  const db = forcedDb || getAsyncDb();
+  const division = options.division || "COMBINED";
+  const cacheKey = `${division}_${options.startDate || ""}_${options.endDate || ""}`;
+  const nowMs = Date.now();
+  const cached = dashboardCaches.get(cacheKey);
+  if (!effectiveBypass && cached && cached.expiresAt > nowMs) {
+    return cached.data;
+  }
+
   const todayIsoDate = new Date().toISOString().slice(0, 10);
   const currentMonthPrefix = todayIsoDate.slice(0, 7);
+  const startDate = options.startDate || `${currentMonthPrefix}-01`;
+  const endDate = options.endDate || todayIsoDate;
 
   // Parallel query group 1: Rooms & Occupancy
   const occupancyPromise = (async (): Promise<OccupancyMetrics> => {
+    if (division === "TIFFIN") {
+      return { totalRooms: 0, totalCapacity: 0, occupiedBeds: 0, vacantBeds: 0, occupancyRate: 0 };
+    }
+
     const [roomRow, activeStaysRow] = await Promise.all([
       db.queryOne<{ totalRooms: number | string; totalCapacity: number | string }>(`
         SELECT 
@@ -121,25 +164,32 @@ export async function getDashboardMetrics(
         totalRentCollected: number | string;
         totalRentBilled: number | string;
         totalExpensesPaid: number | string;
+        pgExpensesPaid: number | string;
+        tiffinExpensesPaid: number | string;
         totalDepositsHeld: number | string;
+        totalTiffinCollected: number | string;
       }>(`
         SELECT
           COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
           COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
           COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
-          COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld"
+          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
+          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
+          COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) -
+          COALESCE(SUM(CASE WHEN (transaction_type = 'DEPOSIT_REFUND' OR (transaction_type = 'RENT_PAYMENT' AND COALESCE(category, '') = 'DEPOSIT_APPLICATION')) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld",
+          COALESCE(SUM(CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
         FROM financial_transactions
       `),
       db.queryOne<{ rentMonth: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "rentMonth"
         FROM financial_transactions
-        WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date LIKE ?
-      `, [`${currentMonthPrefix}%`]),
+        WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+      `, [startDate, endDate]),
       db.queryOne<{ expMonth: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "expMonth"
         FROM financial_transactions
-        WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date LIKE ?
-      `, [`${currentMonthPrefix}%`]),
+        WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+      `, [startDate, endDate]),
       db.queryOne<{ count: number | string }>(`
         SELECT COUNT(*) as count FROM (
           SELECT r.id
@@ -157,36 +207,74 @@ export async function getDashboardMetrics(
         FROM financial_transactions
         WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' 
           AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') 
-          AND transaction_date LIKE ?
-      `, [`${currentMonthPrefix}%`]),
+          AND transaction_date >= ? AND transaction_date <= ?
+      `, [startDate, endDate]),
       db.queryOne<{ tiffinRev: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "tiffinRev"
         FROM financial_transactions
-        WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED'
-          AND (category = 'TIFFIN' OR description LIKE '%tiffin%')
-          AND transaction_date LIKE ?
-      `, [`${currentMonthPrefix}%`]),
+        WHERE (
+          transaction_type = 'TIFFIN_PAYMENT'
+          OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))
+        ) AND status = 'POSTED'
+          AND transaction_date >= ? AND transaction_date <= ?
+      `, [startDate, endDate]),
     ]);
 
-    const totalRentCollected = Number(finSummary?.totalRentCollected || 0);
-    const totalRentBilled = Number(finSummary?.totalRentBilled || 0);
-    const totalExpensesPaid = Number(finSummary?.totalExpensesPaid || 0);
-    const totalDepositsHeld = Number(finSummary?.totalDepositsHeld || 0);
+    const rawTotalRentCollected = Number(finSummary?.totalRentCollected || 0);
+    const rawTotalRentBilled = Number(finSummary?.totalRentBilled || 0);
+    const rawTotalExpensesPaid = Number(finSummary?.totalExpensesPaid || 0);
+    const rawPgExpensesPaid = Number(finSummary?.pgExpensesPaid || 0);
+    const rawTiffinExpensesPaid = Number(finSummary?.tiffinExpensesPaid || 0);
+    const rawTotalDepositsHeld = Number(finSummary?.totalDepositsHeld || 0);
+    const rawTotalTiffinCollected = Number(finSummary?.totalTiffinCollected || 0);
+
     const currentMonthRent = Number(rentMonthRow?.rentMonth || 0);
     const currentMonthExpenses = Number(expMonthRow?.expMonth || 0);
-    const outstandingRent = Math.max(0, totalRentBilled - totalRentCollected);
     const overdueCount = Number(overdueCountRow?.count || 0);
     const kitchenCosts = Number(kitchenCostRow?.kitchenCost || 0);
     const tiffinRevenue = Number(tiffinRevRow?.tiffinRev || 0);
     const tiffinNetResult = tiffinRevenue - kitchenCosts;
 
+    if (division === "PG") {
+      const outstandingRent = Math.max(0, rawTotalRentBilled - rawTotalRentCollected);
+      return {
+        currentMonthRent,
+        currentMonthExpenses: Math.max(0, currentMonthExpenses - kitchenCosts),
+        totalRentCollected: rawTotalRentCollected,
+        totalRentBilled: rawTotalRentBilled,
+        totalExpensesPaid: rawPgExpensesPaid,
+        totalDepositsHeld: rawTotalDepositsHeld,
+        outstandingRent,
+        overdueCount,
+        kitchenCosts: 0,
+        tiffinRevenue: 0,
+        tiffinNetResult: 0,
+      };
+    } else if (division === "TIFFIN") {
+      return {
+        currentMonthRent: 0,
+        currentMonthExpenses: kitchenCosts,
+        totalRentCollected: 0,
+        totalRentBilled: 0,
+        totalExpensesPaid: rawTiffinExpensesPaid,
+        totalDepositsHeld: 0,
+        outstandingRent: 0,
+        overdueCount: 0,
+        kitchenCosts,
+        tiffinRevenue,
+        tiffinNetResult,
+      };
+    }
+
+    // COMBINED
+    const outstandingRent = Math.max(0, rawTotalRentBilled - rawTotalRentCollected);
     return {
       currentMonthRent,
       currentMonthExpenses,
-      totalRentCollected,
-      totalRentBilled,
-      totalExpensesPaid,
-      totalDepositsHeld,
+      totalRentCollected: rawTotalRentCollected,
+      totalRentBilled: rawTotalRentBilled,
+      totalExpensesPaid: rawTotalExpensesPaid,
+      totalDepositsHeld: rawTotalDepositsHeld,
       outstandingRent,
       overdueCount,
       kitchenCosts,
@@ -202,15 +290,27 @@ export async function getDashboardMetrics(
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const ym = d.toISOString().slice(0, 7);
-      sixMonths.push(ym);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      sixMonths.push(`${y}-${m}`);
+    }
+
+    let collectedSql = "CASE WHEN (transaction_type = 'RENT_PAYMENT' OR transaction_type = 'TIFFIN_PAYMENT') AND status = 'POSTED' THEN amount ELSE 0 END";
+    let expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END";
+
+    if (division === "PG") {
+      collectedSql = "CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END";
+      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
+    } else if (division === "TIFFIN") {
+      collectedSql = "CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN'))) AND status = 'POSTED' THEN amount ELSE 0 END";
+      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
     }
 
     const monthlyDbRows = await db.query<{ ym: string; collected: number | string; expenses: number | string }>(`
       SELECT 
         substr(transaction_date, 1, 7) as ym,
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as collected,
-        COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as expenses
+        COALESCE(SUM(${collectedSql}), 0) as collected,
+        COALESCE(SUM(${expenseSql}), 0) as expenses
       FROM financial_transactions
       WHERE substr(transaction_date, 1, 7) IN (${sixMonths.map(() => "?").join(",")})
       GROUP BY substr(transaction_date, 1, 7)
@@ -243,9 +343,17 @@ export async function getDashboardMetrics(
       meal_type: string;
       status: string;
       final_preparation_count: number | string;
+      planned_resident_count: number | string;
+      planned_tiffin_count: number | string;
       cooked_count: number | string;
     }>(`
-      SELECT meal_type, status, final_preparation_count, COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
+      SELECT
+        meal_type,
+        status,
+        final_preparation_count,
+        COALESCE(planned_resident_count, 0) as planned_resident_count,
+        COALESCE(planned_tiffin_count, 0) as planned_tiffin_count,
+        COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
       FROM daily_meal_plans
       WHERE service_date = ?
     `, [targetKitchenDate]);
@@ -260,13 +368,28 @@ export async function getDashboardMetrics(
           meal_type: string;
           status: string;
           final_preparation_count: number | string;
+          planned_resident_count: number | string;
+          planned_tiffin_count: number | string;
           cooked_count: number | string;
         }>(`
-          SELECT meal_type, status, final_preparation_count, COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
+          SELECT
+            meal_type,
+            status,
+            final_preparation_count,
+            COALESCE(planned_resident_count, 0) as planned_resident_count,
+            COALESCE(planned_tiffin_count, 0) as planned_tiffin_count,
+            COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
           FROM daily_meal_plans
           WHERE service_date = ?
         `, [targetKitchenDate]);
       }
+    }
+
+    let delOrderFilter = "";
+    if (division === "PG") {
+      delOrderFilter = "AND order_type = 'RESIDENT'";
+    } else if (division === "TIFFIN") {
+      delOrderFilter = "AND order_type = 'EXTERNAL'";
     }
 
     const [deliveryMealStats, delStatsRow] = await Promise.all([
@@ -282,7 +405,7 @@ export async function getDashboardMetrics(
           COALESCE(SUM(CASE WHEN dispatched_at IS NOT NULL OR status IN ('OUT_FOR_DELIVERY', 'DELIVERED', 'EXCEPTION') THEN 1 ELSE 0 END), 0) as dispatched_count,
           COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered_count
         FROM delivery_tasks
-        WHERE service_date = ?
+        WHERE service_date = ? ${delOrderFilter}
         GROUP BY meal_type
       `, [targetKitchenDate]),
       db.queryOne<{ total_tasks: number | string; delivered: number | string; exceptions: number | string }>(`
@@ -291,7 +414,7 @@ export async function getDashboardMetrics(
           COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered,
           COALESCE(SUM(CASE WHEN status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exceptions
         FROM delivery_tasks
-        WHERE service_date = ?
+        WHERE service_date = ? ${delOrderFilter}
       `, [targetKitchenDate]),
     ]);
 
@@ -308,28 +431,39 @@ export async function getDashboardMetrics(
     const lPlan = mealPlans.find((p) => p.meal_type === "LUNCH");
     const dPlan = mealPlans.find((p) => p.meal_type === "DINNER");
 
+    const getCookedCount = (plan?: typeof bPlan) => {
+      if (!plan) return 0;
+      if (division === "PG") return Number(plan.planned_resident_count);
+      if (division === "TIFFIN") return Number(plan.planned_tiffin_count);
+      return Number(plan.cooked_count);
+    };
+
+    const bCooked = getCookedCount(bPlan);
+    const lCooked = getCookedCount(lPlan);
+    const dCooked = getCookedCount(dPlan);
+
     const mealFulfillment: MealFulfillmentMetrics = {
       serviceDate: targetKitchenDate,
       breakfast: {
         status: bPlan?.status || "UNPLANNED",
-        cooked: bPlan ? Number(bPlan.cooked_count) : 0,
+        cooked: bCooked,
         dispatched: deliveryMealMap["BREAKFAST"]?.dispatched || 0,
         delivered: deliveryMealMap["BREAKFAST"]?.delivered || 0,
       },
       lunch: {
         status: lPlan?.status || "UNPLANNED",
-        cooked: lPlan ? Number(lPlan.cooked_count) : 0,
+        cooked: lCooked,
         dispatched: deliveryMealMap["LUNCH"]?.dispatched || 0,
         delivered: deliveryMealMap["LUNCH"]?.delivered || 0,
       },
       dinner: {
         status: dPlan?.status || "UNPLANNED",
-        cooked: dPlan ? Number(dPlan.cooked_count) : 0,
+        cooked: dCooked,
         dispatched: deliveryMealMap["DINNER"]?.dispatched || 0,
         delivered: deliveryMealMap["DINNER"]?.delivered || 0,
       },
       totals: {
-        cooked: (bPlan ? Number(bPlan.cooked_count) : 0) + (lPlan ? Number(lPlan.cooked_count) : 0) + (dPlan ? Number(dPlan.cooked_count) : 0),
+        cooked: bCooked + lCooked + dCooked,
         dispatched: (deliveryMealMap["BREAKFAST"]?.dispatched || 0) + (deliveryMealMap["LUNCH"]?.dispatched || 0) + (deliveryMealMap["DINNER"]?.dispatched || 0),
         delivered: (deliveryMealMap["BREAKFAST"]?.delivered || 0) + (deliveryMealMap["LUNCH"]?.delivered || 0) + (deliveryMealMap["DINNER"]?.delivered || 0),
       },
@@ -365,10 +499,10 @@ export async function getDashboardMetrics(
     deliverySummary: mealAndDelivery.deliverySummary,
   };
 
-  dashboardCache = {
+  dashboardCaches.set(cacheKey, {
     data: result,
     expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-  };
+  });
 
   return result;
 }

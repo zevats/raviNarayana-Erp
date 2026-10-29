@@ -32,6 +32,8 @@ import {
   getDeliveryDashboardSummary,
   listActiveDeliveryStaff,
   createExternalDeliveryTask,
+  batchAssignDeliveryTasks,
+  batchDispatchDeliveryTasks,
 } from "../apps/erp/src/server/delivery/deliveryService";
 import {
   getNotifications,
@@ -888,9 +890,227 @@ async function runDeliveryTests() {
   assert(pgStaff.length === 1 && pgStaff[0].username === "pg_staff", "listActiveDeliveryStaff executes successfully on PostgreSQL AsyncDb adapter");
 
   // -----------------------------------------------------------------------------
-  // TEST SUITE 19: Zero Primary Database Access Guard & Environment Cleanup
+  // TEST SUITE 19: Batch Assignment & Driver Run Assembly
   // -----------------------------------------------------------------------------
-  console.log("\n[TEST SUITE 19] Zero Primary Database Access Guard & Environment Cleanup");
+  console.log("\n[TEST SUITE 19] Batch Assignment & Driver Run Assembly");
+
+  // Create a batch of new delivery tasks for testing batch assignment
+  const extTask1 = await createExternalDeliveryTask(managerUser, {
+    serviceDate: "2026-10-22",
+    mealType: "LUNCH",
+    customerName: "Batch Customer Alpha",
+    customerPhone: "+91 99999 11111",
+    deliveryAddress: "Tower A, Tech Park, Sector 48",
+  });
+
+  const extTask2 = await createExternalDeliveryTask(managerUser, {
+    serviceDate: "2026-10-22",
+    mealType: "LUNCH",
+    customerName: "Batch Customer Beta",
+    customerPhone: "+91 99999 22222",
+    deliveryAddress: "Tower B, Tech Park, Sector 48",
+  });
+
+  // 1. Rejects empty task IDs
+  try {
+    await batchAssignDeliveryTasks(managerUser, {
+      taskIds: [],
+      assignedToStaffId: rameshDeliveryUser.id,
+    });
+    assert(false, "batchAssignDeliveryTasks rejected empty taskIds");
+  } catch (err: any) {
+    assert(err.message.includes("At least one valid delivery task ID"), "Empty taskIds rejected with clear error message");
+  }
+
+  // 2. Rejects invalid staff ID
+  try {
+    await batchAssignDeliveryTasks(managerUser, {
+      taskIds: [extTask1.id, extTask2.id],
+      assignedToStaffId: "non_existent_staff",
+    });
+    assert(false, "batchAssignDeliveryTasks rejected non-existent staff member");
+  } catch (err: any) {
+    assert(err.message.includes("not found"), "Non-existent staff rejected with clear error");
+  }
+
+  // 3. Rejects non-delivery role staff member
+  try {
+    await batchAssignDeliveryTasks(managerUser, {
+      taskIds: [extTask1.id, extTask2.id],
+      assignedToStaffId: kitchenUser.id,
+    });
+    assert(false, "batchAssignDeliveryTasks rejected KITCHEN_OPERATIONS staff");
+  } catch (err: any) {
+    assert(err.message.includes("Only active DELIVERY_PERSON"), "Staff without DELIVERY_PERSON role rejected");
+  }
+
+  // 4. Successfully batch assigns multiple tasks to Ramesh
+  const batchAssignResult = await batchAssignDeliveryTasks(managerUser, {
+    taskIds: [extTask1.id, extTask2.id],
+    assignedToStaffId: rameshDeliveryUser.id,
+  });
+  assert(batchAssignResult.assignedCount === 2, "batchAssignDeliveryTasks assigned exactly 2 tasks");
+  assert(batchAssignResult.assignedStaffId === rameshDeliveryUser.id, "Assigned staff ID matches Ramesh");
+  assert(batchAssignResult.tasks.every((t) => t.status === "ASSIGNED" && t.assignedTo === rameshDeliveryUser.id), "All tasks transitioned to ASSIGNED with Ramesh allocated");
+
+  // 5. Batch reassignment from Ramesh to Suresh
+  const batchReassignResult = await batchAssignDeliveryTasks(managerUser, {
+    taskIds: [extTask1.id, extTask2.id],
+    assignedToStaffId: sureshDeliveryUser.id,
+  });
+  assert(batchReassignResult.assignedCount === 2, "batchAssignDeliveryTasks reassigned 2 tasks to Suresh");
+  assert(batchReassignResult.tasks.every((t) => t.assignedTo === sureshDeliveryUser.id), "All tasks successfully updated to Suresh");
+
+  // 6. Verify audit event was logged for batch assignment
+  const batchAudit = (getDb().prepare(`
+    SELECT * FROM audit_logs WHERE action = 'delivery.tasks_batch_assigned' ORDER BY created_at DESC LIMIT 1
+  `).get()) as any;
+  assert(!!batchAudit, "Audit event 'delivery.tasks_batch_assigned' recorded");
+  assert(batchAudit.target_type === "delivery_task_batch", "Audit log target_type is 'delivery_task_batch'");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 20: Batch Dispatch & Out-for-Delivery Invariants
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 20] Batch Dispatch & Out-for-Delivery Invariants");
+
+  // 1. Delivery person cannot dispatch tasks assigned to someone else
+  try {
+    await batchDispatchDeliveryTasks(rameshDeliveryUser, {
+      taskIds: [extTask1.id, extTask2.id],
+    });
+    assert(false, "Ramesh should not be able to dispatch Suresh's assigned tasks");
+  } catch (err: any) {
+    assert(err instanceof AuthorizationError, "403 AuthorizationError thrown when driver attempts to dispatch another driver's tasks");
+  }
+
+  // 2. Assigned delivery person can dispatch their own run
+  const dispatchResult = await batchDispatchDeliveryTasks(sureshDeliveryUser, {
+    taskIds: [extTask1.id, extTask2.id],
+  });
+  assert(dispatchResult.dispatchedCount === 2, "Suresh successfully batch dispatched 2 assigned tasks");
+  assert(dispatchResult.tasks.every((t) => t.status === "OUT_FOR_DELIVERY"), "All tasks transitioned to OUT_FOR_DELIVERY");
+
+  // 3. Idempotent dispatch: calling again does not fail or duplicate side effects
+  const idempotentDispatch = await batchDispatchDeliveryTasks(sureshDeliveryUser, {
+    taskIds: [extTask1.id, extTask2.id],
+  });
+  assert(idempotentDispatch.dispatchedCount === 0, "Idempotent batch dispatch returns 0 newly dispatched tasks");
+
+  // 4. Audit log recorded for batch dispatch
+  const dispatchAudit = (getDb().prepare(`
+    SELECT * FROM audit_logs WHERE action = 'delivery.tasks_batch_dispatched' ORDER BY created_at DESC LIMIT 1
+  `).get()) as any;
+  assert(!!dispatchAudit, "Audit event 'delivery.tasks_batch_dispatched' recorded");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 21: Commercial Billing Invariant Protection (Billed Delivery Immutability)
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 21] Commercial Billing Invariant Protection (Billed Delivery Immutability)");
+
+  // Complete extTask1
+  await completeDeliveryTask(sureshDeliveryUser, extTask1.id, {
+    recipientName: "Vikas Reception",
+    notes: "Left at building entrance",
+  });
+
+  // Insert mock invoice record to satisfy foreign key constraint
+  const invoiceNow = new Date().toISOString();
+  getDb().prepare(`
+    INSERT OR IGNORE INTO invoices (
+      id, invoice_number, invoice_type, invoice_category, status,
+      issue_date, due_date, billing_period, company_name, company_address,
+      recipient_name, recipient_phone, created_by, created_at, updated_at
+    ) VALUES (
+      'inv_test_commercial_456', 'INV-2026-TEST', 'REGULAR_BILL', 'TIFFIN', 'ISSUED',
+      '2026-10-22', '2026-10-22', '2026-10', 'Ravi Narayana', 'Jhajjar',
+      'Batch Customer Alpha', '+91 99999 11111', ?, ?, ?
+    )
+  `).run(superAdminUser.id, invoiceNow, invoiceNow);
+
+  // Simulate invoice issuance linking extTask1 to an official invoice
+  getDb().prepare(`
+    UPDATE delivery_tasks
+    SET invoice_id = 'inv_test_commercial_456',
+        billed_at = '2026-10-22T12:00:00.000Z'
+    WHERE id = ?
+  `).run(extTask1.id);
+
+  // 1. Billed task mapped correctly with invoice fields
+  const billedTaskDetail = await getDeliveryTaskById(managerUser, extTask1.id);
+  assert(billedTaskDetail?.task.invoiceId === "inv_test_commercial_456", "getDeliveryTaskById returns invoiceId");
+  assert(billedTaskDetail?.task.billedAt === "2026-10-22T12:00:00.000Z", "getDeliveryTaskById returns billedAt");
+
+  // 2. Single reassignment on billed task is rejected
+  try {
+    await assignDeliveryTask(managerUser, extTask1.id, {
+      assignedToStaffId: rameshDeliveryUser.id,
+    });
+    assert(false, "assignDeliveryTask should reject task linked to invoice");
+  } catch (err: any) {
+    assert(err.message.includes("linked to an invoice") || err.message.includes("Delivered"), "Reassignment rejected on billed task");
+  }
+
+  // 3. Batch reassignment on billed task is rejected
+  try {
+    await batchAssignDeliveryTasks(managerUser, {
+      taskIds: [extTask1.id],
+      assignedToStaffId: rameshDeliveryUser.id,
+    });
+    assert(false, "batchAssignDeliveryTasks should reject task linked to invoice");
+  } catch (err: any) {
+    assert(err.message.includes("linked to an invoice") || err.message.includes("already been delivered"), "Batch reassignment rejected on billed task");
+  }
+
+  // 4. Exception reporting on billed task is rejected
+  try {
+    await reportDeliveryException(managerUser, extTask1.id, {
+      exceptionType: "OTHER",
+      reason: "Customer claimed non-delivery post invoice",
+    });
+    assert(false, "reportDeliveryException should reject task linked to invoice");
+  } catch (err: any) {
+    assert(err.message.includes("Delivered") || err.message.includes("linked to an invoice"), "Exception reporting rejected on billed task");
+  }
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 22: Search and Filter Capabilities
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 22] Search and Filter Capabilities");
+
+  // 1. Search by customer name
+  const searchByName = await listDeliveryTasks(managerUser, {
+    search: "Customer Beta",
+  });
+  assert(searchByName.some((t) => t.customerName === "Batch Customer Beta"), "listDeliveryTasks matches customerName in search query");
+
+  // 2. Search by phone number
+  const searchByPhone = await listDeliveryTasks(managerUser, {
+    search: "22222",
+  });
+  assert(searchByPhone.some((t) => t.customerPhone === "+91 99999 22222"), "listDeliveryTasks matches customerPhone in search query");
+
+  // 3. Search by address
+  const searchByAddress = await listDeliveryTasks(managerUser, {
+    search: "Tower B",
+  });
+  assert(searchByAddress.some((t) => (t.deliveryAddress || "").includes("Tower B")), "listDeliveryTasks matches deliveryAddress in search query");
+
+  // 4. Filter by UNASSIGNED
+  const unassignedTasks = await listDeliveryTasks(managerUser, {
+    assignedTo: "UNASSIGNED",
+  });
+  assert(unassignedTasks.every((t) => !t.assignedTo), "listDeliveryTasks with assignedTo='UNASSIGNED' returns only unassigned tasks");
+
+  // 5. Filter by specific staff ID
+  const sureshFilteredTasks = await listDeliveryTasks(managerUser, {
+    assignedTo: sureshDeliveryUser.id,
+  });
+  assert(sureshFilteredTasks.every((t) => t.assignedTo === sureshDeliveryUser.id), "listDeliveryTasks with specific assignedTo returns only Suresh's tasks");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 23: Zero Primary Database Access Guard & Environment Cleanup
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 23] Zero Primary Database Access Guard & Environment Cleanup");
 
   const primaryStatsAfter = fs.existsSync(primaryDbPath) ? fs.statSync(primaryDbPath) : null;
   if (primaryStatsBefore && primaryStatsAfter) {

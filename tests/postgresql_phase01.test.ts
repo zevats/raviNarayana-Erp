@@ -31,6 +31,7 @@ import {
 } from "../apps/erp/src/server/database/migrateSqliteToPg";
 import { resolveDbPath, getDb, getAsyncDb, closeDb } from "../apps/erp/src/server/database/db";
 import { validateProductionDatabaseEnvironment } from "../apps/erp/src/server/database/env";
+import { runMigrations as runSqliteTestMigrations } from "./helpers/sqliteMigrations";
 
 let passCount = 0;
 let failCount = 0;
@@ -61,6 +62,9 @@ async function runPhase01Tests() {
   clearMockSentEmails();
 
   const db = getDb();
+  // Self-contained schema: previously this suite only passed when an earlier suite had
+  // already migrated the shared tests/test_erp.db (order dependency, ISSUE-004).
+  runSqliteTestMigrations(db);
 
   // ---------------------------------------------------------------------------
   // TEST SUITE 1: Drizzle PostgreSQL Schema & Versioning
@@ -453,11 +457,31 @@ async function runPhase01Tests() {
   // ---------------------------------------------------------------------------
   console.log("\n[TEST SUITE 8] SQLite to PostgreSQL Migration & Guarded Rollback Verification");
 
+  // The migration source is a synthetic SQLite fixture. resolveDbPath() otherwise defaults to the
+  // protected data/erp.db, which tests must never open (ISSUE-004).
+  const originalErpDbPath = process.env.ERP_DATABASE_PATH;
+  const fixtureSourcePath = path.resolve(__dirname, `phase01_migration_source_${process.pid}.db`);
+  {
+    const Database = require("better-sqlite3");
+    const fixture = new Database(fixtureSourcePath);
+    runSqliteTestMigrations(fixture);
+    fixture.close();
+  }
+  process.env.ERP_DATABASE_PATH = fixtureSourcePath;
+
   const sourceDbPath = resolveDbPath();
-  assert(fs.existsSync(sourceDbPath), `Source SQLite database verified at ${sourceDbPath}`);
+  assert(
+    sourceDbPath === path.normalize(fixtureSourcePath) && fs.existsSync(sourceDbPath),
+    `Source SQLite fixture verified at ${path.basename(sourceDbPath)} (never data/erp.db)`
+  );
 
   // Test dry-run migration without modifying destination
-  const dryRunResult = await migrateSqliteToPostgres({ dryRun: true });
+  const dryRunResult = await migrateSqliteToPostgres({ dryRun: true, sqlitePath: fixtureSourcePath });
+  if (originalErpDbPath) process.env.ERP_DATABASE_PATH = originalErpDbPath;
+  else delete process.env.ERP_DATABASE_PATH;
+  for (const suffix of ["", "-wal", "-shm"]) {
+    if (fs.existsSync(fixtureSourcePath + suffix)) fs.unlinkSync(fixtureSourcePath + suffix);
+  }
   if (!getDatabaseUrl()) {
     assert(
       dryRunResult.errors.some((e) => e.includes("not configured in environment")),

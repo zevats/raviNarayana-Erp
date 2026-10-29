@@ -16,8 +16,9 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const startDate = url.searchParams.get("startDate") || undefined;
     const endDate = url.searchParams.get("endDate") || undefined;
+    const division = (url.searchParams.get("division") as any) || undefined;
 
-    const summary = await getCashbookSummary(user, { startDate, endDate });
+    const summary = await getCashbookSummary(user, { startDate, endDate, division });
     return NextResponse.json({ success: true, summary });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);

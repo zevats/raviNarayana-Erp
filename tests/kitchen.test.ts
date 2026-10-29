@@ -12,17 +12,22 @@ import {
 } from "../apps/erp/src/server/authorization/authorize";
 import {
   getEligibleResidentsForDate,
+  getEligibleTiffinSubscriptionsForDate,
+  calculateDailyKitchenDemand,
   createMealPlan,
   updateMealPlan,
   confirmMealPlan,
   completeMealPlan,
   adjustMealPlanQuantity,
+  refreshMealPlanDemand,
+  reconcileMealPlanProduction,
   getMealPlanById,
   listMealPlans,
   getPreparationSheetData,
   getKitchenDashboardSummary,
   updateResidentMealPreference,
 } from "../apps/erp/src/server/kitchen/kitchenService";
+import { generateDeliveryTasks } from "../apps/erp/src/server/delivery/deliveryService";
 import { getAuditLogs } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
 
@@ -771,6 +776,276 @@ async function runKitchenTests() {
     dietaryPreference: "JAIN",
   }, mockPgDb);
   assert(executedSqls.some(s => s.includes("ON CONFLICT(resident_id) DO UPDATE SET")), "updateResidentMealPreference executes cross-engine ON CONFLICT upsert on PostgreSQL AsyncDb adapter");
+
+  // -----------------------------------------------------------------------------
+  // TEST SUITE 15: Subscription-Driven Kitchen Demand, Production Reconciliation & Cross-Module Delivery (Task 01B.45)
+  // -----------------------------------------------------------------------------
+  console.log("\n[TEST SUITE 15] Subscription-Driven Kitchen Demand, Production Reconciliation & Delivery");
+
+  const liveDb = new Database(TEST_KITCHEN_DB_PATH);
+
+  // 1. Verify Migration V14 schema extension
+  const dmpColumns = (liveDb.prepare("PRAGMA table_info(daily_meal_plans)").all() as any[]).map(c => c.name);
+  assert(dmpColumns.includes("planned_tiffin_count"), "daily_meal_plans schema has planned_tiffin_count column");
+  assert(dmpColumns.includes("dispatched_count"), "daily_meal_plans schema has dispatched_count column");
+  assert(dmpColumns.includes("leftover_count"), "daily_meal_plans schema has leftover_count column");
+  assert(dmpColumns.includes("waste_count"), "daily_meal_plans schema has waste_count column");
+  assert(dmpColumns.includes("reconciled_by"), "daily_meal_plans schema has reconciled_by column");
+  assert(dmpColumns.includes("reconciled_at"), "daily_meal_plans schema has reconciled_at column");
+
+  const dtColumns = (liveDb.prepare("PRAGMA table_info(delivery_tasks)").all() as any[]).map(c => c.name);
+  assert(dtColumns.includes("subscription_id"), "delivery_tasks schema has subscription_id column");
+
+  // 2. Seed commercial Tiffin customers, products, and subscriptions
+  const seedTimestamp = new Date().toISOString();
+  liveDb.prepare(`
+    INSERT INTO tiffin_customers (id, full_name, phone, delivery_address, customer_type, dietary_preference, status, created_by, created_at, updated_at)
+    VALUES
+      ('tif_cust_1', 'Vikram Malhotra', '9988776655', 'Tower A-402, DLF CyberCity', 'INDIVIDUAL', 'VEG', 'ACTIVE', ?, ?, ?),
+      ('tif_cust_2', 'Infosys Tech Hub', '9988776656', 'Plot 12, Met City Industrial Zone', 'CORPORATE', 'VEG', 'ACTIVE', ?, ?, ?),
+      ('tif_cust_3', 'Pooja Hegde', '9988776657', 'Villa 14, Green Meadows', 'INDIVIDUAL', 'NON_VEG', 'ACTIVE', ?, ?, ?),
+      ('tif_cust_4', 'Sanjay Dutt', '9988776658', 'Block C-101, Palm Springs', 'INDIVIDUAL', 'VEG', 'ACTIVE', ?, ?, ?)
+  `).run(
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp
+  );
+
+  liveDb.prepare(`
+    INSERT INTO tiffin_products (id, code, name, category, billing_unit, price, currency, status, created_by, created_at, updated_at)
+    VALUES
+      ('tif_prod_both', 'TIF-PKG-BOTH', 'Standard Both Meals Package', 'SUBSCRIPTION_PACKAGE', 'PER_MONTH', 4000, 'INR', 'ACTIVE', ?, ?, ?),
+      ('tif_prod_lunch', 'TIF-MEAL-LUNCH', 'Executive Lunch Box', 'STANDARD_MEAL', 'PER_MEAL', 120, 'INR', 'ACTIVE', ?, ?, ?),
+      ('tif_prod_dinner', 'TIF-MEAL-DINNER', 'Light Homestyle Dinner', 'STANDARD_MEAL', 'PER_MEAL', 100, 'INR', 'ACTIVE', ?, ?, ?)
+  `).run(
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp
+  );
+
+  // Subscriptions:
+  // sub_1: Vikram - BOTH meals, ALL_DAYS, qty 1, ACTIVE (2026-10-01 to NULL)
+  // sub_2: Infosys - LUNCH, MON_FRI, qty 5, ACTIVE (2026-10-01 to NULL)
+  // sub_3: Pooja - DINNER, MON_SAT, qty 2, ACTIVE (2026-10-01 to NULL), PAUSED 2026-10-14 to 2026-10-18
+  // sub_4: Sanjay - LUNCH, ALL_DAYS, qty 3, CANCELLED on 2026-10-10
+  liveDb.prepare(`
+    INSERT INTO tiffin_subscriptions (
+      id, customer_id, product_id, status, start_date, end_date, price, currency,
+      meal_types, service_days, quantity_per_meal, pause_start_date, pause_resume_date,
+      pause_reason, cancelled_at, cancellation_reason, cancelled_by, delivery_address,
+      delivery_instructions, created_by, created_at, updated_at
+    ) VALUES
+      ('sub_1', 'tif_cust_1', 'tif_prod_both', 'ACTIVE', '2026-10-01', NULL, 4000, 'INR', 'BOTH', 'ALL_DAYS', 1, NULL, NULL, NULL, NULL, NULL, NULL, 'Tower A-402, DLF CyberCity', 'Leave at reception desk', ?, ?, ?),
+      ('sub_2', 'tif_cust_2', 'tif_prod_lunch', 'ACTIVE', '2026-10-01', NULL, 600, 'INR', 'LUNCH', 'MON_FRI', 5, NULL, NULL, NULL, NULL, NULL, NULL, 'Plot 12, Met City Industrial Zone', 'Gate 2 Security Dispatch', ?, ?, ?),
+      ('sub_3', 'tif_cust_3', 'tif_prod_dinner', 'PAUSED', '2026-10-01', NULL, 200, 'INR', 'DINNER', 'MON_SAT', 2, '2026-10-14', '2026-10-18', 'Vacation', NULL, NULL, NULL, 'Villa 14, Green Meadows', NULL, ?, ?, ?),
+      ('sub_4', 'tif_cust_4', 'tif_prod_lunch', 'CANCELLED', '2026-10-01', NULL, 360, 'INR', 'LUNCH', 'ALL_DAYS', 3, NULL, NULL, NULL, '2026-10-10T10:00:00.000Z', 'Relocated', ?, 'Block C-101, Palm Springs', NULL, ?, ?, ?)
+  `).run(
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, seedTimestamp, seedTimestamp,
+    opsManagerUser.id, opsManagerUser.id, seedTimestamp, seedTimestamp
+  );
+
+  // Reset Aarav's lunch preference so both Aarav and Priya are opted into lunch
+  liveDb.prepare("UPDATE resident_meal_preferences SET lunch_opt_in = 1 WHERE resident_id = 'res_aarav'").run();
+
+  liveDb.close();
+
+  // 3. Test getEligibleTiffinSubscriptionsForDate on Friday 2026-10-16
+  const bSubs = await getEligibleTiffinSubscriptionsForDate(kitchenUser, "2026-10-16", "BREAKFAST");
+  assert(bSubs.length === 0, "Breakfast has 0 eligible commercial tiffin subscriptions");
+
+  const lSubs = await getEligibleTiffinSubscriptionsForDate(kitchenUser, "2026-10-16", "LUNCH");
+  assert(lSubs.length === 2, "Lunch on 2026-10-16 has exactly 2 eligible subscriptions (sub_1 and sub_2)");
+  const lSubTotalPortions = lSubs.reduce((sum, s) => sum + s.quantityPerMeal, 0);
+  assert(lSubTotalPortions === 6, `Lunch subscription portion demand is 6 (1 + 5, got ${lSubTotalPortions})`);
+
+  const dSubs = await getEligibleTiffinSubscriptionsForDate(kitchenUser, "2026-10-16", "DINNER");
+  assert(dSubs.length === 1 && dSubs[0].subscriptionId === "sub_1", "Dinner on 2026-10-16 has only sub_1 (sub_3 is paused)");
+  assert(dSubs[0].quantityPerMeal === 1, "Dinner subscription demand is 1 portion");
+
+  // Sunday 2026-10-18 schedule filter test: sub_2 (MON_FRI) and sub_3 (MON_SAT) are excluded
+  const sundayLunchSubs = await getEligibleTiffinSubscriptionsForDate(kitchenUser, "2026-10-18", "LUNCH");
+  assert(sundayLunchSubs.length === 1 && sundayLunchSubs[0].subscriptionId === "sub_1", "Sunday Lunch excludes MON_FRI corporate subscription (only ALL_DAYS sub_1 eligible)");
+
+  // 4. Test calculateDailyKitchenDemand
+  const demandResult = await calculateDailyKitchenDemand(kitchenUser, "2026-10-16");
+  assert(demandResult.serviceDate === "2026-10-16", "calculateDailyKitchenDemand returned correct date");
+  assert(demandResult.dayOfWeek === "FRIDAY", `calculateDailyKitchenDemand identified FRIDAY (got ${demandResult.dayOfWeek})`);
+  assert(demandResult.totalResidents === 2, "2 eligible PG residents on 2026-10-16 (Aarav and Priya)");
+  assert(demandResult.breakdown.lunch.residentDemand === 2, "Lunch PG resident demand is 2");
+  assert(demandResult.breakdown.lunch.tiffinDemand === 6, "Lunch commercial tiffin demand is 6");
+  assert(demandResult.breakdown.lunch.totalRequired === 8, "Lunch total required portions is 8 (2 resident + 6 tiffin)");
+  assert(demandResult.breakdown.dinner.residentDemand === 2, "Dinner PG resident demand is 2");
+  assert(demandResult.breakdown.dinner.tiffinDemand === 1, "Dinner commercial tiffin demand is 1");
+  assert(demandResult.breakdown.dinner.totalRequired === 3, "Dinner total required portions is 3 (2 resident + 1 tiffin)");
+
+  // 5. Create meal plan with commercial tiffin demand integration
+  const tiffinLunchPlan = await createMealPlan(kitchenUser, {
+    serviceDate: "2026-10-16",
+    mealType: "LUNCH",
+    guestCount: 2,
+    notes: "Executive Lunch Box service with Paneer Butter Masala",
+    status: "CONFIRMED",
+  });
+
+  assert(tiffinLunchPlan.plannedResidentCount === 2, "Lunch plan plannedResidentCount is 2");
+  assert(tiffinLunchPlan.plannedTiffinCount === 6, "Lunch plan plannedTiffinCount automatically computed as 6");
+  assert(tiffinLunchPlan.guestCount === 2, "Lunch plan guestCount is 2");
+  assert(tiffinLunchPlan.finalPreparationCount === 10, "Lunch plan finalPreparationCount = 2 + 6 + 2 = 10");
+  assert(tiffinLunchPlan.status === "CONFIRMED", "Lunch plan status is CONFIRMED");
+
+  // 6. Test refreshMealPlanDemand
+  // Add a new subscription active on 2026-10-16
+  const stepDb = new Database(TEST_KITCHEN_DB_PATH);
+  stepDb.prepare(`
+    INSERT INTO tiffin_subscriptions (
+      id, customer_id, product_id, status, start_date, price, currency,
+      meal_types, service_days, quantity_per_meal, delivery_address, created_by, created_at, updated_at
+    ) VALUES (
+      'sub_new_5', 'tif_cust_1', 'tif_prod_lunch', 'ACTIVE', '2026-10-01', 120, 'INR',
+      'LUNCH', 'ALL_DAYS', 2, 'Tower A-402, DLF CyberCity', ?, ?, ?
+    )
+  `).run(opsManagerUser.id, seedTimestamp, seedTimestamp);
+  stepDb.close();
+
+  const refreshedPlan = await refreshMealPlanDemand(kitchenUser, tiffinLunchPlan.id);
+  assert(refreshedPlan.plannedTiffinCount === 8, `refreshedPlan plannedTiffinCount updated to 8 (got ${refreshedPlan.plannedTiffinCount})`);
+  assert(refreshedPlan.guestCount === 2, "refreshedPlan preserved manual guestCount = 2");
+  assert(refreshedPlan.finalPreparationCount === 12, `refreshedPlan finalPreparationCount = 2 + 8 + 2 = 12 (got ${refreshedPlan.finalPreparationCount})`);
+
+  // 7. Test reconcileMealPlanProduction
+  // Invariant error: Accounted (15) > Cooked (12)
+  let invariantCaught = false;
+  try {
+    await reconcileMealPlanProduction(kitchenUser, tiffinLunchPlan.id, {
+      actualCookedCount: 12,
+      dispatchedCount: 11,
+      leftoverCount: 3,
+      wasteCount: 1,
+    });
+  } catch (err: any) {
+    invariantCaught = err.message.includes("cannot exceed actual cooked count");
+  }
+  assert(invariantCaught, "Invariant Guard: Dispatched + Leftover + Waste cannot exceed Actual Cooked count");
+
+  // Negative validation error
+  let negativeCaught = false;
+  try {
+    await reconcileMealPlanProduction(kitchenUser, tiffinLunchPlan.id, {
+      actualCookedCount: 12,
+      dispatchedCount: -1,
+    });
+  } catch (err: any) {
+    negativeCaught = err.message.includes("non-negative integer");
+  }
+  assert(negativeCaught, "Validation Guard: Negative reconciliation counts rejected");
+
+  // Valid reconciliation
+  const reconciledPlan = await reconcileMealPlanProduction(kitchenUser, tiffinLunchPlan.id, {
+    actualCookedCount: 14,
+    dispatchedCount: 11,
+    leftoverCount: 2,
+    wasteCount: 1,
+    notes: "High demand, +2 portions prepared; all distributed cleanly",
+  });
+
+  assert(reconciledPlan.status === "COMPLETED", "Reconciled plan status transitioned to COMPLETED");
+  assert(reconciledPlan.actualCookedCount === 14, "actualCookedCount recorded as 14");
+  assert(reconciledPlan.dispatchedCount === 11, "dispatchedCount recorded as 11");
+  assert(reconciledPlan.leftoverCount === 2, "leftoverCount recorded as 2");
+  assert(reconciledPlan.wasteCount === 1, "wasteCount recorded as 1");
+  assert(reconciledPlan.reconciledBy === kitchenUser.id, "reconciledBy stamped with actor ID");
+  assert(Boolean(reconciledPlan.reconciledAt), "reconciledAt timestamp recorded");
+
+  // Verify getMealPlanById returns reconciledByName
+  const reconciledDetail = await getMealPlanById(kitchenUser, tiffinLunchPlan.id);
+  assert(reconciledDetail?.plan.reconciledByName === kitchenUser.fullName, `getMealPlanById populated reconciledByName (${reconciledDetail?.plan.reconciledByName})`);
+
+  // Cannot refresh a COMPLETED plan
+  let completedRefreshBlocked = false;
+  try {
+    await refreshMealPlanDemand(kitchenUser, tiffinLunchPlan.id);
+  } catch (err: any) {
+    completedRefreshBlocked = err.message.includes("Completed meal plans cannot be refreshed");
+  }
+  assert(completedRefreshBlocked, "State Guard: Completed meal plans cannot be refreshed");
+
+  // 8. Test Preparation Sheet Data with Tiffin Subscriptions
+  const tiffinPrepSheet = await getPreparationSheetData(kitchenUser, tiffinLunchPlan.id);
+  assert(Boolean(tiffinPrepSheet), "getPreparationSheetData returned prep sheet");
+  assert((tiffinPrepSheet?.tiffinSubscriptions?.length || 0) === 3, `Prep sheet contains 3 commercial tiffin subscriptions (got ${tiffinPrepSheet?.tiffinSubscriptions?.length})`);
+  assert(tiffinPrepSheet?.summary.tiffinSubscriberCount === 3, "Prep sheet summary reports 3 tiffin subscribers");
+  assert(tiffinPrepSheet?.summary.actualCookedCount === 14, "Prep sheet summary reports actualCookedCount 14");
+  assert(tiffinPrepSheet?.summary.dispatchedCount === 11, "Prep sheet summary reports dispatchedCount 11");
+
+  // 9. Combined Delivery Task Generation (Internal Residents + External Tiffin Subscriptions)
+  // Create dinner plan for 2026-10-16 and generate delivery tasks
+  const dinnerPlan = await createMealPlan(kitchenUser, {
+    serviceDate: "2026-10-16",
+    mealType: "DINNER",
+    guestCount: 0,
+    status: "CONFIRMED",
+  });
+
+  const deliveryGenResult = await generateDeliveryTasks(opsManagerUser, {
+    serviceDate: "2026-10-16",
+    mealType: "DINNER",
+  });
+
+  // 2 confirmed PG residents (Aarav, Priya) + 1 active tiffin subscription (sub_1, qty 1) = 3 delivery tasks
+  assert(deliveryGenResult.createdCount === 3, `Created exactly 3 delivery tasks (2 resident + 1 commercial tiffin, got ${deliveryGenResult.createdCount})`);
+  assert(deliveryGenResult.alreadyExistedCount === 0, "0 pre-existing tasks on first run");
+
+  const residentDelTasks = deliveryGenResult.tasks.filter(t => t.orderType === "RESIDENT");
+  const externalDelTasks = deliveryGenResult.tasks.filter(t => t.orderType === "EXTERNAL");
+  assert(residentDelTasks.length === 2, "2 internal resident delivery tasks generated");
+  assert(externalDelTasks.length === 1, "1 external commercial tiffin delivery task generated");
+  assert(externalDelTasks[0].subscriptionId === "sub_1", "External delivery task stamped with subscriptionId 'sub_1'");
+  assert(externalDelTasks[0].deliveryAddress === "Tower A-402, DLF CyberCity", "External delivery task snapshot address correct");
+
+  // Idempotency: re-running creates 0 tasks and skips 3 existing
+  const rerunGenResult = await generateDeliveryTasks(opsManagerUser, {
+    serviceDate: "2026-10-16",
+    mealType: "DINNER",
+  });
+  assert(rerunGenResult.createdCount === 0, "Re-running delivery generation created 0 duplicate tasks");
+  assert(rerunGenResult.alreadyExistedCount === 3, "Re-running delivery generation detected 3 already existing tasks");
+
+  // 10. Server-Side RBAC Enforcement on New Workflows
+  let accountantDemandBlocked = false;
+  try {
+    await calculateDailyKitchenDemand(accountantUser, "2026-10-16");
+  } catch (err: any) {
+    accountantDemandBlocked = err instanceof AuthorizationError && err.statusCode === 403;
+  }
+  assert(accountantDemandBlocked, "Privilege Guard: ACCOUNTANT blocked from calculateDailyKitchenDemand with HTTP 403");
+
+  let accountantReconcileBlocked = false;
+  try {
+    await reconcileMealPlanProduction(accountantUser, tiffinLunchPlan.id, { actualCookedCount: 14 });
+  } catch (err: any) {
+    accountantReconcileBlocked = err instanceof AuthorizationError && err.statusCode === 403;
+  }
+  assert(accountantReconcileBlocked, "Privilege Guard: ACCOUNTANT blocked from reconcileMealPlanProduction with HTTP 403");
+
+  let deliveryPersonPlanBlocked = false;
+  try {
+    await refreshMealPlanDemand(deliveryUser, dinnerPlan.id);
+  } catch (err: any) {
+    deliveryPersonPlanBlocked = err instanceof AuthorizationError && err.statusCode === 403;
+  }
+  assert(deliveryPersonPlanBlocked, "Privilege Guard: DELIVERY_PERSON blocked from refreshMealPlanDemand with HTTP 403");
+
+  // 11. Immutable Audit Trail Verification
+  const auditLogs = getAuditLogs({ limit: 100 });
+  const auditActions = auditLogs.map(l => l.action);
+  assert(auditActions.includes("kitchen.plan_refreshed"), "Audit trail captured kitchen.plan_refreshed");
+  assert(auditActions.includes("kitchen.production_reconciled"), "Audit trail captured kitchen.production_reconciled");
+  const reconcileLog = auditLogs.find(l => l.action === "kitchen.production_reconciled");
+  const reconcileMeta = reconcileLog && typeof reconcileLog.metadata === "string" ? JSON.parse(reconcileLog.metadata) : reconcileLog?.metadata;
+  assert(Boolean(reconcileMeta && reconcileMeta.actualCookedCount === 14), "Audit log captured production reconciliation metadata with actualCookedCount: 14");
 
   // -----------------------------------------------------------------------------
   // TEST SUITE 14: Zero Primary Database Access Guard & Environment Cleanup

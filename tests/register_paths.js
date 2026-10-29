@@ -62,6 +62,17 @@ function wrapBetterSqlite3(BetterSqlite3Class) {
 let wrappedBetterSqlite = null;
 
 Module.prototype.require = function (id) {
+  if (typeof id === "string" && id.startsWith("@/")) {
+    const rel = id.slice(2);
+    const resolvedInDist = path.resolve(__dirname, "dist/apps/erp/src", rel);
+    try {
+      return originalRequire.call(this, resolvedInDist);
+    } catch {
+      const resolvedInSrc = path.resolve(__dirname, "../apps/erp/src", rel);
+      return originalRequire.call(this, resolvedInSrc);
+    }
+  }
+
   if (id === "better-sqlite3") {
     if (!wrappedBetterSqlite) {
       let raw;
