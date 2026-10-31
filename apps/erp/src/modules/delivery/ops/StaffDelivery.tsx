@@ -11,7 +11,7 @@ import { getOfflineQueue } from "../offlineQueue";
 import { useDeliveryTasks, useManifest, postJson } from "./data";
 import { rupees, displayName, placeLine } from "./ui";
 import { DeliveryForm, DeliverySheet, mapsHref, paymentLabel, telHref, CallLink } from "./DeliverySheet";
-import { K, Pill, MealToggle, FilterChips, PageLoader, LoadError, stopNumbers, two, firstName, fullDate, dayMonth } from "./staffKit";
+import { K, Pill, MealToggle, FilterChips, PageLoader, LoadError, EmptyState, stopNumbers, two, firstName, fullDate, dayMonth } from "./staffKit";
 import { StaffCash } from "./StaffCash";
 import { StaffHistory } from "./StaffHistory";
 import { RecordDetail, RecordSheet } from "./staffParts";
@@ -179,6 +179,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
           </p>
         </div>
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
+        {tasks.length > 0 && (
         <div>
           <div className="flex justify-between text-[14px]">
             <span className="font-medium">
@@ -190,6 +191,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
             <div className="h-full rounded-full bg-[#C9501C] transition-[width] duration-700" style={{ width: `${pct}%` }} />
           </div>
         </div>
+        )}
       </section>
 
       {/* Tablet / desktop hero (screenshot 2) */}
@@ -245,22 +247,14 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
           </div>
 
           {tasks.length === 0 ? (
-            <div className={`${K.card} p-10 text-center`}>
-              <p className="text-xl font-extrabold">No stops yet</p>
-              <p className="text-sm text-[#6E7F70] mt-1">Your {mealWord.toLowerCase()} stops appear here when they are assigned to you.</p>
-            </div>
+            <EmptyState title="No stops yet" detail={`${mealWord} · Today`} />
           ) : (
             <>
               {next && matches(next) && (
                 <NextUp task={next} stopNo={numbers.get(next.id)} selected={wide && selected?.id === next.id} starting={starting === next.id} onStart={() => start(next)} onDeliver={() => deliver(next)} />
               )}
               {!next && (
-                <div className={`${K.card} p-6 text-center`}>
-                  <p className="text-xl font-extrabold">All stops done</p>
-                  <p className="text-sm text-[#6E7F70] mt-1">
-                    {completed} of {tasks.length} {mealWord.toLowerCase()} stops recorded.
-                  </p>
-                </div>
+                <EmptyState title="All stops done" detail={`${completed} of ${tasks.length} ${mealWord.toLowerCase()} stops recorded`} />
               )}
               <ul className="space-y-2.5">
                 {rest.map((t) => (

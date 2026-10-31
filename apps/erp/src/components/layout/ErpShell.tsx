@@ -428,14 +428,14 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
         {/* Account Area */}
         <div className="p-4 border-t border-white/10 bg-[#16221A]">
-          <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} title="My account" className="flex items-center gap-3 mb-3 overflow-hidden rounded-xl -m-1 p-1 hover:bg-white/5">
+          <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} title="My account" className={`flex items-center gap-3 mb-3 overflow-hidden rounded-xl -m-1 p-1 hover:bg-white/5${pathname === "/account" ? " pointer-events-none" : ""}`}>
             <UserAvatar size={36} tone="dark" />
             <div className="overflow-hidden min-w-0">
               <p className="text-xs font-semibold text-white truncate">
                 {user.fullName}
               </p>
               <p className="text-[11px] text-[#A8B9A1] font-medium truncate mt-0.5">
-                {roleLabel} · My account
+                {roleLabel}{pathname === "/account" ? "" : " · My account"}
               </p>
             </div>
           </Link>
@@ -519,8 +519,8 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
                 <UserAvatar size={36} tone="dark" />
                 <div>
                   <h3 className="text-sm font-semibold text-white">{user.fullName}</h3>
-                  <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => { setIsMobileMenuOpen(false); handleNavClick(e, "/account"); }} className="text-xs text-[#C89F6B] underline-offset-2 hover:underline">
-                    {roleLabel} · My account
+                  <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => { setIsMobileMenuOpen(false); handleNavClick(e, "/account"); }} className={`text-xs text-[#C89F6B] underline-offset-2 hover:underline${pathname === "/account" ? " pointer-events-none" : ""}`}>
+                    {roleLabel}{pathname === "/account" ? "" : " · My account"}
                   </Link>
                 </div>
               </div>
@@ -615,7 +615,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               >
                 {roleLabel}
               </span>
-              <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} className="text-xs text-[#1A2E20] font-medium truncate hover:underline" title="My account">
+              <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} className={`text-xs text-[#1A2E20] font-medium truncate hover:underline${pathname === "/account" ? " pointer-events-none" : ""}`} title="My account">
                 {user.fullName}
               </Link>
             </div>

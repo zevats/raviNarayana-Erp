@@ -39,8 +39,9 @@ export function ProfileMenu({ user, open, onClose, onLogout, isLoggingOut }: { u
     }
     router.push(sheet ? `/account?sheet=${sheet}` : "/account");
   };
+  const onProfile = pathname === "/account";
   const items = [
-    { label: "My profile", Icon: UserRound, run: () => go(null) },
+    ...(onProfile ? [] : [{ label: "My profile", Icon: UserRound, run: () => go(null) }]),
     { label: "Change password", Icon: KeyRound, run: () => go("password") },
     { label: "Change email", Icon: Mail, run: () => go("email") },
   ];
