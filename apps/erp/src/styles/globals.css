@@ -183,3 +183,7 @@ html:has([aria-modal="true"]), html:has([aria-modal="true"]) body,
 html:has(.fixed.inset-0.z-50), html:has(.fixed.inset-0.z-50) body { overflow: hidden; overscroll-behavior: none; }
 .rn-sheet { overscroll-behavior: contain; }
 .rn-scrim { touch-action: none; }
+
+/* Elements pinned to the screen (sheets, dialogs, banners) never take the spacing margin a parent's
+   space-y-* gives its children: it shifted whole overlays down and left a band at the top. */
+.fixed { margin-top: 0 !important; margin-bottom: 0 !important; }

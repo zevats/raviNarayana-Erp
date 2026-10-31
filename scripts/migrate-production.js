@@ -6,10 +6,9 @@
  * when the deploy explicitly sets ERP_PRODUCTION_MIGRATE=apply, and it:
  *   1. applies pending Drizzle migrations (apps/erp/src/server/database/drizzle) using DIRECT_URL
  *      (non-pooled) or DATABASE_URL;
- *   2. if ERP_RESET_ALL_DATA="<database>:<label>" is set, empties all data once (see resetAllDataOnce);
- *   3. when the staff table is empty, creates the first Owner (SUPER_ADMIN) from ERP_ADMIN_USERNAME,
+ *   2. when the staff table is empty, creates the first Owner (SUPER_ADMIN) from ERP_ADMIN_USERNAME,
  *      ERP_ADMIN_EMAIL, ERP_ADMIN_PASSWORD (12+ characters) and ERP_ADMIN_NAME.
- * It never prints credentials: only the host, database name and counts.
+ * It never deletes data and never prints credentials: only the host, database name and counts.
  *
  * Usage (Render start command): node scripts/migrate-production.js && npm run start:render
  */
@@ -56,7 +55,9 @@ async function main() {
     const appliedAfter = Number((await sql`SELECT COUNT(*)::int AS n FROM drizzle.__drizzle_migrations`)[0].n);
     console.log(`[migrate-production] Migrations: ${appliedBefore} before, ${appliedAfter} now (${appliedAfter - appliedBefore} applied).`);
 
-    await resetAllDataOnce(sql, dbName);
+    if ((process.env.ERP_RESET_ALL_DATA || "").trim()) {
+      console.log("[migrate-production] ERP_RESET_ALL_DATA is ignored: data is never deleted on deploy. Remove it from Render.");
+    }
 
     const staff = Number((await sql`SELECT COUNT(*)::int AS n FROM staff_users`)[0].n);
     if (staff > 0) {
@@ -79,37 +80,6 @@ async function main() {
   } finally {
     await sql.end({ timeout: 5 });
   }
-}
-
-/**
- * One-time wipe of all business data (e.g. synthetic demo data), requested by setting
- * ERP_RESET_ALL_DATA="<database name>:<label>". The database name must match the target, so it
- * cannot hit another database by mistake. Every table in the public schema is emptied; the
- * schema and the migration history (drizzle schema) stay. The value is recorded in
- * drizzle.erp_maintenance, so the same value never wipes twice (restarts are safe); a new
- * label is needed for another wipe.
- */
-async function resetAllDataOnce(sql, dbName) {
-  const raw = (process.env.ERP_RESET_ALL_DATA || "").trim();
-  if (!raw) return;
-  const [target, ...rest] = raw.split(":");
-  if (target.trim().toLowerCase() !== dbName || !rest.join(":").trim()) {
-    fail(`ERP_RESET_ALL_DATA must be "${dbName}:<label>" for this database. Nothing was deleted.`);
-  }
-  await sql`CREATE TABLE IF NOT EXISTS drizzle.erp_maintenance (token text PRIMARY KEY, action text NOT NULL, done_at text NOT NULL)`;
-  const done = await sql`SELECT done_at FROM drizzle.erp_maintenance WHERE token = ${raw}`;
-  if (done.length) {
-    console.log(`[migrate-production] Data reset '${raw}' already done on ${done[0].done_at}: skipped. Remove ERP_RESET_ALL_DATA from Render.`);
-    return;
-  }
-  const tables = (await sql`SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`).map((r) => r.tablename);
-  let rows = 0;
-  for (const t of tables) rows += Number((await sql.unsafe(`SELECT COUNT(*)::int AS n FROM public."${t.replace(/"/g, '""')}"`))[0].n);
-  await sql.begin(async (tx) => {
-    if (tables.length) await tx.unsafe(`TRUNCATE TABLE ${tables.map((t) => `public."${t.replace(/"/g, '""')}"`).join(", ")} RESTART IDENTITY CASCADE`);
-    await tx`INSERT INTO drizzle.erp_maintenance (token, action, done_at) VALUES (${raw}, 'reset_all_data', ${new Date().toISOString()})`;
-  });
-  console.log(`[migrate-production] Data reset '${raw}': emptied ${tables.length} tables (${rows} rows removed). Remove ERP_RESET_ALL_DATA from Render.`);
 }
 
 main().catch((e) => fail(`Failed: ${e && e.message ? e.message.replace(/postgres(ql)?:\/\/[^\s]+/g, "<url>") : "unknown error"}`));
