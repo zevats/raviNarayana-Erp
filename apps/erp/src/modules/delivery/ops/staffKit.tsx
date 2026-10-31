@@ -79,7 +79,7 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
         {meals.map((m) => (
           <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-11 rounded-full text-[15px] font-semibold flex items-center justify-center gap-2 transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-[0_2px_8px_rgba(201,80,28,0.28)]" : "text-[#3E4540]"}`}>
             {label(m)}
-            {counts?.[m] !== undefined && <CountBadge on={value === m} n={counts[m]!} />}
+            {counts && <CountBadge on={value === m} n={counts[m]} />}
           </button>
         ))}
       </div>
@@ -87,7 +87,7 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
         {meals.map((m) => (
           <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press flex items-center gap-2 h-11 px-5 rounded-full text-sm font-semibold transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4540] hover:text-[#1F2320]"}`}>
             {label(m)}
-            {counts?.[m] !== undefined && <CountBadge on={value === m} n={counts[m]!} />}
+            {counts && <CountBadge on={value === m} n={counts[m]} />}
           </button>
         ))}
       </div>
@@ -96,7 +96,9 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
 }
 
 /** Stop count inside a meal switch: white-on-orange when chosen, grey-on-white otherwise. */
-function CountBadge({ on, n }: { on: boolean; n: number }) {
+function CountBadge({ on, n }: { on: boolean; n: number | undefined }) {
+  // Until the count has loaded, the badge keeps its place (no jump when the number arrives).
+  if (n === undefined) return <span aria-hidden="true" className={`w-[22px] h-[22px] rounded-full animate-pulse ${on ? "bg-white/25" : "bg-white/70"}`} />;
   return <span className={`min-w-[22px] h-[22px] px-1.5 rounded-full text-[12px] font-bold tabular-nums flex items-center justify-center ${on ? "bg-white/25 text-white" : "bg-white text-[#5A6C5E]"}`}>{n}</span>;
 }
 

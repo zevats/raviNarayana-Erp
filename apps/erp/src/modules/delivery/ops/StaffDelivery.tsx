@@ -63,7 +63,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   // The selected meal loads first; the other meal's count is fetched once it is on screen.
   const other: MealType = meal === "LUNCH" ? "DINNER" : "LUNCH";
   const tasksQ = useDeliveryTasks(today, meal);
-  const otherQ = useDeliveryTasks(today, other, tasksQ.data !== undefined);
+  const otherQ = useDeliveryTasks(today, other); // both meals load together, so both counts arrive at once
   useManifest(today, meal); // opening the screen after 08:00 / 15:30 prepares that meal's list
   const tasks = useMemo(() => (tasksQ.data ?? []).filter((t) => t.status !== "CANCELLED"), [tasksQ.data]);
   const numbers = useMemo(() => stopNumbers(tasks), [tasks]);

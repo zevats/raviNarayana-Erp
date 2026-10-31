@@ -38,7 +38,7 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const other: MealType = meal === "LUNCH" ? "DINNER" : "LUNCH";
   const q = useDeliveryTasks(date, meal);
-  const otherQ = useDeliveryTasks(date, other, q.data !== undefined);
+  const otherQ = useDeliveryTasks(date, other);
   const all = useMemo(() => (q.data ?? []).filter((t) => t.status !== "CANCELLED"), [q.data]);
   const numbers = useMemo(() => stopNumbers(all), [all]);
   const isRecorded = (t: DeliveryTask) => ["DELIVERED", "PARTIAL", "NOT_DELIVERED"].includes(deliveryOutcome(t));
