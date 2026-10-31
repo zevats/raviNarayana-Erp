@@ -138,7 +138,7 @@ export function DeliveryStaffShell({
 
       {/* Phone tab bar: always a floating pill, the same style as the top bar once scrolled. */}
       <nav aria-label="Delivery sections" className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-        <div className="pointer-events-auto w-full max-w-md grid grid-cols-3 gap-1 p-1 rounded-full bg-[#EEF1ED]/85 backdrop-blur-md border border-[#8E9F89]/25 shadow-[0_4px_24px_rgba(43,51,41,0.12)]">
+        <div data-bottom-bar className="pointer-events-auto w-full max-w-md grid grid-cols-3 gap-1 p-1 rounded-full bg-[#EEF1ED]/85 backdrop-blur-md border border-[#8E9F89]/25 shadow-[0_4px_24px_rgba(43,51,41,0.12)]">
           {TABS.map(({ view: v, label, Icon }) => (
             <button
               key={v}

@@ -641,6 +641,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
         {/* MOBILE BOTTOM NAVIGATION BAR (Role-Aware & Touch-Optimized)     */}
         {/* ============================================================== */}
         <nav
+          data-bottom-bar
           className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#8E9F89]/20 shadow-lg pb-safe"
           aria-label="Mobile Navigation"
         >

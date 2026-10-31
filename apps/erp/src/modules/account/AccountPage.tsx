@@ -6,6 +6,7 @@ import type { AuthenticatedUser, MyAccount } from "@/types";
 import { ROLE_LABELS } from "@/types";
 import { UserAvatar } from "@/components/brand/BrandMark";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader, useFillHeight } from "@/components/feedback/FullPageLoader";
 import { useErpQuery, invalidateErpCache, clearErpCache } from "@/lib/cache/erpDataCache";
 import { requestJson, postJsonRequest } from "@/lib/http/requestJson";
 import { useSheetDrag } from "@/components/feedback/useSheetDrag";
@@ -464,6 +465,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const fill = useFillHeight<HTMLDivElement>();
   const t = useMemo(() => theme(user.role), [user.role]);
   const tone = user.role === "DELIVERY_PERSON" ? "orange" : "forest";
   const me = q.data;
@@ -500,7 +502,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
 
   if (!me) {
     return q.error ? (
-      <div role="alert" className="mx-auto max-w-md min-h-[50vh] flex flex-col items-center justify-center text-center gap-3 px-4">
+      <div ref={fill.ref} style={fill.style} role="alert" className="mx-auto max-w-md min-h-[50vh] flex flex-col items-center justify-center text-center gap-3 px-4">
         <span className="w-14 h-14 rounded-2xl bg-[#FBE3DD] text-[#9A3423] flex items-center justify-center">
           <WifiOff className="w-6 h-6" />
         </span>
@@ -523,7 +525,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
         </button>
       </div>
     ) : (
-      <BikeLoader tone={tone} label="Opening your account…" className="min-h-[55vh]" />
+      <FullPageLoader tone={tone} label="Opening your account…" size="md" />
     );
   }
 

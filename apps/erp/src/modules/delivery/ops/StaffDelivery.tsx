@@ -11,7 +11,7 @@ import { getOfflineQueue } from "../offlineQueue";
 import { useDeliveryTasks, useManifest, postJson } from "./data";
 import { rupees, displayName, placeLine } from "./ui";
 import { DeliveryForm, DeliverySheet, mapsHref, paymentLabel, telHref, CallLink } from "./DeliverySheet";
-import { K, Pill, MealToggle, FilterChips, PageLoader, LoadError, EmptyState, stopNumbers, two, firstName, fullDate, dayMonth } from "./staffKit";
+import { K, Pill, MealToggle, FilterChips, PageLoader, LoadError, EmptyState, stopNumbers, two, firstName } from "./staffKit";
 import { StaffCash } from "./StaffCash";
 import { StaffHistory } from "./StaffHistory";
 import { RecordDetail, RecordSheet } from "./staffParts";
@@ -172,12 +172,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       )}
       {/* Phone header (screenshot 1) */}
       <section className="md:hidden space-y-4">
-        <div>
-          <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>
-          <p className="text-[14px] text-[#6E7F70]">
-            {dayMonth(today)} · {mealWord} shift
-          </p>
-        </div>
+        <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
         {tasks.length > 0 && (
         <div>
@@ -201,9 +196,6 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
             <h1 className="text-[28px] font-extrabold tracking-[-0.02em]">Namaste, {firstName(user.fullName)}</h1>
             <Pill tone="success">{open.length > 0 ? "Active Route" : tasks.length ? "Route Complete" : "No Route Yet"}</Pill>
           </div>
-          <p className="mt-1 text-[14px] text-[#5A6C5E]">
-            {fullDate(today)} · {mealWord} shift
-          </p>
         </div>
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
         <div className="w-56 lg:w-64">

@@ -1,7 +1,7 @@
 import React from "react";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 
-/** Shown while a page opens: one calm loading stage instead of half-drawn content. */
+/** Shown while a page opens: the scooter in the middle of the visible area, never half-drawn content. */
 export default function ManagementLoading() {
-  return <BikeLoader label="Opening…" size="lg" className="min-h-[60vh] select-none" />;
+  return <FullPageLoader label="Opening…" />;
 }

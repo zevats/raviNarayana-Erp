@@ -4,6 +4,7 @@ import React from "react";
 import { WifiOff } from "lucide-react";
 import type { DeliveryTask, MealType } from "@/types";
 import { BikeLoader, BikeGraphic } from "@/components/feedback/BikeLoader";
+import { FullPageLoader, useFillHeight } from "@/components/feedback/FullPageLoader";
 
 /*
  * Visual kit for the delivery partner's app (My Stops, My Cash, History), following the
@@ -73,11 +74,12 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
   }
   return (
     <>
-      <div role="radiogroup" aria-label="Meal" className="md:hidden grid grid-cols-2 w-full p-1 rounded-2xl bg-[#EFEAE1]/80">
+      {/* Phones: full-width pill track, chosen meal in solid orange, stop count as a round badge. */}
+      <div role="radiogroup" aria-label="Meal" className="md:hidden grid grid-cols-2 w-full p-1 rounded-full bg-[#EFEAE1]">
         {meals.map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-11 rounded-xl text-[14px] font-semibold flex items-center justify-center gap-2 transition-colors ${value === m ? "bg-white shadow-sm text-[#1F2320]" : "text-[#5A6C5E]"}`}>
+          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-11 rounded-full text-[15px] font-semibold flex items-center justify-center gap-2 transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-[0_2px_8px_rgba(201,80,28,0.28)]" : "text-[#3E4540]"}`}>
             {label(m)}
-            {counts?.[m] !== undefined && <span className={`min-w-[22px] text-[11px] px-1.5 py-0.5 rounded-md ${value === m ? "bg-[#FCE9DD] text-[#B4440F]" : "text-[#6E7F70]"}`}>{counts[m]}</span>}
+            {counts?.[m] !== undefined && <CountBadge on={value === m} n={counts[m]!} />}
           </button>
         ))}
       </div>
@@ -85,12 +87,17 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
         {meals.map((m) => (
           <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press flex items-center gap-2 h-11 px-5 rounded-full text-sm font-semibold transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4540] hover:text-[#1F2320]"}`}>
             {label(m)}
-            {counts?.[m] !== undefined && <span className={`text-[11px] font-semibold ${value === m ? "px-2 py-0.5 rounded-full bg-white/20" : "text-[#6E7F70] font-normal"}`}>{counts[m]} stops</span>}
+            {counts?.[m] !== undefined && <CountBadge on={value === m} n={counts[m]!} />}
           </button>
         ))}
       </div>
     </>
   );
+}
+
+/** Stop count inside a meal switch: white-on-orange when chosen, grey-on-white otherwise. */
+function CountBadge({ on, n }: { on: boolean; n: number }) {
+  return <span className={`min-w-[22px] h-[22px] px-1.5 rounded-full text-[12px] font-bold tabular-nums flex items-center justify-center ${on ? "bg-white/25 text-white" : "bg-white text-[#5A6C5E]"}`}>{n}</span>;
 }
 
 /** Filter chips: they wrap onto a second line instead of scrolling sideways. */
@@ -111,11 +118,9 @@ export function FilterChips<T extends string>({ value, onChange, items }: { valu
 }
 
 /** Loading stage for a delivery screen: the riding scooter, never half-loaded figures. */
-const FILL = "min-h-[calc(100dvh-12rem-env(safe-area-inset-top))] md:min-h-[calc(100dvh-10rem-env(safe-area-inset-top))]";
-
 export function PageLoader({ label }: { label: string }) {
-  // Fills the visible area between the top bar and the tab bar, so the scooter sits in its middle.
-  return <BikeLoader label={label} tone="orange" className={FILL} />;
+  // Fills the visible area down to the tab bar, so the scooter sits in its middle.
+  return <FullPageLoader label={label} tone="orange" size="md" />;
 }
 
 /** Nothing to show: a small parked scooter, a short title and (optionally) what it refers to. */
@@ -145,8 +150,9 @@ export function EmptyState({ title, detail, compact = false }: { title: string; 
 /** Could not load: says so plainly and offers a retry (it also retries by itself). */
 export function LoadError({ text, onRetry }: { text: string; onRetry: () => unknown }) {
   const [busy, setBusy] = React.useState(false);
+  const fill = useFillHeight<HTMLDivElement>();
   return (
-    <div role="alert" className={`mx-auto max-w-md ${FILL} flex flex-col items-center justify-center text-center gap-3 px-4`}>
+    <div ref={fill.ref} style={fill.style} role="alert" className="mx-auto max-w-md min-h-[50vh] flex flex-col items-center justify-center text-center gap-3 px-4">
       <span className="w-14 h-14 rounded-2xl bg-[#FBE3DD] text-[#9A3423] flex items-center justify-center">
         <WifiOff className="w-6 h-6" />
       </span>

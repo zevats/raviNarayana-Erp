@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { ArrowLeft, Home, RotateCcw } from "lucide-react";
 import { BikeGraphic } from "./BikeLoader";
+import { useFillHeight } from "./FullPageLoader";
 
 /**
  * Full-page status (404, something went wrong): the scooter parked at the roadside, a big code,
@@ -24,8 +25,9 @@ export function StatusPage({
   reference?: string;
   showBack?: boolean;
 }) {
+  const fill = useFillHeight<HTMLDivElement>();
   return (
-    <div className="min-h-[70vh] flex items-center justify-center px-4 py-16 font-sans text-[#1F2320]">
+    <div ref={fill.ref} style={fill.style} className="min-h-[70vh] flex items-center justify-center px-4 py-10 font-sans text-[#1F2320]">
       <div className="w-full max-w-md text-center">
         <div className="rn-bike-still mx-auto w-fit">
           <BikeGraphic tone="auto" width={132} />
