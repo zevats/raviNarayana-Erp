@@ -149,6 +149,13 @@ export async function POST(request: NextRequest) {
     if (isDatabaseUnavailableError(error)) {
       return databaseUnavailableResponse("ERP Login API", error);
     }
+    if (/Unable to deliver verification code/.test(String(error?.message))) {
+      console.error("ERP Login API Error: the sign-in code email could not be sent (check the email settings).");
+      return NextResponse.json(
+        { error: "We could not email your sign-in code right now. Please try again in a few minutes, or tell the administrator." },
+        { status: 503 }
+      );
+    }
     console.error("ERP Login API Error:", error);
     // Internal error details stay in the server log; the browser gets a generic message.
     return NextResponse.json(

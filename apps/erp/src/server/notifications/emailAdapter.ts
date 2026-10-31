@@ -518,6 +518,80 @@ interface GlobalEmailContext {
 
 const globalForEmail = globalThis as unknown as GlobalEmailContext;
 
+/**
+ * Email over HTTPS (Brevo or Resend). Hosts that block outgoing SMTP ports (e.g. Render's free
+ * instances block 25/465/587) can still send: the request goes to the provider's API on port 443.
+ *   EMAIL_ADAPTER=brevo  + BREVO_API_KEY   (sender address verified in Brevo)
+ *   EMAIL_ADAPTER=resend + RESEND_API_KEY  (sender domain verified in Resend)
+ *   EMAIL_FROM="Ravinarayan ERP <sender@example.com>"
+ * Errors are logged without the key or message content.
+ */
+export class HttpApiEmailAdapter implements EmailAdapter {
+  private readonly fromName: string;
+  private readonly fromEmail: string;
+
+  constructor(private readonly provider: "brevo" | "resend", private readonly apiKey: string, from: string) {
+    const m = /^\s*"?([^"<]*?)"?\s*<\s*([^>\s]+)\s*>\s*$/.exec(from);
+    this.fromName = (m ? m[1] : "").trim() || DEFAULT_SENDER_NAME;
+    this.fromEmail = (m ? m[2] : from).trim();
+  }
+
+  private async post(to: string, subject: string, html: string, text: string, kind: string): Promise<boolean> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res =
+        this.provider === "brevo"
+          ? await fetch("https://api.brevo.com/v3/smtp/email", {
+              method: "POST",
+              headers: { "api-key": this.apiKey, "content-type": "application/json", accept: "application/json" },
+              body: JSON.stringify({ sender: { name: this.fromName, email: this.fromEmail }, to: [{ email: to }], subject, htmlContent: html, textContent: text }),
+              signal: ctrl.signal,
+            })
+          : await fetch("https://api.resend.com/emails", {
+              method: "POST",
+              headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
+              body: JSON.stringify({ from: `${this.fromName} <${this.fromEmail}>`, to: [to], subject, html, text }),
+              signal: ctrl.signal,
+            });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => "");
+        console.error(`[Email API Error] ${this.provider} rejected ${kind} email: HTTP ${res.status} ${detail.slice(0, 200)}`);
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      console.error(`[Email API Error] ${this.provider} ${kind} email failed:`, err?.name === "AbortError" ? "timed out" : err?.message || "network error");
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async sendOtp(to: string, otp: string): Promise<boolean> {
+    const r = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
+    return this.post(to, r.subject, r.html, r.text, "otp");
+  }
+
+  async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
+    return this.post(
+      to,
+      "Ravinarayan ERP Password Reset Request",
+      `<p>A password reset was requested for your account.</p><p><a href="${resetUrl}">Click here to reset your password</a></p><p>This link expires in 1 hour.</p>`,
+      `Reset your password at: ${resetUrl}. Valid for 1 hour.`,
+      "password_reset"
+    );
+  }
+
+  async sendRendered(to: string, email: RenderedEmail, meta: { kind: string }): Promise<boolean> {
+    return this.post(to, email.subject, email.html, email.text, meta.kind);
+  }
+
+  async warmUp(): Promise<boolean> {
+    return true;
+  }
+}
+
 export function getEmailAdapter(): EmailAdapter {
   if (globalForEmail._rnActiveEmailAdapter) {
     if ("isReusedInstance" in (globalForEmail._rnActiveEmailAdapter as any)) {
@@ -557,6 +631,16 @@ export function getEmailAdapter(): EmailAdapter {
   // 2. Automated test suite default (unless testing SMTP explicitly)
   if (isTest && adapterType !== "smtp") {
     globalForEmail._rnActiveEmailAdapter = new MockEmailAdapter();
+    return globalForEmail._rnActiveEmailAdapter;
+  }
+
+  // 2b. Email over HTTPS (for hosts that block SMTP ports)
+  if (adapterType === "brevo" || adapterType === "resend") {
+    const key = (adapterType === "brevo" ? process.env.BREVO_API_KEY : process.env.RESEND_API_KEY)?.trim();
+    const from = (process.env.EMAIL_FROM || "").trim();
+    if (!key) throw new Error(`Email configuration error: ${adapterType === "brevo" ? "BREVO_API_KEY" : "RESEND_API_KEY"} is required when EMAIL_ADAPTER=${adapterType}.`);
+    if (!from) throw new Error(`Email configuration error: EMAIL_FROM (a sender verified in ${adapterType}) is required when EMAIL_ADAPTER=${adapterType}.`);
+    globalForEmail._rnActiveEmailAdapter = new HttpApiEmailAdapter(adapterType, key, from);
     return globalForEmail._rnActiveEmailAdapter;
   }
 
