@@ -120,8 +120,9 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
 
   const isOpen = (t: DeliveryTask) => ["WAITING", "OUT"].includes(deliveryOutcome(t));
   const byRun = (a: DeliveryTask, b: DeliveryTask) => (numbers.get(a.id) ?? 0) - (numbers.get(b.id) ?? 0);
-  // Out for delivery first, then the run order.
-  const open = tasks.filter(isOpen).sort((a, b) => (deliveryOutcome(a) === "OUT" ? 0 : 1) - (deliveryOutcome(b) === "OUT" ? 0 : 1) || byRun(a, b));
+  // A queue, first come first served: stops already out for delivery first, then the oldest order
+  // first; a new order joins at the end.
+  const open = tasks.filter(isOpen).sort((a, b) => (deliveryOutcome(a) === "OUT" ? 0 : 1) - (deliveryOutcome(b) === "OUT" ? 0 : 1) || a.createdAt.localeCompare(b.createdAt) || byRun(a, b));
   const done = tasks.filter((t) => !isOpen(t)).sort(byRun);
   const next = open[0] ?? null;
   const collectOpen = (t: DeliveryTask) => t.paymentMode === "DOORSTEP" && (isOpen(t) || (t.balanceDue || 0) > 0);
