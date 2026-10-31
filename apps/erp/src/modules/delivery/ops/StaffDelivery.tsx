@@ -132,7 +132,6 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const selected = tasks.find((t) => t.id === selectedId) ?? next;
   const completed = done.length;
   const pct = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
-  const toCollect = open.filter((t) => t.paymentMode === "DOORSTEP").reduce((n, t) => n + (t.orderTotal || 0), 0);
   const mealWord = meal === "LUNCH" ? "Lunch" : "Dinner";
 
   const start = async (t: DeliveryTask) => {
@@ -179,7 +178,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       <section className="md:hidden space-y-4">
         <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
-        {tasks.length > 0 && <ProgressCard done={completed} total={tasks.length} remaining={open.length} toCollect={toCollect} pct={pct} />}
+        {tasks.length > 0 && <ProgressCard done={completed} total={tasks.length} remaining={open.length} pct={pct} />}
       </section>
 
       {/* Tablet / desktop hero (screenshot 2) */}
@@ -412,16 +411,8 @@ function OpenStopCard({ task, label, starting, onStart, onDeliver }: { task: Del
   );
 }
 
-/** Today's run at a glance (phones): done of total, a bar, and what is left — stops and cash. */
-function ProgressCard({ done, total, remaining, toCollect, pct }: { done: number; total: number; remaining: number; toCollect: number; pct: number }) {
-  const stat = (dot: string, value: string, label: string) => (
-    <div className="flex-1 min-w-0 rounded-xl bg-[#F7F3EC] px-3 py-2">
-      <p className="flex items-center gap-1.5 text-[12px] text-[#6E7F70]">
-        <span className={`w-1.5 h-1.5 rounded-full ${dot}`} /> {label}
-      </p>
-      <p className="mt-0.5 text-[16px] font-extrabold tabular-nums text-[#1F2320] truncate">{value}</p>
-    </div>
-  );
+/** Today's run at a glance (phones): done of total, percentage and a bar. */
+function ProgressCard({ done, total, remaining, pct }: { done: number; total: number; remaining: number; pct: number }) {
   return (
     <section aria-label="Today's progress" className={`${K.card} p-4 space-y-3`}>
       <div className="flex items-baseline justify-between gap-3">
@@ -433,11 +424,6 @@ function ProgressCard({ done, total, remaining, toCollect, pct }: { done: number
       </div>
       <div className="h-2.5 rounded-full bg-[#EFEAE1] overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label="Deliveries done">
         <div className={`h-full rounded-full transition-[width] duration-700 ${remaining === 0 ? "bg-[#2F6B24]" : "bg-[#C9501C]"}`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="flex gap-2">
-        {stat("bg-[#C9501C]", String(remaining), "Remaining")}
-        {stat("bg-[#2F6B24]", String(done), "Done")}
-        {toCollect > 0 && stat("bg-[#E9A23B]", rupees(toCollect), "To collect")}
       </div>
     </section>
   );
