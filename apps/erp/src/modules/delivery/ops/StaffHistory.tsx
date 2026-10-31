@@ -7,7 +7,7 @@ import { businessToday, businessMeal } from "@/lib/businessDate";
 import { deliveryOutcome, undeliveredOf } from "@/lib/delivery/outcome";
 import { useDeliveryTasks } from "./data";
 import { rupees, displayName, placeLine } from "./ui";
-import { K, Pill, MealToggle, PageLoader, LoadError, stopNumbers, two, clock } from "./staffKit";
+import { K, Pill, MealToggle, PageLoader, LoadError, EmptyState, stopNumbers, two, clock } from "./staffKit";
 import { RecordDetail, outcomeChip } from "./staffParts";
 import { DayPicker, OptionMenu } from "./Pickers";
 
@@ -57,8 +57,8 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
       </div>
 
       {/* One row: meal first, then the day (custom calendar), then what to show (custom menu). */}
-      <div className="relative flex items-center gap-2">
-        <MealToggle compact value={meal} onChange={setMeal} counts={{ [meal]: countOf(q.data), [other]: countOf(otherQ.data) }} />
+      <div className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex">
+        <MealToggle compact stretch value={meal} onChange={setMeal} counts={{ [meal]: countOf(q.data), [other]: countOf(otherQ.data) }} />
         <DayPicker value={date} today={today} onChange={setDate} />
         <OptionMenu
           label="Show"
@@ -82,16 +82,19 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
         )
       ) : (
         <>
+          {recorded.length > 0 && (
           <p className="text-[13px] text-[#5A6C5E]">
-            {recorded.length === 0
-              ? "Nothing recorded yet."
-              : `${by("DELIVERED").length} delivered${by("PARTIAL").length ? ` · ${by("PARTIAL").length} partial` : ""}${by("NOT_DELIVERED").length ? ` · ${by("NOT_DELIVERED").length} not delivered` : ""} · ${rupees(recorded.reduce((n, t) => n + (t.collectedAmount || 0), 0))} collected`}
+            {`${by("DELIVERED").length} delivered${by("PARTIAL").length ? ` · ${by("PARTIAL").length} partial` : ""}${by("NOT_DELIVERED").length ? ` · ${by("NOT_DELIVERED").length} not delivered` : ""} · ${rupees(recorded.reduce((n, t) => n + (t.collectedAmount || 0), 0))} collected`}
           </p>
+          )}
 
           <div className="grid lg:grid-cols-[minmax(0,1fr)_400px] gap-5 lg:gap-6 items-start">
             <section className="space-y-3 min-w-0">
               {visible.length === 0 ? (
-                <div className={`${K.card} p-8 text-center text-[14px] text-[#5A6C5E]`}>No deliveries recorded here.</div>
+                <EmptyState
+                  title={recorded.length === 0 ? "No deliveries yet" : "None in this filter"}
+                  detail={`${meal === "LUNCH" ? "Lunch" : "Dinner"} · ${date === today ? "Today" : new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`))}`}
+                />
               ) : (
                 <ul className="space-y-3">
                   {visible.map((t) => (

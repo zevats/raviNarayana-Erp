@@ -8,7 +8,7 @@ import { postJsonRequest } from "@/lib/http/requestJson";
 import { businessToday } from "@/lib/businessDate";
 import { getJson, LIVE_MS } from "./data";
 import { rupees } from "./ui";
-import { K, Pill, PageLoader, LoadError, initials, clock, shortDay } from "./staffKit";
+import { K, Pill, PageLoader, LoadError, EmptyState, initials, clock, shortDay } from "./staffKit";
 
 type Detail = { custody: StaffCustodyRow; collections: StaffCustodyCollection[]; handovers: DriverCashHandover[] };
 const bizDate = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(iso));
@@ -180,7 +180,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
       <section className="space-y-2.5">
         <h2 className="text-[17px] font-extrabold">Cash collected</h2>
         {withYou.length + waitingRows.length === 0 ? (
-          <div className={`${K.card} p-6 text-center text-[14px] text-[#5A6C5E]`}>Nothing to settle. Cash you collect shows here.</div>
+          <EmptyState compact title="No cash collected yet" />
         ) : (
           <ul className="space-y-2.5">
             {[...withYou, ...waitingRows].map((x) => (
@@ -206,7 +206,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
       <section className="space-y-2.5">
         <h2 className="text-[17px] font-extrabold">Handover history</h2>
         {pastHandovers.length === 0 ? (
-          <div className={`${K.card} p-6 text-center text-[14px] text-[#5A6C5E]`}>No handovers yet.</div>
+          <EmptyState compact title="No handovers yet" />
         ) : (
           <ul className={`${K.card} divide-y divide-[#ECE6DB]`}>
             {pastHandovers.slice(0, 20).map((h) => {

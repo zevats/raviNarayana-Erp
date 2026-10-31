@@ -134,7 +134,7 @@ export function DeliveryStaffShell({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-8 pt-[calc(84px+env(safe-area-inset-top))] md:pt-[calc(92px+env(safe-area-inset-top))] pb-24 md:pb-12">{children}</main>
+      <main className="mx-auto max-w-[1180px] px-4 sm:px-6 lg:px-8 pt-[calc(84px+env(safe-area-inset-top))] md:pt-[calc(92px+env(safe-area-inset-top))] pb-[calc(5rem+max(0.75rem,env(safe-area-inset-bottom)))] md:pb-12">{children}</main>
 
       {/* Phone tab bar: always a floating pill, the same style as the top bar once scrolled. */}
       <nav aria-label="Delivery sections" className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">

@@ -3,7 +3,7 @@
 import React from "react";
 import { WifiOff } from "lucide-react";
 import type { DeliveryTask, MealType } from "@/types";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { BikeLoader, BikeGraphic } from "@/components/feedback/BikeLoader";
 
 /*
  * Visual kit for the delivery partner's app (My Stops, My Cash, History), following the
@@ -55,15 +55,15 @@ export const two = (n: number | undefined) => (n === undefined ? "—" : String(
  * Lunch / Dinner switch used on every delivery-partner screen: a full-width two-part switch on
  * phones, a pill switch with stop counts on wider screens. A count shows only once it has loaded.
  */
-export function MealToggle({ value, onChange, counts, compact = false }: { value: MealType; onChange: (m: MealType) => void; counts?: Partial<Record<MealType, number | undefined>>; compact?: boolean }) {
+export function MealToggle({ value, onChange, counts, compact = false, stretch = false }: { value: MealType; onChange: (m: MealType) => void; counts?: Partial<Record<MealType, number | undefined>>; compact?: boolean; stretch?: boolean }) {
   const meals: Array<"LUNCH" | "DINNER"> = ["LUNCH", "DINNER"];
   const label = (m: "LUNCH" | "DINNER") => (m === "LUNCH" ? "Lunch" : "Dinner");
   if (compact) {
     // Same look as the full switch, sized to share one row with other controls.
     return (
-      <div role="radiogroup" aria-label="Meal" className="inline-flex items-center p-1 rounded-full bg-[#EFEAE1]/80 shrink-0">
+      <div role="radiogroup" aria-label="Meal" className={`${stretch ? "grid grid-cols-2 w-full sm:inline-flex sm:w-auto" : "inline-flex"} items-center p-1 rounded-full bg-[#EFEAE1]/80 shrink-0`}>
         {meals.map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-9 px-3 sm:px-4 rounded-full text-[13px] font-semibold transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4540]"}`}>
+          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-9 px-3 sm:px-4 rounded-full flex items-center justify-center text-[13px] font-semibold transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4540]"}`}>
             {label(m)}
             {counts?.[m] !== undefined && <span className={`hidden sm:inline ml-1.5 text-[11px] ${value === m ? "text-white/80" : "text-[#6E7F70]"}`}>{counts[m]}</span>}
           </button>
@@ -111,15 +111,42 @@ export function FilterChips<T extends string>({ value, onChange, items }: { valu
 }
 
 /** Loading stage for a delivery screen: the riding scooter, never half-loaded figures. */
+const FILL = "min-h-[calc(100dvh-12rem-env(safe-area-inset-top))] md:min-h-[calc(100dvh-10rem-env(safe-area-inset-top))]";
+
 export function PageLoader({ label }: { label: string }) {
-  return <BikeLoader label={label} tone="orange" className="min-h-[55vh]" />;
+  // Fills the visible area between the top bar and the tab bar, so the scooter sits in its middle.
+  return <BikeLoader label={label} tone="orange" className={FILL} />;
+}
+
+/** Nothing to show: a small parked scooter, a short title and (optionally) what it refers to. */
+export function EmptyState({ title, detail, compact = false }: { title: string; detail?: string; compact?: boolean }) {
+  if (compact) {
+    // Secondary sections: one short row, so a page of empty sections stays light.
+    return (
+      <div className={`${K.card} px-4 py-3.5 flex items-center gap-3`}>
+        <span className="rn-bike-still opacity-70 shrink-0">
+          <BikeGraphic tone="orange" width={40} />
+        </span>
+        <p className="text-[14px] font-semibold text-[#5A6C5E]">{title}</p>
+      </div>
+    );
+  }
+  return (
+    <div className={`${K.card} px-6 py-9 flex flex-col items-center text-center gap-2`}>
+      <span className="rn-bike-still opacity-80">
+        <BikeGraphic tone="orange" width={72} />
+      </span>
+      <p className="mt-1 text-[15px] font-bold text-[#1F2320]">{title}</p>
+      {detail && <p className="text-[13px] text-[#6E7F70]">{detail}</p>}
+    </div>
+  );
 }
 
 /** Could not load: says so plainly and offers a retry (it also retries by itself). */
 export function LoadError({ text, onRetry }: { text: string; onRetry: () => unknown }) {
   const [busy, setBusy] = React.useState(false);
   return (
-    <div role="alert" className="mx-auto max-w-md min-h-[45vh] flex flex-col items-center justify-center text-center gap-3 px-4">
+    <div role="alert" className={`mx-auto max-w-md ${FILL} flex flex-col items-center justify-center text-center gap-3 px-4`}>
       <span className="w-14 h-14 rounded-2xl bg-[#FBE3DD] text-[#9A3423] flex items-center justify-center">
         <WifiOff className="w-6 h-6" />
       </span>
