@@ -356,7 +356,7 @@ function NextUp({ task, stopNo, selected, starting, onStart, onDeliver, queueTot
             )}
             <div className="flex-1" />
             <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-11 px-5 text-[13px]`}>
-              <PencilLine className="w-4 h-4" /> Deliver
+              <PencilLine className="w-4 h-4" /> Mark as delivered
             </button>
           </div>
         </div>
@@ -403,7 +403,7 @@ function OpenStopCard({ task, label, starting, onStart, onDeliver }: { task: Del
             </button>
           )}
           <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-12 text-[15px] flex-1`}>
-            Deliver
+            Mark as delivered
           </button>
         </div>
       </div>
