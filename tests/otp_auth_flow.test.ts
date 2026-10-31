@@ -4,7 +4,7 @@ import path from "path";
 import fs from "fs";
 
 import { runMigrations } from "./helpers/sqliteMigrations";
-import { getAdminEmail, DEFAULT_ADMIN_EMAIL } from "../apps/erp/src/server/database/env";
+import { getAdminEmail } from "../apps/erp/src/server/database/env";
 import * as auth from "../apps/erp/src/server/authentication/auth";
 import {
   getEmailAdapter,
@@ -85,21 +85,23 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   console.log("[TEST SUITE 1] Authoritative Administrator Email & Masking");
 
-  assert(
-    DEFAULT_ADMIN_EMAIL === "rishabh27kumar2006@gmail.com",
-    `DEFAULT_ADMIN_EMAIL is set to rishabh27kumar2006@gmail.com (got ${DEFAULT_ADMIN_EMAIL})`
-  );
-
+  // ISSUE-011: there is no built-in administrator email; it comes only from ERP_ADMIN_EMAIL.
+  const originalAdminEmail = process.env.ERP_ADMIN_EMAIL;
+  delete process.env.ERP_ADMIN_EMAIL;
+  assert(getAdminEmail() === null, "getAdminEmail() has no hardcoded default when ERP_ADMIN_EMAIL is unset");
+  process.env.ERP_ADMIN_EMAIL = "  Owner.Admin@Example.com ";
   const resolvedEmail = getAdminEmail();
   assert(
-    resolvedEmail === "rishabh27kumar2006@gmail.com",
-    `getAdminEmail() resolves to rishabh27kumar2006@gmail.com (got ${resolvedEmail})`
+    resolvedEmail === "owner.admin@example.com",
+    `getAdminEmail() returns the configured address, normalized (got ${resolvedEmail})`
   );
+  if (originalAdminEmail === undefined) delete process.env.ERP_ADMIN_EMAIL;
+  else process.env.ERP_ADMIN_EMAIL = originalAdminEmail;
 
-  const maskedGmail = auth.maskEmail("rishabh27kumar2006@gmail.com");
+  const maskedGmail = auth.maskEmail("owner.admin@example.com");
   assert(
-    maskedGmail === "r***6@gmail.com",
-    `maskEmail('rishabh27kumar2006@gmail.com') masks to r***6@gmail.com (got ${maskedGmail})`
+    maskedGmail === "o***n@example.com",
+    `maskEmail('owner.admin@example.com') masks to o***n@example.com (got ${maskedGmail})`
   );
 
   const maskedOrg = auth.maskEmail("admin@ravinarayan.in");
@@ -117,7 +119,7 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // SUITE 2: Isolated Database Migration & Administrator Email Synchronization
   // ---------------------------------------------------------------------------
-  console.log("\n[TEST SUITE 2] Database Staff Lookup & Email Synchronization");
+  console.log("\n[TEST SUITE 2] Database Staff Lookup (exact match, no side effects)");
 
   const rawDb = new Database(TEST_DB_PATH);
   rawDb.pragma("journal_mode = WAL");
@@ -132,29 +134,34 @@ async function runTests() {
 
   rawDb.prepare(`
     INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
-    VALUES ('usr_admin_001', 'admin', 'admin@ravinarayan.in', 'Dr. Ravinder Gulia', ?, 'SUPER_ADMIN', 1, ?, ?)
+    VALUES ('usr_admin_001', 'admin', 'owner.admin@example.com', 'ERP Administrator', ?, 'SUPER_ADMIN', 1, ?, ?)
+  `).run(passwordHash, now, now);
+  // Second Owner account (PRD: two Owner accounts) with its own mailbox.
+  rawDb.prepare(`
+    INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
+    VALUES ('usr_owner_002', 'owner_two', 'second.owner@example.com', 'Second Owner', ?, 'SUPER_ADMIN', 1, ?, ?)
   `).run(passwordHash, now, now);
 
-  // 1. Lookup by username "admin": should synchronize email to DEFAULT_ADMIN_EMAIL
+  // 1. Lookup by username returns the stored email unchanged
   const staffByUsername = await auth.findStaffByIdentifier("admin", asyncDb);
   assert(staffByUsername !== null, "findStaffByIdentifier finds admin by username");
-  assert(
-    staffByUsername?.email === "rishabh27kumar2006@gmail.com",
-    `Admin email synchronized to rishabh27kumar2006@gmail.com (got ${staffByUsername?.email})`
-  );
+  assert(staffByUsername?.email === "owner.admin@example.com", `Admin email returned as stored (got ${staffByUsername?.email})`);
 
-  // Verify database record itself was updated
-  const storedRow = rawDb.prepare("SELECT email FROM staff_users WHERE id = 'usr_admin_001'").get() as { email: string };
-  assert(
-    storedRow.email === "rishabh27kumar2006@gmail.com",
-    `Database row persistently updated to rishabh27kumar2006@gmail.com (got ${storedRow.email})`
-  );
+  // 2. A second Owner keeps its own identity and email (login never rewrites emails, ISSUE-025)
+  const secondOwner = await auth.findStaffByIdentifier("owner_two", asyncDb);
+  assert(secondOwner?.id === "usr_owner_002", "Second Owner resolves to its own account by username");
+  const storedSecond = rawDb.prepare("SELECT email FROM staff_users WHERE id = 'usr_owner_002'").get() as { email: string };
+  assert(storedSecond.email === "second.owner@example.com", `Login lookup does not rewrite another Owner's email (got ${storedSecond.email})`);
+  const bySecondEmail = await auth.findStaffByIdentifier("second.owner@example.com", asyncDb);
+  assert(bySecondEmail?.id === "usr_owner_002", "Second Owner resolves by its own email");
+  const unknownEmail = await auth.findStaffByIdentifier("nobody@example.com", asyncDb);
+  assert(unknownEmail === null, "Unknown email matches no account (no 'any SUPER_ADMIN' fallback)");
 
-  // 2. Lookup by email "rishabh27kumar2006@gmail.com"
-  const staffByGmail = await auth.findStaffByIdentifier("rishabh27kumar2006@gmail.com", asyncDb);
+  // 3. Lookup by email "owner.admin@example.com"
+  const staffByGmail = await auth.findStaffByIdentifier("owner.admin@example.com", asyncDb);
   assert(
     staffByGmail !== null && staffByGmail.id === "usr_admin_001",
-    "findStaffByIdentifier resolves admin user via rishabh27kumar2006@gmail.com"
+    "findStaffByIdentifier resolves admin user via owner.admin@example.com"
   );
 
   // ---------------------------------------------------------------------------
@@ -167,14 +174,14 @@ async function runTests() {
 
   assert(challenge.challengeId.startsWith("chl_"), "Generated valid challengeId");
   assert(
-    challenge.maskedEmail === "r***6@gmail.com",
-    `Masked email on challenge returns r***6@gmail.com (got ${challenge.maskedEmail})`
+    challenge.maskedEmail === "o***n@example.com",
+    `Masked email on challenge returns o***n@example.com (got ${challenge.maskedEmail})`
   );
 
   assert(mockSentEmails.length === 1, "Exactly one email dispatched via email adapter");
   const sentMsg = mockSentEmails[0];
   assert(
-    sentMsg.to === "rishabh27kumar2006@gmail.com",
+    sentMsg.to === "owner.admin@example.com",
     `Email recipient is authoritative Gmail address: ${sentMsg.to}`
   );
   assert(
@@ -316,7 +323,7 @@ async function runTests() {
 
   let providerError = "";
   try {
-    await auth.createOtpChallenge("usr_admin_001", "rishabh27kumar2006@gmail.com", asyncDb);
+    await auth.createOtpChallenge("usr_admin_001", "owner.admin@example.com", asyncDb);
   } catch (err: any) {
     providerError = err.message;
   }
@@ -341,7 +348,7 @@ async function runTests() {
   console.log("\n[TEST SUITE 8] OTP Resend Flow & Old Challenge Invalidation");
 
   clearMockSentEmails();
-  const initialChallenge = await auth.createOtpChallenge("usr_admin_001", "rishabh27kumar2006@gmail.com", asyncDb);
+  const initialChallenge = await auth.createOtpChallenge("usr_admin_001", "owner.admin@example.com", asyncDb);
   assert(initialChallenge.challengeId.startsWith("chl_"), "Initial challenge created");
 
   // Simulate 61 seconds passing by updating created_at in the database
@@ -354,8 +361,8 @@ async function runTests() {
     `Resend generated fresh challengeId (got ${resendResult.challengeId})`
   );
   assert(
-    resendResult.maskedEmail === "r***6@gmail.com",
-    `Resend returned masked email r***6@gmail.com`
+    resendResult.maskedEmail === "o***n@example.com",
+    `Resend returned masked email o***n@example.com`
   );
 
   // Verify old challenge was deleted
@@ -365,7 +372,7 @@ async function runTests() {
   // Verify a second email was dispatched
   assert(mockSentEmails.length === 2, "Second email dispatched on resend");
   const secondMsg = mockSentEmails[1];
-  assert(secondMsg.to === "rishabh27kumar2006@gmail.com", "Second email sent to rishabh27kumar2006@gmail.com");
+  assert(secondMsg.to === "owner.admin@example.com", "Second email sent to owner.admin@example.com");
 
   // ---------------------------------------------------------------------------
   // SUITE 9: Successful OTP Verification & Single Active Session Creation
@@ -389,8 +396,8 @@ async function runTests() {
 
   assert(verifyResult.user.id === "usr_admin_001", "Returned correct authenticated staff user ID");
   assert(
-    verifyResult.user.email === "rishabh27kumar2006@gmail.com",
-    `Authenticated user email is rishabh27kumar2006@gmail.com (got ${verifyResult.user.email})`
+    verifyResult.user.email === "owner.admin@example.com",
+    `Authenticated user email is owner.admin@example.com (got ${verifyResult.user.email})`
   );
   assert(
     typeof verifyResult.sessionToken === "string" && verifyResult.sessionToken.length === 64,
@@ -400,8 +407,8 @@ async function runTests() {
   // Verify session is valid in database
   const validatedUser = await auth.validateSession(verifyResult.sessionToken, asyncDb);
   assert(
-    validatedUser !== null && validatedUser.email === "rishabh27kumar2006@gmail.com",
-    "Session validation succeeds and confirms user email is rishabh27kumar2006@gmail.com"
+    validatedUser !== null && validatedUser.email === "owner.admin@example.com",
+    "Session validation succeeds and confirms user email is owner.admin@example.com"
   );
 
   // Verify challenge was consumed (single-use)
@@ -486,26 +493,26 @@ async function runTests() {
       host: "smtp.gmail.com",
       port: 465,
       secure: true,
-      user: "zevats@gmail.com",
+      user: "sender.mailbox@example.com",
       pass: "mock_google_app_password",
-      from: "Ravinarayan ERP <zevats@gmail.com>",
+      from: "Ravinarayan ERP <sender.mailbox@example.com>",
     },
     mockTransporter
   );
 
   // 3. sendOtp verification
-  const sendResult = await smtpAdapter.sendOtp("rishabh27kumar2006@gmail.com", "482910");
+  const sendResult = await smtpAdapter.sendOtp("owner.admin@example.com", "482910");
   assert(sendResult === true, "sendOtp returns true on SMTP server acceptance");
   assert(capturedMailOptions.length === 1, "Transporter received sendMail call");
 
   const sentOptions = capturedMailOptions[0];
   assert(
-    sentOptions.from === "Ravinarayan ERP <zevats@gmail.com>",
-    `Sender identity is Ravinarayan ERP <zevats@gmail.com> (got "${sentOptions.from}")`
+    sentOptions.from === "Ravinarayan ERP <sender.mailbox@example.com>",
+    `Sender identity is Ravinarayan ERP <sender.mailbox@example.com> (got "${sentOptions.from}")`
   );
   assert(
-    sentOptions.to === "rishabh27kumar2006@gmail.com",
-    `Recipient is authoritative address rishabh27kumar2006@gmail.com (got "${sentOptions.to}")`
+    sentOptions.to === "owner.admin@example.com",
+    `Recipient is authoritative address owner.admin@example.com (got "${sentOptions.to}")`
   );
   assert(
     sentOptions.subject === "Your Ravinarayan ERP Verification Code",
@@ -522,7 +529,7 @@ async function runTests() {
 
   // 4. Transport failure handling
   shouldTransporterSucceed = false;
-  const failResult = await smtpAdapter.sendOtp("rishabh27kumar2006@gmail.com", "999999");
+  const failResult = await smtpAdapter.sendOtp("owner.admin@example.com", "999999");
   assert(failResult === false, "sendOtp returns false when SMTP transport throws error");
 
   const connResult = await smtpAdapter.verifyConnection();
@@ -540,8 +547,26 @@ async function runTests() {
   const origEnv = { ...process.env };
 
   try {
+    // 0. EMAIL_ADAPTER=smtp without SMTP_USER fails fast (no built-in sender mailbox, ISSUE-011)
+    const originalSmtpUser = process.env.SMTP_USER;
+    process.env.EMAIL_ADAPTER = "smtp";
+    delete process.env.SMTP_USER;
+    process.env.SMTP_APP_PASSWORD = "mock_google_app_password";
+    setEmailAdapterForTesting(null);
+    let smtpMissingUserError = "";
+    try {
+      getEmailAdapter();
+    } catch (err: any) {
+      smtpMissingUserError = err.message;
+    }
+    assert(
+      smtpMissingUserError.includes("SMTP_USER is required when EMAIL_ADAPTER=smtp"),
+      `Explicit EMAIL_ADAPTER=smtp fails fast if SMTP_USER is missing (got "${smtpMissingUserError}")`
+    );
+
     // 1. EMAIL_ADAPTER=smtp with missing password throws clear error
     process.env.EMAIL_ADAPTER = "smtp";
+    process.env.SMTP_USER = "sender.mailbox@example.com";
     delete process.env.SMTP_APP_PASSWORD;
     delete process.env.SMTP_PASS;
     setEmailAdapterForTesting(null);
@@ -556,6 +581,8 @@ async function runTests() {
       smtpMissingPassError.includes("SMTP_APP_PASSWORD is required when EMAIL_ADAPTER=smtp"),
       `Explicit EMAIL_ADAPTER=smtp fails fast if password is missing (got "${smtpMissingPassError}")`
     );
+    if (originalSmtpUser === undefined) delete process.env.SMTP_USER;
+    else process.env.SMTP_USER = originalSmtpUser;
 
     // 2. Production with EMAIL_ADAPTER=mock is forbidden
     process.env.NODE_ENV = "production";
@@ -610,8 +637,12 @@ async function runTests() {
     ".env.example specifies SMTP_PORT=465"
   );
   assert(
-    envExampleContent.includes("SMTP_USER=zevats@gmail.com"),
-    ".env.example specifies sender account zevats@gmail.com"
+    /^SMTP_USER=\S+@example\.com$/m.test(envExampleContent),
+    ".env.example uses a placeholder sender account (no personal mailbox)"
+  );
+  assert(
+    /^ERP_ADMIN_PASSWORD=\s*$/m.test(envExampleContent),
+    ".env.example ships no administrator password"
   );
   assert(
     envExampleContent.includes("your_16_char_google_app_password_here"),

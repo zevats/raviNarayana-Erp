@@ -65,10 +65,25 @@ export function getPgSql(direct = false): postgres.Sql | null {
     return globalForPg._rnPgSql;
   }
 
+  // A new connection costs ~60-90 ms on the local WSL database (SCRAM handshake + relay) versus
+  // ~3 ms for a query on an open one. With a 120 s idle timeout every page opened after a short
+  // pause paid that again, so loopback databases keep idle connections for 30 minutes. Remote
+  // databases keep the shorter timeout. ERP_PG_IDLE_TIMEOUT_S overrides both.
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return "";
+    }
+  })();
+  const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "[::1]" || host === "::1";
+  const idleOverride = Number(process.env.ERP_PG_IDLE_TIMEOUT_S);
   const sqlClient = postgres(url, {
     max: 20,
-    idle_timeout: 120,
+    idle_timeout: idleOverride > 0 ? idleOverride : isLoopback ? 1800 : 120,
     connect_timeout: 15,
+    // Identifies the app's sessions in pg_stat_activity (dev metrics count new connections by it).
+    connection: { application_name: "rn-erp" },
   });
 
   globalForPg._rnPgSql = sqlClient;

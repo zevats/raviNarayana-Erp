@@ -18,6 +18,7 @@ import {
   getFleetCustodySummary,
   getDriverCustodySummary,
   completeDeliveryTask,
+  getDeliveryTaskById,
   listDeliveryTasks,
   extractCleanUserNotes,
 } from "../apps/erp/src/server/delivery/deliveryService";
@@ -223,24 +224,27 @@ async function runTestSuite() {
 
   console.log("\n--- 4. Single-Screen Delivery Completion with Auto Undelivered & Collection ---");
   {
+    // Order-backed: one outcome per order line (this order has one line of 2 thalis).
+    const taskDetail = await getDeliveryTaskById(sureshActor, deliveryTaskId);
+    const thaliLine = taskDetail!.task.orderLines![0];
+    const oneOfTwo = [{ orderItemId: thaliLine.orderItemId, deliveredQuantity: 1, undeliveredQuantity: 1 }];
+
     // A: Test that undelivered without reason fails
     let failedWithoutReason = false;
     try {
       await completeDeliveryTask(sureshActor, deliveryTaskId, {
-        deliveredQuantity: 1,
-        undeliveredQuantity: 1,
+        lines: oneOfTwo,
         undeliveredReason: undefined, // Missing reason
       });
     } catch (err: any) {
       failedWithoutReason = true;
-      assert(err.message.includes("Reason is required"), "Delivery completion rejects shortfall without reason");
+      assert(err.message.includes("A reason is required"), "Delivery completion rejects shortfall without reason");
     }
     assert(failedWithoutReason, "Shortfall without reason successfully blocked");
 
     // B: Complete delivery with 1 delivered, 1 undelivered (shortfall reason provided) + cash collection
     const completedTask = await completeDeliveryTask(sureshActor, deliveryTaskId, {
-      deliveredQuantity: 1,
-      undeliveredQuantity: 1,
+      lines: oneOfTwo,
       undeliveredReason: "Customer took fewer portions",
       collectedAmount: 150,
       paymentMethod: "CASH",

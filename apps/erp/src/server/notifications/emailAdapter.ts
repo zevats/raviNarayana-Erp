@@ -1,5 +1,8 @@
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
 import nodemailer, { Transporter } from "nodemailer";
-import { renderOtpEmail } from "./emailTemplate";
+import { renderOtpEmail, RenderedEmail } from "./emailTemplate";
 
 export interface EmailMessage {
   to: string;
@@ -28,6 +31,8 @@ export interface SmtpLifecycleMetrics {
 export interface EmailAdapter {
   sendOtp(to: string, otp: string): Promise<boolean>;
   sendPasswordReset(to: string, resetUrl: string): Promise<boolean>;
+  /** Sends an already rendered email (account codes and notices). `meta.otp` is kept only by the dev outbox. */
+  sendRendered?(to: string, email: RenderedEmail, meta: { kind: string; otp?: string }): Promise<boolean>;
   verifyConnection?(): Promise<{ success: boolean; error?: string }>;
   verifyDetailed?(): Promise<{
     success: boolean;
@@ -52,14 +57,43 @@ export interface SmtpConfig {
   from?: string;
 }
 
-export const DEFAULT_SMTP_USER = "zevats@gmail.com";
-export const DEFAULT_EMAIL_FROM = "Ravinarayan ERP <zevats@gmail.com>";
+// No built-in sender mailbox (ISSUE-011): SMTP_USER must be configured; EMAIL_FROM defaults to it.
+const DEFAULT_SENDER_NAME = "Ravinarayan ERP";
 
 // In-memory mock storage for testing and offline development
 export const mockSentEmails: EmailMessage[] = [];
 
 export function clearMockSentEmails(): void {
   mockSentEmails.length = 0;
+}
+
+/**
+ * Development-only "mail catcher": every message is written as a JSON file to a local directory
+ * (one file per message, owner-only permissions). Lets the full login/OTP and password-reset flows
+ * be exercised locally and in browser verification without a real mail server. Refused in production.
+ */
+export class OutboxEmailAdapter implements EmailAdapter {
+  constructor(private readonly dir: string) {}
+
+  private write(kind: string, message: Record<string, unknown>): boolean {
+    fs.mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const file = path.join(this.dir, `${Date.now()}_${crypto.randomBytes(3).toString("hex")}_${kind}.json`);
+    fs.writeFileSync(file, JSON.stringify({ kind, ...message, timestamp: new Date().toISOString() }, null, 2), { mode: 0o600 });
+    return true;
+  }
+
+  async sendOtp(to: string, otp: string): Promise<boolean> {
+    const rendered = renderOtpEmail({ otp, recipientEmail: to, expiresInMinutes: 10 });
+    return this.write("otp", { to, subject: rendered.subject, otp, text: rendered.text });
+  }
+
+  async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
+    return this.write("password_reset", { to, subject: "Ravinarayan ERP Password Reset Request", resetUrl });
+  }
+
+  async sendRendered(to: string, email: RenderedEmail, meta: { kind: string; otp?: string }): Promise<boolean> {
+    return this.write(meta.kind, { to, subject: email.subject, ...(meta.otp ? { otp: meta.otp } : {}), text: email.text, html: email.html });
+  }
 }
 
 /**
@@ -89,6 +123,11 @@ export class MockEmailAdapter implements EmailAdapter {
       text: `Please reset your password using this link: ${resetUrl}`,
       timestamp: new Date().toISOString(),
     });
+    return true;
+  }
+
+  async sendRendered(to: string, email: RenderedEmail): Promise<boolean> {
+    mockSentEmails.push({ to, subject: email.subject, html: email.html, text: email.text, timestamp: new Date().toISOString() });
     return true;
   }
 
@@ -148,7 +187,7 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
     this.host = config.host || "smtp.gmail.com";
     this.port = config.port ?? 465;
     this.secure = config.secure ?? (this.port === 465);
-    this.from = config.from || `Ravinarayan ERP <${config.user || DEFAULT_SMTP_USER}>`;
+    this.from = config.from || `${DEFAULT_SENDER_NAME} <${config.user}>`;
 
     this.adapterId = `adapter_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     this.transporterId = `txp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -282,6 +321,16 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         `[SMTP Delivery Error] Failed after ${totalSmtpMs}ms:`,
         err?.message || "Unknown SMTP transport error"
       );
+      return false;
+    }
+  }
+
+  async sendRendered(to: string, email: RenderedEmail, meta: { kind: string }): Promise<boolean> {
+    try {
+      const info = await this.transporter.sendMail({ from: this.from, to, subject: email.subject, text: email.text, html: email.html });
+      return Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0);
+    } catch (err: any) {
+      console.error(`[SMTP Delivery Error] Failed to send ${meta.kind} email:`, err?.message || "Unknown SMTP transport error");
       return false;
     }
   }
@@ -492,6 +541,19 @@ export function getEmailAdapter(): EmailAdapter {
     return globalForEmail._rnActiveEmailAdapter;
   }
 
+  // 1b. Development outbox (local mail catcher): writes each message to ERP_EMAIL_OUTBOX_DIR.
+  if (adapterType === "outbox") {
+    if (isProd) {
+      throw new Error("Configuration error: the outbox email adapter is strictly forbidden in production environments.");
+    }
+    const dir = process.env.ERP_EMAIL_OUTBOX_DIR?.trim();
+    if (!dir) {
+      throw new Error("Configuration error: ERP_EMAIL_OUTBOX_DIR is required when EMAIL_ADAPTER=outbox.");
+    }
+    globalForEmail._rnActiveEmailAdapter = new OutboxEmailAdapter(dir);
+    return globalForEmail._rnActiveEmailAdapter;
+  }
+
   // 2. Automated test suite default (unless testing SMTP explicitly)
   if (isTest && adapterType !== "smtp") {
     globalForEmail._rnActiveEmailAdapter = new MockEmailAdapter();
@@ -499,7 +561,7 @@ export function getEmailAdapter(): EmailAdapter {
   }
 
   // 3. SMTP configuration parameters
-  const smtpUser = process.env.SMTP_USER || DEFAULT_SMTP_USER;
+  const smtpUser = (process.env.SMTP_USER || "").trim();
   const smtpPass = process.env.SMTP_APP_PASSWORD || process.env.SMTP_PASS || "";
   const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
   const smtpPort = parseInt(process.env.SMTP_PORT || "465", 10);
@@ -507,10 +569,13 @@ export function getEmailAdapter(): EmailAdapter {
     process.env.SMTP_SECURE !== undefined
       ? process.env.SMTP_SECURE === "true"
       : smtpPort === 465;
-  const emailFrom = process.env.EMAIL_FROM || DEFAULT_EMAIL_FROM;
+  const emailFrom = process.env.EMAIL_FROM || (smtpUser ? `${DEFAULT_SENDER_NAME} <${smtpUser}>` : undefined);
 
   // 4. Explicit SMTP selection
   if (adapterType === "smtp" || adapterType === "gmail") {
+    if (!smtpUser) {
+      throw new Error("Email configuration error: SMTP_USER is required when EMAIL_ADAPTER=smtp.");
+    }
     if (!smtpPass) {
       throw new Error(
         "Email configuration error: SMTP_APP_PASSWORD is required when EMAIL_ADAPTER=smtp."

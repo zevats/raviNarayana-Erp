@@ -24,6 +24,7 @@ import { CashbookLedger } from "@/modules/finance/components/CashbookLedger";
 import { ResidentStatementsView } from "@/modules/finance/components/ResidentStatementsView";
 import { InvoiceLedgerView } from "@/modules/finance/components/InvoiceLedgerView";
 import { DailyClosingView } from "@/modules/finance/components/DailyClosingView";
+import { useHasPermission } from "@/components/auth/CurrentUserContext";
 
 import { PaymentModal } from "@/modules/finance/components/modals/PaymentModal";
 import { RentChargeModal } from "@/modules/finance/components/modals/RentChargeModal";
@@ -38,6 +39,8 @@ import {
 import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
 
 export default function FinancePage() {
+  // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
+  const canManageFinance = useHasPermission("finance.manage");
   const [activeTab, setActiveTab] = useState<"cashbook" | "residents" | "invoices" | "closing">("cashbook");
 
   // Local calendar date filters (defaults to current calendar month)
@@ -80,7 +83,8 @@ export default function FinancePage() {
         residents: dataResidents.residents || [],
       };
     },
-    { ttl: 30000, tags: ["finance"] }
+    // Balances can change through other staff (handovers, orders): reuse for 60s, never longer.
+    { ttl: 60000, tags: ["finance"] }
   );
 
   const cashbook = financeData?.cashbook || null;
@@ -236,6 +240,7 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setActiveTab("cashbook")}
+            aria-pressed={activeTab === "cashbook"}
             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "cashbook"
                 ? "bg-[#1A2E20] text-white shadow-xs"
@@ -258,6 +263,7 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setActiveTab("residents")}
+            aria-pressed={activeTab === "residents"}
             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "residents"
                 ? "bg-[#1A2E20] text-white shadow-xs"
@@ -280,6 +286,7 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setActiveTab("invoices")}
+            aria-pressed={activeTab === "invoices"}
             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "invoices"
                 ? "bg-[#1A2E20] text-white shadow-xs"
@@ -293,6 +300,7 @@ export default function FinancePage() {
           <button
             type="button"
             onClick={() => setActiveTab("closing")}
+            aria-pressed={activeTab === "closing"}
             className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
               activeTab === "closing"
                 ? "bg-[#1A2E20] text-white shadow-xs"
@@ -327,7 +335,7 @@ export default function FinancePage() {
             transactions={transactions}
             isLoading={loading}
             onViewReceipt={(tx) => setReceiptTx(tx)}
-            onInitiateReversal={(tx) => setReversalTarget(tx)}
+            onInitiateReversal={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
             onOpenPayment={() => {
               setPaymentResidentId(undefined);
               setIsPaymentOpen(true);

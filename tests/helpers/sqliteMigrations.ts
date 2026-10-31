@@ -65,6 +65,12 @@ export function runMigrations(db: Database.Database): void {
   if (currentVersion < 20) {
     applyMigrationV20(db);
   }
+  if (currentVersion < 21) {
+    applyMigrationV21(db);
+  }
+  if (currentVersion < 22) {
+    applyMigrationV22(db);
+  }
 }
 
 /**
@@ -1573,12 +1579,117 @@ function applyMigrationV20(db: Database.Database): void {
   tx();
 }
 
+/**
+ * Migration V21 (mirrors PostgreSQL migration 0012_orders):
+ * 1. Create orders and order_items (first-class order storage, ISSUE-008 / ISSUE-024).
+ * 2. Advance user_version to 21.
+ */
+function applyMigrationV21(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS orders (
+        id TEXT PRIMARY KEY NOT NULL,
+        order_type TEXT NOT NULL CHECK (order_type IN ('DELIVERY', 'DINE_IN')),
+        status TEXT NOT NULL DEFAULT 'CONFIRMED' CHECK (status IN ('CONFIRMED', 'COMPLETED', 'CANCELLED')),
+        service_date TEXT NOT NULL,
+        meal_type TEXT NOT NULL CHECK (meal_type IN ('BREAKFAST', 'LUNCH', 'DINNER')),
+        customer_id TEXT REFERENCES tiffin_customers(id) ON DELETE RESTRICT,
+        customer_name TEXT NOT NULL,
+        customer_phone TEXT,
+        delivery_address TEXT,
+        delivery_task_id TEXT UNIQUE REFERENCES delivery_tasks(id) ON DELETE RESTRICT,
+        financial_transaction_id TEXT UNIQUE REFERENCES financial_transactions(id) ON DELETE RESTRICT,
+        total_quantity INTEGER NOT NULL CHECK (total_quantity > 0),
+        total_amount INTEGER NOT NULL CHECK (total_amount >= 0),
+        payment_method TEXT CHECK (payment_method IS NULL OR payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER')),
+        notes TEXT,
+        idempotency_key TEXT UNIQUE,
+        source TEXT NOT NULL DEFAULT 'APP' CHECK (source IN ('APP', 'LEGACY_BACKFILL')),
+        created_by TEXT REFERENCES staff_users(id),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK (
+          (order_type = 'DELIVERY' AND delivery_task_id IS NOT NULL AND financial_transaction_id IS NULL)
+          OR (order_type = 'DINE_IN' AND financial_transaction_id IS NOT NULL AND delivery_task_id IS NULL)
+        )
+      );
 
+      CREATE TABLE IF NOT EXISTS order_items (
+        id TEXT PRIMARY KEY NOT NULL,
+        order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        line_no INTEGER NOT NULL,
+        product_id TEXT REFERENCES tiffin_products(id) ON DELETE SET NULL,
+        product_name TEXT NOT NULL,
+        quantity INTEGER NOT NULL CHECK (quantity > 0),
+        unit_price INTEGER NOT NULL CHECK (unit_price >= 0),
+        line_total INTEGER NOT NULL,
+        delivered_quantity INTEGER CHECK (delivered_quantity IS NULL OR (delivered_quantity >= 0 AND delivered_quantity <= quantity)),
+        undelivered_reason TEXT,
+        created_at TEXT NOT NULL,
+        UNIQUE (order_id, line_no),
+        CHECK (line_total = quantity * unit_price)
+      );
 
+      CREATE INDEX IF NOT EXISTS idx_orders_service_date ON orders(service_date);
+      CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_customer_phone ON orders(customer_phone);
+      CREATE INDEX IF NOT EXISTS idx_orders_type_date ON orders(order_type, service_date);
+      CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
+    `);
 
+    db.pragma("user_version = 21");
+  });
 
+  tx();
+}
 
+/**
+ * Migration V22 (mirrors PostgreSQL migration 0013_custody_ledger):
+ * 1. Create delivery_collections (one row per payment, attributed to the collecting staff member).
+ * 2. Add declared_upi, accepted_upi, upi_transaction_id, declared_by to driver_cash_handovers.
+ * 3. Copy existing task-level collections once (deterministic ids).
+ * 4. Advance user_version to 22.
+ */
+function applyMigrationV22(db: Database.Database): void {
+  const tx = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS delivery_collections (
+        id TEXT PRIMARY KEY NOT NULL,
+        delivery_task_id TEXT NOT NULL REFERENCES delivery_tasks(id) ON DELETE RESTRICT,
+        order_id TEXT REFERENCES orders(id) ON DELETE SET NULL,
+        collected_by TEXT NOT NULL REFERENCES staff_users(id) ON DELETE RESTRICT,
+        amount INTEGER NOT NULL CHECK (amount > 0),
+        payment_method TEXT NOT NULL CHECK (payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER')),
+        collected_at TEXT NOT NULL,
+        handover_id TEXT REFERENCES driver_cash_handovers(id) ON DELETE RESTRICT,
+        idempotency_key TEXT UNIQUE,
+        source TEXT NOT NULL DEFAULT 'APP' CHECK (source IN ('APP', 'BACKFILL')),
+        notes TEXT,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_dcol_collector_handover ON delivery_collections(collected_by, handover_id);
+      CREATE INDEX IF NOT EXISTS idx_dcol_task ON delivery_collections(delivery_task_id);
+      CREATE INDEX IF NOT EXISTS idx_dcol_handover ON delivery_collections(handover_id);
+    `);
+    const cols = (db.prepare("PRAGMA table_info(driver_cash_handovers)").all() as Array<{ name: string }>).map((c) => c.name);
+    if (!cols.includes("declared_upi")) db.exec("ALTER TABLE driver_cash_handovers ADD COLUMN declared_upi INTEGER NOT NULL DEFAULT 0 CHECK (declared_upi >= 0)");
+    if (!cols.includes("accepted_upi")) db.exec("ALTER TABLE driver_cash_handovers ADD COLUMN accepted_upi INTEGER NOT NULL DEFAULT 0 CHECK (accepted_upi >= 0)");
+    if (!cols.includes("upi_transaction_id")) db.exec("ALTER TABLE driver_cash_handovers ADD COLUMN upi_transaction_id TEXT REFERENCES financial_transactions(id) ON DELETE SET NULL");
+    if (!cols.includes("declared_by")) db.exec("ALTER TABLE driver_cash_handovers ADD COLUMN declared_by TEXT REFERENCES staff_users(id) ON DELETE SET NULL");
+    db.exec(`
+      INSERT OR IGNORE INTO delivery_collections (id, delivery_task_id, order_id, collected_by, amount, payment_method, collected_at, handover_id, idempotency_key, source, notes, created_at)
+      SELECT 'dcol_bf_' || t.id, t.id, o.id, COALESCE(t.delivered_by, t.assigned_to), t.collected_amount,
+             CASE WHEN t.collected_payment_method IN ('CASH', 'UPI', 'BANK_TRANSFER', 'CHEQUE', 'OTHER') THEN t.collected_payment_method ELSE 'CASH' END,
+             COALESCE(t.delivered_at, t.updated_at),
+             CASE WHEN t.collection_status = 'HANDED_OVER' AND EXISTS (SELECT 1 FROM driver_cash_handovers h WHERE h.id = t.handover_id) THEN t.handover_id ELSE NULL END,
+             NULL, 'BACKFILL', 'Copied from the delivery task total (migration V22)', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM delivery_tasks t LEFT JOIN orders o ON o.delivery_task_id = t.id
+      WHERE t.collected_amount > 0 AND COALESCE(t.delivered_by, t.assigned_to) IS NOT NULL
+        AND EXISTS (SELECT 1 FROM staff_users s WHERE s.id = COALESCE(t.delivered_by, t.assigned_to));
+    `);
+    db.pragma("user_version = 22");
+  });
 
-
-
+  tx();
+}
 

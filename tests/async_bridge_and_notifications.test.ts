@@ -15,6 +15,7 @@ import {
   getNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  invalidateNotificationCache,
 } from "../apps/erp/src/server/notifications/notificationService";
 import { AuthenticatedUser } from "../apps/erp/src/types";
 
@@ -325,6 +326,28 @@ async function runTestSuite() {
     markAllRepeatError = true;
   }
   assert(!markAllRepeatError, "markAllNotificationsAsRead handles 0 remaining notifications safely");
+
+  // 3.4: concurrent requests (dashboard render + header bell) share one feed computation;
+  // a computation already running when the data changes must not be cached.
+  const probeUser: AuthenticatedUser = { ...staffUser, id: "usr_concurrency_probe" };
+  const [pageFeed, bellFeed] = await Promise.all([
+    getNotifications(probeUser, { limit: 4 }),
+    getNotifications(probeUser, { limit: 15 }),
+  ]);
+  assert(
+    pageFeed.notifications.length > 0 && pageFeed.notifications[0] === bellFeed.notifications[0],
+    "Concurrent requests for one user's feed are served by a single computation"
+  );
+  assert(pageFeed.notifications.length <= 4 && bellFeed.notifications.length > pageFeed.notifications.length, "Each caller still gets its own limit");
+
+  invalidateNotificationCache(probeUser.id);
+  const beforeWrite = getNotifications(probeUser);
+  invalidateNotificationCache(probeUser.id); // a write commits while the first computation is running
+  const afterWrite = getNotifications(probeUser);
+  const [stale, fresh] = await Promise.all([beforeWrite, afterWrite]);
+  const cachedNext = await getNotifications(probeUser);
+  assert(stale.notifications[0] !== fresh.notifications[0], "A request after the change does not join the computation started before it");
+  assert(cachedNext.notifications[0] === fresh.notifications[0], "Only the post-change computation is cached");
 
   // ---------------------------------------------------------------------------
   // SUITE 4: Zero Database Access Guard

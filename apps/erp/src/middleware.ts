@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { validateCsrf, csrfForbiddenResponse } from "./server/security/csrf";
+import { ERP_PATHNAME_HEADER } from "./server/authorization/sectionAccess";
 
 export const ERP_COOKIE_NAME = "rn_erp_session";
+
+// Redirect targets keep the origin the browser used (localhost, 127.0.0.1 or a LAN address).
+// `request.url` can carry the dev server's own hostname instead, which drops the session cookie.
+function sameOriginUrl(request: NextRequest, path: string): URL {
+  const host = request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.replace(":", "");
+  return host ? new URL(path, `${proto}://${host}`) : new URL(path, request.url);
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -39,11 +48,19 @@ export function middleware(request: NextRequest) {
   // 3. Protected management pages (e.g. /dashboard, /staff, /rooms, etc.)
   if (pathname.startsWith("/dashboard") || (!pathname.startsWith("/api") && !pathname.startsWith("/login"))) {
     if (!isAuthenticated) {
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = sameOriginUrl(request, "/login");
       loginUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(loginUrl);
     }
-    return NextResponse.next();
+    // Retired sections live inside Orders; redirect before any page renders.
+    if (pathname === "/kitchen" || pathname === "/tiffin") {
+      return NextResponse.redirect(sameOriginUrl(request, "/orders"));
+    }
+    // The management layout reads the path to send roles away from sections they cannot use
+    // with a real redirect (before streaming starts). Always overwritten, so it cannot be spoofed.
+    const headers = new Headers(request.headers);
+    headers.set(ERP_PATHNAME_HEADER, pathname);
+    return NextResponse.next({ request: { headers } });
   }
 
   // 5. Protected API endpoints (except public auth endpoints and health check)

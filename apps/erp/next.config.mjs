@@ -8,8 +8,20 @@ const __dirname = path.dirname(__filename);
 const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || (process.env.NODE_ENV === "development" ? ".next-dev" : ".next"),
   reactStrictMode: true,
+  // `next dev` only: by default a compiled route idle for 60 s (beyond the last 5 used) is dropped
+  // at the next compilation of any other route, so sections recompiled (3-4 s) after short pauses
+  // and the background warm-up evicted its own earliest routes. Keep every compiled route for the
+  // working day instead. No effect on production builds.
+  onDemandEntries: {
+    maxInactiveAge: 24 * 60 * 60 * 1000,
+    pagesBufferLength: 500,
+  },
   experimental: {
     serverComponentsExternalPackages: ["better-sqlite3", "postgres"],
+    // Client router cache: revisiting a server-rendered page (dashboard, staff) within 2 min reuses
+    // its payload instead of re-rendering and re-querying. Mutations call router.refresh() (see
+    // ErpShell), which purges this cache, so changes made in the app show on the next visit.
+    staleTimes: { dynamic: 120, static: 120 },
   },
   async headers() {
     const isProd = process.env.NODE_ENV === "production";

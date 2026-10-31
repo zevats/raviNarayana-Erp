@@ -110,6 +110,7 @@ export type Permission =
   | "residents.read"
   | "residents.manage"
   | "finance.read"
+  | "finance.record"
   | "finance.manage"
   | "tiffin.read"
   | "tiffin.manage"
@@ -799,7 +800,8 @@ export type DeliveryStatus =
   | "ASSIGNED"
   | "OUT_FOR_DELIVERY"
   | "DELIVERED"
-  | "EXCEPTION";
+  | "EXCEPTION"
+  | "CANCELLED";
 
 export type DeliveryExceptionType =
   | "RESIDENT_UNAVAILABLE"
@@ -815,7 +817,33 @@ export type DeliveryEventType =
   | "DISPATCHED"
   | "DELIVERED"
   | "EXCEPTION"
-  | "RETRIED";
+  | "RETRIED"
+  | "CANCELLED"
+  | "RESOLVED"
+  | "UPDATED";
+
+/** What happened to an undelivered quantity (migration 0014). */
+export type DeliveryDisposition = "RETURNED" | "WITH_STAFF" | "DISCARDED";
+
+/** How a delivery is paid: at the door (one-off order), monthly invoice (subscription), or not charged (resident meal). */
+export type DeliveryPaymentMode = "DOORSTEP" | "MONTHLY" | "NONE";
+
+/**
+ * One item line of a delivery, whatever its source: an order line (priced, collected at the door)
+ * or a delivery task item (subscription/resident meal, no doorstep price).
+ */
+export interface DeliveryLine {
+  lineId: string;
+  source: "ORDER" | "TASK";
+  productName: string;
+  quantity: number;
+  /** Saved order price; null for subscription/resident items (no doorstep amount). */
+  unitPrice: number | null;
+  /** null until the delivery outcome is recorded. */
+  deliveredQuantity: number | null;
+  undeliveredReason: string | null;
+  disposition: DeliveryDisposition | null;
+}
 
 export type DeliveryOrderType = "RESIDENT" | "EXTERNAL";
 
@@ -859,16 +887,69 @@ export interface DeliveryTask {
   deliveredBy: string | null;
   deliveryNotes: string | null;
   items?: OrderItem[];
+  /** Structured order behind this task (orders/order_items, migration 0012); absent for subscription runs. */
+  orderId?: string | null;
+  orderLines?: DeliveryOrderLine[];
+  /** Order value at the saved prices. */
+  orderTotal?: number | null;
+  /** Amount due: delivered quantities × saved prices once completed, otherwise the order value. */
+  expectedAmount?: number | null;
+  /** expectedAmount − collectedAmount (never negative). */
+  balanceDue?: number | null;
+  /** Every item line (order lines or task items); empty for legacy deliveries without lines. */
+  lines?: DeliveryLine[];
+  paymentMode?: DeliveryPaymentMode;
+  /** Customer landmark and standing delivery instructions (read live from the customer record). */
+  landmark?: string | null;
+  deliveryInstructions?: string | null;
   recipientName: string | null;
   exceptionType: DeliveryExceptionType | null;
   exceptionReason: string | null;
   exceptionAt: string | null;
   exceptionBy: string | null;
+  cancelledAt?: string | null;
+  cancelledBy?: string | null;
+  cancelReason?: string | null;
+  /** The cancellation was made after the meal cutoff (Manager override with a reason). */
+  cutoffOverride?: boolean;
+  /** A Manager closed the follow-up on a partial or undelivered delivery (status unchanged). */
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolutionNote?: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface DeliveryOrderLine {
+  orderItemId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+  /** null until the delivery outcome is recorded. */
+  deliveredQuantity: number | null;
+  undeliveredReason: string | null;
+  undeliveredDisposition?: DeliveryDisposition | null;
+}
+
+/** Per-line outcome submitted when completing a delivery with item lines. */
+export interface DeliveryLineOutcome {
+  /** Order line id (order-backed deliveries); kept for existing clients and queued actions. */
+  orderItemId?: string;
+  /** DeliveryLine.lineId (either source). */
+  lineId?: string;
+  deliveredQuantity: number;
+  /** Optional; when sent it must equal ordered − delivered. */
+  undeliveredQuantity?: number;
+  /** Reason for this line's shortfall (falls back to the delivery-level undeliveredReason). */
+  reason?: string;
+  /** Where the undelivered quantity went; required for a shortfall once migration 0014 is installed. */
+  disposition?: DeliveryDisposition;
+}
+
 export interface CompleteDeliveryTaskInput {
+  /** Required for order-backed tasks: one entry per order line. */
+  lines?: DeliveryLineOutcome[];
   recipientName?: string;
   notes?: string;
   collectedAmount?: number;
@@ -894,10 +975,21 @@ export interface DriverCashHandover {
   shiftDate: string; // YYYY-MM-DD
   declaredCash: number;
   acceptedCash: number;
+  /** acceptedCash − declaredCash (negative = cash short). */
   variance: number;
   varianceReason: string | null;
   status: DriverHandoverStatus;
   transactionId?: string | null;
+  /** UPI/digital collections declared (computed from the linked collections). */
+  declaredUpi?: number;
+  /** UPI confirmed as received in the business account by the verifier. */
+  acceptedUpi?: number;
+  upiTransactionId?: string | null;
+  /** Staff member who submitted the declaration (the employee, or a manager on their behalf). */
+  declaredBy?: string | null;
+  declaredByName?: string | null;
+  /** Number of collections linked to this declaration. */
+  collectionCount?: number;
   acceptedBy?: string | null;
   acceptedByName?: string | null;
   acceptedAt?: string | null;
@@ -907,16 +999,71 @@ export interface DriverCashHandover {
 }
 
 export interface DeclareCashHandoverInput {
+  /** Manager/Owner declaring on an employee's behalf; ignored for delivery staff (always themselves). */
   driverId?: string;
-  shiftDate: string;
-  declaredCash: number;
+  /** Defaults to today's business date. */
+  shiftDate?: string;
+  /** Optional: the cash the employee states. The declaration is computed from the recorded
+   *  collections; a different figure is rejected (the verifier records any physical difference). */
+  declaredCash?: number;
   notes?: string;
 }
 
 export interface AcceptCashHandoverInput {
+  /** Cash physically counted. */
   acceptedCash: number;
+  /** UPI confirmed as received; required when UPI was declared. */
+  acceptedUpi?: number;
+  /** Required (min 5 characters) when cash or UPI differs from the declaration. */
   varianceReason?: string;
   notes?: string;
+  /** Stale-record protection: the declaration the verifier is looking at. */
+  expectedDriverId?: string;
+  expectedDeclaredCash?: number;
+  expectedDeclaredUpi?: number;
+}
+
+/** One employee's custody ledger position (all amounts in whole rupees). */
+export interface StaffCustodyRow {
+  staffId: string;
+  staffName: string;
+  role: string;
+  cashCollected: number;
+  upiCollected: number;
+  /** Collected, not yet in any declaration. */
+  cashUndeclared: number;
+  upiUndeclared: number;
+  /** In a declaration awaiting verification. */
+  cashAwaitingAcceptance: number;
+  upiAwaitingAcceptance: number;
+  /** Physically received / confirmed by a verifier (accepted and discrepancy-flagged handovers). */
+  cashHandedOver: number;
+  upiReconciled: number;
+  /** Still held by the employee = undeclared + awaiting acceptance. */
+  cashPending: number;
+  upiPending: number;
+  /** Declared but not received in settled handovers (positive = short). */
+  cashShort: number;
+  upiShort: number;
+  pendingHandovers: number;
+  discrepancies: number;
+  status: "CLEAR" | "HOLDING" | "AWAITING_ACCEPTANCE" | "DISCREPANCY";
+}
+
+export interface StaffCustodyCollection {
+  id: string;
+  deliveryTaskId: string;
+  orderId: string | null;
+  customerName: string | null;
+  serviceDate: string;
+  amount: number;
+  paymentMethod: string;
+  collectedAt: string;
+  handoverId: string | null;
+  handoverStatus: DriverHandoverStatus | null;
+  /** Paid straight into the PG account (UPI): booked at once, never held or handed over. */
+  paidToAccount?: boolean;
+  source: string;
 }
 
 export interface DriverCustodySummary {
@@ -931,7 +1078,7 @@ export interface DriverCustodySummary {
 }
 
 export type BusinessOrderType = "DELIVERY" | "DINE_IN";
-export type BusinessOrderStatus = "CONFIRMED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "EXCEPTION" | "COMPLETED";
+export type BusinessOrderStatus = "CONFIRMED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "EXCEPTION" | "COMPLETED" | "CANCELLED";
 
 export interface OrderItem {
   productId?: string;
@@ -939,10 +1086,16 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  /** Recorded at delivery (structured orders only); null/absent until then. */
+  deliveredQuantity?: number | null;
+  undeliveredReason?: string | null;
 }
 
 export interface UnifiedOrder {
+  /** Delivery task id (DELIVERY) or ledger sale id (DINE_IN); kept for existing UI actions. */
   id: string;
+  /** orders.id since migration 0012; absent for legacy rows not yet backfilled. */
+  orderId?: string;
   orderType: BusinessOrderType;
   customerId?: string | null;
   customerName: string;
@@ -956,7 +1109,11 @@ export interface UnifiedOrder {
   paymentStatus: "PAID" | "PENDING" | "PARTIALLY_PAID";
   paymentMethod?: PaymentMethod | null;
   collectedAmount?: number;
+  /** Amount due: delivered quantities × saved prices once the delivery is recorded, else the order total. */
+  amountDue?: number;
   remainingAmount?: number;
+  /** Delivery outcome once recorded: every item, some items, or nothing delivered. */
+  deliveryOutcome?: "FULL" | "PARTIAL" | "NONE" | null;
   orderStatus: BusinessOrderStatus;
   deliveryTaskId?: string | null;
   deliveryStatus?: DeliveryStatus | null;
@@ -2002,3 +2159,151 @@ export const MAX_DOCUMENT_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 
 
+
+// ============================================================================
+// DELIVERY OPERATIONS (round 11, migration 0014): delivery lists, overrides, close-out
+// ============================================================================
+
+export interface DeliveryManifestStatus {
+  /** Migration 0014 installed; when false, list preparation and overrides are switched off. */
+  schemaReady: boolean;
+  serviceDate: string;
+  mealType: MealType;
+  /** Automatic preparation time and cancellation cutoff (HH:MM, IST); null for meals without one. */
+  prepareAt: string | null;
+  cutoffAt: string | null;
+  pastCutoff: boolean;
+  /** Not prepared yet and its time has come (the page prepares it on open). */
+  due: boolean;
+  prepared: boolean;
+  preparedAt: string | null;
+  preparedByName: string | null;
+  trigger: "AUTO" | "MANUAL" | null;
+  lastRunAt: string | null;
+  lastRunByName: string | null;
+  /** Deliveries for this date and meal (excluding cancelled) and how many have nobody assigned. */
+  taskCount: number;
+  unassignedCount: number;
+}
+
+export interface DeliveryManifestRunResult {
+  ran: boolean;
+  /** Why an automatic run did nothing. */
+  reason?: "NOT_DUE" | "ALREADY_PREPARED";
+  created: number;
+  alreadyExisted: number;
+  /** Skipped for today (subscription skip, resident opted out). */
+  skipped: number;
+  autoAssigned: number;
+  unassigned: number;
+  status: DeliveryManifestStatus;
+}
+
+export type DayOverrideAction = "SKIP" | "EXTRA" | "CLEAR";
+
+export interface SubscriptionDayRow {
+  subscriptionId: string;
+  customerName: string;
+  customerPhone: string | null;
+  productName: string;
+  subscriptionStatus: string;
+  quantityPerMeal: number;
+  eligible: boolean;
+  ineligibleReason: string | null;
+  override: { action: "SKIP" | "EXTRA"; quantity: number | null; reason: string | null; afterCutoff: boolean } | null;
+  /** Boxes for this meal after today's override (0 when skipped or not eligible). */
+  effectiveQuantity: number;
+  task: { id: string; status: DeliveryStatus; assignedToName: string | null; quantity: number | null } | null;
+}
+
+export interface ResidentMealDeliveryRow {
+  residentId: string;
+  residentName: string;
+  roomNumber: string | null;
+  floor: number | null;
+  lunchRoomDelivery: boolean;
+  dinnerRoomDelivery: boolean;
+  /** Standing opt-in for the selected meal. */
+  optedIn: boolean;
+  /** Today's arrangement for the selected meal. */
+  today: "ROOM_DELIVERY" | "AT_PG" | "SKIPPED" | "NOT_EATING";
+  task: { id: string; status: DeliveryStatus } | null;
+}
+
+export interface DeliveryDayListing<T> {
+  serviceDate: string;
+  mealType: MealType;
+  schemaReady: boolean;
+  pastCutoff: boolean;
+  cutoffAt: string | null;
+  rows: T[];
+}
+
+export interface DeliveryShortfallRow {
+  taskId: string;
+  customerName: string;
+  roomNumber: string | null;
+  productName: string;
+  ordered: number;
+  delivered: number;
+  undelivered: number;
+  reason: string | null;
+  disposition: DeliveryDisposition | null;
+  staffName: string | null;
+  resolved: boolean;
+}
+
+export interface DeliveryCloseout {
+  serviceDate: string;
+  mealType: MealType | "ALL";
+  summary: import("@/lib/delivery/outcome").DeliveryDaySummary;
+  items: Array<{ productName: string; ordered: number; delivered: number; undelivered: number; returned: number; withStaff: number; discarded: number; unrecorded: number }>;
+  shortfalls: DeliveryShortfallRow[];
+  cancelled: Array<{ taskId: string; customerName: string; reason: string | null; cutoffOverride: boolean; cancelledAt: string | null }>;
+  /** Money collected for this day's deliveries, per staff member and method, with handover state. */
+  collections: Array<{ staffId: string; staffName: string; cash: number; upi: number; undeclared: number; awaitingAcceptance: number; handedOver: number }>;
+  /** Handovers accepted on this date (the cashbook date), with any discrepancy. */
+  handovers: Array<{ id: string; staffName: string; declaredCash: number; declaredUpi: number; acceptedCash: number; acceptedUpi: number; status: DriverHandoverStatus; varianceReason: string | null; acceptedByName: string | null }>;
+}
+
+export interface DeliveryHistoryDay {
+  serviceDate: string;
+  mealType: MealType;
+  total: number;
+  delivered: number;
+  partial: number;
+  notDelivered: number;
+  open: number;
+  cancelled: number;
+}
+
+// ============================================================================
+// SELF-SERVICE ACCOUNT (profile, password, email)
+// ============================================================================
+
+export interface MyAccount {
+  id: string;
+  username: string;
+  email: string;
+  fullName: string;
+  role: StaffRole;
+  memberSince: string;
+  lastSignIn: string | null;
+  /** Other signed-in devices (this one excluded). */
+  otherSessions: number;
+  /** Signed-in devices, this one first; never includes the session token. */
+  devices: Array<{ id: string; label: string; current: boolean; signedInAt: string }>;
+  /** Work summary (delivery staff). */
+  summary: {
+    monthLabel: string;
+    stopsThisMonth: number;
+    deliveredThisMonth: number;
+    /** Delivered in full out of the stops finished this month (%). */
+    deliveredRate: number | null;
+    todayDone: number;
+    todayStops: number;
+    cashHandedOverThisMonth: number;
+    handoversThisMonth: number;
+    cashWithYou: number;
+  } | null;
+}

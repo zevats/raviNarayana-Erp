@@ -1,25 +1,47 @@
 /**
  * Environment validation and security policy enforcement for Ravinarayan ERP.
  */
+import crypto from "crypto";
 
 export interface ValidatedAdminConfig {
   username: string;
   email: string;
   password: string;
   fullName: string;
+  /**
+   * True when no ERP_ADMIN_PASSWORD was configured (development only) and a random initial
+   * password was generated. The bootstrap caller must show it once to the operator and must
+   * never log, persist or return it anywhere else.
+   */
+  passwordGenerated?: boolean;
 }
 
-const DEMO_PASSWORD = "Ravinarayan@2026";
 const MIN_PASSWORD_LENGTH = 12;
 
-export const DEFAULT_ADMIN_EMAIL = "rishabh27kumar2006@gmail.com";
+// SHA-256 digests of retired shared demo credentials. Stored as digests so the plaintext never
+// appears in source; any configured password matching one of them is refused everywhere.
+const RETIRED_PASSWORD_DIGESTS = new Set([
+  "ea86dee8be20199dab221f23e746f3129c161e15f7ad65fe9e97d6b84ec923ad",
+]);
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isRetiredDemoPassword(password: string): boolean {
+  return RETIRED_PASSWORD_DIGESTS.has(crypto.createHash("sha256").update(password).digest("hex"));
+}
+
+/** Cryptographically secure initial password: 24 URL-safe characters (~144 bits). */
+export function generateInitialAdminPassword(): string {
+  return crypto.randomBytes(18).toString("base64url");
+}
 
 /**
- * Returns the authoritative administrator email address.
- * Prefers ERP_ADMIN_EMAIL if explicitly set, defaulting to DEFAULT_ADMIN_EMAIL.
+ * Returns the configured administrator email (ERP_ADMIN_EMAIL), lower-cased, or null when unset.
+ * There is deliberately no built-in default: the address must come from local configuration.
  */
-export function getAdminEmail(): string {
-  return (process.env.ERP_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL).trim().toLowerCase();
+export function getAdminEmail(): string | null {
+  const email = process.env.ERP_ADMIN_EMAIL?.trim().toLowerCase();
+  return email ? email : null;
 }
 
 export function validateAdminEnvironment(staffCount: number): ValidatedAdminConfig | null {
@@ -31,43 +53,45 @@ export function validateAdminEnvironment(staffCount: number): ValidatedAdminConf
   const isProduction = process.env.NODE_ENV === "production";
   const configuredPassword = process.env.ERP_ADMIN_PASSWORD;
 
-  if (isProduction) {
-    if (!configuredPassword) {
-      throw new Error(
-        "[FATAL SECURITY CONFIGURATION] ERP_ADMIN_PASSWORD must be explicitly provided in production before seeding initial administrator."
-      );
-    }
-
-    if (configuredPassword === DEMO_PASSWORD) {
-      throw new Error(
-        "[FATAL SECURITY CONFIGURATION] Known demonstration password 'Ravinarayan@2026' is prohibited in production environments."
-      );
-    }
-
-    if (configuredPassword.length < MIN_PASSWORD_LENGTH) {
-      throw new Error(
-        `[FATAL SECURITY CONFIGURATION] ERP_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters long in production.`
-      );
-    }
-  }
-
-  // Development fallback
-  const password = configuredPassword || DEMO_PASSWORD;
-  if (!isProduction && !configuredPassword) {
-    console.warn(
-      "[DEV NOTICE] ERP_ADMIN_PASSWORD not set. Seeding initial administrator with development demo credential."
+  const email = getAdminEmail();
+  if (!email || !EMAIL_PATTERN.test(email)) {
+    throw new Error(
+      "[FATAL SECURITY CONFIGURATION] ERP_ADMIN_EMAIL must be set to the administrator's email address before seeding the initial administrator (it receives login verification codes)."
     );
   }
 
+  if (isProduction && !configuredPassword) {
+    throw new Error(
+      "[FATAL SECURITY CONFIGURATION] ERP_ADMIN_PASSWORD must be explicitly provided in production before seeding initial administrator."
+    );
+  }
+
+  if (configuredPassword !== undefined) {
+    if (isRetiredDemoPassword(configuredPassword)) {
+      throw new Error(
+        "[FATAL SECURITY CONFIGURATION] ERP_ADMIN_PASSWORD matches a retired, publicly known demonstration password and is prohibited."
+      );
+    }
+    if (configuredPassword.length < MIN_PASSWORD_LENGTH) {
+      throw new Error(
+        `[FATAL SECURITY CONFIGURATION] ERP_ADMIN_PASSWORD must be at least ${MIN_PASSWORD_LENGTH} characters long.`
+      );
+    }
+  }
+
+  // Development without a configured password: generate a random one for one-time display.
+  const passwordGenerated = !configuredPassword;
+  const password = configuredPassword || generateInitialAdminPassword();
+
   const username = process.env.ERP_ADMIN_USERNAME || "admin";
-  const email = getAdminEmail();
-  const fullName = process.env.ERP_ADMIN_NAME || "Dr. Ravinder Gulia";
+  const fullName = process.env.ERP_ADMIN_NAME || "ERP Administrator";
 
   return {
     username: username.trim().toLowerCase(),
-    email: email.trim().toLowerCase(),
+    email,
     password,
     fullName,
+    passwordGenerated,
   };
 }
 

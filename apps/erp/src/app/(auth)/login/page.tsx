@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { LoginForm } from "@/modules/auth/components/LoginForm";
 import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
 import { getEmailAdapter } from "@/server/notifications/emailAdapter";
-import { Loader2 } from "lucide-react";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +34,7 @@ export default async function LoginPage() {
       <div className="w-full max-w-[350px] sm:max-w-md mx-auto relative z-10 my-auto">
         <Suspense
           fallback={
-            <div className="flex items-center justify-center py-20 text-xs font-sans font-semibold uppercase tracking-widest text-[#445448]">
-              <Loader2 className="w-5 h-5 animate-spin text-[#1A2E20] mr-2.5" />
-              <span>Loading Management Portal...</span>
-            </div>
+            <BikeLoader tone="forest" label="Opening…" className="py-20" />
           }
         >
           <LoginForm />

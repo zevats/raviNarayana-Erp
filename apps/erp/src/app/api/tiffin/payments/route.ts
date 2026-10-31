@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -53,6 +54,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/payments", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { success: false, error: error.message || "Failed to record tiffin payment." },

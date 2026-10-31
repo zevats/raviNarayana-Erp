@@ -10,7 +10,8 @@
     "dev:local": "next dev -p 3001 -H 127.0.0.1",
     "build": "next build",
     "start": "next start -p 3001 -H 0.0.0.0",
-    "lint": "next lint"
+    "lint": "next lint",
+    "start:render": "next start -H 0.0.0.0 -p ${PORT:-10000}"
   },
   "dependencies": {
     "@ravinarayan/brand": "*",

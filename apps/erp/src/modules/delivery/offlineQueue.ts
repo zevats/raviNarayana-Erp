@@ -32,6 +32,21 @@ function sanitizePayload(action: OfflineQueueActionType, payload: Record<string,
     if (typeof payload.undeliveredReason === "string" && payload.undeliveredReason.trim()) {
       clean.undeliveredReason = payload.undeliveredReason.trim().slice(0, 200);
     }
+    if (Array.isArray(payload.lines)) {
+      const isQty = (n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 0;
+      const isId = (v: unknown) => typeof v === "string" && v.length > 0 && v.length <= 120;
+      clean.lines = payload.lines
+        .filter((l: any) => l && (isId(l.lineId) || isId(l.orderItemId)) && isQty(l.deliveredQuantity))
+        .slice(0, 30)
+        .map((l: any) => ({
+          ...(isId(l.lineId) ? { lineId: l.lineId } : {}),
+          ...(isId(l.orderItemId) ? { orderItemId: l.orderItemId } : {}),
+          deliveredQuantity: l.deliveredQuantity,
+          ...(isQty(l.undeliveredQuantity) ? { undeliveredQuantity: l.undeliveredQuantity } : {}),
+          ...(typeof l.reason === "string" && l.reason.trim() ? { reason: l.reason.trim().slice(0, 200) } : {}),
+          ...(l.disposition === "RETURNED" || l.disposition === "WITH_STAFF" || l.disposition === "DISCARDED" ? { disposition: l.disposition } : {}),
+        }));
+    }
     if (Array.isArray(payload.itemsReconciliation)) {
       const isQty = (n: unknown) => typeof n === "number" && Number.isFinite(n) && n >= 0;
       clean.itemsReconciliation = payload.itemsReconciliation
@@ -87,8 +102,9 @@ export function getOfflineQueue(userId?: string): QueuedDeliveryAction[] {
     const queue: QueuedDeliveryAction[] = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(queue)) return [];
 
+    // With a user id: only that staff member's actions (untagged legacy actions belong to nobody).
     if (userId) {
-      return queue.filter((item) => !item.userId || item.userId === userId);
+      return queue.filter((item) => item.userId === userId);
     }
     return queue;
   } catch (e) {
@@ -113,6 +129,10 @@ export function enqueueDeliveryAction(
   userId?: string,
   existingIdempotencyKey?: string
 ): QueuedDeliveryAction {
+  // An action without its owner could later be replayed under another person's session.
+  if (!userId) {
+    throw new Error("Cannot save this delivery on the phone without the signed-in staff member. Sign in again and retry.");
+  }
   const allQueue = getOfflineQueue();
   const timestamp = Date.now();
   const randomSuffix = Math.random().toString(36).substring(2, 9);
@@ -126,7 +146,7 @@ export function enqueueDeliveryAction(
     id: `queue_${timestamp}_${randomSuffix}`,
     action,
     taskId,
-    userId: userId || undefined,
+    userId,
     payload: cleanPayload,
     idempotencyKey,
     createdAt: new Date().toISOString(),
@@ -163,7 +183,7 @@ export function clearUserOfflineQueue(userId: string): void {
  * Enforces account-isolation, strips endless retries on 401/403 auth failures,
  * and tracks idempotency responses.
  */
-export async function processOfflineQueue(currentUserId?: string): Promise<{
+export async function processOfflineQueue(currentUserId: string): Promise<{
   syncedCount: number;
   conflictCount: number;
   errorCount: number;
@@ -171,9 +191,13 @@ export async function processOfflineQueue(currentUserId?: string): Promise<{
 }> {
   const allQueue = getOfflineQueue();
 
-  // Account isolation: only process actions matching the current authenticated account (or legacy untagged actions)
+  // Account isolation: only the signed-in staff member's own actions are sent. Untagged legacy
+  // actions are never sent (the server would refuse them too); they stay visible for review.
+  if (!currentUserId) {
+    return { syncedCount: 0, conflictCount: 0, errorCount: 0, authFailed: false };
+  }
   const pending = allQueue.filter((item) => {
-    const isOwner = !currentUserId || !item.userId || item.userId === currentUserId;
+    const isOwner = item.userId === currentUserId;
     const isRetryable = item.status === "PENDING" || (item.status === "FAILED" && (item.retryCount || 0) < 5);
     return isOwner && isRetryable;
   });

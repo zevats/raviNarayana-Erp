@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import postgres from "postgres";
-import { resolveDbPath, validateFixturePath } from "./db";
+import { validateFixturePath } from "./db";
 import { getDatabaseUrl } from "./client";
 
 export interface MigrationConflict {
@@ -205,7 +205,12 @@ export async function migrateSqliteToPostgres(options?: MigrationOptions): Promi
     }
     sqlitePath = fixtureValidation.resolvedPath;
   } else {
-    sqlitePath = options?.sqlitePath || resolveDbPath();
+    // ISSUE-022: never fall back to resolveDbPath() (which defaults to the protected data/erp.db).
+    if (!options?.sqlitePath || !options.sqlitePath.trim()) {
+      summary.errors.push("An explicit sqlitePath is required. The migration utility never defaults to data/erp.db.");
+      return summary;
+    }
+    sqlitePath = options.sqlitePath;
   }
 
   if (!fs.existsSync(sqlitePath)) {

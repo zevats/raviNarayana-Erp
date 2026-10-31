@@ -164,9 +164,6 @@ export function GenerateTiffinInvoicesModal({
                 <div className="font-bold flex items-center gap-1.5 text-emerald-800">
                   <ShieldCheck className="w-4 h-4" /> Issue Immediately (Final)
                 </div>
-                <div className="text-[11px] text-gray-500 mt-1 font-normal">
-                  Consumes sequential INV-YYYY-NNNN and posts TIFFIN_CHARGE to cashbook.
-                </div>
               </button>
 
               <button
@@ -180,9 +177,6 @@ export function GenerateTiffinInvoicesModal({
               >
                 <div className="font-bold flex items-center gap-1.5 text-gray-800">
                   <FileText className="w-4 h-4" /> Save as Drafts
-                </div>
-                <div className="text-[11px] text-gray-500 mt-1 font-normal">
-                  Review and audit before issuing. No invoice numbers or ledger charges consumed yet.
                 </div>
               </button>
             </div>

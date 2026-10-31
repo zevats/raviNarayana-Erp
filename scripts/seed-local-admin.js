@@ -7,6 +7,7 @@
  */
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
 // Register paths so TypeScript compiled modules can be required cleanly
@@ -34,6 +35,49 @@ const ALLOWED_LOCAL_HOSTS = new Set([
 ]);
 
 const REQUIRED_LOCAL_DB = "ravinarayana_erp_local";
+
+const ADMIN_BOOTSTRAP_KEYS = ["ERP_ADMIN_EMAIL", "ERP_ADMIN_USERNAME", "ERP_ADMIN_NAME", "ERP_ADMIN_PASSWORD"];
+
+/**
+ * Loads the administrator bootstrap settings (ERP_ADMIN_*) from apps/erp/.env.development.local
+ * when they are not already set in the environment. Values are never printed.
+ */
+function loadLocalAdminSettings() {
+  const devLocalPath = path.resolve(__dirname, "../apps/erp/.env.development.local");
+  if (!fs.existsSync(devLocalPath)) return;
+  const content = fs.readFileSync(devLocalPath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eqIdx = trimmed.indexOf("=");
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const val = trimmed.slice(eqIdx + 1).trim().replace(/^"(.*)"$/, "$1");
+    if (ADMIN_BOOTSTRAP_KEYS.includes(key) && val && !process.env[key]) {
+      process.env[key] = val;
+    }
+  }
+}
+
+/**
+ * One-time display of a generated initial password. On an interactive terminal it is printed
+ * once; when output is redirected or captured it is written to a file only the current user can
+ * read, outside the repository, so it never lands in logs or CI output.
+ */
+function revealGeneratedPasswordOnce(username, password) {
+  if (process.stdout.isTTY) {
+    process.stdout.write("\n  Initial administrator password (shown once, not stored anywhere):\n\n");
+    process.stdout.write(`      ${username}  /  ${password}\n\n`);
+    process.stdout.write("  Sign in and change it from Staff Administration. It cannot be displayed again.\n\n");
+    return;
+  }
+  const dir = path.join(os.homedir(), ".ravinarayan-erp");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, "initial-admin-password.txt");
+  fs.writeFileSync(file, `${username}\n${password}\n`, { mode: 0o600 });
+  console.log(`[LOCAL SEED] Non-interactive output detected: the generated initial password was written to ${file}`);
+  console.log("[LOCAL SEED] Read it, sign in, change the password, then delete that file.");
+}
 
 /**
  * Loads .env.development.local to ensure isolated local PostgreSQL configuration
@@ -122,6 +166,7 @@ async function main() {
 
   const dbUrl = resolveLocalDatabaseUrl();
   const target = validateTarget(dbUrl);
+  loadLocalAdminSettings();
 
   console.log(`[LOCAL SEED] Target validated: host='${target.hostname}', port=${target.port}, db='${target.dbName}' (isolated local)`);
 
@@ -196,6 +241,9 @@ async function main() {
     console.log(`  - Is Active : ${adminRecord.isActive === 1 || adminRecord.isActive === "1" ? "true (1)" : "false"}`);
     console.log(`  - Created At: ${adminRecord.createdAt}`);
     console.log("[LOCAL SEED VERIFICATION] Password hash securely hidden and not exposed.");
+    if (result.generatedPassword) {
+      revealGeneratedPasswordOnce(result.username, result.generatedPassword);
+    }
     console.log("================================================================================");
     console.log("  PROVISIONING COMPLETE");
     console.log("================================================================================");

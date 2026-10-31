@@ -169,7 +169,7 @@ async function runAllTests() {
       fullName: "Neha Sharma",
       username: "neha_sharma",
       email: "neha@ravinarayan.in",
-      role: "ACCOUNTANT",
+      role: "DELIVERY_PERSON",
       password: "short", // Only 5 chars
     }, undefined, db);
   } catch (err: any) {
@@ -185,7 +185,7 @@ async function runAllTests() {
       fullName: "Neha Sharma",
       username: "neha sharma!", // Contains spaces and special char
       email: "neha@ravinarayan.in",
-      role: "ACCOUNTANT",
+      role: "DELIVERY_PERSON",
       password: "StrongPassword@2026",
     }, undefined, db);
   } catch (err: any) {
@@ -199,14 +199,14 @@ async function runAllTests() {
     fullName: "Neha Sharma",
     username: "neha_sharma",
     email: "neha@ravinarayan.in",
-    role: "ACCOUNTANT",
+    role: "DELIVERY_PERSON",
     password: "StrongPassword@2026",
   }, "127.0.0.1", db);
 
   assert(createdAccountant.id.startsWith("usr_"), "Created user has prefixed id");
   assert(createdAccountant.username === "neha_sharma", "Username stored normalized");
   assert(createdAccountant.email === "neha@ravinarayan.in", "Email stored normalized");
-  assert(createdAccountant.role === "ACCOUNTANT", "Role is ACCOUNTANT");
+  assert(createdAccountant.role === "DELIVERY_PERSON", "Role is DELIVERY_PERSON");
   assert(createdAccountant.isActive === true, "Account is active by default");
 
   // Verify bcrypt hash at rest (starts with $2)
@@ -220,7 +220,7 @@ async function runAllTests() {
       fullName: "Another Neha",
       username: "NEHA_SHARMA", // Duplicate case-insensitive
       email: "another_neha@ravinarayan.in",
-      role: "ACCOUNTANT",
+      role: "DELIVERY_PERSON",
       password: "StrongPassword@2026",
     }, undefined, db);
   } catch (err: any) {
@@ -236,7 +236,7 @@ async function runAllTests() {
       fullName: "Different User",
       username: "different_user",
       email: "neha@ravinarayan.in", // Duplicate email
-      role: "ACCOUNTANT",
+      role: "DELIVERY_PERSON",
       password: "StrongPassword@2026",
     }, undefined, db);
   } catch (err: any) {
@@ -285,14 +285,51 @@ async function runAllTests() {
   // 3. Super Admin legitimately assigns new role
   await updateStaffRole(superAdminActor, createdAccountant.id, "OPERATIONS_MANAGER", "127.0.0.1", db);
   const updatedAccountant = await getStaffUserById(superAdminActor, createdAccountant.id, db);
-  assert(updatedAccountant?.role === "OPERATIONS_MANAGER", "Super Admin successfully promoted accountant to OPERATIONS_MANAGER");
+  assert(updatedAccountant?.role === "OPERATIONS_MANAGER", "Super Admin successfully promoted delivery staff to OPERATIONS_MANAGER");
 
   // Verify role change audit log
   const roleAuditLogs = await getStaffAuditHistory(superAdminActor, createdAccountant.id, 10, db);
   const roleChangeLog = roleAuditLogs.find((l) => l.action === "staff.role_assigned");
   assert(roleChangeLog !== undefined, "Audit event staff.role_assigned recorded");
-  assert(roleChangeLog?.metadata?.previousRole === "ACCOUNTANT", "Audit tracks previousRole: ACCOUNTANT");
+  assert(roleChangeLog?.metadata?.previousRole === "DELIVERY_PERSON", "Audit tracks previousRole: DELIVERY_PERSON");
   assert(roleChangeLog?.metadata?.newRole === "OPERATIONS_MANAGER", "Audit tracks newRole: OPERATIONS_MANAGER");
+
+  // ISSUE-012: legacy roles (ACCOUNTANT, KITCHEN_OPERATIONS) can no longer be granted, but existing
+  // legacy accounts keep their role and permissions until the Owner moves them to a canonical role.
+  let legacyCreateBlocked = false;
+  try {
+    await createStaffUser(superAdminActor, {
+      username: "legacy_acct_new",
+      email: "legacy.acct.new@example.invalid",
+      fullName: "Legacy Accountant New",
+      password: "SecurePassword2026!",
+      role: "ACCOUNTANT",
+    }, "127.0.0.1", db);
+  } catch (err: any) {
+    legacyCreateBlocked = err.message.includes("retired");
+  }
+  assert(legacyCreateBlocked, "Creating a staff account with retired role ACCOUNTANT is rejected");
+
+  let legacyAssignBlocked = false;
+  try {
+    await updateStaffRole(superAdminActor, createdAccountant.id, "KITCHEN_OPERATIONS", "127.0.0.1", db);
+  } catch (err: any) {
+    legacyAssignBlocked = err.message.includes("retired");
+  }
+  assert(legacyAssignBlocked, "Assigning retired role KITCHEN_OPERATIONS is rejected");
+
+  const legacyId = "usr_legacy_accountant_56";
+  const legacyNow = new Date().toISOString();
+  await db.execute(
+    `INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
+     VALUES (?, 'legacy_accountant', 'legacy.accountant@example.invalid', 'Legacy Accountant', 'x', 'ACCOUNTANT', 1, ?, ?)`,
+    [legacyId, legacyNow, legacyNow]
+  );
+  const legacyRow = await db.queryOne<any>("SELECT role FROM staff_users WHERE id = ?", [legacyId]);
+  assert(legacyRow?.role === "ACCOUNTANT", "Existing legacy ACCOUNTANT account is left untouched");
+  await updateStaffRole(superAdminActor, legacyId, "OPERATIONS_MANAGER", "127.0.0.1", db);
+  const migratedRow = await db.queryOne<any>("SELECT role FROM staff_users WHERE id = ?", [legacyId]);
+  assert(migratedRow?.role === "OPERATIONS_MANAGER", "Legacy account can be moved to a canonical role");
 
   // ============================================================================
   // TEST SUITE 4: Sole Super-Administrator Safety Protection

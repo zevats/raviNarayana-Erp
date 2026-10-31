@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, CreditCard, CheckCircle2, AlertCircle, ArrowRight, DollarSign } from "lucide-react";
 import { PaymentMethod, TiffinCustomerBalanceSummary } from "@/types";
+import { businessToday } from "@/lib/businessDate";
 
 interface RecordTiffinPaymentModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ export function RecordTiffinPaymentModal({
 }: RecordTiffinPaymentModalProps) {
   const [customerId, setCustomerId] = useState(initialCustomerId || "");
   const [amount, setAmount] = useState<string>(initialAmount ? String(initialAmount) : "");
-  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(() => businessToday());
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("UPI");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || "");

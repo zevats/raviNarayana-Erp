@@ -354,6 +354,16 @@ async function runTestSuite() {
     },
   ];
   const expectedAmount = 2 * 150 + 0 * 50; // ₹300
+  // Order-backed deliveries record one outcome per order line (structured order_items).
+  const orderLines = await db.query<{ id: string; product_name: string; quantity: number }>(
+    `SELECT oi.id, oi.product_name, oi.quantity FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.delivery_task_id = ? ORDER BY oi.line_no`,
+    [taskIdToDeliver]
+  );
+  const lineOutcomes = orderLines.map((l) => {
+    const delivered = l.product_name === lassiProduct.name ? 0 : Number(l.quantity);
+    return { orderItemId: l.id, deliveredQuantity: delivered, undeliveredQuantity: Number(l.quantity) - delivered };
+  });
 
   // 1. Validation test: Shortfall without reason is rejected
   let shortfallWithoutReasonBlocked = false;
@@ -362,15 +372,14 @@ async function runTestSuite() {
       sureshDeliveryUser,
       taskIdToDeliver,
       {
-        deliveredQuantity: 2,
-        undeliveredQuantity: 1,
+        lines: lineOutcomes,
         undeliveredReason: "", // Empty reason should fail
       },
       undefined,
       db
     );
   } catch (err: any) {
-    shortfallWithoutReasonBlocked = err.message.includes("Reason is required");
+    shortfallWithoutReasonBlocked = err.message.includes("A reason is required");
   }
   assert(shortfallWithoutReasonBlocked, "Validation Guard: Undelivered portions require mandatory shortfall reason");
 
@@ -384,6 +393,7 @@ async function runTestSuite() {
       undeliveredQuantity: undeliveredPortions,
       undeliveredReason: shortfallReason,
       itemsReconciliation: itemReconciliation,
+      lines: lineOutcomes,
       collectedAmount: expectedAmount, // Collected ₹300 in cash
       paymentMethod: "CASH",
       notes: "Handed over at door, ₹300 collected in cash",
@@ -398,7 +408,17 @@ async function runTestSuite() {
   assert(completedDelivery.collectedAmount === 300, "Collected amount saved as ₹300");
   assert(completedDelivery.collectedPaymentMethod === "CASH", "Payment method saved as CASH");
   assert(completedDelivery.collectionStatus === "COLLECTED", "Collection status updated to 'COLLECTED'");
-  assert(completedDelivery.deliveryNotes?.includes("undelivered"), "Delivery notes preserve shortfall reason and quantities");
+  const recordedLines = await db.query<{ product_name: string; delivered_quantity: number; undelivered_reason: string | null }>(
+    `SELECT oi.product_name, oi.delivered_quantity, oi.undelivered_reason FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.delivery_task_id = ? ORDER BY oi.line_no`,
+    [taskIdToDeliver]
+  );
+  const lassiLine = recordedLines.find((l) => l.product_name === lassiProduct.name);
+  assert(
+    Boolean(lassiLine) && Number(lassiLine!.delivered_quantity) === 0 && lassiLine!.undelivered_reason === shortfallReason,
+    "Per-line outcome stored: undelivered item has delivered 0 and the shortfall reason"
+  );
+  assert(completedDelivery.expectedAmount === 300 && completedDelivery.balanceDue === 0, "Amount due from delivered lines is ₹300, balance ₹0");
 
   // --------------------------------------------------------------------------
   // SECTION 7: Driver Cash Custody & Fleet Handover Summary (Fixing HTTP 400)
@@ -484,11 +504,12 @@ async function runTestSuite() {
   // Verify redirects on old routes
   const kitchenPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "kitchen", "page.tsx");
   const kitchenPageContent = fs.readFileSync(kitchenPagePath, "utf-8");
-  assert(kitchenPageContent.includes('router.replace("/orders")'), "/kitchen redirects cleanly to /orders");
+  // Server-side redirect since the performance round (no intermediate client render).
+  assert(kitchenPageContent.includes('redirect("/orders")'), "/kitchen redirects cleanly to /orders");
 
   const tiffinPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "tiffin", "page.tsx");
   const tiffinPageContent = fs.readFileSync(tiffinPagePath, "utf-8");
-  assert(tiffinPageContent.includes('router.replace("/orders")'), "/tiffin redirects cleanly to /orders");
+  assert(tiffinPageContent.includes('redirect("/orders")'), "/tiffin redirects cleanly to /orders");
 
   // --------------------------------------------------------------------------
   // SECTION 10: Primary Database Immutability Guard

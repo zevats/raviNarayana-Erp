@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -116,6 +117,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/subscriptions", error);
+    if (dbError) return dbError;
 
     console.error("[API_TIFFIN_SUBSCRIPTIONS_GET_ERROR]", error);
     const statusCode = error.statusCode || 500;
@@ -148,6 +151,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/subscriptions", error);
+    if (dbError) return dbError;
 
     const isClientValidation =
       error.message?.includes("required") ||

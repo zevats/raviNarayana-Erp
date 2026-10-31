@@ -224,9 +224,6 @@ export function ResidentStatementsView({
               <h3 className="font-serif text-base text-[#1A2E20] font-bold">
                 Account Ledger History
               </h3>
-              <p className="text-xs text-[#5A6C5E] mt-0.5">
-                Chronological statement of all rent charges, payment receipts, deposit collections, and adjustments.
-              </p>
             </div>
             <span className="text-xs text-[#6E7F70] font-sans font-medium tabular-nums">
               {(selectedStatement.transactions || []).length} record{(selectedStatement.transactions || []).length !== 1 ? "s" : ""}

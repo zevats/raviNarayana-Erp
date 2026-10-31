@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 import {
   StaffUser,
   StaffRole,
@@ -18,7 +19,6 @@ import {
   AlertTriangle,
   History,
   CheckCircle2,
-  Loader2,
   KeyRound,
   Send,
 } from "lucide-react";
@@ -192,7 +192,7 @@ export function CreateStaffModal({
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#B58A57]" /> : "Create Account"}
+              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Create Account"}
             </button>
           </div>
         </form>
@@ -308,7 +308,7 @@ export function EditStaffModal({
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#B58A57]" /> : "Save Changes"}
+              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Save Changes"}
             </button>
           </div>
         </form>
@@ -453,7 +453,7 @@ export function ChangeRoleModal({
               disabled={loading || selectedRole === staff.role}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#B58A57]" /> : "Update Role"}
+              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Update Role"}
             </button>
           </div>
         </form>
@@ -562,7 +562,7 @@ export function DeactivateStaffModal({
               }`}
             >
               {loading ? (
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <BikeLoader inline tone="light" label="Working" />
               ) : isDeactivating ? (
                 "Deactivate & Revoke Sessions"
               ) : (
@@ -677,7 +677,7 @@ export function DirectResetModal({
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#B58A57]" /> : "Reset & Invalidate Sessions"}
+              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Reset & Invalidate Sessions"}
             </button>
           </div>
         </form>
@@ -724,7 +724,7 @@ export function StaffHistoryModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[85vh]">
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[85dvh]">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <History className="w-5 h-5 text-[#B58A57]" />
@@ -737,10 +737,7 @@ export function StaffHistoryModal({
 
         <div className="p-6 overflow-y-auto space-y-3 flex-1">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center text-xs text-[#445448]">
-              <Loader2 className="w-6 h-6 animate-spin text-[#1A2E20] mb-2" />
-              <span>Loading audit logs...</span>
-            </div>
+            <BikeLoader tone="forest" label="Loading activity…" className="py-12" />
           ) : error ? (
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />

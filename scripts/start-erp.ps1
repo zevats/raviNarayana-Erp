@@ -92,6 +92,9 @@ Write-Host "Press Ctrl+C to safely shut down the development server." -Foregroun
 Write-Host "--------------------------------------------------------------------------------" -ForegroundColor DarkGray
 Write-Host ""
 
+# Compile every page in the background once the server is up, so first navigation is not a compile wait.
+Start-Process -FilePath "powershell.exe" -WindowStyle Hidden -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "warm-erp-routes.ps1"), "-BaseUrl", "http://127.0.0.1:3001")
+
 if ($LocalOnly) {
     npm run dev:erp:local
 } else {

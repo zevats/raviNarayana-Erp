@@ -85,6 +85,27 @@
       "when": 1792209000000,
       "tag": "0011_delivery_handover",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792212000000,
+      "tag": "0012_orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792298400000,
+      "tag": "0013_custody_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792384800000,
+      "tag": "0014_delivery_operations",
+      "breakpoints": true
     }
   ]
 }

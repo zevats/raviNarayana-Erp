@@ -5,7 +5,6 @@ import { performDatabaseCleanupAsync } from "../database/cleanup";
 import { StaffUser, AuthenticatedUser } from "../../types";
 import { getEmailAdapter } from "../notifications/emailAdapter";
 import { recordAuditEventAsync } from "../audit/audit";
-import { getAdminEmail } from "../database/env";
 
 const SESSION_TTL_DAYS = 7;
 const MAX_IP_FAILED_ATTEMPTS = 20; // Layer 1: Max failed attempts from single IP across all accounts
@@ -261,30 +260,19 @@ export async function findStaffByIdentifier(
 ): Promise<(StaffUser & { password_hash: string }) | null> {
   const db = asyncDb || getAsyncDb();
   const cleanId = identifier.trim().toLowerCase();
-  const targetAdminEmail = getAdminEmail();
-  const isAdminEmailInput = cleanId === targetAdminEmail;
 
-  let row = await db.queryOne<StaffUser & { password_hash: string }>(
+  // Exact username/email match only. Earlier revisions also matched "any SUPER_ADMIN" when the
+  // configured admin email was typed and rewrote every Owner's email on login; with two Owner
+  // accounts that resolved the wrong account and redirected OTP codes to one inbox.
+  const row = await db.queryOne<StaffUser & { password_hash: string }>(
     `SELECT
        id, username, email, full_name as "fullName", password_hash,
        role, is_active as "isActive", created_at as "createdAt",
        updated_at as "updatedAt", last_login_at as "lastLoginAt"
      FROM staff_users
-     WHERE (LOWER(username) = ? OR LOWER(email) = ? ${isAdminEmailInput ? "OR LOWER(username) = 'admin' OR role = 'SUPER_ADMIN'" : ""}) AND is_active = 1`,
+     WHERE (LOWER(username) = ? OR LOWER(email) = ?) AND is_active = 1`,
     [cleanId, cleanId]
   );
-
-  // If this is the administrator account, ensure its email is synchronized to targetAdminEmail
-  if (row && (row.role === "SUPER_ADMIN" || row.username.toLowerCase() === "admin")) {
-    if (row.email.toLowerCase() !== targetAdminEmail) {
-      const now = new Date().toISOString();
-      await db.execute(
-        `UPDATE staff_users SET email = ?, updated_at = ? WHERE id = ?`,
-        [targetAdminEmail, now, row.id]
-      );
-      row.email = targetAdminEmail;
-    }
-  }
 
   return row || null;
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -33,6 +34,7 @@ export async function POST(
         undeliveredQuantity: body.undeliveredQuantity !== undefined ? Number(body.undeliveredQuantity) : undefined,
         undeliveredReason: body.undeliveredReason,
         itemsReconciliation: body.itemsReconciliation,
+        lines: Array.isArray(body.lines) ? body.lines : undefined,
       },
       clientIp
     );
@@ -41,6 +43,8 @@ export async function POST(
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/delivery/tasks/[id]/deliver", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { error: error.message || "Failed to complete delivery task." },

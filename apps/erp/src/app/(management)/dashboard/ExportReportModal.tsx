@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import { Download, Printer, FileText, X, Check, ArrowRight } from "lucide-react";
+import { businessToday } from "@/lib/businessDate";
 
 interface ExportReportModalProps {
   division?: string;
@@ -27,6 +29,7 @@ interface ExportReportModalProps {
 }
 
 export function ExportReportModal({ summary, division, startDate, endDate }: ExportReportModalProps) {
+  const currentUser = useCurrentUser();
   const [isOpen, setIsOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -45,7 +48,7 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = businessToday();
       a.download = `ravinarayan_executive_report_${division ? division.toLowerCase() + "_" : ""}${todayIso}.csv`;
       document.body.appendChild(a);
       a.click();
@@ -98,7 +101,7 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
                     Executive Report Export
                   </h3>
                   <p className="text-[11px] text-[#A8B9A1] mt-0.5">
-                    Authorized for Dr. Ravinder Gulia &bull; Owner
+                    Prepared for {currentUser?.fullName || "Owner"}
                   </p>
                 </div>
               </div>

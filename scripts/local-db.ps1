@@ -38,10 +38,48 @@ function Invoke-DockerCmd {
     }
 }
 
+# WSL shuts its VM down seconds after the last WSL session exits, which stops Docker and this
+# container (the cause of "connect ECONNREFUSED 127.0.0.1:5432"). A hidden, labelled keep-alive
+# session holds the distro up while the ERP is in use. Identified only by this tag.
+$WslDistro = "Ubuntu-22.04"
+$KeepAliveTag = "rn-erp-db-keepalive"
+
+function Test-NativeDocker {
+    try {
+        $null = docker ps -q 2>$null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
+function Get-KeepAlive {
+    Get-CimInstance Win32_Process -Filter "Name='wsl.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match $KeepAliveTag }
+}
+
+function Start-KeepAlive {
+    if (Test-NativeDocker) { return }
+    if (Get-KeepAlive) {
+        Write-Host "WSL keep-alive already running." -ForegroundColor Gray
+        return
+    }
+    Start-Process -FilePath "wsl.exe" -WindowStyle Hidden -ArgumentList @("-d", $WslDistro, "--", "bash", "-c", "`"exec -a $KeepAliveTag sleep infinity`"")
+    Start-Sleep -Seconds 2
+    Write-Host "Started hidden WSL keep-alive ($KeepAliveTag) so PostgreSQL stays up." -ForegroundColor Gray
+}
+
+function Stop-KeepAlive {
+    $procs = Get-KeepAlive
+    foreach ($p in $procs) { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue }
+    if ($procs) { Write-Host "Stopped WSL keep-alive." -ForegroundColor Gray }
+}
+
 switch ($Action) {
     "start" {
         Write-Host "Starting isolated local PostgreSQL container ($ContainerName)..." -ForegroundColor Cyan
-        
+        Start-KeepAlive
+
         # Check if already running
         $running = Invoke-DockerCmd "ps -q -f name=$ContainerName"
         if ($running) {
@@ -80,11 +118,19 @@ switch ($Action) {
         Write-Host "Stopping container $ContainerName..." -ForegroundColor Cyan
         Invoke-DockerCmd "stop $ContainerName"
         Write-Host "Container stopped." -ForegroundColor Green
+        Stop-KeepAlive
     }
 
     "status" {
         Write-Host "Isolated Local PostgreSQL Status:" -ForegroundColor Cyan
         Invoke-DockerCmd "ps -f name=$ContainerName"
+        if (-not (Test-NativeDocker)) {
+            if (Get-KeepAlive) {
+                Write-Host "WSL keep-alive: running" -ForegroundColor Green
+            } else {
+                Write-Host "WSL keep-alive: NOT running - WSL (and PostgreSQL) will stop when idle. Run '.\scripts\local-db.ps1 start'." -ForegroundColor Yellow
+            }
+        }
     }
 
     "health" {

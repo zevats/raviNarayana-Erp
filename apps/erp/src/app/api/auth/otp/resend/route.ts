@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resendOtpChallenge } from "@/server/authentication/auth";
 import { validateCsrf, csrfForbiddenResponse } from "@/server/security/csrf";
+import { isDatabaseUnavailableError, databaseUnavailableResponse } from "@/server/database/availability";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,9 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (err: any) {
+    if (isDatabaseUnavailableError(err)) {
+      return databaseUnavailableResponse("ERP OTP Resend API", err);
+    }
     const message = err?.message || "Failed to resend verification code.";
     const isRateLimited = message.toLowerCase().includes("please wait");
     return NextResponse.json(

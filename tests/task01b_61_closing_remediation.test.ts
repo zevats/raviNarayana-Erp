@@ -13,6 +13,7 @@ import {
   getResidentFinancialSummary,
   getResidentRentBalance,
   assertClosingDateNotFinalized,
+  getBusinessDateString,
 } from "../apps/erp/src/server/finance/financeService";
 import {
   saveDailyClosingDraft,
@@ -470,7 +471,8 @@ async function runTests() {
 
   // Today is the date reverseTransaction records on.
   // If today is finalized, reversal must be blocked.
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // The reversal guard uses the Asia/Kolkata business date; a UTC date breaks this between 00:00 and 05:30 IST.
+  const todayStr = getBusinessDateString();
   const previewToday = await previewDailyClosing(accountantActor, todayStr, "PG", db);
   const actualCashToday = Math.max(0, previewToday.expectedCashBalance);
   await finalizeDailyClosing(accountantActor, {

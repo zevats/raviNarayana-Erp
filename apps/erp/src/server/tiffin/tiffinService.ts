@@ -1604,6 +1604,11 @@ export async function pauseTiffinSubscription(
       },
       ipAddress: clientIp,
     }, tx);
+
+    // Deliveries already on a list inside the pause are cancelled while their meal is before its
+    // cutoff; later ones stay for the Manager to decide on the Delivery page.
+    const { cancelSubscriptionDeliveriesForChange } = await import("../delivery/deliveryOps");
+    await cancelSubscriptionDeliveriesForChange(tx, actor, id, pauseStart, pauseResume || null, `Subscription paused${reason ? `: ${reason}` : ""}`, clientIp);
   });
 
   return (await getTiffinSubscriptionById(actor, id, db))!;
@@ -1734,6 +1739,10 @@ export async function cancelTiffinSubscription(
       },
       ipAddress: clientIp,
     }, tx);
+
+    const { cancelSubscriptionDeliveriesForChange } = await import("../delivery/deliveryOps");
+    const { getBusinessDateString } = await import("../finance/financeService");
+    await cancelSubscriptionDeliveriesForChange(tx, actor, id, getBusinessDateString(), null, `Subscription cancelled${reason ? `: ${reason}` : ""}`, clientIp);
   });
 
   return (await getTiffinSubscriptionById(actor, id, db))!;

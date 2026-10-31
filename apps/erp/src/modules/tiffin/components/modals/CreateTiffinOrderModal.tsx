@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, ShoppingBag, Plus, User, Phone, MapPin, Calendar, Clock, DollarSign, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { X, ShoppingBag, Plus, User, Phone, MapPin, Calendar, Clock, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType } from "@/types";
+import { businessToday } from "@/lib/businessDate";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 interface CreateTiffinOrderModalProps {
   isOpen: boolean;
@@ -24,7 +26,7 @@ export function CreateTiffinOrderModal({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
-  const [serviceDate, setServiceDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [serviceDate, setServiceDate] = useState(() => businessToday());
   const [mealType, setMealType] = useState<MealType>("LUNCH");
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
@@ -147,7 +149,7 @@ export function CreateTiffinOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
@@ -400,7 +402,7 @@ export function CreateTiffinOrderModal({
             >
               {submitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-[#B58A57]" />
+                  <BikeLoader inline tone="light" label="Working" />
                   <span>Adding Order...</span>
                 </>
               ) : (

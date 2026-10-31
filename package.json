@@ -62,7 +62,10 @@
     "test:phase01": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/postgresql_phase01.test.js",
     "test:postgres:live": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/live_postgresql_integration.test.js",
     "test": "npm run test:security && npm run test:rbac && npm run test:rooms && npm run test:finance && npm run test:invoicing && npm run test:kitchen && npm run test:integration && npm run test:delivery && npm run test:otp && npm run test:perf && npm run test:tiffin && npm run test:kitchen_inventory && npm run test:task50 && npm run test:task51 && npm run test:task52 && npm run test:task53 && npm run test:task54 && npm run test:task55 && npm run test:task56 && npm run test:task57 && npm run test:task58 && npm run test:task61 && npm run test:task63 && npm run test:task64 && npm run test:task66 && npm run test:task67 && npm run test:task68 && npm run test:task69 && npm run test:task70 && npm run test:task71",
-    "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed"
+    "seed:demo": "npx tsc -p tests/tsconfig.json && node -r ./tests/register_paths.js tests/dist/tests/seed_synthetic_data.js --allow-synthetic-seed",
+    "start:render": "npm run start:render --workspace=@ravinarayan/erp",
+    "render:start": "node scripts/migrate-production.js && npm run start:render",
+    "db:migrate:production": "node scripts/migrate-production.js"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

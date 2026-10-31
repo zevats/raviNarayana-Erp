@@ -33,6 +33,7 @@ import { NotificationItem, ClosingDivision } from "@/types";
 import { getNotifications } from "@/server/notifications/notificationService";
 import { ExportReportModal } from "./ExportReportModal";
 import { MonthlyRevenueChart } from "./MonthlyRevenueChart";
+import { businessToday } from "@/lib/businessDate";
 
 export const dynamic = "force-dynamic";
 
@@ -72,8 +73,8 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     redirect("/delivery");
   }
 
-  const ownerName = user?.fullName || "Dr. Ravinder Gulia";
-  const todayIsoDate = new Date().toISOString().slice(0, 10);
+  const ownerName = user?.fullName || "Owner";
+  const todayIsoDate = businessToday();
   const currentMonthPrefix = todayIsoDate.slice(0, 7);
   const activeDivision: ClosingDivision = searchParams?.division === "PG" || searchParams?.division === "TIFFIN" ? searchParams.division : "COMBINED";
 
@@ -121,11 +122,14 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
   };
 
   let monthlyData: { month: string; label: string; collected: number; expenses: number }[] = [];
+  // When figures cannot be loaded the page says so; it never presents placeholder zeros as real data.
+  let metricsUnavailable = false;
 
   try {
     const [metrics, notifs] = await Promise.all([
       getDashboardMetrics({
         division: activeDivision,
+        viewerRole: user?.role,
         startDate: searchParams?.startDate,
         endDate: searchParams?.endDate,
       }),
@@ -140,6 +144,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
     liveNotifications = notifs;
   } catch (err) {
     console.error("Dashboard database query error:", err);
+    metricsUnavailable = true;
   }
 
   // Summary object for export modal
@@ -163,6 +168,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   return (
     <div className="space-y-7 pb-12">
+      {metricsUnavailable && (
+        <div role="alert" className="p-4 rounded-2xl border border-red-200 bg-red-50 text-red-900 text-sm">
+          Dashboard figures could not be loaded because the database is not reachable. The numbers below are
+          not current. Refresh the page once the database is available.
+        </div>
+      )}
       
       {/* ============================================================== */}
       {/* 1. EXECUTIVE HEADER & DIVISION FILTER CONTROLS                 */}
@@ -181,8 +192,10 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           {/* Canonical 3-Way Division Filter */}
           <div className="inline-flex rounded-xl bg-[#FAF8F5] p-1 border border-[#8E9F89]/30 text-xs font-semibold shadow-2xs">
+            {/* Division filters are user-chosen; prefetching each would render the dashboard three extra times. */}
             <Link
               href="/dashboard?division=COMBINED"
+              prefetch={false}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 activeDivision === "COMBINED"
                   ? "bg-[#1A2E20] text-white shadow-2xs"
@@ -193,6 +206,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </Link>
             <Link
               href="/dashboard?division=PG"
+              prefetch={false}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 activeDivision === "PG"
                   ? "bg-[#1A2E20] text-white shadow-2xs"
@@ -203,6 +217,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
             </Link>
             <Link
               href="/dashboard?division=TIFFIN"
+              prefetch={false}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 activeDivision === "TIFFIN"
                   ? "bg-[#1A2E20] text-white shadow-2xs"
@@ -286,7 +301,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <span className="truncate">Invoices &amp; Tax</span>
               </Link>
               <Link
-                href="/tiffin"
+                href="/orders"
                 className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
               >
                 <Users className="w-4 h-4 text-[#5D7656] shrink-0" />
@@ -296,7 +311,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
           ) : user?.role === "OPERATIONS_MANAGER" ? (
             <>
               <Link
-                href="/kitchen"
+                href="/orders"
                 className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
               >
                 <UtensilsCrossed className="w-4 h-4 text-[#B58A57] shrink-0" />
@@ -341,7 +356,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
                 <span className="truncate">Resident Stays</span>
               </Link>
               <Link
-                href="/kitchen"
+                href="/orders"
                 className="flex items-center gap-2 p-2.5 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/20 hover:border-[#1A2E20] text-xs font-semibold text-[#1A2E20] transition-colors shadow-2xs"
               >
                 <UtensilsCrossed className="w-4 h-4 text-[#B58A57] shrink-0" />

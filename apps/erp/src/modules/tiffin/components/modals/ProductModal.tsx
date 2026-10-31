@@ -135,9 +135,6 @@ export function ProductModal({
               <h2 id="product-modal-title" className="text-base sm:text-lg font-bold text-[#1A2E20]">
                 {isEditing ? "Edit Catalog Item" : "Add Meal / Package to Catalog"}
               </h2>
-              <p className="text-xs text-[#5A6C5E]">
-                Configure baseline menu items, add-ons, or recurring monthly packages.
-              </p>
             </div>
           </div>
           <button
@@ -247,9 +244,6 @@ export function ProductModal({
                 className="w-full pl-7 pr-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20] font-semibold"
               />
             </div>
-            <p className="text-[11px] text-[#5A6C5E] mt-1">
-              Whole integer INR. Changing catalog price updates future orders without altering historical transactions.
-            </p>
           </div>
 
           {/* Description */}

@@ -111,7 +111,7 @@ export function PwaRegistrar() {
     <>
       {/* PWA Home Screen Install Banner */}
       {showInstallBanner && !isStandalone && (
-        <div className="fixed top-2 left-2 right-2 sm:left-auto sm:right-4 sm:max-w-sm z-50 p-3 bg-[#1A2E20] text-white rounded-2xl shadow-xl border border-[#B58A57]/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-4">
+        <div className="fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-4 left-2 right-2 sm:left-auto sm:right-4 sm:max-w-sm z-50 p-3 bg-[#1A2E20] text-white rounded-2xl shadow-xl border border-[#B58A57]/30 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-bottom-4">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-9 h-9 rounded-xl bg-[#263B2D] border border-[#B58A57]/30 flex items-center justify-center shrink-0">
               <Download className="w-4 h-4 text-[#C89F6B]" />

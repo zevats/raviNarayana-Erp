@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, PauseCircle, AlertCircle } from "lucide-react";
 import { TiffinSubscription } from "@/types";
+import { businessToday } from "@/lib/businessDate";
 
 interface PauseSubscriptionModalProps {
   isOpen: boolean;
@@ -28,7 +29,7 @@ export function PauseSubscriptionModal({
     if (isOpen) {
       setError(null);
       setSubmitting(false);
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = businessToday();
       setPauseStartDate(todayStr);
       setPauseResumeDate("");
       setPauseReason("");

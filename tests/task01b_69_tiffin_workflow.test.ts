@@ -497,6 +497,7 @@ async function runTestSuite() {
     {
       id: "queue_test_1",
       action: "COMPLETE_DELIVERY",
+      userId: driverUser.id,
       taskId: offlineTask.id,
       payload: {
         recipientName: "Offline Resident",
@@ -518,6 +519,7 @@ async function runTestSuite() {
     {
       id: "queue_test_1",
       action: "COMPLETE_DELIVERY",
+      userId: driverUser.id,
       taskId: offlineTask.id,
       payload: {
         recipientName: "Offline Resident",

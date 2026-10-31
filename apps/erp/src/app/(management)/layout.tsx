@@ -1,9 +1,10 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ERP_COOKIE_NAME } from "@/server/authentication/auth";
 import { validateSessionCached } from "@/server/authentication/cachedAuth";
 import { ErpShell } from "@/components/layout/ErpShell";
 import { checkDemoProvenance } from "@/server/database/db";
+import { ERP_PATHNAME_HEADER, sectionRedirectFor } from "@/server/authorization/sectionAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,14 @@ export default async function ManagementLayout({
 
   if (!user) {
     redirect("/login");
+  }
+
+  // Runs before the loading boundary, so a role sent elsewhere gets a real redirect instead of a
+  // fully rendered page that redirects in the browser.
+  const pathname = headers().get(ERP_PATHNAME_HEADER);
+  const elsewhere = pathname ? sectionRedirectFor(user.role, pathname) : null;
+  if (elsewhere) {
+    redirect(elsewhere);
   }
 
   const isDev = process.env.NODE_ENV !== "production";

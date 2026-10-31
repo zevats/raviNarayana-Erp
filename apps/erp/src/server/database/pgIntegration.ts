@@ -157,7 +157,16 @@ export async function runPostgresMigrations(
 export async function seedInitialPostgresAdmin(
   asyncDb?: AsyncDb,
   customConfig?: ValidatedAdminConfig
-): Promise<{ seeded: boolean; username: string; message: string }> {
+): Promise<{
+  seeded: boolean;
+  username: string;
+  message: string;
+  /**
+   * Present only when a random initial password was generated (development without
+   * ERP_ADMIN_PASSWORD). Callers must display it once to the operator and never log or store it.
+   */
+  generatedPassword?: string;
+}> {
   const db = asyncDb || (await import("./db")).getAsyncDb();
 
   // 1. Verify staff_users table exists and check existing count
@@ -199,6 +208,7 @@ export async function seedInitialPostgresAdmin(
     seeded: true,
     username: adminConfig.username,
     message: `Initial administrator '${adminConfig.username}' successfully provisioned.`,
+    ...(adminConfig.passwordGenerated ? { generatedPassword: adminConfig.password } : {}),
   };
 }
 

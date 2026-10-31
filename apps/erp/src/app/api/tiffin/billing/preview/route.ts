@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/billing/preview", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { success: false, error: error.message || "Failed to calculate tiffin billing preview." },

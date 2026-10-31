@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -10,6 +11,7 @@ import {
   getFleetCustodySummary,
 } from "@/server/delivery/deliveryService";
 import { getAsyncDb } from "@/server/database/db";
+import { getBusinessDateString } from "@/server/finance/financeService";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const isSummary = searchParams.get("summary") === "true";
     const rawDriverId = searchParams.get("driverId")?.trim();
-    const shiftDate = searchParams.get("shiftDate") || new Date().toISOString().split("T")[0];
+    const shiftDate = searchParams.get("shiftDate") || getBusinessDateString();
     const status = searchParams.get("status") as any;
 
     if (isSummary) {
@@ -79,6 +81,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/delivery/handover", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { error: error.message || "Failed to retrieve handovers." },

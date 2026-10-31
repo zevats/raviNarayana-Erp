@@ -1,0 +1,23 @@
+/**
+ * Business calendar helpers. The ERP operates in India, so "today" is the Asia/Kolkata date,
+ * never the UTC date from Date#toISOString (which is a day behind between 00:00 and 05:30 IST).
+ */
+const BUSINESS_TIME_ZONE = "Asia/Kolkata";
+
+/** YYYY-MM-DD in the business time zone. */
+export function businessToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: BUSINESS_TIME_ZONE }).format(now);
+}
+
+/** Adds whole days to a YYYY-MM-DD date (calendar arithmetic, no time-zone drift). */
+export function addBusinessDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const utc = new Date(Date.UTC(y, m - 1, d + days));
+  return utc.toISOString().slice(0, 10);
+}
+
+/** The meal being served now: lunch until 17:00 IST, dinner from 17:00 (no gap between them). */
+export function businessMeal(now: Date = new Date()): "LUNCH" | "DINNER" {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: BUSINESS_TIME_ZONE, hour: "2-digit", hourCycle: "h23" }).format(now));
+  return hour >= 17 ? "DINNER" : "LUNCH";
+}

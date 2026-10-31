@@ -1,4 +1,6 @@
 import path from "path";
+import { timed } from "./queryMetrics";
+import { businessWriteTable, signalBusinessDataChanged } from "./changeSignals";
 import fs from "fs";
 import { getPgSql, isPostgresConfigured, getDatabaseEngine } from "./client";
 
@@ -116,37 +118,45 @@ export function getAsyncDb(): AsyncDb {
   const pgDb: AsyncDb = {
     isPostgres: true,
     async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
-      const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+      const res = await timed(sql, () => sqlClient.unsafe(convertPlaceholders(sql), params || []));
       return Array.from(res) as T[];
     },
     async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
-      const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+      const res = await timed(sql, () => sqlClient.unsafe(convertPlaceholders(sql), params || []));
       return (res[0] as T) || null;
     },
     async execute(sql: string, params?: any[]): Promise<{ changes: number }> {
-      const res = await sqlClient.unsafe(convertPlaceholders(sql), params || []);
+      const res = await timed(sql, () => sqlClient.unsafe(convertPlaceholders(sql), params || []));
+      const table = res.count ? businessWriteTable(sql) : null;
+      if (table) signalBusinessDataChanged([table]);
       return { changes: res.count || 0 };
     },
     async transaction<T>(cb: (tx: AsyncDb) => Promise<T>): Promise<T> {
-      return (await sqlClient.begin(async (sqlTx) => {
+      // Derived-data caches are told about business writes only after the transaction commits.
+      const writtenTables = new Set<string>();
+      const result = (await sqlClient.begin(async (sqlTx) => {
         const txClient: AsyncDb = {
           isPostgres: true,
           async query<T = any>(sql: string, params?: any[]): Promise<T[]> {
-            const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+            const res = await timed(sql, () => sqlTx.unsafe(convertPlaceholders(sql), params || []));
             return Array.from(res) as T[];
           },
           async queryOne<T = any>(sql: string, params?: any[]): Promise<T | null> {
-            const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+            const res = await timed(sql, () => sqlTx.unsafe(convertPlaceholders(sql), params || []));
             return (res[0] as T) || null;
           },
           async execute(sql: string, params?: any[]): Promise<{ changes: number }> {
-            const res = await sqlTx.unsafe(convertPlaceholders(sql), params || []);
+            const res = await timed(sql, () => sqlTx.unsafe(convertPlaceholders(sql), params || []));
+            const table = res.count ? businessWriteTable(sql) : null;
+            if (table) writtenTables.add(table);
             return { changes: res.count || 0 };
           },
           transaction: (nestedCb) => nestedCb(txClient),
         };
         return await cb(txClient);
       })) as T;
+      if (writtenTables.size > 0) signalBusinessDataChanged(Array.from(writtenTables));
+      return result;
     },
   };
 

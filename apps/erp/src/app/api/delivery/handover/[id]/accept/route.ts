@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -25,8 +26,12 @@ export async function POST(
       params.id,
       {
         acceptedCash: body.acceptedCash,
+        acceptedUpi: body.acceptedUpi,
         varianceReason: body.varianceReason,
         notes: body.notes,
+        expectedDriverId: body.expectedDriverId,
+        expectedDeclaredCash: body.expectedDeclaredCash,
+        expectedDeclaredUpi: body.expectedDeclaredUpi,
       },
       clientIp
     );
@@ -35,6 +40,8 @@ export async function POST(
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/delivery/handover/[id]/accept", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { error: error.message || "Failed to accept cash handover." },

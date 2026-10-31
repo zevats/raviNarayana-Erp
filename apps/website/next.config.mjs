@@ -16,9 +16,10 @@ const nextConfig = {
     const csp = [
       "default-src 'self'",
       scriptSrc,
-      "style-src 'self' 'unsafe-inline'",
+      // globals.css imports the brand typefaces from Google Fonts (stylesheet + font files).
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self'",
       "frame-ancestors 'none'",
       "base-uri 'self'",

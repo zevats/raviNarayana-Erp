@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyOtpChallenge, ERP_COOKIE_NAME } from "@/server/authentication/auth";
 import { getClientIp } from "@/server/authentication/ip";
 import { validateCsrf, csrfForbiddenResponse } from "@/server/security/csrf";
+import { isDatabaseUnavailableError, databaseUnavailableResponse } from "@/server/database/availability";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,9 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (err: any) {
+    if (isDatabaseUnavailableError(err)) {
+      return databaseUnavailableResponse("ERP OTP Verify API", err);
+    }
     return NextResponse.json(
       { error: err?.message || "Invalid or expired verification code." },
       { status: 401 }

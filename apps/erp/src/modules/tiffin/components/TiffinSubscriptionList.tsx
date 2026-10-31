@@ -35,6 +35,7 @@ import { SubscriptionModal } from "./modals/SubscriptionModal";
 import { SubscriptionDetailModal } from "./modals/SubscriptionDetailModal";
 import { PauseSubscriptionModal } from "./modals/PauseSubscriptionModal";
 import { CancelSubscriptionModal } from "./modals/CancelSubscriptionModal";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -366,10 +367,7 @@ export function TiffinSubscriptionList() {
       {/* Main Subscriptions Table */}
       <div className="bg-white border border-[#8E9F89]/30 rounded-2xl overflow-hidden shadow-2xs">
         {isLoading ? (
-          <div className="p-12 text-center text-gray-500 space-y-2">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#1A2E20]" />
-            <p className="text-xs">Loading subscriptions...</p>
-          </div>
+          <BikeLoader tone="forest" label="Loading subscriptions…" className="p-12" />
         ) : subscriptionsError ? (
           <div className="p-12 text-center text-rose-600 space-y-2">
             <AlertCircle className="w-6 h-6 mx-auto" />

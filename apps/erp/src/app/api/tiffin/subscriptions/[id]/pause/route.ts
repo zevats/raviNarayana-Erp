@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -34,6 +35,8 @@ export async function POST(
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/subscriptions/[id]/pause", error);
+    if (dbError) return dbError;
 
     if (error.message?.includes("not found")) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });

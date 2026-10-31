@@ -23,6 +23,7 @@ import { TiffinProduct, ProductCategory, ProductStatus, BillingUnit } from "@/ty
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { formatINR } from "@/modules/finance/utils/formatUtils";
 import { ProductModal } from "./modals/ProductModal";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 const ITEMS_PER_PAGE = 12;
 
@@ -380,10 +381,7 @@ export function TiffinPricingCatalog() {
       {/* Catalog Table */}
       <div className="bg-white border border-[#8E9F89]/30 rounded-2xl shadow-xs overflow-hidden">
         {isLoading ? (
-          <div className="p-12 text-center text-gray-500">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#1A2E20] mb-3" />
-            <p className="text-sm font-medium">Loading tiffin pricing catalog...</p>
-          </div>
+          <BikeLoader tone="forest" label="Loading prices…" className="p-12" />
         ) : productsError ? (
           <div className="p-8 text-center text-red-600">
             <AlertCircle className="w-8 h-8 mx-auto mb-2" />

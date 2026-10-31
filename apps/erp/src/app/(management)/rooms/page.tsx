@@ -36,6 +36,8 @@ import {
   ResidentListItem,
 } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { businessToday } from "@/lib/businessDate";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   SINGLE: "Single Occupancy",
@@ -70,7 +72,8 @@ export default function RoomsPage() {
       }
       return data.rooms || [];
     },
-    { ttl: 60000, tags: ["rooms"] }
+    // Reference data: reused across visits for 5 min; room/resident mutations invalidate it at once.
+    { ttl: 300000, tags: ["rooms"] }
   );
 
   const rooms = cachedRooms || [];
@@ -140,7 +143,7 @@ export default function RoomsPage() {
     room: RoomWithOccupancy;
   } | null>(null);
   const [checkOutDate, setCheckOutDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    businessToday()
   );
 
   // ---------------------------------------------------------------------------
@@ -157,7 +160,7 @@ export default function RoomsPage() {
     email: "",
     emergencyContact: "",
     notes: "",
-    checkInDate: new Date().toISOString().slice(0, 10),
+    checkInDate: businessToday(),
     monthlyRent: 8500,
     securityDeposit: 0,
   });
@@ -460,7 +463,7 @@ export default function RoomsPage() {
     room: RoomWithOccupancy
   ) => {
     setActionError(null);
-    setCheckOutDate(new Date().toISOString().slice(0, 10));
+    setCheckOutDate(businessToday());
     setCheckingOutResident({ occupant, room });
   };
 
@@ -516,7 +519,7 @@ export default function RoomsPage() {
       email: "",
       emergencyContact: "",
       notes: "",
-      checkInDate: new Date().toISOString().slice(0, 10),
+      checkInDate: businessToday(),
       monthlyRent: room.baseRentMonthly,
       securityDeposit: 0,
     });
@@ -640,9 +643,6 @@ export default function RoomsPage() {
           <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1A2E20]">
             Rooms &amp; Bed Inventory
           </h1>
-          <p className="text-xs sm:text-sm text-[#5A6C5E] mt-1 font-sans">
-            Authoritative room inventory and live bed occupancy derived from active resident stays.
-          </p>
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
@@ -829,10 +829,7 @@ export default function RoomsPage() {
       {/* 4. HORIZONTAL ROOM-ROW LISTING                                 */}
       {/* ============================================================== */}
       {loading ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs">
-          <RefreshCw className="w-6 h-6 text-[#B58A57] animate-spin mx-auto mb-2" />
-          <p className="text-xs text-[#5A6C5E]">Loading room inventory from database...</p>
-        </div>
+        <BikeLoader tone="forest" label="Loading rooms…" className="p-12 bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs" />
       ) : filteredRooms.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs space-y-3">
           <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20]">
@@ -1089,7 +1086,7 @@ export default function RoomsPage() {
       {/* ============================================================== */}
       {assigningRoom && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[#1A2E20] text-[#B58A57] flex items-center justify-center shrink-0">
@@ -1262,10 +1259,7 @@ export default function RoomsPage() {
                         Select Checked-Out Resident Profile *
                       </label>
                       {loadingResidentsList ? (
-                        <div className="py-3 text-center text-xs text-[#5A6C5E]">
-                          <RefreshCw className="w-4 h-4 text-[#B58A57] animate-spin inline-block mr-2" />
-                          Loading checked-out residents...
-                        </div>
+                        <BikeLoader tone="forest" size="sm" label="Loading checked-out residents…" className="py-3" />
                       ) : checkedOutResidents.length === 0 ? (
                         <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                           No checked-out residents found. Please switch to the &ldquo;Register New Tenant&rdquo; tab.
@@ -1962,10 +1956,7 @@ export default function RoomsPage() {
             )}
 
             {loadingResidentDetail ? (
-              <div className="py-8 text-center text-xs text-[#5A6C5E]">
-                <RefreshCw className="w-5 h-5 text-[#B58A57] animate-spin mx-auto mb-2" />
-                Loading resident details...
-              </div>
+              <BikeLoader tone="forest" size="sm" label="Loading resident details…" className="py-8" />
             ) : (
               <form onSubmit={handleUpdateResident} className="space-y-3.5">
                 <div>

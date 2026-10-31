@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -18,15 +18,17 @@ import {
   X,
   ExternalLink,
   Calendar,
-  Loader2,
   Wifi,
   WifiOff,
-  RefreshCw,
 } from "lucide-react";
 import { AuthenticatedUser, StaffRole, ROLE_LABELS, ROLE_BADGE_STYLES } from "@/types";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { clearErpCache } from "@/lib/cache/erpDataCache";
+import { clearErpCache, setCacheOwner, onErpCacheInvalidated, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { processOfflineQueue } from "@/modules/delivery/offlineQueue";
+import { CurrentUserProvider } from "@/components/auth/CurrentUserContext";
+import { DeliveryStaffShell } from "./DeliveryStaffShell";
+import { UserAvatar } from "@/components/brand/BrandMark";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -88,8 +90,106 @@ const navItems: NavItem[] = [
 
 export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Client data cache belongs to this user; set synchronously before children read from it.
+  setCacheOwner(user.id);
+
+  // Server-rendered pages (dashboard, staff) are reused from the Next router cache between visits.
+  // When a mutation invalidates their data, refresh so the next visit renders fresh numbers.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsubscribe = onErpCacheInvalidated((tags) => {
+      if (tags && !tags.some((t) => t === "dashboard" || t === "staff")) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 150);
+    });
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
+  }, [router]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [liveState, setLiveState] = useState<"connecting" | "live" | "reconnecting">("connecting");
+
+  // Live updates: the server announces which data changed (orders, delivery, finance...) after
+  // every committed write; this tab refetches those views. Polling stays as the fallback.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+    const lastLocal = new Map<string, number>();
+    let applyingRemote = false;
+    const offLocal = onErpCacheInvalidated((tags) => {
+      if (applyingRemote || !tags) return;
+      const now = Date.now();
+      tags.forEach((t) => lastLocal.set(t, now));
+    });
+    const pendingRecheck = new Set<string>();
+    let recheckTimer: ReturnType<typeof setTimeout> | null = null;
+    let wasDisconnected = false;
+    const source = new EventSource("/api/events");
+    source.addEventListener("ready", () => {
+      setLiveState("live");
+      // Changes made while the stream was reconnecting were not announced: refresh the live views.
+      if (wasDisconnected) {
+        wasDisconnected = false;
+        invalidateErpCache(["orders", "delivery", "custody", "handover"]);
+      }
+    });
+    source.addEventListener("changed", (ev) => {
+      try {
+        const { tags } = JSON.parse((ev as MessageEvent).data) as { tags: string[] };
+        // A view this tab refreshed itself moments ago may only be hearing the echo of its own save,
+        // but someone else may have written too: refresh it once more just after the echo window
+        // instead of dropping the signal (dropping it hid a new order for up to one poll).
+        const now = Date.now();
+        const fresh = tags.filter((t) => now - (lastLocal.get(t) || 0) > 2000);
+        const recent = tags.filter((t) => !fresh.includes(t));
+        if (fresh.length) {
+          applyingRemote = true;
+          invalidateErpCache(fresh);
+        }
+        if (recent.length) {
+          recent.forEach((t) => pendingRecheck.add(t));
+          if (!recheckTimer) {
+            recheckTimer = setTimeout(() => {
+              recheckTimer = null;
+              const due = Array.from(pendingRecheck);
+              pendingRecheck.clear();
+              applyingRemote = true;
+              try {
+                invalidateErpCache(due);
+              } finally {
+                applyingRemote = false;
+              }
+            }, 800);
+          }
+        }
+      } catch {
+        // Malformed message: the next poll refreshes anyway.
+      } finally {
+        applyingRemote = false;
+      }
+    });
+    source.addEventListener("signed-out", () => {
+      source.close();
+      window.location.replace("/login");
+    });
+    source.onerror = () => {
+      wasDisconnected = true;
+      setLiveState("reconnecting");
+    };
+    source.onopen = () => setLiveState("live");
+    return () => {
+      offLocal();
+      if (recheckTimer) clearTimeout(recheckTimer);
+      source.close();
+    };
+  }, [user.id]);
+  // Section the user just clicked, shown as active (with a progress bar) until the route renders,
+  // so a click is acknowledged immediately even while the server is still responding.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const activeHref = pendingHref ?? pathname;
   const [isOnline, setIsOnline] = useState(true);
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
 
@@ -128,7 +228,15 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
+    setPendingHref(null);
   }, [pathname]);
+
+  // Safety net: if a navigation is abandoned (e.g. a redirect back to the same page), stop the bar.
+  useEffect(() => {
+    if (!pendingHref) return;
+    const timer = setTimeout(() => setPendingHref(null), 15000);
+    return () => clearTimeout(timer);
+  }, [pendingHref]);
 
   // Track connectivity & offline queue depth for mobile bar
   useEffect(() => {
@@ -194,8 +302,11 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     // Ignore clicks to the currently active page
     if (pathname === href) {
       e.preventDefault();
+      setPendingHref(null);
       return;
     }
+
+    setPendingHref(href);
 
     // Allow Next.js native <Link> routing to execute immediately on the fast path
     // without startTransition holding the current view or redundant manual router.push
@@ -212,27 +323,45 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
+    // Drop this user's cached data first (in-flight responses are discarded), then revoke the
+    // session on the server before leaving. A hung request cannot keep the user on this screen.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
       clearErpCache();
       await fetch("/api/auth/logout", {
         method: "POST",
         headers: { "X-RN-CSRF": "1" },
+        signal: controller.signal,
       });
     } catch (err) {
       console.error("Logout error:", err);
     } finally {
-      window.location.href = "/login";
+      clearTimeout(timer);
+      // Full document load wipes all in-memory state; replace() keeps the signed-in page out of
+      // the Back history.
+      window.location.replace("/login");
     }
   };
 
+  // Delivery staff get a focused shell (website-style navbar, My Stops / My Cash / History).
+  if (user.role === "DELIVERY_PERSON") {
+    return (
+      <DeliveryStaffShell user={user} onLogout={handleLogout} isLoggingOut={isLoggingOut} queuedCount={offlineQueueCount}>
+        <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
+      </DeliveryStaffShell>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FAF8F5] flex flex-col lg:flex-row font-sans">
+      {pendingHref && <div className="erp-nav-progress" role="progressbar" aria-label="Opening page" />}
       
       {/* Immediate Logout Revocation Feedback Modal */}
       {isLoggingOut && (
         <div className="fixed inset-0 z-50 bg-[#1A2E20]/60 backdrop-blur-xs flex items-center justify-center transition-all animate-fadeIn">
           <div className="bg-white rounded-2xl p-6 shadow-2xl border border-[#8E9F89]/30 flex items-center gap-4 max-w-sm mx-4">
-            <Loader2 className="w-5 h-5 animate-spin text-[#B58A57] shrink-0" />
+            <BikeLoader inline tone="forest" label="Signing out" className="shrink-0" />
             <div>
               <p className="text-sm font-semibold text-[#1A2E20]">Signing out safely…</p>
               <p className="text-xs text-[#5E7060]">Revoking active session credentials</p>
@@ -248,15 +377,6 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
         
         {/* Brand Area */}
         <div className="p-5 border-b border-white/10 flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-white p-1.5 flex items-center justify-center shrink-0 shadow-sm">
-            <Image
-              src="/logo.png"
-              alt="Ravinarayan Logo"
-              width={30}
-              height={30}
-              className="object-contain"
-            />
-          </div>
           <div className="overflow-hidden">
             <h1 className="text-sm font-semibold tracking-wide text-white leading-tight">
               Ravinarayan
@@ -274,13 +394,14 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
           </div>
 
           {visibleNavItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = activeHref === item.href;
             const Icon = item.icon;
 
             return (
               <Link
                 key={item.name}
                 href={item.href}
+                aria-current={isActive ? "page" : undefined}
                 prefetch={true}
                 onClick={(e) => handleNavClick(e, item.href)}
                 className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all ${
@@ -307,19 +428,17 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
         {/* Account Area */}
         <div className="p-4 border-t border-white/10 bg-[#16221A]">
-          <div className="flex items-center gap-3 mb-3 overflow-hidden">
-            <div className="w-9 h-9 rounded-full bg-[#263B2D] border border-[#8E9F89]/30 text-[#C89F6B] font-semibold text-xs flex items-center justify-center shrink-0">
-              {user.fullName.charAt(0).toUpperCase()}
-            </div>
+          <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} title="My account" className="flex items-center gap-3 mb-3 overflow-hidden rounded-xl -m-1 p-1 hover:bg-white/5">
+            <UserAvatar size={36} tone="dark" />
             <div className="overflow-hidden min-w-0">
               <p className="text-xs font-semibold text-white truncate">
                 {user.fullName}
               </p>
               <p className="text-[11px] text-[#A8B9A1] font-medium truncate mt-0.5">
-                {roleLabel}
+                {roleLabel} · My account
               </p>
             </div>
-          </div>
+          </Link>
 
           <div className="pt-2.5 border-t border-white/10 flex items-center justify-between">
             <a
@@ -351,15 +470,6 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
       {/* ============================================================== */}
       <header className="lg:hidden bg-[#1A2E20] text-white border-b border-[#263B2D] px-4 py-3 flex items-center justify-between sticky top-0 z-40 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-white p-1 flex items-center justify-center shrink-0 shadow-xs">
-            <Image
-              src="/logo.png"
-              alt="Ravinarayan Logo"
-              width={26}
-              height={26}
-              className="object-contain"
-            />
-          </div>
           <div>
             <h1 className="text-sm font-semibold tracking-wide text-white leading-none">
               Ravinarayan
@@ -372,7 +482,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
         <div className="flex items-center gap-2">
           {/* Connection & Queue Badge */}
-          <span
+          {(!isOnline || offlineQueueCount > 0) && <span
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-medium ${
               isOnline
                 ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
@@ -380,13 +490,13 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
             }`}
           >
             {isOnline ? <Wifi className="w-2.5 h-2.5" /> : <WifiOff className="w-2.5 h-2.5" />}
-            <span>{isOnline ? "Online" : "Offline"}</span>
+            <span>{isOnline ? "To send" : "Offline"}</span>
             {offlineQueueCount > 0 && (
               <span className="bg-amber-400 text-[#1A2E20] font-bold px-1 rounded-full text-[9px]">
                 {offlineQueueCount}
               </span>
             )}
-          </span>
+          </span>}
 
           <NotificationBell />
 
@@ -403,15 +513,15 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end">
-          <div className="bg-[#1A2E20] text-white border-t border-[#263B2D] p-6 max-h-[85vh] overflow-y-auto rounded-t-3xl shadow-2xl space-y-6">
+          <div className="bg-[#1A2E20] text-white border-t border-[#263B2D] p-6 max-h-[85dvh] overflow-y-auto rounded-t-3xl shadow-2xl space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-[#263B2D] border border-[#8E9F89]/30 text-[#C89F6B] font-semibold text-sm flex items-center justify-center">
-                  {user.fullName.charAt(0).toUpperCase()}
-                </div>
+                <UserAvatar size={36} tone="dark" />
                 <div>
                   <h3 className="text-sm font-semibold text-white">{user.fullName}</h3>
-                  <p className="text-xs text-[#A8B9A1]">{roleLabel}</p>
+                  <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => { setIsMobileMenuOpen(false); handleNavClick(e, "/account"); }} className="text-xs text-[#C89F6B] underline-offset-2 hover:underline">
+                    {roleLabel} · My account
+                  </Link>
                 </div>
               </div>
               <button
@@ -424,13 +534,14 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
             <nav className="space-y-1">
               {visibleNavItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = activeHref === item.href;
                 const Icon = item.icon;
 
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     prefetch={true}
                     onClick={(e) => handleNavClick(e, item.href)}
                     className={`flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-medium ${
@@ -494,9 +605,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               <span>{currentDateStr}</span>
             </div>
 
-            <div className="h-4 w-[1px] bg-[#8E9F89]/25 shrink-0" />
-
-            <NotificationBell />
+                        <NotificationBell />
 
             <div className="h-4 w-[1px] bg-[#8E9F89]/25 shrink-0" />
 
@@ -506,16 +615,16 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               >
                 {roleLabel}
               </span>
-              <span className="text-xs text-[#1A2E20] font-medium truncate">
+              <Link href="/account" aria-current={pathname === "/account" ? "page" : undefined} onClick={(e) => handleNavClick(e, "/account")} className="text-xs text-[#1A2E20] font-medium truncate hover:underline" title="My account">
                 {user.fullName}
-              </span>
+              </Link>
             </div>
           </div>
         </header>
 
         {/* Content Container */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto min-w-0 pb-24 lg:pb-8">
-          {children}
+          <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
         </main>
 
         {/* Footer */}
@@ -535,68 +644,17 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
           className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-[#8E9F89]/20 shadow-lg pb-safe"
           aria-label="Mobile Navigation"
         >
-          {user.role === "DELIVERY_PERSON" ? (
-            /* Dedicated Driver Action Bar */
-            <div className="grid grid-cols-3 h-16 max-w-md mx-auto items-stretch">
-              <Link
-                href="/delivery"
-                prefetch={true}
-                onClick={(e) => handleNavClick(e, "/delivery")}
-                className={`flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ${
-                  pathname === "/delivery"
-                    ? "text-[#1A2E20] font-semibold"
-                    : "text-[#5E7060] hover:text-[#1A2E20]"
-                }`}
-              >
-                <div className={`p-1 rounded-lg ${pathname === "/delivery" ? "bg-[#1A2E20]/10 text-[#1A2E20]" : ""}`}>
-                  <Truck className="w-5 h-5" />
-                </div>
-                <span>Stops</span>
-              </Link>
-
-              <Link
-                href="/offline"
-                prefetch={true}
-                onClick={(e) => handleNavClick(e, "/offline")}
-                className={`relative flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors ${
-                  pathname === "/offline"
-                    ? "text-[#1A2E20] font-semibold"
-                    : "text-[#5E7060] hover:text-[#1A2E20]"
-                }`}
-              >
-                <div className={`relative p-1 rounded-lg ${pathname === "/offline" ? "bg-[#1A2E20]/10 text-[#1A2E20]" : ""}`}>
-                  <RefreshCw className="w-5 h-5" />
-                  {offlineQueueCount > 0 && (
-                    <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
-                      {offlineQueueCount}
-                    </span>
-                  )}
-                </div>
-                <span>Offline Sync</span>
-              </Link>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                disabled={isLoggingOut}
-                className="flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-[#5E7060] hover:text-red-700 transition-colors"
-              >
-                <div className="p-1 rounded-lg">
-                  <LogOut className="w-5 h-5" />
-                </div>
-                <span>Sign Out</span>
-              </button>
-            </div>
-          ) : (
+          {(
             /* Management Staff Mobile Bottom Bar (Role-Aware) */
             <div className="grid grid-cols-5 h-16 max-w-lg mx-auto items-stretch">
               {mobileBarItems.map((item) => {
-                const isActive = pathname === item.href;
+                const isActive = activeHref === item.href;
                 const Icon = item.icon;
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
+                    aria-current={isActive ? "page" : undefined}
                     prefetch={true}
                     onClick={(e) => handleNavClick(e, item.href)}
                     className={`flex flex-col items-center justify-center gap-1 text-[10px] font-medium transition-colors ${
@@ -616,6 +674,8 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
               <button
                 type="button"
                 onClick={() => setIsMobileMenuOpen(true)}
+                aria-expanded={isMobileMenuOpen}
+                aria-haspopup="dialog"
                 className="flex flex-col items-center justify-center gap-1 text-[10px] font-medium text-[#5E7060] hover:text-[#1A2E20] transition-colors"
               >
                 <div className="p-1 rounded-lg">

@@ -37,9 +37,6 @@ export function FinanceHeader({
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20]">
           Finance &amp; Cashbook
         </h1>
-        <p className="text-xs sm:text-sm text-[#5A6C5E] mt-1 font-sans">
-          Operational cashbook ledger, rent billing, payment collections, deposit liabilities, and expenses.
-        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0 w-full 2xl:w-auto">

@@ -1,9 +1,10 @@
+import { hasDeliveryOpsSchema } from "../delivery/deliveryRules";
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
 import { getCompanyBillingConfig } from "../database/env";
-import { assertClosingDateNotFinalized } from "../finance/financeService";
+import { assertClosingDateNotFinalized, acquireLedgerKeyLock } from "../finance/financeService";
 import { assertValidGstin } from "../finance/gstinValidator";
 import {
   generateNextInvoiceNumber,
@@ -132,6 +133,7 @@ export async function previewTiffinBilling(
   let totalProjectedAmount = 0;
   let alreadyBilledInvoicesCount = 0;
 
+  const itemLines = await hasDeliveryOpsSchema(db);
   for (const row of subRows) {
     const subscriptionId = row.subscription_id;
     const customerId = row.customer_id;
@@ -151,10 +153,13 @@ export async function previewTiffinBilling(
     `, [customerId, subscriptionId, billingPeriod]);
 
     // Query delivery tasks for this subscription in the date window
+    // With item lines (migration 0014) a delivery bills the boxes actually delivered (a partial
+    // delivery or an extra-today box changes it); older deliveries bill quantity_per_meal.
     const tasks = await db.query<any>(`
       SELECT
         id, service_date, meal_type, status, invoice_id,
-        delivered_at, delivered_by, exception_type, exception_reason
+        delivered_at, delivered_by, exception_type, exception_reason,
+        ${itemLines ? "(SELECT SUM(i.delivered_quantity) FROM delivery_task_items i WHERE i.task_id = delivery_tasks.id)" : "NULL"} AS delivered_boxes
       FROM delivery_tasks
       WHERE subscription_id = ?
         AND service_date >= ?
@@ -192,7 +197,7 @@ export async function previewTiffinBilling(
       }
     } else {
       // Per-meal / per-delivery billing (e.g. Daily Tiffin)
-      billableQuantity = deliveredTasks.length * quantityPerMeal;
+      billableQuantity = deliveredTasks.reduce((sum, t) => sum + boxesFor(t, quantityPerMeal), 0);
       subtotal = billableQuantity * agreedPrice;
       if (deliveredTasks.length === 0 && !existingInvoice) {
         warnings.push("0 delivered meals available to bill in this date range.");
@@ -208,7 +213,7 @@ export async function previewTiffinBilling(
       alreadyBilledInvoicesCount++;
     } else {
       totalEligibleCustomers++;
-      totalBillableDeliveredMeals += deliveredTasks.length * quantityPerMeal;
+      totalBillableDeliveredMeals += deliveredTasks.reduce((sum, t) => sum + boxesFor(t, quantityPerMeal), 0);
       totalProjectedAmount += subtotal;
     }
 
@@ -590,48 +595,50 @@ export async function recordTiffinPayment(
     throw new Error(`Customer '${customerId}' not found.`);
   }
 
-  // Idempotency check: if already processed, return existing
+  // Idempotency: a replayed key returns the original row; a key reused with a different payload
+  // is rejected. Checked here and again under the key lock inside the transaction.
+  const replayIdempotent = (existing: any): { transaction: FinancialTransaction; allocation?: any } => {
+    if (
+      existing.transaction_type !== "TIFFIN_PAYMENT" ||
+      Number(existing.amount) !== amount ||
+      existing.customer_id !== customerId ||
+      existing.payment_method !== paymentMethod
+    ) {
+      throw new Error(
+        `Idempotency key '${idempotencyKey}' was already used with a different transaction payload.`
+      );
+    }
+    return {
+      transaction: {
+        id: existing.id,
+        transactionType: existing.transaction_type,
+        amount: Number(existing.amount),
+        transactionDate: existing.transaction_date,
+        paymentMethod: existing.payment_method,
+        referenceNumber: existing.reference_number,
+        residentId: null,
+        customerId: existing.customer_id,
+        stayId: null,
+        category: existing.category,
+        description: existing.description,
+        billingPeriod: existing.billing_period,
+        payeeVendor: existing.payee_vendor,
+        idempotencyKey: existing.idempotency_key,
+        status: existing.status,
+        reversalOfId: existing.reversal_of_id,
+        createdBy: existing.created_by,
+        createdAt: existing.created_at,
+        updatedAt: existing.updated_at,
+      },
+    };
+  };
   if (idempotencyKey) {
     const existing = await db.queryOne<any>(`
       SELECT * FROM financial_transactions WHERE idempotency_key = ?
     `, [idempotencyKey]);
-
-    if (existing) {
-      if (
-        existing.transaction_type !== "TIFFIN_PAYMENT" ||
-        Number(existing.amount) !== amount ||
-        existing.customer_id !== customerId ||
-        existing.payment_method !== paymentMethod
-      ) {
-        throw new Error(
-          `Idempotency key '${idempotencyKey}' was already used with a different transaction payload.`
-        );
-      }
-      return {
-        transaction: {
-          id: existing.id,
-          transactionType: existing.transaction_type,
-          amount: Number(existing.amount),
-          transactionDate: existing.transaction_date,
-          paymentMethod: existing.payment_method,
-          referenceNumber: existing.reference_number,
-          residentId: null,
-          customerId: existing.customer_id,
-          stayId: null,
-          category: existing.category,
-          description: existing.description,
-          billingPeriod: existing.billing_period,
-          payeeVendor: existing.payee_vendor,
-          idempotencyKey: existing.idempotency_key,
-          status: existing.status,
-          reversalOfId: existing.reversal_of_id,
-          createdBy: existing.created_by,
-          createdAt: existing.created_at,
-          updatedAt: existing.updated_at,
-        },
-      };
-    }
+    if (existing) return replayIdempotent(existing);
   }
+  let replayed: any = null;
 
   const txnId = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
@@ -639,6 +646,13 @@ export async function recordTiffinPayment(
 
   await db.transaction(async (tx) => {
     await assertClosingDateNotFinalized(tx, transactionDate, "TIFFIN");
+
+    if (idempotencyKey) {
+      // Concurrent duplicates serialize here; the later one replays the committed row.
+      await acquireLedgerKeyLock(tx, `idempotency:${idempotencyKey}`);
+      replayed = await tx.queryOne<any>("SELECT * FROM financial_transactions WHERE idempotency_key = ?", [idempotencyKey]);
+      if (replayed) return;
+    }
 
     await tx.execute(`
       INSERT INTO financial_transactions (
@@ -700,6 +714,8 @@ export async function recordTiffinPayment(
       allocatedResult = alloc.allocation;
     }
   });
+
+  if (replayed) return replayIdempotent(replayed);
 
   const row = await db.queryOne<any>(`
     SELECT t.*, c.full_name as customer_name
@@ -1246,4 +1262,9 @@ export async function reconcilePrepaidException(
     reconciledByName: actor.username,
     policyStatement: "Under current policy, automated credit notes or ledger adjustments are deferred pending management policy determination. No invoices or ledger transactions were altered.",
   };
+}
+
+/** Boxes billed for one delivered subscription delivery: delivered item quantities when recorded. */
+function boxesFor(task: { delivered_boxes?: number | string | null }, quantityPerMeal: number): number {
+  return task.delivered_boxes === null || task.delivered_boxes === undefined ? quantityPerMeal : Number(task.delivered_boxes);
 }

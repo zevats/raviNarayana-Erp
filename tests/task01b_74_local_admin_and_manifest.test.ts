@@ -138,7 +138,11 @@ async function runTests() {
 
   testAssert(adminRow !== null, "Administrator account exists in local PostgreSQL staff_users");
   testAssert(adminRow?.username === "admin", "Administrator username matches 'admin'");
-  testAssert(adminRow?.email === "rishabh27kumar2006@gmail.com", "Administrator email matches 'rishabh27kumar2006@gmail.com'");
+  testAssert(
+    typeof adminRow?.email === "string" && /^[^s@]+@[^s@]+$/.test(adminRow.email) &&
+      (!process.env.ERP_ADMIN_EMAIL || adminRow.email === process.env.ERP_ADMIN_EMAIL.trim().toLowerCase()),
+    "Administrator email is set (and matches ERP_ADMIN_EMAIL when configured)"
+  );
   testAssert(adminRow?.role === "SUPER_ADMIN", "Administrator has role 'SUPER_ADMIN'");
   testAssert(Number(adminRow?.isActive) === 1, "Administrator is active (is_active = 1)");
   testAssert(

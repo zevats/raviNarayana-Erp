@@ -1,4 +1,5 @@
 import { getAsyncDb, AsyncDb } from "../database/db";
+import { onBusinessDataChanged } from "../database/changeSignals";
 import { ClosingDivision } from "@/types";
 
 export interface OccupancyMetrics {
@@ -55,6 +56,8 @@ export interface DashboardMetricsResult {
 
 export interface DashboardMetricsOptions {
   division?: ClosingDivision;
+  /** Part of the cache key: cached aggregates are never shared across roles. */
+  viewerRole?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -70,6 +73,10 @@ const DASHBOARD_CACHE_TTL_MS = 15_000; // 15 seconds freshness
 export function invalidateDashboardCache(): void {
   dashboardCaches.clear();
 }
+
+// Any committed business write (payment, delivery, check-in, order, ...) drops cached aggregates,
+// so the 15s cache only ever spares repeated reads of unchanged data.
+onBusinessDataChanged(invalidateDashboardCache);
 
 /**
  * Fetches all dashboard aggregates with parallel database queries and
@@ -108,7 +115,7 @@ export async function getDashboardMetrics(
   }
 
   const division = options.division || "COMBINED";
-  const cacheKey = `${division}_${options.startDate || ""}_${options.endDate || ""}`;
+  const cacheKey = `${options.viewerRole || "system"}_${division}_${options.startDate || ""}_${options.endDate || ""}`;
   const nowMs = Date.now();
   const cached = dashboardCaches.get(cacheKey);
   if (!effectiveBypass && cached && cached.expiresAt > nowMs) {

@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 import {
   StaffUser,
   StaffRole,
@@ -32,21 +34,12 @@ import {
   KeyRound,
   Edit2,
   Power,
-  Loader2,
   AlertCircle,
   Send,
 } from "lucide-react";
 
 export function StaffDirectoryView({ currentUser }: { currentUser: AuthenticatedUser }) {
-  const [staffList, setStaffList] = useState<StaffUser[]>([]);
-  const [stats, setStats] = useState<StaffStats>({
-    totalStaff: 0,
-    activeStaff: 0,
-    deactivatedStaff: 0,
-    superAdmins: 0,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [bannerNotice, setBannerNotice] = useState<string | null>(null);
 
   // Filter States
@@ -67,39 +60,42 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
 
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
 
-  const fetchStaff = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (selectedRole !== "ALL") params.append("role", selectedRole);
-      if (statusFilter !== "ALL") params.append("status", statusFilter);
-      if (search.trim()) params.append("search", search.trim());
-
-      const res = await fetch(`/api/staff?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to load staff accounts.");
-
-      setStaffList(data.staff || []);
-      if (data.stats) setStats(data.stats);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Search is debounced into the cache key; one request per distinct filter set.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
-    fetchStaff();
-  }, [selectedRole, statusFilter]);
-
-  // Debounced search
-  useEffect(() => {
-    const handler = setTimeout(() => {
-      fetchStaff();
-    }, 300);
+    const handler = setTimeout(() => setDebouncedSearch(search.trim()), 300);
     return () => clearTimeout(handler);
   }, [search]);
+
+  const staffParams = new URLSearchParams();
+  if (selectedRole !== "ALL") staffParams.append("role", selectedRole);
+  if (statusFilter !== "ALL") staffParams.append("status", statusFilter);
+  if (debouncedSearch) staffParams.append("search", debouncedSearch);
+  const staffKey = `/api/staff?${staffParams.toString()}`;
+
+  // Staff accounts change only through this screen, so cached results are reused across visits
+  // for 5 minutes and every staff mutation invalidates them immediately.
+  const staffQuery = useErpQuery<{ staff: StaffUser[]; stats: StaffStats | null }>(
+    staffKey,
+    async () => {
+      const res = await fetch(staffKey);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to load staff accounts.");
+      return { staff: data.staff || [], stats: data.stats || null };
+    },
+    { ttl: 300000, tags: ["staff"] }
+  );
+  const staffList = staffQuery.data?.staff ?? [];
+  const stats: StaffStats = staffQuery.data?.stats ?? {
+    totalStaff: 0,
+    activeStaff: 0,
+    deactivatedStaff: 0,
+    superAdmins: 0,
+  };
+  const loading = staffQuery.isLoading && !staffQuery.data;
+  const error = actionError ?? staffQuery.error?.message ?? null;
+  const setError = setActionError;
+  const fetchStaff = () => invalidateErpCache(["staff"]);
 
   const handleSendRecovery = async (staff: StaffUser) => {
     setIsDispatchingRecovery(staff.id);
@@ -155,9 +151,6 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
               Staff Administration &amp; Access Governance
             </h1>
           </div>
-          <p className="text-xs text-[#445448] mt-1">
-            Authoritative directory of internal personnel, RBAC role assignments, security sessions, and account recovery.
-          </p>
         </div>
 
         {isSuperAdmin && (
@@ -211,7 +204,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
           />
         </div>
 
-        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
           <select
             value={selectedRole}
             onChange={(e) => setSelectedRole(e.target.value)}
@@ -228,6 +221,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
           <div className="inline-flex rounded-xl border border-[#D5CEBF] p-0.5 bg-gray-50 text-xs font-semibold">
             <button
               onClick={() => setStatusFilter("ALL")}
+              aria-pressed={statusFilter === "ALL"}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 statusFilter === "ALL" ? "bg-white shadow-xs text-[#1A2E20]" : "text-[#445448] hover:text-[#1A2E20]"
               }`}
@@ -236,6 +230,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
             </button>
             <button
               onClick={() => setStatusFilter("ACTIVE")}
+              aria-pressed={statusFilter === "ACTIVE"}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 statusFilter === "ACTIVE" ? "bg-white shadow-xs text-emerald-800" : "text-[#445448] hover:text-[#1A2E20]"
               }`}
@@ -244,6 +239,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
             </button>
             <button
               onClick={() => setStatusFilter("DEACTIVATED")}
+              aria-pressed={statusFilter === "DEACTIVATED"}
               className={`px-3 py-1.5 rounded-lg transition-all ${
                 statusFilter === "DEACTIVATED" ? "bg-white shadow-xs text-red-800" : "text-[#445448] hover:text-[#1A2E20]"
               }`}
@@ -257,10 +253,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
       {/* Staff Table */}
       <div className="bg-white rounded-2xl border border-[#D5CEBF] shadow-xs overflow-hidden">
         {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center text-xs text-[#445448]">
-            <Loader2 className="w-8 h-8 animate-spin text-[#1A2E20] mb-2" />
-            <span>Loading staff directory...</span>
-          </div>
+          <BikeLoader tone="forest" label="Loading staff…" className="py-20" />
         ) : staffList.length === 0 ? (
           <div className="py-16 text-center text-xs text-[#8E9F89]">
             No staff accounts found matching your filter criteria.

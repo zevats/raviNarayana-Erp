@@ -20,12 +20,14 @@ import {
   tryNormalizePaymentMethod,
 } from "@/types";
 import { formatINRWithSign } from "../utils/formatUtils";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 interface CashbookLedgerProps {
   transactions: FinancialTransaction[];
   isLoading: boolean;
   onViewReceipt: (tx: FinancialTransaction) => void;
-  onInitiateReversal: (tx: FinancialTransaction) => void;
+  /** Omitted for users without finance.manage: reversals are Owner-only. */
+  onInitiateReversal?: (tx: FinancialTransaction) => void;
   onOpenPayment: () => void;
   onOpenCharge: () => void;
   onOpenDeposit: () => void;
@@ -220,10 +222,7 @@ export function CashbookLedger({
       <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
         {/* Loading State */}
         {isLoading ? (
-          <div className="p-12 text-center">
-            <div className="w-6 h-6 border-2 border-[#1A2E20] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-xs text-[#5A6C5E]">Loading transactions from ledger...</p>
-          </div>
+          <BikeLoader tone="forest" label="Loading transactions…" className="p-12" />
         ) : filtered.length === 0 ? (
           /* Empty State */
           <div className="p-12 text-center space-y-3">
@@ -403,10 +402,10 @@ export function CashbookLedger({
                           <span>Receipt</span>
                         </button>
 
-                        {!isReversed && !isReversal && (
+                        {onInitiateReversal && !isReversed && !isReversal && (
                           <button
                             type="button"
-                            onClick={() => onInitiateReversal(tx)}
+                            onClick={() => onInitiateReversal?.(tx)}
                             className="min-h-[36px] px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-medium flex items-center gap-1 shadow-2xs"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -600,10 +599,10 @@ export function CashbookLedger({
                               <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
                             </button>
 
-                            {!isReversed && !isReversal && (
+                            {onInitiateReversal && !isReversed && !isReversal && (
                               <button
                                 type="button"
-                                onClick={() => onInitiateReversal(tx)}
+                                onClick={() => onInitiateReversal?.(tx)}
                                 className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-rose-50 text-stone-600 hover:text-rose-700 transition-colors shadow-2xs"
                                 title="Reverse transaction"
                               >

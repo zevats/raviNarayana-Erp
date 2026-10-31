@@ -61,7 +61,7 @@ export function PrintableInvoiceModal({
       aria-labelledby="invoice-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:m-0">
+      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92dvh] print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:m-0">
         {/* Top Control Bar (Hidden when printing) */}
         <div className="flex items-center justify-between p-4 bg-white border-b border-[#8E9F89]/20 print:hidden">
           <div className="flex items-center gap-2">

@@ -10,27 +10,82 @@ Evidence references point to [VERIFICATION_LOG.md](VERIFICATION_LOG.md) entries 
 | ISSUE-002 | S2 | Advisory-lock errors swallowed inside PG transactions | FIXED (verified on PG) |
 | ISSUE-003 | S1 | `validatePostgresTargetSafety` is fail-open for remote hosts | FIXED (verified) |
 | ISSUE-004 | S8 | Test suites depend on protected files, suite order, or stale caches | FIXED (verified) |
-| ISSUE-005 | S1 | `next build` / `next start` load `.env.local` (remote Neon) on dev machines | OPEN |
-| ISSUE-006 | S3 | Offline delivery completion/exception queue not wired into the delivery UI | FIXED (verified on PG; browser check pending) |
-| ISSUE-007 | S8 | Postgres-only code paths have no live-PG test coverage | IN PROGRESS |
-| ISSUE-008 | S5 | Orders persisted as `[ORDER_JSON:{...}]` inside `delivery_tasks.delivery_notes` | DECISION NEEDED |
-| ISSUE-009 | S3 | Delivery orders auto-assigned to a hardcoded driver ("Suresh") | FIXED (verified, SQLite) |
-| ISSUE-010 | S4 | Manager lacks `finance.manage`; contradicts PRD §2.2 | DECISION NEEDED |
-| ISSUE-011 | S1 | Hardcoded dev admin password and personal admin email defaults in `env.ts` | DECISION NEEDED |
-| ISSUE-012 | S4 | Legacy roles (`ACCOUNTANT`, `KITCHEN_OPERATIONS`) still assignable through the staff API | DECISION NEEDED (depends on ISSUE-010) |
+| ISSUE-005 | S1 | `next build` / `next start` load `.env.local` (remote Neon) on dev machines | OPEN (mitigated: builds only in sandbox) |
+| ISSUE-006 | S3 | Offline delivery completion queue not wired into the delivery UI | FIXED (verified on PG + browser) |
+| ISSUE-007 | S8 | Postgres-only code paths had no live-PG test coverage | FIXED for money flows (4 live-PG suites); other modules SQLite-only |
+| ISSUE-008 | S5 | Orders persisted as `[ORDER_JSON]` text | FIXED (migration 0012 + backfill, verified on PG); JSON still dual-written (ISSUE-035) |
+| ISSUE-009 | S3 | Delivery orders auto-assigned to a hardcoded driver | FIXED (verified) |
+| ISSUE-010 | S4 | Manager lacked finance entry rights (PRD §2.2) | FIXED per decision (b) (verified on PG + browser) |
+| ISSUE-011 | S1 | Hardcoded demo password / personal emails as defaults | FIXED (verified) |
+| ISSUE-012 | S4 | Legacy roles assignable through the staff API | FIXED (verified) |
 | ISSUE-013 | S8 | Task 67/68 tests assert role navigation removed by Task 69 | FIXED (verified) |
-| ISSUE-014 | S8 | `npm test` is unsafe in the working tree and omits suites | FIXED (`npm run test:safe`); legacy `npm test` still unsafe |
-| ISSUE-015 | S8 | Conflicting / duplicated historical documentation | IN PROGRESS |
-| ISSUE-016 | S1 | Historic report says migrations 0006–0011 were applied to remote Neon `neondb` | BLOCKED (owner verification) |
-| ISSUE-017 | S8 | Two ERP dev servers listening on port 3001 simultaneously | OPEN (user action) |
-| ISSUE-018 | S8 | `local-db.ps1` publishes the container on all WSL interfaces (compose uses 127.0.0.1) | OPEN |
-| ISSUE-019 | S5 | SQLite test schema vs PG migration drift | RESOLVED at table level; columns unverified |
-| ISSUE-020 | S1 | All Task 01B.49–75 work is uncommitted | DECISION NEEDED (needs approval) |
-| ISSUE-021 | S2 | Concurrent delivery completions both applied (duplicate events/audit, last-writer-wins collection) | FIXED (verified on PG) |
-| ISSUE-022 | S1 | `migrateSqliteToPostgres` defaults its source to `data/erp.db` when `requireFixture` is not set | OPEN |
-| ISSUE-023 | S6 | Delivery page has no manual assign/reassign UI (`DispatchBoardView`, `DriverRunView`, `BatchAssignModal` are unused) | OPEN |
-| ISSUE-024 | S5 | Partial-delivery quantities persisted only as free text in `delivery_notes` | OPEN (part of ISSUE-008) |
-
+| ISSUE-014 | S8 | `npm test` unsafe in the working tree and incomplete | FIXED (`npm run test:safe`) |
+| ISSUE-015 | S8 | Conflicting / duplicated historical documentation | FIXED (superseded banners; verified docs) |
+| ISSUE-016 | S1 | Historic report: migrations 0006–0011 applied to remote Neon `neondb` | BLOCKED (owner to inspect Neon console) |
+| ISSUE-017 | S8 | Two ERP dev servers on port 3001 | RESOLVED (no ERP server on 3001 at end of session; see note) |
+| ISSUE-018 | S8 | `local-db.ps1` publishes the container on all WSL interfaces | OPEN |
+| ISSUE-019 | S5 | SQLite test schema vs PG migration drift | RESOLVED at table level (V21 mirrors 0012) |
+| ISSUE-020 | S1 | Task 01B.49–75 work uncommitted | FIXED (local snapshot `7b175c3` on `wip/01b-takeover-snapshot`) |
+| ISSUE-021 | S2 | Concurrent delivery completions both applied | FIXED (verified on PG) |
+| ISSUE-022 | S1 | SQLite→PG utility defaulted its source to `data/erp.db` | FIXED (explicit `sqlitePath` required) |
+| ISSUE-023 | S6 | No manual assign/reassign UI on `/delivery` | OPEN |
+| ISSUE-024 | S5 | Partial-delivery data stored as free text | FIXED for orders since 0012 (`order_items.delivered_quantity`); legacy rows keep text |
+| ISSUE-025 | S1 | Login matched "any SUPER_ADMIN" for the admin email and rewrote Owners' emails | FIXED (verified) |
+| ISSUE-026 | S4 | Manager can finalize checkout settlements incl. deposit refunds (existing rule) | DECISION NEEDED |
+| ISSUE-027 | S2 | Concurrent rent payments could exceed rent charged (overpayment race) | FIXED (verified on PG) |
+| ISSUE-028 | S2 | Concurrent double reversal created two reversal rows | FIXED (verified on PG) |
+| ISSUE-029 | S3 | Idempotent retries / losing handover acceptance returned raw DB errors | FIXED (verified on PG) |
+| ISSUE-030 | S7 | Website CSP blocked Google Fonts (brand typefaces never loaded) | FIXED (verified in browser) |
+| ISSUE-031 | S7 | Horizontal overflow on `/orders` and `/staff` at 390 px | FIXED (verified in browser) |
+| ISSUE-032 | S7 | Driver opening `/finance` sees an empty shell (APIs 403) instead of a redirect | FIXED (server page guard on /rooms, /residents, /finance; VL-36) |
+| ISSUE-033 | S8 | Webpack "critical dependency" warning from dynamic `require` in `emailAdapter.ts` | OPEN (pre-existing, build passes) |
+| ISSUE-034 | S5 | `/api/kitchen/walkin-sale` posts counter sales without an `orders` row | OPEN (listed via legacy fallback; backfill converts) |
+| ISSUE-035 | S5 | Delivery modal still reads items from `[ORDER_JSON]`; JSON dual-write remains | OPEN (transition step) |
+| ISSUE-036 | S6 | Orders cannot be edited or cancelled (no endpoint) | DECISION NEEDED (refund/ledger rules) |
+| ISSUE-037 | S3 | Local PostgreSQL stops whenever WSL idles out (login 500 `ECONNREFUSED`) | FIXED (`local-db.ps1` keep-alive; VL-25) |
+| ISSUE-038 | S7 | DB outage surfaced as raw 500 / misleading 401 on login and OTP routes | FIXED (503 + plain message; VL-25) |
+| ISSUE-039 | S5 | Local dev DB was at migration 0011; order screens read `orders` (0012) | FIXED (0012 applied to `ravinarayana_erp_local` 2026-10-30 with approval, after a verified backup; VL-51) |
+| ISSUE-040 | S7 | Delivery/Orders polled every 4 s (≈45 requests/min per open tab) and refetched on every mount | FIXED (shared cache, 20 s visible-only polling; VL-27) |
+| ISSUE-041 | S7 | Return visits re-queried the DB (3–46 queries) | FIXED (0 queries on revisit; VL-27/28) |
+| ISSUE-042 | S2 | 22 "today" defaults used the UTC date (wrong day 00:00–05:30 IST, incl. Delivery/Orders/check-in) | FIXED (`businessToday()`; VL-26) |
+| ISSUE-043 | S1 | Login form submitted credentials via GET URL before hydration | FIXED (POST + hydration-gated submit; VL-31) |
+| ISSUE-044 | S3 | Dashboard server cache (15 s) never invalidated → stale KPIs after payments/deliveries | FIXED (commit-time change signal; VL-29) |
+| ISSUE-045 | S7 | Two notification bells polled independently | FIXED (shared query) |
+| ISSUE-046 | S7 | OTP: double-submit possible; 350 ms artificial delay before code field | FIXED |
+| ISSUE-047 | S3 | Dashboard showed zeros as real figures when its queries failed | FIXED (explicit notice) |
+| ISSUE-048 | S7 | First navigation in `next dev` is compile-bound (3–5 s per section) | FIXED for dev (warm-up now actually compiles protected pages + API routes; 3.0–4.4 s → 0.43–1.04 s on the real app, VL-34); not present in production builds |
+| ISSUE-049 | S8 | /dashboard route data requested twice after OTP login | RESOLVED (no app defect: Next 14.2 dev-only partial prefetch + full fetch; the real duplicate work was ISSUE-051; VL-35) |
+| ISSUE-050 | S4 | Requested Manager/Delivery profiles not created (first requested password was below the 12-character policy) | RESOLVED (created 2026-10-30 with a compliant owner-supplied password via `createStaffUser`; policy unchanged; VL-33) |
+| ISSUE-051 | S7 | Notification feed (7 aggregate queries) computed twice per dashboard load: page render and header bell ran concurrently and both missed the 30 s cache | FIXED (in-flight de-duplication with invalidation generation; VL-35, test 3.4) |
+| ISSUE-052 | S3 | `listUnifiedOrders` defaulted the service date to the UTC day (residual of ISSUE-042) | FIXED (`getBusinessDateString()`) |
+| ISSUE-053 | S3 | `next dev` dropped compiled routes idle > 60 s (beyond the last 5 used) at the next compile of any route; the warm-up evicted its own first routes → 3–4 s recompiles "sometimes", after short inactivity and on the first OTP | FIXED (`onDemandEntries` keeps routes for 24 h; VL-39, VL-44) |
+| ISSUE-054 | S7 | PostgreSQL pool closed idle connections after 120 s on the local DB → 57–91 ms reconnect (SCRAM + WSL relay) per connection after a pause | FIXED (30 min idle timeout on loopback hosts, 120 s remote, env override; VL-40) |
+| ISSUE-055 | S7 | Sign-out took 2.7 s: logout route compiled on first use (1.8 s), page kept in Back history, no timeout | FIXED (route warmed, `location.replace`, 5 s abort; 0.9 s total, API 0.18 s; VL-41) |
+| ISSUE-056 | S2 | Client cache: a request started before a mutation was joined by the post-mutation refetch and cached (pre-change data shown after a change); a late response for an old filter/date could overwrite newer data; responses landing after sign-out / account switch were cached | FIXED (cancel in-flight on invalidate/clear/owner switch, cache-authoritative hook updates, key guard; tests SUITE 6) |
+| ISSUE-057 | S7 | No visible reaction to a navigation click until the route responded | FIXED (immediate active state + progress bar, 6–40 ms; VL-42) |
+| ISSUE-058 | S7 | Role/retired-section redirects ran inside the streaming boundary (full render, then browser redirect: 2.1–3.2 s); Delivery login rendered the dashboard before redirecting | FIXED (layout-level redirect before streaming, middleware redirect for /kitchen /tiffin, role-aware login landing; VL-43) |
+| ISSUE-059 | S8 | Invoice ledger refetched on every Finance visit | FIXED (shared cache; Daily Closing intentionally always fresh) |
+| ISSUE-060 | S8 | Warm-up covered only page-load APIs; first save/modal actions compiled on use (2.5–7 s) | FIXED (all 111 routes discovered from the source tree) |
+| ISSUE-061 | S8 | Middleware redirects built from `request.url`; with `next dev -H 127.0.0.1` Next reports the host as `localhost`, so browsing via 127.0.0.1 lost the cookie on redirect | MITIGATED (redirects use the request Host; default 0.0.0.0 mode verified for localhost, 127.0.0.1 and LAN IP; `-LocalOnly` + 127.0.0.1 still affected by Next's host rewrite — use http://localhost:3001) |
+| ISSUE-062 | S7 | Dev-mode limits that remain: webpack dev compile cost grows with live routes (2.5–7 s for a route not yet compiled once all are loaded); full warm-up ≈ 4 min after a server start; ~70–100 ms dev overhead per request; dev JS makes a full page load (login/sign-out) ≈ 0.9 s | OPEN (inherent to `next dev`; a production build removes them but `build:erp`/`start:erp` are prohibited on this machine) |
+| ISSUE-063 | S2 | Order lines priced with the browser's `unitPrice`; free-text lines accepted | FIXED (name and price from the active menu on the server; monthly packages and inactive items rejected; VL-48) |
+| ISSUE-064 | S2 | Delivery completion: items parsed from notes (₹120 fallback invented), one aggregate quantity spread by ratio, amount from an average price, collection unchecked | FIXED (per-line outcome validated on the server, due = Σ delivered × saved price, collected 0…due; VL-48/49) |
+| ISSUE-065 | S2 | Further payments overwrote the collected total; no cap, lock or method check | FIXED (additive, row-locked, capped at the amount due, same method; VL-48) |
+| ISSUE-066 | S3 | Orders list measured payment against the order total, not the delivered amount | FIXED (amountDue, remaining and delivery outcome per order) |
+| ISSUE-067 | S3 | Order form: new idempotency key per click (duplicate on retry), first item pre-added, monthly packages offered, reuse re-added off-menu items, form not reset between orders (next order inherited the previous phone) | FIXED (draft key, clean form, orderable menu, reuse rules; VL-49) |
+| ISSUE-068 | S7 | Other staff's orders and deliveries appeared only after 20-second polling | FIXED (SSE `/api/events` from commit-time change signals, polling kept as fallback; VL-49) |
+| ISSUE-069 | S3 | Round-6 regression: a second invalidation cancelled an in-flight reload without notifying the page (list stale up to 20 s after two quick saves) | FIXED (cancelled keys refetch; found by E2E, VL-49) |
+| ISSUE-070 | S7 | Offline replay dropped per-item quantities; replaying a recorded "not delivered" outcome was reported as a conflict | FIXED (VL-48 §8/§9) |
+| ISSUE-071 | S5 | Local DB lacked migration 0012 and had no menu (0 products) | FIXED (migration + backfill (0 legacy rows) + 14-item catalog loaded with approval; VL-51) |
+| ISSUE-072 | S6 | No "Suresh" staff account locally (only Zevats Delivery); PRD price override and quoted party snacks have no path | DECISION NEEDED |
+| ISSUE-073 | S4 | 34 order/delivery/tiffin API routes answered every exception with **400 Bad Request**, including database failures (the console 400 was `GET /api/orders` → PostgreSQL `42P01 relation "orders" does not exist`, raw SQL text sent to the browser) | FIXED (database errors → 500 `DATABASE_ERROR`, constraint conflicts → 409, unreachable → 503, SQL detail logged server-side only; validation errors stay 400; VL-51, test `http_error_mapping`) |
+| ISSUE-074 | S2 | **Handover never completed:** the Delivery page POSTed declarations to `/api/delivery/handover`, which has only a GET handler → 405 on every declaration; the working endpoint is `/api/delivery/handover/declare` | FIXED (custody panel uses `/declare`; verified 200 in browser; VL-53) |
+| ISSUE-075 | S2 | Custody credited to the **assigned** driver and computed per day: cash taken by a Manager (balance at the office, or completing for a driver) landed in the driver's custody; yesterday's undeclared cash disappeared from view | FIXED (migration 0013 `delivery_collections`: one row per payment with `collected_by`; custody = all outstanding collections per staff id; VL-52) |
+| ISSUE-076 | S2 | Declarations were free-typed and unlinked: unlimited declarations per day; acceptance swept every collected cash task of that driver/date (including later collections); a second declaration posted income again with nothing behind it | FIXED (declaration computed from and linked to the employee's undeclared collections; one pending at a time; acceptance settles exactly the linked collections; one ledger entry per kind) |
+| ISSUE-077 | S2 | Discrepancies vanished: a short count was stored as ACCEPTED and the shortfall left custody; the Manager's button accepted the declared figure in one click (no way to enter the counted amount) | FIXED (counted cash and confirmed UPI entered separately; a difference requires a reason and sets DISCREPANCY_FLAGGED; original declaration kept; shortfall shown per employee) |
+| ISSUE-078 | S2 | UPI collected on deliveries was never declared, reconciled or posted to the books | FIXED (declared UPI computed from collections, confirmed separately by the verifier, posted once as a UPI cashbook entry) |
+| ISSUE-079 | S7 | Owner/Manager saw one combined "Fleet Cash Custody" figure for the selected date; pending declarations were filtered by the page date (other days' declarations invisible) | FIXED (staff-wise table, totals = sum of rows, per-employee history; pending list not date-filtered) |
+| ISSUE-080 | S8 | Custody API defaulted to the UTC date | FIXED (business date) |
 ---
 
 ## ISSUE-001 — Closing lock ordering deadlock (S2) — FIXED (verified)
@@ -153,16 +208,104 @@ Observed in the sandbox baseline (VL-05, VL-10):
 ## ISSUE-024 — Partial-delivery data stored as free text (S5) — OPEN
 - Delivered/undelivered portions and reasons are appended to `delivery_notes` (`[Recon - ...]`, `[Qty - ...]`); no columns exist, so shortfall reporting requires parsing text. Resolve together with ISSUE-008.
 
+
+## ISSUE-010 — resolution (decision b, 2026-10-29)
+- New permission `finance.record` (Owner, Manager, legacy Accountant): rent charge, rent payment, security deposit, expense, and upload of rent/deposit/expense receipts. `finance.manage` (Owner, legacy Accountant) keeps reversals, closing draft/finalize/reopen, invoice create/issue/allocate/cancel, tiffin billing and payments, settlement receipts and every financial document archive.
+- UI: `useHasPermission` (`components/auth/CurrentUserContext.tsx`) hides Reverse, closing actions and invoice mutations for roles the server rejects; server enforcement is unchanged and authoritative.
+- Evidence: `pg_money_flows` §H permission matrix (19 allow/deny checks on live PG); `finance` suite; browser E2E (manager records expense, reversal 403, no Reverse button, owner-only closing notice).
+
+## ISSUE-011 — resolution
+- `env.ts`: no default admin email (ERP_ADMIN_EMAIL required to seed), neutral default display name, retired demo password blocked by SHA-256 digest (no plaintext in source), development bootstrap generates a 24-char CSPRNG password flagged `passwordGenerated`.
+- `seed-local-admin.js`: loads ERP_ADMIN_* from `.env.development.local` only; shows a generated password once on an interactive terminal, otherwise writes it to `~/.ravinarayan-erp/initial-admin-password.txt` (0600). Never logged, audited or committed.
+- `emailAdapter.ts`: no default sender mailbox; `SMTP_USER` required for SMTP. `.env.example` uses placeholders and ships no admin password. Dashboard/CSV "Prepared for" uses the signed-in user, not a hardcoded name. Staff password reset rejects the retired demo password in all environments.
+- Evidence: `auth_hardening` (6-pre/6-dev assertions), `otp_auth_flow`, `performance_and_caching`; E2E fixture seeded through the real bootstrap path.
+- Not done here: rewriting git history that already contains the old literals (snapshot `7b175c3` and earlier commits). Redact before any push.
+
+## ISSUE-012 — resolution
+- `isAssignableRole` (canonical roles only) enforced in `createStaffUser` and `updateStaffRole`. Existing ACCOUNTANT / KITCHEN_OPERATIONS accounts keep their role and permissions untouched and can be moved to a canonical role; no rows were changed. The directory role filter still lists legacy roles so the Owner can find such accounts.
+- Transition: the Owner reviews legacy accounts in Staff Administration and reassigns each (Manager or Delivery). Evidence: `task01b_56`, `rbac_staff_foundation`, browser E2E (create dialog offers no retired roles).
+
+## ISSUE-008 / ISSUE-024 — resolution
+- Migration `0012_orders.sql` (additive): `orders` (type, lifecycle status, links to delivery task XOR ledger sale, totals, UNIQUE idempotency key, source APP/LEGACY_BACKFILL, FKs RESTRICT) and `order_items` (line no, product FK SET NULL, qty/price/line_total CHECKs, delivered quantity + reason). Drizzle schema and SQLite V21 mirror it.
+- `createUnifiedOrder`: one transaction for customer, task/ledger, order, items, assignment, dispatch; idempotency key lock + replay; product ids validated; no try/catch inside the transaction.
+- Reads (`listUnifiedOrders`, `getCustomerOrderHistory`) use the tables, with a read-only fallback for legacy rows not yet converted. Delivery completion writes per-line delivered quantities.
+- Backfill: `backfillLegacyOrders` / `scripts/backfill-orders.js [--dry-run]` — deterministic ids, per-row advisory lock and transaction, never modifies source rows, placeholder line for unrecoverable items, ledger amount authoritative for counter sales.
+- Evidence: `pg_orders` 34/34 (concurrent idempotent creation, rollback, validation, line delivery, concurrent backfill ×2 + re-run, source rows unchanged, FK restrict); 13 migrations apply to an empty DB (36 tables) and 0012 applies forward on an existing one. **Not run against any shared database.** Rollout: `npm run db:migrate` then `node -r ./tests/register_paths.js scripts/backfill-orders.js --dry-run`, then without `--dry-run`.
+
+## ISSUE-020 — resolution
+- Branch `wip/01b-takeover-snapshot`, commit `7b175c3` (local only, not pushed): 202 added, 49 modified, 4 deletions (the `scratch/check_*` files). Staged by explicit path list after scanning added lines for credentials, keys, remote DB URLs and personal data. Excluded: real env files, `data/`, `storage/`, `*.db*`, build output, and `scratch/test-full-auth-flow.js` (password literal). Known content to redact before any push: the Neon development *hostname* in `reasons.md`, the personal admin email and the retired demo password in older committed files.
+
+## ISSUE-017 — note
+- At the start of this round one ERP `next dev` (PID 23320, launched from cmd 32296) listened on :3001. At the end, neither process was running. All terminations in this session were restricted to processes whose command lines matched the sandbox path or the `rn-e2e-` browser profiles; the cause of the exit is not established.
+
+## ISSUE-025 — Login identity confusion for Owners (S1) — FIXED
+- `findStaffByIdentifier` matched `OR role = 'SUPER_ADMIN'` when the configured admin email was typed (arbitrary Owner row; PRD plans two Owners) and rewrote every Owner's email to the configured admin email during login (OTP for both Owners sent to one inbox; unique-email failures). Now exact username/email match, no side effects. Evidence: `otp_auth_flow` Suite 2 (second Owner resolves to itself, email unchanged, unknown email → null).
+
+## ISSUE-026 — Manager settlement authority (S4) — DECISION NEEDED
+- `finalizeResidentCheckoutSettlement` accepts `residents.manage` OR `finance.manage`, so the Manager can finalize a checkout including a cash deposit refund (verified on PG). Decision (b) did not cover settlements; behaviour left unchanged. Options: keep (PRD lists check-out as a Manager duty) or require `finance.manage` when a refund/deduction is involved.
+
+## ISSUE-027 — Rent overpayment race (S2) — FIXED
+- Balance checked outside the transaction; two concurrent payments both passed (₹8000 paid against ₹6000 charged on live PG). Fix: per-resident advisory lock and balance recheck inside the transaction (`acquireLedgerKeyLock`). Charge reversals take the same lock.
+
+## ISSUE-028 — Double reversal (S2) — FIXED
+- Unconditional `UPDATE ... SET status='REVERSED'` let concurrent reversals each insert a reversal row (2 rows on live PG). Fix: `WHERE status = 'POSTED'` with a changes check.
+
+## ISSUE-029 — Raw errors on idempotent retries (S3) — FIXED
+- Concurrent submissions sharing an idempotency key surfaced `duplicate key` errors (rent payment/charge/deposit/expense, tiffin payment); the losing handover acceptance did the same. Fix: idempotency-key advisory lock + in-transaction replay; handover row `FOR UPDATE` with a status re-check. Data was always protected by unique indexes; callers now get the original result or a business error.
+
+## ISSUE-030 — Website fonts blocked by CSP (S7) — FIXED
+- `globals.css` imports Google Fonts but CSP allowed only `'self'`. Added `https://fonts.googleapis.com` (style-src) and `https://fonts.gstatic.com` (font-src). Verified: 0 console errors on 5 pages × 2 viewports.
+
+## ISSUE-031 — Mobile overflow (S7) — FIXED
+- `/orders` header actions and the `/staff` filter row did not wrap (398/397 px at 390). Added `flex-wrap`. Verified at 390 px on six ERP pages.
+
 ---
 
 ## Execution plan
 
-| Batch | Scope | Acceptance criteria | Status |
-|---|---|---|---|
-| 1 | ISSUE-001, -002 | `pg_closing_locks` 14/14 on live PG ×3; closing SQLite suites green | **Done** |
-| 2 | ISSUE-003, -004, -013, -014 | target validator default-deny with tests; every sandbox suite PASS or explicit BLOCKED with reason; no suite touches `data/` | **Done** |
-| 3 | ISSUE-006, -021 | offline completion enqueued with idempotency; task66 green; PG tests for sync idempotency and races | **Done** (browser check in Batch 7) |
-| 4 | ISSUE-009 done; ISSUE-012, -011 await decisions | no name-based assignment; canonical roles only; no personal data/password literals | Partly done |
-| 5 | ISSUE-007, -022 | live-PG tests for every money-moving workflow; utility requires an explicit SQLite source | Next |
-| 6 | ISSUE-008, -010 | after owner decisions | Waiting |
-| 7 | ISSUE-023 + browser E2E + website build + docs | core flows exercised in a browser against the local stack; FLOW_VERIFICATION updated | |
+| Batch | Scope | Status |
+|---|---|---|
+| 1 | Closing locks (001, 002) | Done |
+| 2 | Test harness + DB-target safety (003, 004, 013, 014) | Done |
+| 3 | Offline delivery + completion race (006, 021) | Done (browser-verified) |
+| 4 | Default driver (009) | Done |
+| 5 | Decisions: finance.record (010), roles (012), bootstrap defaults (011, 025) | Done |
+| 6 | Live-PG money flows (007, 027, 028, 029) | Done |
+| 7 | Orders storage + backfill (008, 024, 022) | Done |
+| 8 | Browser E2E (ERP) + website build/verification (030, 031) | Done for the flows listed in FLOW_VERIFICATION |
+| 9 | Next | Manual assign UI (023); retire ORDER_JSON reads (035); kitchen walk-in → orders (034); decisions 026 and 036; browser coverage for kitchen, tiffin subscriptions/billing, invoices, check-in/out, documents; live-PG coverage for kitchen inventory and residents/rooms concurrency |
+
+## ISSUE-048 / ISSUE-049 / ISSUE-051 — First-visit latency and duplicate requests (round 5, 2026-10-30)
+- **Root cause of the slow first visits (048):** `warm-erp-routes.ps1` requested pages without a session cookie. The middleware redirects such requests to `/login` (API routes: 401) *before* the route is compiled, so only `/login`, `/offline` and `/forgot-password` were ever warmed; each protected page and each API route it calls still compiled on the user's first click (≈1–2 s per API route, 3–4 s per section). The POST-only sign-in routes also compiled on first use (≈1.1 s each on login and OTP verify).
+- **Fix:** the warm-up sends a random throwaway cookie value that passes the middleware's shape check but matches no session (two read-only lookups, no writes, then a `/login` redirect or 401), and also requests the API routes the pages load plus the sign-in routes (GET → 405 without running a handler). A named mutex keeps it to one instance per base URL.
+- **049:** two RSC requests per first visit come from Next 14.2 in development: prefetching is disabled in dev, so navigation creates an `auto` prefetch entry (`Next-Router-Prefetch: 1`, loading-boundary shell only) and `InnerLayoutRouter` then fetches the full payload (traced with CDP initiator stacks; `prefetch-cache-utils.js` "in dev, there's never gonna be a prefetch entry"). Production builds prefetch full payloads ahead of the click (VL-28). No app change.
+- **051:** the dashboard page's `getNotifications` and the header bell's `/api/notifications` ran concurrently; both missed the per-user cache, so the notification queries ran twice per dashboard load. Concurrent callers now share one in-flight computation; an invalidation bumps a generation so a computation that started before a write is never cached.
+
+## ISSUE-063 … ISSUE-072 — Order → delivery workflow (round 7, 2026-10-30)
+The full audit, design, verification matrix and pending decisions are in [ORDER_DELIVERY_WORKFLOW.md](ORDER_DELIVERY_WORKFLOW.md).
+- **Evidence:** `pg_order_delivery_workflow` passes 46/46 (VL-48). The browser E2E passes 30/30 on two consecutive runs (VL-49). The full regression is 42 PASS / 0 FAIL / 3 SKIPPED (VL-50).
+- **Updated tests:** `pg_orders`, `task70` and `task71` previously encoded the old behaviour (free-text lines, client prices, aggregate completion). They now assert the corrected rules.
+
+## ISSUE-074 … ISSUE-080 — Custody and cash handover (round 9, 2026-10-30)
+- **Ledger.** Migration 0013 adds `delivery_collections`: one row per payment, holding `collected_by` (a staff id), the method, the amount, the delivery and order, and the `handover_id`. It also adds `declared_upi`, `accepted_upi`, `upi_transaction_id` and `declared_by` to `driver_cash_handovers`. The migration is additive, and existing task totals were copied once, attributed to `delivered_by`, else `assigned_to`.
+- **Attribution.**
+  - Money taken at the door belongs to the delivery's assigned employee.
+  - A later payment belongs to whoever receives it.
+  - Ownership is stored on the row, never inferred from who is viewing.
+- **Declaration.** The employee, or a Manager on their behalf (`declared_by` is recorded), declares the sum of their undeclared collections, which are linked in the same transaction. This runs under a per-employee advisory lock, and only one declaration can await verification at a time. A stated cash figure that differs from the records is rejected; the verifier records any physical difference.
+- **Verification.**
+  - The verifier must be a Manager, Owner or Accountant who is not the employee and not the declarer. The Owner may verify their own, having no one above them.
+  - Cash counted and UPI received are entered separately, and UPI cannot exceed the declared amount.
+  - Optional stale-record checks compare the expected employee and the declared amounts.
+  - Each kind posts one ledger entry (`dch_tx_<id>`, `dch_upi_<id>`).
+  - The status becomes ACCEPTED, or DISCREPANCY_FLAGGED with a mandatory reason.
+  - A row lock plus a status guard make concurrent or repeated acceptance fail.
+- **Views.** Delivery staff see their own custody only (403 otherwise). Manager and Owner see a staff-wise table with an aggregate row that is the sum of the rows, plus per-employee collections and handover history.
+- **Live.** Writes to `delivery_collections` and `driver_cash_handovers` refresh custody views over SSE.
+- **Evidence:**
+  - `pg_custody_ledger` 36/36 (VL-52);
+  - custody browser E2E 18/18 (VL-53);
+  - `task58` updated to the corrected rules: a shortfall is now DISCREPANCY_FLAGGED, UPI must be confirmed, and UPI reaches the cashbook;
+  - full regression 44/0/3;
+  - read-only checks on the migrated local database 7/7 (VL-54).
+

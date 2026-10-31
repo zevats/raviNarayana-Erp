@@ -11,6 +11,7 @@ import {
 } from "@/server/authentication/auth";
 import { getClientIp } from "@/server/authentication/ip";
 import { validateCsrf, csrfForbiddenResponse } from "@/server/security/csrf";
+import { isDatabaseUnavailableError, databaseUnavailableResponse } from "@/server/database/availability";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,9 @@ export async function POST(request: NextRequest) {
 
         return response;
       } catch (err: any) {
+        if (isDatabaseUnavailableError(err)) {
+          return databaseUnavailableResponse("ERP Login API (OTP branch)", err);
+        }
         return NextResponse.json(
           { error: err.message || "Invalid or expired verification code." },
           { status: 401 }
@@ -142,9 +146,13 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error: any) {
+    if (isDatabaseUnavailableError(error)) {
+      return databaseUnavailableResponse("ERP Login API", error);
+    }
     console.error("ERP Login API Error:", error);
+    // Internal error details stay in the server log; the browser gets a generic message.
     return NextResponse.json(
-      { error: error?.message || "An unexpected error occurred during authentication." },
+      { error: "An unexpected error occurred during authentication. Please try again." },
       { status: 500 }
     );
   }

@@ -668,46 +668,35 @@ async function runFinanceTests() {
   const opsList = await listTransactions(opsManagerUser, {});
   assert(Array.isArray(opsList), "OPERATIONS_MANAGER successfully reads transaction list");
 
-  // 4. OPERATIONS_MANAGER blocked from mutating finance (HTTP 403)
-  let opsBlockedOnCharge = false;
-  try {
-    await recordRentCharge(opsManagerUser, {
-      residentId: "res_priya",
-      amount: 2000,
-      transactionDate: "2026-10-10",
-      billingPeriod: "October 2026",
-    });
-  } catch (err: any) {
-    opsBlockedOnCharge = err instanceof AuthorizationError && err.statusCode === 403;
-  }
-  assert(opsBlockedOnCharge, "Privilege Guard: OPERATIONS_MANAGER blocked from recordRentCharge with HTTP 403");
+  // 4. ISSUE-010 decision (b): the Manager records rent charges/payments, deposits and expenses
+  //    (finance.record) but reversals, closings and invoices stay Owner-only (finance.manage).
+  //    Positive Manager writes are exercised against live PostgreSQL in pg_finance_permissions.
+  assert(hasPermission(opsManagerUser.role, "finance.record"), "OPERATIONS_MANAGER holds finance.record (entry recording)");
+  assert(hasPermission(superAdminUser.role, "finance.record"), "SUPER_ADMIN holds finance.record");
+  assert(!hasPermission(deliveryUser.role, "finance.record"), "DELIVERY_PERSON lacks finance.record");
+  assert(!hasPermission(kitchenUser.role, "finance.record"), "KITCHEN_OPERATIONS lacks finance.record");
 
-  let opsBlockedOnPayment = false;
+  let opsBlockedOnReversal = false;
   try {
-    await recordRentPayment(opsManagerUser, {
-      residentId: "res_priya",
-      amount: 2000,
-      transactionDate: "2026-10-10",
-      paymentMethod: "CASH",
-    });
+    await reverseTransaction(opsManagerUser, "txn_does_not_matter", "Manager attempting reversal");
   } catch (err: any) {
-    opsBlockedOnPayment = err instanceof AuthorizationError && err.statusCode === 403;
+    opsBlockedOnReversal = err instanceof AuthorizationError && err.statusCode === 403;
   }
-  assert(opsBlockedOnPayment, "Privilege Guard: OPERATIONS_MANAGER blocked from recordRentPayment with HTTP 403");
+  assert(opsBlockedOnReversal, "Privilege Guard: OPERATIONS_MANAGER blocked from reverseTransaction with HTTP 403");
 
-  let opsBlockedOnExpense = false;
+  let deliveryBlockedOnExpense = false;
   try {
-    await recordExpense(opsManagerUser, {
+    await recordExpense(deliveryUser, {
       category: "GROCERY",
       amount: 500,
       transactionDate: "2026-10-10",
       paymentMethod: "CASH",
-      description: "Ops unauthorized expense",
+      description: "Delivery unauthorized expense",
     });
   } catch (err: any) {
-    opsBlockedOnExpense = err instanceof AuthorizationError && err.statusCode === 403;
+    deliveryBlockedOnExpense = err instanceof AuthorizationError && err.statusCode === 403;
   }
-  assert(opsBlockedOnExpense, "Privilege Guard: OPERATIONS_MANAGER blocked from recordExpense with HTTP 403");
+  assert(deliveryBlockedOnExpense, "Privilege Guard: DELIVERY_PERSON blocked from recordExpense with HTTP 403");
 
   // 5. KITCHEN_OPERATIONS and DELIVERY_PERSON blocked from reading (HTTP 403)
   let kitchenBlockedOnRead = false;

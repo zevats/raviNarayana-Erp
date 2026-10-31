@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -32,6 +33,8 @@ export async function GET(
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/subscriptions/[id]", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { success: false, error: error.message || "Failed to retrieve subscription." },
@@ -65,6 +68,8 @@ export async function PATCH(
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/subscriptions/[id]", error);
+    if (dbError) return dbError;
 
     if (error.message?.includes("not found")) {
       return NextResponse.json({ success: false, error: error.message }, { status: 404 });

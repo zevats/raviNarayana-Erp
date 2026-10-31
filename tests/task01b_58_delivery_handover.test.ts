@@ -16,6 +16,7 @@ import {
   recordDeliveryCollection,
   createCashHandoverDeclaration,
   acceptCashHandover,
+  listStaffCustody,
   getDriverCustodySummary,
   listDriverCashHandovers,
   syncDeliveryActions,
@@ -406,6 +407,7 @@ async function runTask58Tests() {
   // Accountant verifies banknotes and accepts exact ₹600
   const acceptedHandover = await acceptCashHandover(accountantUser, declaredHandover.id, {
     acceptedCash: 600,
+    acceptedUpi: 400, // UPI from Order 3 confirmed in the business account
     notes: "Cash physically verified and placed in PG vault",
   }, undefined, asyncDb);
 
@@ -433,12 +435,14 @@ async function runTask58Tests() {
   // Cashbook position after acceptance: cashbook inflow increased by exactly ₹600
   const cashbookAfter = await getCashbookSummary(accountantUser, { startDate: shiftDate, endDate: shiftDate, division: "COMBINED" }, asyncDb);
   const collectedAfter = cashbookAfter.totalTiffinCollected || 0;
-  assert(collectedAfter === collectedBefore + 600, `Authoritative Cashbook reflects ₹600 delivery collection inflow (before: ${collectedBefore}, after: ${collectedAfter})`);
+  // Round 9: UPI collected on deliveries reaches the books when the verifier confirms it (it was
+  // previously never posted). ₹600 cash + ₹400 UPI, each posted exactly once.
+  assert(collectedAfter === collectedBefore + 1000, `Cashbook reflects ₹600 cash + ₹400 UPI delivery collections (before: ${collectedBefore}, after: ${collectedAfter})`);
 
   // Repeat acceptance guard: Cannot accept an already accepted handover
   let doubleAcceptRejected = false;
   try {
-    await acceptCashHandover(accountantUser, declaredHandover.id, { acceptedCash: 600 }, undefined, asyncDb);
+    await acceptCashHandover(accountantUser, declaredHandover.id, { acceptedCash: 600, acceptedUpi: 400 }, undefined, asyncDb);
   } catch (err: any) {
     doubleAcceptRejected = true;
   }
@@ -490,7 +494,11 @@ async function runTask58Tests() {
     varianceReason: "Customer gave 20 rupees coin which was worn out and rejected by bank counter; driver covered remaining next day",
   }, undefined, asyncDb);
 
-  assert(acceptedSuresh.status === "ACCEPTED", "Handover with variance accepted");
+  // Round 9: a shortfall is never shown as a clean acceptance; it stays visible to the Owner.
+  assert(acceptedSuresh.status === "DISCREPANCY_FLAGGED", `Handover with variance settled as DISCREPANCY_FLAGGED (got ${acceptedSuresh.status})`);
+  const ledger = await listStaffCustody(superAdminUser, asyncDb);
+  const sureshRow = ledger.staff.find((r) => r.staffId === driverSuresh.id);
+  assert(sureshRow?.cashShort === 20 && sureshRow?.status === "DISCREPANCY", `Owner's staff-wise ledger shows Suresh ₹20 short (got ₹${sureshRow?.cashShort}, ${sureshRow?.status})`);
   assert(acceptedSuresh.declaredCash === 500, "Declared was 500");
   assert(acceptedSuresh.acceptedCash === 480, "Accepted cash was 480");
   assert(acceptedSuresh.variance === -20, "Variance recorded as -20 (shortage)");
@@ -541,6 +549,7 @@ async function runTask58Tests() {
     {
       id: "queue_act_1",
       action: "COMPLETE_DELIVERY",
+      userId: driverRamesh.id,
       taskId: taskOffline1.id,
       payload: {
         recipientName: "Security Guard Ramu",
@@ -556,6 +565,7 @@ async function runTask58Tests() {
     {
       id: "queue_act_2",
       action: "REPORT_EXCEPTION",
+      userId: driverRamesh.id,
       taskId: taskOffline2.id,
       payload: {
         exceptionType: "LOCATION_UNCLEAR",
@@ -569,6 +579,7 @@ async function runTask58Tests() {
     {
       id: "queue_act_3",
       action: "COMPLETE_DELIVERY",
+      userId: driverRamesh.id,
       taskId: taskConflict.id,
       payload: {
         recipientName: "Prem",

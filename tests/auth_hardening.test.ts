@@ -270,6 +270,38 @@ assert(activeStillExists !== undefined, "Active unexpired sessions are preserved
 // -----------------------------------------------------------------------------
 console.log("\n[TEST SUITE 6] Production Configuration & Seed Security");
 
+// 6-pre: the administrator email has no built-in default (ISSUE-011)
+const originalAdminEmail = process.env.ERP_ADMIN_EMAIL;
+delete process.env.ERP_ADMIN_EMAIL;
+process.env.NODE_ENV = "development";
+delete process.env.ERP_ADMIN_PASSWORD;
+let missingEmailThrew = false;
+try {
+  validateAdminEnvironment(0);
+} catch (e: any) {
+  missingEmailThrew = e.message.includes("ERP_ADMIN_EMAIL must be set");
+}
+assert(missingEmailThrew, "Seeding refuses to run without ERP_ADMIN_EMAIL (no hardcoded personal default)");
+process.env.ERP_ADMIN_EMAIL = "owner@example.com";
+
+// 6-dev: development without a configured password generates a strong random one
+const devConfigA = validateAdminEnvironment(0);
+const devConfigB = validateAdminEnvironment(0);
+assert(devConfigA?.passwordGenerated === true, "Development bootstrap flags the password as generated");
+assert((devConfigA?.password.length ?? 0) >= 20 && /^[A-Za-z0-9_-]+$/.test(devConfigA!.password), "Generated password is long and URL-safe");
+assert(devConfigA?.password !== devConfigB?.password, "Each bootstrap generates a different password");
+assert(devConfigA?.email === "owner@example.com" && devConfigA?.fullName === "ERP Administrator", "Email comes from configuration; neutral default display name");
+
+// 6-dev-retired: retired demo password rejected in development too
+process.env.ERP_ADMIN_PASSWORD = "Ravinarayan@2026";
+let devDemoThrew = false;
+try {
+  validateAdminEnvironment(0);
+} catch (e: any) {
+  devDemoThrew = e.message.includes("demonstration password");
+}
+assert(devDemoThrew, "Retired demo password is rejected in development as well");
+
 // 6a: Production with missing password
 process.env.NODE_ENV = "production";
 delete process.env.ERP_ADMIN_PASSWORD;
@@ -306,6 +338,7 @@ assert(prodWeakThrew, "Production fails safely if ERP_ADMIN_PASSWORD is shorter 
 process.env.ERP_ADMIN_PASSWORD = "SuperStrongPassword2026#Secure";
 const validProdConfig = validateAdminEnvironment(0);
 assert(validProdConfig !== null && validProdConfig.password === "SuperStrongPassword2026#Secure", "Production accepts valid strong administrator password");
+assert(validProdConfig?.passwordGenerated === false, "Configured password is not flagged as generated");
 
 // 6e: Existing users check (no overwrite)
 const existingUsersCheck = validateAdminEnvironment(5);
@@ -313,6 +346,9 @@ assert(existingUsersCheck === null, "Existing database with staff users returns 
 
 // Restore dev environment
 process.env.NODE_ENV = "development";
+delete process.env.ERP_ADMIN_PASSWORD;
+if (originalAdminEmail === undefined) delete process.env.ERP_ADMIN_EMAIL;
+else process.env.ERP_ADMIN_EMAIL = originalAdminEmail;
 
 // -----------------------------------------------------------------------------
 // TEST SUITE 7: Brand Package Integration (Step 6 & Step 7 #12)

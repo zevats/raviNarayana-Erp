@@ -158,9 +158,6 @@ export function AllocatePaymentModal({
               <h2 id="alloc-title" className="text-base sm:text-lg font-bold text-[#1A2E20]">
                 Allocate Payment to Invoice
               </h2>
-              <p className="text-xs text-[#5A6C5E]">
-                Apply liquid rent collections directly against this billing document.
-              </p>
             </div>
           </div>
           <button

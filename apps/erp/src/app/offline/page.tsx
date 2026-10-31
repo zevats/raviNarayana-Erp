@@ -39,7 +39,13 @@ export default function OfflineFallbackPage() {
   const handleSyncNow = async () => {
     setSyncStatus("Connecting and synchronizing...");
     try {
-      const res = await processOfflineQueue();
+      const me = await fetch("/api/auth/me", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      const userId: string | undefined = me?.user?.id ?? me?.id;
+      if (!userId) {
+        setSyncStatus("Sign in again to send the deliveries saved on this phone.");
+        return;
+      }
+      const res = await processOfflineQueue(userId);
       if (res.authFailed) {
         setSyncStatus("Session expired or unauthorized. Please re-authenticate to synchronize pending actions.");
       } else {

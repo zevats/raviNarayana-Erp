@@ -1,17 +1,7 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
+// Legacy route consolidated into Orders (Task 01B.70). Redirect on the server so the browser
+// never downloads and renders an intermediate page.
 export default function TiffinRedirectPage() {
-  const router = useRouter();
-  useEffect(() => {
-    router.replace("/orders");
-  }, [router]);
-
-  return (
-    <div className="p-12 text-center text-xs font-serif text-[#8E9F89]">
-      Consolidated operational workflow: Redirecting to Orders...
-    </div>
-  );
+  redirect("/orders");
 }

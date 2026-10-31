@@ -223,7 +223,7 @@ export async function GET(request: NextRequest) {
     const rows: (string | number)[][] = [
       ["Ravinarayan PG Guesthouse - Executive Operations & Financial Summary"],
       ["Generated At", new Date().toISOString(), "ISO-8601 Timestamp"],
-      ["Prepared For", "Dr. Ravinder Gulia - Owner", "Super Admin"],
+      ["Prepared For", user.fullName, user.role],
       ["Reporting Period", `${startDate} to ${endDate}`, `Division: ${division}`],
       [],
       ["SECTION", "METRIC", "VALUE", "UNIT / NOTES"],

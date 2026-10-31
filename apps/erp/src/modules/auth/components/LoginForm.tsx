@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, User, Eye, EyeOff, AlertCircle, ArrowUpRight, Loader2, Shield, KeyRound, CheckCircle2 } from "lucide-react";
+import { Lock, User, Eye, EyeOff, AlertCircle, ArrowUpRight, Shield, KeyRound, CheckCircle2 } from "lucide-react";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 function sanitizeNextUrl(rawUrl: string | null): string {
   if (!rawUrl) return "/dashboard";
@@ -70,9 +71,18 @@ export function LoginForm() {
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
+  // Until hydration the forms cannot be submitted (buttons disabled, which also blocks Enter), so a
+  // native submission can never send credentials; method="post" keeps them out of URLs regardless.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+
+  // One request per intentional submit: state updates are async, so a ref blocks a double Enter/click.
+  const inFlight = useRef(false);
+
   // Handle Step 1: Username/Email + Password
   const handlePrimaryLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (inFlight.current) return;
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -82,6 +92,7 @@ export function LoginForm() {
       return;
     }
 
+    inFlight.current = true;
     setIsSubmittingLogin(true);
     setLoginPhase("SIGNING_IN");
 
@@ -107,6 +118,7 @@ export function LoginForm() {
       clearTimeout(phaseTimer);
 
       if (!response.ok) {
+        inFlight.current = false;
         setLoginPhase("IDLE");
         setErrorMessage(data.error || "Invalid username or password. Please verify your credentials.");
         setIsSubmittingLogin(false);
@@ -119,12 +131,11 @@ export function LoginForm() {
         setMaskedEmail(data.emailMasked);
         setResendCooldown(60);
 
-        // Brief affirmative transition before displaying OTP input
-        setTimeout(() => {
-          setStep("OTP");
-          setIsSubmittingLogin(false);
-          setLoginPhase("IDLE");
-        }, 350);
+        // Show the code field immediately (no artificial transition delay).
+        inFlight.current = false;
+        setStep("OTP");
+        setIsSubmittingLogin(false);
+        setLoginPhase("IDLE");
         return;
       }
 
@@ -133,6 +144,7 @@ export function LoginForm() {
       router.replace(nextUrl);
     } catch (err) {
       clearTimeout(phaseTimer);
+      inFlight.current = false;
       setLoginPhase("IDLE");
       console.error("Login request error:", err);
       setErrorMessage("Unable to connect to the authentication service. Please check your network connection.");
@@ -152,6 +164,8 @@ export function LoginForm() {
       return;
     }
 
+    if (inFlight.current) return;
+    inFlight.current = true;
     setIsVerifyingOtp(true);
 
     try {
@@ -170,15 +184,21 @@ export function LoginForm() {
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        inFlight.current = false;
         setErrorMessage(data.error || "Invalid verification code. Please check and try again.");
         setIsVerifyingOtp(false);
         return;
       }
 
-      // Verification succeeded: navigate cleanly to destination
-      router.replace(nextUrl);
+      // Verification succeeded: navigate cleanly to destination. inFlight stays set so the
+      // consumed code cannot be resubmitted while the next page loads. Delivery staff go straight
+      // to their run sheet instead of rendering the dashboard only to be redirected from it.
+      const landing =
+        !searchParams.get("next") && data.user?.role === "DELIVERY_PERSON" ? "/delivery" : nextUrl;
+      router.replace(landing);
     } catch (err) {
       console.error("OTP verification error:", err);
+      inFlight.current = false;
       setErrorMessage("Unable to verify code. Please check your network connection.");
       setIsVerifyingOtp(false);
     }
@@ -384,7 +404,7 @@ export function LoginForm() {
 
         {/* Step 1: Login Form */}
         {step === "LOGIN" && (
-          <form onSubmit={handlePrimaryLogin} className="w-full space-y-4 sm:space-y-4.5" noValidate>
+          <form method="post" onSubmit={handlePrimaryLogin} className="w-full space-y-4 sm:space-y-4.5" noValidate>
             <div>
               <label
                 htmlFor="identifier"
@@ -467,17 +487,17 @@ export function LoginForm() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isSubmittingLogin}
+                disabled={!hydrated || isSubmittingLogin}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-75 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
                 {loginPhase === "SIGNING_IN" ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
+                    <BikeLoader inline tone="light" label="Working" />
                     <span>Signing in…</span>
                   </>
                 ) : loginPhase === "SENDING_CODE" ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#D4AF37]" />
+                    <BikeLoader inline tone="light" label="Working" />
                     <span>Sending verification code…</span>
                   </>
                 ) : loginPhase === "CODE_SENT" ? (
@@ -504,7 +524,7 @@ export function LoginForm() {
 
         {/* Step 2: OTP Verification Form */}
         {step === "OTP" && (
-          <form onSubmit={handleOtpVerify} className="w-full space-y-4 sm:space-y-4.5" noValidate>
+          <form method="post" onSubmit={handleOtpVerify} className="w-full space-y-4 sm:space-y-4.5" noValidate>
             <div>
               <label
                 htmlFor="otp"
@@ -542,12 +562,12 @@ export function LoginForm() {
             <div className="pt-2 space-y-3">
               <button
                 type="submit"
-                disabled={isVerifyingOtp || isResendingOtp || otp.length !== 6}
+                disabled={!hydrated || isVerifyingOtp || isResendingOtp || otp.length !== 6}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
                 {isVerifyingOtp ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
+                    <BikeLoader inline tone="light" label="Working" />
                     <span>Verifying code…</span>
                   </>
                 ) : (
@@ -567,7 +587,7 @@ export function LoginForm() {
                 >
                   {isResendingOtp ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#654735]" />
+                      <BikeLoader inline tone="forest" label="Sending new code" />
                       <span>Sending new code…</span>
                     </>
                   ) : resendCooldown > 0 ? (
@@ -596,7 +616,7 @@ export function LoginForm() {
 
         {/* Step 3: Forgot Password Form */}
         {step === "FORGOT" && (
-          <form onSubmit={handleForgotPassword} className="w-full space-y-4 sm:space-y-4.5" noValidate>
+          <form method="post" onSubmit={handleForgotPassword} className="w-full space-y-4 sm:space-y-4.5" noValidate>
             <div>
               <label
                 htmlFor="forgotIdentifier"
@@ -628,12 +648,12 @@ export function LoginForm() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isSubmittingForgot}
+                disabled={!hydrated || isSubmittingForgot}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
                 {isSubmittingForgot ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
+                    <BikeLoader inline tone="light" label="Working" />
                     <span>Sending Recovery Link...</span>
                   </>
                 ) : (
@@ -658,7 +678,7 @@ export function LoginForm() {
 
         {/* Step 4: Reset Password Form (token from email link) */}
         {step === "RESET" && (
-          <form onSubmit={handleResetPassword} className="w-full space-y-4 sm:space-y-4.5" noValidate>
+          <form method="post" onSubmit={handleResetPassword} className="w-full space-y-4 sm:space-y-4.5" noValidate>
             <div>
               <label
                 htmlFor="newPassword"
@@ -724,12 +744,12 @@ export function LoginForm() {
             <div className="pt-2 space-y-2">
               <button
                 type="submit"
-                disabled={isSubmittingReset}
+                disabled={!hydrated || isSubmittingReset}
                 className="w-full inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] active:bg-[#121A15] text-white text-sm font-sans font-bold tracking-wider uppercase transition-all shadow-md hover:shadow-lg shadow-[#1A2E20]/20 disabled:opacity-60 disabled:cursor-not-allowed group focus:outline-none focus:ring-2 focus:ring-[#B58A57] focus:ring-offset-2"
               >
                 {isSubmittingReset ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-[#C89F6B]" />
+                    <BikeLoader inline tone="light" label="Working" />
                     <span>Updating Password...</span>
                   </>
                 ) : (

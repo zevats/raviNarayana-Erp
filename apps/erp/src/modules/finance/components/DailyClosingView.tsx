@@ -26,6 +26,7 @@ import {
   PaymentMethod,
 } from "@/types";
 import { toLocalDateString } from "../utils/dateUtils";
+import { useHasPermission } from "@/components/auth/CurrentUserContext";
 
 interface DailyClosingViewProps {
   onMutationSuccess?: (message: string) => void;
@@ -36,6 +37,8 @@ export function DailyClosingView({
   onMutationSuccess,
   onMutationError,
 }: DailyClosingViewProps) {
+  // Draft, finalize and reopen require finance.manage (Owner); the server enforces this too.
+  const canManageFinance = useHasPermission("finance.manage");
   const [selectedDate, setSelectedDate] = useState<string>(toLocalDateString());
   const [selectedDivision, setSelectedDivision] = useState<ClosingDivision>("COMBINED");
   const [preview, setPreview] = useState<DailyClosingPreview | null>(null);
@@ -603,7 +606,11 @@ export function DailyClosingView({
           </div>
 
           <div className="flex items-center gap-3">
-            {!isFinalized ? (
+            {!canManageFinance ? (
+              <p className="text-xs text-[#5C6B5A]">
+                Closing the day is done by the Owner. You can review the preview here.
+              </p>
+            ) : !isFinalized ? (
               <>
                 <button
                   type="button"

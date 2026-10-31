@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -58,6 +59,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/delivery/tasks", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { error: error.message || "Failed to load delivery tasks." },
@@ -91,6 +94,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/delivery/tasks", error);
+    if (dbError) return dbError;
 
     return NextResponse.json(
       { error: error.message || "Failed to create external delivery task." },

@@ -2,7 +2,8 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { isValidRole } from "../authorization/permissions";
+import { isValidRole, isAssignableRole } from "../authorization/permissions";
+import { isRetiredDemoPassword } from "../database/env";
 import { recordAuditEventAsync } from "../audit/audit";
 import { getEmailAdapter } from "../notifications/emailAdapter";
 import { AuthenticatedUser, StaffRole, StaffUser } from "@/types";
@@ -175,6 +176,9 @@ export async function createStaffUser(
   if (!isValidRole(role)) {
     throw new Error(`Invalid role '${role}'.`);
   }
+  if (!isAssignableRole(role)) {
+    throw new Error(`Role '${role}' is retired and can no longer be assigned. Use Owner, Manager or Delivery.`);
+  }
 
   // Privilege escalation protection: only Super Administrator can assign SUPER_ADMIN
   if (role === "SUPER_ADMIN" && actor.role !== "SUPER_ADMIN") {
@@ -255,6 +259,9 @@ export async function updateStaffRole(
 
   if (!isValidRole(newRole)) {
     throw new Error(`Invalid role '${newRole}'.`);
+  }
+  if (!isAssignableRole(newRole)) {
+    throw new Error(`Role '${newRole}' is retired and can no longer be assigned. Use Owner, Manager or Delivery.`);
   }
 
   // Privilege escalation protection: only Super Administrator can assign SUPER_ADMIN
@@ -401,8 +408,8 @@ export async function resetStaffPassword(
     throw new Error("Password must be at least 12 characters long.");
   }
 
-  if (process.env.NODE_ENV === "production" && newPassword === "Ravinarayan@2026") {
-    throw new Error("Demonstration password cannot be used in production.");
+  if (isRetiredDemoPassword(newPassword)) {
+    throw new Error("This password is a retired, publicly known demonstration password and cannot be used.");
   }
 
   const target = await db.queryOne<{ id: string; username: string }>("SELECT id, username FROM staff_users WHERE id = ?", [targetUserId]);

@@ -30,6 +30,9 @@ export const ALL_PERMISSIONS: readonly Permission[] = [
   "residents.read",
   "residents.manage",
   "finance.read",
+  // Day-to-day entry of rent charges/payments, security deposits and expenses (Owner + Manager).
+  "finance.record",
+  // Owner-level finance authority: reversals, closings, invoices, settlements, billing runs.
   "finance.manage",
   "tiffin.read",
   "tiffin.manage",
@@ -57,6 +60,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     "residents.read",
     "residents.manage",
     "finance.read",
+    "finance.record",
     "finance.manage",
     "tiffin.read",
     "tiffin.manage",
@@ -74,6 +78,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
     "residents.read",
     "residents.manage",
     "finance.read",
+    "finance.record",
     "tiffin.read",
     "tiffin.manage",
     "kitchen.read",
@@ -87,6 +92,7 @@ export const ROLE_PERMISSIONS: Record<StaffRole, ReadonlySet<Permission>> = {
   ACCOUNTANT: new Set<Permission>([
     "residents.read",
     "finance.read",
+    "finance.record",
     "finance.manage",
     "audit.read",
   ]),
@@ -127,6 +133,16 @@ export function getRolePermissions(role: string | undefined | null): ReadonlySet
     return new Set();
   }
   return ROLE_PERMISSIONS[role as StaffRole] || new Set();
+}
+
+/**
+ * Whether a role may be newly assigned (staff creation or role change). Only the Task 01B.69
+ * canonical roles qualify. Legacy roles (ACCOUNTANT, KITCHEN_OPERATIONS) stay valid for existing
+ * accounts, which keep their permissions, but cannot be granted again.
+ */
+export function isAssignableRole(role: string | undefined | null): role is StaffRole {
+  if (!role) return false;
+  return CANONICAL_ROLES.includes(role as StaffRole);
 }
 
 /**

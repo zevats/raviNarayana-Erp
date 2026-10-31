@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useMemo } from "react";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import {
   FileText,
   Search,
@@ -21,6 +22,8 @@ import { formatINR } from "../utils/formatUtils";
 import { CreateInvoiceModal } from "./modals/CreateInvoiceModal";
 import { PrintableInvoiceModal } from "./modals/PrintableInvoiceModal";
 import { AllocatePaymentModal } from "./modals/AllocatePaymentModal";
+import { useHasPermission } from "@/components/auth/CurrentUserContext";
+import { businessToday } from "@/lib/businessDate";
 
 interface InvoiceLedgerViewProps {
   residents: ResidentListItem[];
@@ -33,8 +36,6 @@ export function InvoiceLedgerView({
   onOpenRecordPayment,
   onRefreshParentFinance,
 }: InvoiceLedgerViewProps) {
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
@@ -45,6 +46,8 @@ export function InvoiceLedgerView({
   const [categoryFilter, setCategoryFilter] = useState<"ALL" | "RESIDENT" | "TIFFIN">("ALL");
 
   // Modals
+  // Create/issue/allocate/cancel require finance.manage (Owner); the server enforces this too.
+  const canManageFinance = useHasPermission("finance.manage");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
@@ -56,31 +59,34 @@ export function InvoiceLedgerView({
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, setCancelling] = useState(false);
 
-  const fetchInvoices = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (statusFilter !== "ALL") params.set("status", statusFilter);
-      if (typeFilter !== "ALL") params.set("invoiceType", typeFilter);
-      if (categoryFilter !== "ALL") params.set("invoiceCategory", categoryFilter);
-      params.set("limit", "100");
-
-      const res = await fetch(`/api/finance/invoices?${params.toString()}`);
+  // Cached per filter combination: switching tabs or returning to Finance reuses the list;
+  // invoice actions invalidate it (and dependent summaries) so the next render is fresh.
+  const invoiceParams = new URLSearchParams();
+  if (statusFilter !== "ALL") invoiceParams.set("status", statusFilter);
+  if (typeFilter !== "ALL") invoiceParams.set("invoiceType", typeFilter);
+  if (categoryFilter !== "ALL") invoiceParams.set("invoiceCategory", categoryFilter);
+  invoiceParams.set("limit", "100");
+  const invoiceKey = `/api/finance/invoices?${invoiceParams.toString()}`;
+  const {
+    data: invoiceData,
+    error: invoiceLoadError,
+    isLoading: invoicesLoading,
+    isRevalidating: invoicesRevalidating,
+    refetch: refetchInvoices,
+  } = useErpQuery<Invoice[]>(
+    invoiceKey,
+    async () => {
+      const res = await fetch(invoiceKey, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load invoices.");
+      return data.invoices || [];
+    },
+    { ttl: 60000, tags: ["finance", "invoices"] }
+  );
+  const invoices = invoiceData ?? [];
+  const loading = invoicesLoading && !invoiceData;
 
-      setInvoices(data.invoices || []);
-    } catch (err: any) {
-      setError(err.message || "Failed to load invoices.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchInvoices();
-  }, [statusFilter, typeFilter, categoryFilter]);
+  const fetchInvoices = () => invalidateErpCache(["invoices", "dashboard"]);
 
   // Client-side search filtering
   const filteredInvoices = useMemo(() => {
@@ -102,7 +108,7 @@ export function InvoiceLedgerView({
   const totalCollected = filteredInvoices.reduce((sum, i) => sum + i.amountPaid, 0);
   const totalDue = filteredInvoices.reduce((sum, i) => sum + i.balanceDue, 0);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = businessToday();
   const ageingBuckets = useMemo(() => {
     let current = 0;
     let days1To30 = 0;
@@ -219,11 +225,11 @@ export function InvoiceLedgerView({
         </div>
       )}
 
-      {error && (
+      {(error || (invoiceLoadError && !invoiceData)) && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-red-800 text-xs">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-red-600" />
-            <span>{error}</span>
+            <span>{error || invoiceLoadError?.message || "Failed to load invoices."}</span>
           </div>
           <button
             onClick={() => setError(null)}
@@ -369,16 +375,17 @@ export function InvoiceLedgerView({
           </div>
 
           <button
-            onClick={fetchInvoices}
-            disabled={loading}
+            onClick={() => refetchInvoices()}
+            disabled={invoicesLoading || invoicesRevalidating}
             className="p-1.5 rounded-xl border border-[#8E9F89]/30 hover:bg-[#FAF8F5] text-[#5A6C5E] transition-colors"
             title="Reload invoices"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-[#B58A57]" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${invoicesLoading || invoicesRevalidating ? "animate-spin text-[#B58A57]" : ""}`} />
           </button>
         </div>
 
-        {/* Primary Action Button */}
+        {/* Primary Action Button (invoices are Owner-level: finance.manage) */}
+        {canManageFinance && (
         <button
           onClick={() => setIsCreateOpen(true)}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-xl text-xs font-semibold transition-colors shadow-2xs shrink-0"
@@ -386,6 +393,7 @@ export function InvoiceLedgerView({
           <Plus className="w-4 h-4 text-[#B58A57]" />
           Generate Invoice
         </button>
+        )}
       </div>
 
       {/* Invoices Table */}
@@ -407,6 +415,7 @@ export function InvoiceLedgerView({
                 ? "No billing records match your current filters. Clear filters to see all invoices."
                 : "Generate your first resident invoice to begin tracking structured bills, tax breakdowns, and payment allocations."}
             </p>
+            {canManageFinance && (
             <button
               onClick={() => setIsCreateOpen(true)}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1A2E20] text-white rounded-xl text-xs font-semibold hover:bg-[#263B2D] transition-colors shadow-2xs"
@@ -414,6 +423,7 @@ export function InvoiceLedgerView({
               <Plus className="w-3.5 h-3.5 text-[#B58A57]" />
               Generate First Invoice
             </button>
+            )}
           </div>
         ) : (
           <>
@@ -489,7 +499,7 @@ export function InvoiceLedgerView({
                         <span>Print Bill</span>
                       </button>
 
-                      {isDraft && (
+                      {canManageFinance && isDraft && (
                         <button
                           onClick={() => handleIssueInvoice(inv.id)}
                           className="px-3 py-1.5 bg-[#B58A57] hover:bg-[#9E7443] text-white rounded-lg text-xs font-semibold shadow-2xs"
@@ -498,7 +508,7 @@ export function InvoiceLedgerView({
                         </button>
                       )}
 
-                      {(inv.status === "ISSUED" || isPartiallyPaid) && (
+                      {canManageFinance && (inv.status === "ISSUED" || isPartiallyPaid) && (
                         <button
                           onClick={() => openAllocateModal(inv)}
                           className="px-3 py-1.5 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs"
@@ -508,7 +518,7 @@ export function InvoiceLedgerView({
                         </button>
                       )}
 
-                      {inv.amountPaid === 0 && !isCancelled && (
+                      {canManageFinance && inv.amountPaid === 0 && !isCancelled && (
                         <button
                           onClick={() => {
                             setCancelTargetId(inv.id);
@@ -652,7 +662,7 @@ export function InvoiceLedgerView({
                           </button>
 
                           {/* Issue (Drafts only) */}
-                          {isDraft && (
+                          {canManageFinance && isDraft && (
                             <button
                               onClick={() => handleIssueInvoice(inv.id)}
                               className="px-2 py-1 bg-[#B58A57] hover:bg-[#9E7443] text-white rounded-lg text-[11px] font-semibold transition-colors"
@@ -663,7 +673,7 @@ export function InvoiceLedgerView({
                           )}
 
                           {/* Allocate Payment (Issued or Partially Paid) */}
-                          {(inv.status === "ISSUED" || isPartiallyPaid) && (
+                          {canManageFinance && (inv.status === "ISSUED" || isPartiallyPaid) && (
                             <button
                               onClick={() => openAllocateModal(inv)}
                               className="px-2 py-1 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1"
@@ -675,7 +685,7 @@ export function InvoiceLedgerView({
                           )}
 
                           {/* Cancel Invoice */}
-                          {inv.amountPaid === 0 && !isCancelled && (
+                          {canManageFinance && inv.amountPaid === 0 && !isCancelled && (
                             <button
                               onClick={() => {
                                 setCancelTargetId(inv.id);

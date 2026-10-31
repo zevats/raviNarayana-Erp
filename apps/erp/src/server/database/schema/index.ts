@@ -1239,3 +1239,74 @@ export const driverCashHandovers = pgTable(
 
 
 
+// -----------------------------------------------------------------------------
+// Orders (migration 0012, ISSUE-008 / ISSUE-024)
+// -----------------------------------------------------------------------------
+// orders.status is the order lifecycle only; delivery progress stays on delivery_tasks.
+export const orders = pgTable(
+  "orders",
+  {
+    id: text("id").primaryKey(),
+    orderType: text("order_type").notNull(),
+    status: text("status").notNull().default("CONFIRMED"),
+    serviceDate: text("service_date").notNull(),
+    mealType: text("meal_type").notNull(),
+    customerId: text("customer_id").references(() => tiffinCustomers.id, { onDelete: "restrict" }),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone"),
+    deliveryAddress: text("delivery_address"),
+    deliveryTaskId: text("delivery_task_id")
+      .unique()
+      .references(() => deliveryTasks.id, { onDelete: "restrict" }),
+    financialTransactionId: text("financial_transaction_id")
+      .unique()
+      .references(() => financialTransactions.id, { onDelete: "restrict" }),
+    totalQuantity: integer("total_quantity").notNull(),
+    totalAmount: integer("total_amount").notNull(),
+    paymentMethod: text("payment_method"),
+    notes: text("notes"),
+    idempotencyKey: text("idempotency_key").unique(),
+    source: text("source").notNull().default("APP"),
+    createdBy: text("created_by").references(() => staffUsers.id),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_orders_service_date").on(table.serviceDate),
+    index("idx_orders_customer").on(table.customerId),
+    index("idx_orders_customer_phone").on(table.customerPhone),
+    index("idx_orders_type_date").on(table.orderType, table.serviceDate),
+    check("chk_orders_type", sql`${table.orderType} IN ('DELIVERY', 'DINE_IN')`),
+    check("chk_orders_status", sql`${table.status} IN ('CONFIRMED', 'COMPLETED', 'CANCELLED')`),
+    check("chk_orders_meal", sql`${table.mealType} IN ('BREAKFAST', 'LUNCH', 'DINNER')`),
+    check("chk_orders_source", sql`${table.source} IN ('APP', 'LEGACY_BACKFILL')`),
+    check("chk_orders_qty", sql`${table.totalQuantity} > 0`),
+    check("chk_orders_amount", sql`${table.totalAmount} >= 0`),
+  ]
+);
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    lineNo: integer("line_no").notNull(),
+    productId: text("product_id").references(() => tiffinProducts.id, { onDelete: "set null" }),
+    productName: text("product_name").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPrice: integer("unit_price").notNull(),
+    lineTotal: integer("line_total").notNull(),
+    deliveredQuantity: integer("delivered_quantity"),
+    undeliveredReason: text("undelivered_reason"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("order_items_order_line_unique").on(table.orderId, table.lineNo),
+    index("idx_order_items_product").on(table.productId),
+    check("chk_order_items_qty", sql`${table.quantity} > 0`),
+    check("chk_order_items_price", sql`${table.unitPrice} >= 0`),
+    check("chk_order_items_total", sql`${table.lineTotal} = ${table.quantity} * ${table.unitPrice}`),
+  ]
+);

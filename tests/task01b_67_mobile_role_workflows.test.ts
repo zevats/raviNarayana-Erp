@@ -394,7 +394,9 @@ async function runTask67Tests() {
   );
   assert(
     dashboardContent.includes('href="/finance"') &&
-    dashboardContent.includes('href="/kitchen"') &&
+    // Kitchen/Tiffin were consolidated into /orders (Task 01B.70); links now point there directly.
+    dashboardContent.includes('href="/orders"') &&
+    !dashboardContent.includes('href="/kitchen"') &&
     dashboardContent.includes('href="/delivery"'),
     "Dashboard quick action bar links directly to authorized operational destinations"
   );

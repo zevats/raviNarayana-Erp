@@ -195,6 +195,16 @@ export async function acquireClosingExclusiveLock(
 }
 
 /**
+ * Transaction-scoped advisory lock on an arbitrary ledger key (resident balance, idempotency key).
+ * Always acquired after the closing locks, so the global order stays closing -> ledger key.
+ * No-op on SQLite, where write transactions are already serialized.
+ */
+export async function acquireLedgerKeyLock(tx: AsyncDb, key: string): Promise<void> {
+  if (!tx.isPostgres) return;
+  await tx.query("SELECT pg_advisory_xact_lock(4202, hashtext($1))", [key]);
+}
+
+/**
  * Shared, race-safe closing lock policy.
  * Asserts that the transactionDate is not locked by a FINALIZED daily cashbook closing
  * for the given division (or COMBINED).
@@ -262,7 +272,7 @@ export async function recordRentCharge(
   }
   const db = dbInstance ?? getAsyncDb();
 
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.rent_charge_recorded" });
+  requirePermission(actor, "finance.record", { ip: clientIp, action: "finance.rent_charge_recorded" });
 
   const residentId = input.residentId?.trim();
   const amount = Number(input.amount);
@@ -282,26 +292,29 @@ export async function recordRentCharge(
     throw new Error("Billing period (e.g. 'October 2026') is required.");
   }
 
-  // Idempotency check: if already processed, return existing or reject mismatch
+  // Idempotency: a replayed key returns the original row; a key reused with a different
+  // payload is rejected. Checked before the transaction and again under the key lock inside it.
+  const replayIdempotent = (existing: any): FinancialTransaction => {
+    if (
+      existing.transaction_type !== "RENT_CHARGE" ||
+      Number(existing.amount) !== amount ||
+      existing.resident_id !== residentId ||
+      (billingPeriod && existing.billing_period !== billingPeriod)
+    ) {
+      throw new Error(
+        `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
+      );
+    }
+    return mapRowToTransaction(existing);
+  };
   if (idempotencyKey) {
     const existing = await db.queryOne<any>(
       "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
       [idempotencyKey]
     );
-    if (existing) {
-      if (
-        existing.transaction_type !== "RENT_CHARGE" ||
-        Number(existing.amount) !== amount ||
-        existing.resident_id !== residentId ||
-        (billingPeriod && existing.billing_period !== billingPeriod)
-      ) {
-        throw new Error(
-          `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
-        );
-      }
-      return mapRowToTransaction(existing);
-    }
+    if (existing) return replayIdempotent(existing);
   }
+  let replayed: any = null;
 
   // Validate resident exists
   const resident = await db.queryOne<{ id: string; fullName: string }>(
@@ -329,6 +342,13 @@ export async function recordRentCharge(
 
   await db.transaction(async (tx) => {
     await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
+    if (idempotencyKey) {
+      // Concurrent duplicates serialize here; the later one replays the committed row.
+      await acquireLedgerKeyLock(tx, `idempotency:${idempotencyKey}`);
+      replayed = await tx.queryOne<any>("SELECT * FROM financial_transactions WHERE idempotency_key = ?", [idempotencyKey]);
+      if (replayed) return;
+    }
 
     await tx.execute(`
       INSERT INTO financial_transactions (
@@ -374,6 +394,7 @@ export async function recordRentCharge(
     }, tx);
   });
 
+  if (replayed) return replayIdempotent(replayed);
   return (await getTransactionById(actor, id, db))!;
 }
 
@@ -398,7 +419,7 @@ export async function recordRentPayment(
   }
   const db = dbInstance ?? getAsyncDb();
 
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.rent_payment_recorded" });
+  requirePermission(actor, "finance.record", { ip: clientIp, action: "finance.rent_payment_recorded" });
 
   const residentId = input.residentId?.trim();
   const amount = Number(input.amount);
@@ -416,26 +437,29 @@ export async function recordRentPayment(
     throw new Error("Valid transaction date in YYYY-MM-DD format is required.");
   }
 
-  // Idempotency check: if already processed, return existing or reject mismatch
+  // Idempotency: a replayed key returns the original row; a key reused with a different
+  // payload is rejected. Checked before the transaction and again under the key lock inside it.
+  const replayIdempotent = (existing: any): FinancialTransaction => {
+    if (
+      existing.transaction_type !== "RENT_PAYMENT" ||
+      Number(existing.amount) !== amount ||
+      existing.resident_id !== residentId ||
+      existing.payment_method !== paymentMethod
+    ) {
+      throw new Error(
+        `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
+      );
+    }
+    return mapRowToTransaction(existing);
+  };
   if (idempotencyKey) {
     const existing = await db.queryOne<any>(
       "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
       [idempotencyKey]
     );
-    if (existing) {
-      if (
-        existing.transaction_type !== "RENT_PAYMENT" ||
-        Number(existing.amount) !== amount ||
-        existing.resident_id !== residentId ||
-        existing.payment_method !== paymentMethod
-      ) {
-        throw new Error(
-          `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
-        );
-      }
-      return mapRowToTransaction(existing);
-    }
+    if (existing) return replayIdempotent(existing);
   }
+  let replayed: any = null;
 
   // Validate resident exists
   const resident = await db.queryOne<{ id: string; fullName: string }>(
@@ -471,6 +495,23 @@ export async function recordRentPayment(
 
   await db.transaction(async (tx) => {
     await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
+    if (idempotencyKey) {
+      // Concurrent duplicates serialize here; the later one replays the committed row.
+      await acquireLedgerKeyLock(tx, `idempotency:${idempotencyKey}`);
+      replayed = await tx.queryOne<any>("SELECT * FROM financial_transactions WHERE idempotency_key = ?", [idempotencyKey]);
+      if (replayed) return;
+    }
+
+    // Overpayment guard under a per-resident lock: concurrent payments for the same resident
+    // serialize here, so the balance read below includes every committed payment.
+    await acquireLedgerKeyLock(tx, `resident:${residentId}`);
+    const lockedBalance = await getResidentRentBalance(residentId, tx);
+    if (amount > lockedBalance) {
+      throw new Error(
+        `Payment amount (₹${amount.toLocaleString("en-IN")}) exceeds current outstanding rent balance (₹${Math.max(0, lockedBalance).toLocaleString("en-IN")}). Payments cannot exceed outstanding billed charges.`
+      );
+    }
 
     await tx.execute(`
       INSERT INTO financial_transactions (
@@ -518,6 +559,7 @@ export async function recordRentPayment(
     }, tx);
   });
 
+  if (replayed) return replayIdempotent(replayed);
   return (await getTransactionById(actor, id, db))!;
 }
 
@@ -542,7 +584,7 @@ export async function recordSecurityDeposit(
   }
   const db = dbInstance ?? getAsyncDb();
 
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.security_deposit_recorded" });
+  requirePermission(actor, "finance.record", { ip: clientIp, action: "finance.security_deposit_recorded" });
 
   const residentId = input.residentId?.trim();
   const amount = Number(input.amount);
@@ -560,26 +602,29 @@ export async function recordSecurityDeposit(
     throw new Error("Valid transaction date in YYYY-MM-DD format is required.");
   }
 
-  // Idempotency check: if already processed, return existing or reject mismatch
+  // Idempotency: a replayed key returns the original row; a key reused with a different
+  // payload is rejected. Checked before the transaction and again under the key lock inside it.
+  const replayIdempotent = (existing: any): FinancialTransaction => {
+    if (
+      existing.transaction_type !== "SECURITY_DEPOSIT" ||
+      Number(existing.amount) !== amount ||
+      existing.resident_id !== residentId ||
+      existing.payment_method !== paymentMethod
+    ) {
+      throw new Error(
+        `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
+      );
+    }
+    return mapRowToTransaction(existing);
+  };
   if (idempotencyKey) {
     const existing = await db.queryOne<any>(
       "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
       [idempotencyKey]
     );
-    if (existing) {
-      if (
-        existing.transaction_type !== "SECURITY_DEPOSIT" ||
-        Number(existing.amount) !== amount ||
-        existing.resident_id !== residentId ||
-        existing.payment_method !== paymentMethod
-      ) {
-        throw new Error(
-          `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
-        );
-      }
-      return mapRowToTransaction(existing);
-    }
+    if (existing) return replayIdempotent(existing);
   }
+  let replayed: any = null;
 
   const resident = await db.queryOne<{ id: string; fullName: string }>(
     "SELECT id, full_name as fullName FROM residents WHERE id = ?",
@@ -605,6 +650,13 @@ export async function recordSecurityDeposit(
 
   await db.transaction(async (tx) => {
     await assertClosingDateNotFinalized(tx, transactionDate, "PG");
+
+    if (idempotencyKey) {
+      // Concurrent duplicates serialize here; the later one replays the committed row.
+      await acquireLedgerKeyLock(tx, `idempotency:${idempotencyKey}`);
+      replayed = await tx.queryOne<any>("SELECT * FROM financial_transactions WHERE idempotency_key = ?", [idempotencyKey]);
+      if (replayed) return;
+    }
 
     await tx.execute(`
       INSERT INTO financial_transactions (
@@ -652,6 +704,7 @@ export async function recordSecurityDeposit(
     }, tx);
   });
 
+  if (replayed) return replayIdempotent(replayed);
   return (await getTransactionById(actor, id, db))!;
 }
 
@@ -676,7 +729,7 @@ export async function recordExpense(
   }
   const db = dbInstance ?? getAsyncDb();
 
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.expense_recorded" });
+  requirePermission(actor, "finance.record", { ip: clientIp, action: "finance.expense_recorded" });
 
   const category = input.category;
   const amount = Number(input.amount);
@@ -700,26 +753,29 @@ export async function recordExpense(
     throw new Error("Expense description of at least 3 characters is required.");
   }
 
-  // Idempotency check: if already processed, return existing or reject mismatch
+  // Idempotency: a replayed key returns the original row; a key reused with a different
+  // payload is rejected. Checked before the transaction and again under the key lock inside it.
+  const replayIdempotent = (existing: any): FinancialTransaction => {
+    if (
+      existing.transaction_type !== "EXPENSE" ||
+      Number(existing.amount) !== amount ||
+      existing.category !== category ||
+      existing.payment_method !== paymentMethod
+    ) {
+      throw new Error(
+        `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
+      );
+    }
+    return mapRowToTransaction(existing);
+  };
   if (idempotencyKey) {
     const existing = await db.queryOne<any>(
       "SELECT * FROM financial_transactions WHERE idempotency_key = ?",
       [idempotencyKey]
     );
-    if (existing) {
-      if (
-        existing.transaction_type !== "EXPENSE" ||
-        Number(existing.amount) !== amount ||
-        existing.category !== category ||
-        existing.payment_method !== paymentMethod
-      ) {
-        throw new Error(
-          `Idempotency key '${idempotencyKey}' was already used with a different transaction payload. Mismatched payload reuse is strictly rejected.`
-        );
-      }
-      return mapRowToTransaction(existing);
-    }
+    if (existing) return replayIdempotent(existing);
   }
+  let replayed: any = null;
 
   const id = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
@@ -727,6 +783,13 @@ export async function recordExpense(
   await db.transaction(async (tx) => {
     const expenseDivision = category === "GROCERY" || category === "KITCHEN_SUPPLIES" ? "TIFFIN" : "PG";
     await assertClosingDateNotFinalized(tx, transactionDate, expenseDivision);
+
+    if (idempotencyKey) {
+      // Concurrent duplicates serialize here; the later one replays the committed row.
+      await acquireLedgerKeyLock(tx, `idempotency:${idempotencyKey}`);
+      replayed = await tx.queryOne<any>("SELECT * FROM financial_transactions WHERE idempotency_key = ?", [idempotencyKey]);
+      if (replayed) return;
+    }
 
     await tx.execute(`
       INSERT INTO financial_transactions (
@@ -772,6 +835,7 @@ export async function recordExpense(
     }, tx);
   });
 
+  if (replayed) return replayIdempotent(replayed);
   return (await getTransactionById(actor, id, db))!;
 }
 
@@ -1154,12 +1218,29 @@ export async function reverseTransaction(
   await db.transaction(async (tx) => {
     await assertClosingDateNotFinalized(tx, today, reversalDivision);
 
-    // 1. Mark original reversed
-    await tx.execute(`
+    if (current.residentId) {
+      // Same lock as rent payments: a charge cannot be reversed while a payment against it commits.
+      await acquireLedgerKeyLock(tx, `resident:${current.residentId}`);
+      if (current.transactionType === "RENT_CHARGE") {
+        const lockedBalance = await getResidentRentBalance(current.residentId, tx);
+        if (current.amount > lockedBalance) {
+          throw new Error(
+            `Cannot reverse rent charge of ₹${current.amount.toLocaleString("en-IN")} because payments have already been applied against it. Reverse the corresponding payments first.`
+          );
+        }
+      }
+    }
+
+    // 1. Mark original reversed. The status guard makes concurrent reversals of the same
+    //    transaction mutually exclusive: only one request flips POSTED -> REVERSED.
+    const flipped = await tx.execute(`
       UPDATE financial_transactions
       SET status = 'REVERSED', updated_at = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'POSTED'
     `, [now, transactionId]);
+    if (flipped.changes === 0) {
+      throw new Error(`Transaction '${transactionId}' is already reversed.`);
+    }
 
     // If reversing a RENT_PAYMENT or TIFFIN_PAYMENT, deallocate any linked invoice payments
     if (current.transactionType === "RENT_PAYMENT" || current.transactionType === "TIFFIN_PAYMENT") {

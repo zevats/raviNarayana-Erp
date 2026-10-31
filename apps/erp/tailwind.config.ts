@@ -1,5 +1,15 @@
 import type { Config } from "tailwindcss";
-import { brandColors, brandFonts } from "@ravinarayan/brand";
+import { brandColors, brandFonts, brandTokens } from "@ravinarayan/brand";
+
+// The brand palette plus the remaining brand tokens by their token names (forest.deepest,
+// surface.*, text.*, status.*): the same @ravinarayan/brand values, no new colours.
+const colors = {
+  ...brandColors,
+  forest: { ...brandColors.forest, deepest: brandTokens.colors.forest.deepest },
+  surface: brandTokens.colors.surface,
+  text: brandTokens.colors.text,
+  status: brandTokens.colors.status,
+};
 
 const config: Config = {
   content: [
@@ -10,7 +20,7 @@ const config: Config = {
   ],
   theme: {
     extend: {
-      colors: brandColors,
+      colors,
       fontFamily: {
         sans: ["var(--font-sans)", "Inter", "system-ui", "-apple-system", "sans-serif"],
         serif: ["var(--font-serif)", "Inter", "system-ui", "-apple-system", "sans-serif"],

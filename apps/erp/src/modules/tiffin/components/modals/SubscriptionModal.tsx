@@ -20,6 +20,7 @@ import {
   SubscriptionServiceDays,
 } from "@/types";
 import { formatINR } from "@/modules/finance/utils/formatUtils";
+import { businessToday } from "@/lib/businessDate";
 
 interface SubscriptionModalProps {
   isOpen: boolean;
@@ -82,7 +83,7 @@ export function SubscriptionModal({
         setDeliveryInstructions(subscription.deliveryInstructions || "");
         setNotes(subscription.notes || "");
       } else {
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = businessToday();
         setCustomerId(preselectedCustomerId || (activeCustomers[0]?.id || ""));
         const defaultProd = activeProducts[0];
         setProductId(defaultProd?.id || "");
@@ -230,9 +231,6 @@ export function SubscriptionModal({
               <h2 id="subscription-modal-title" className="text-base sm:text-lg font-bold text-[#1A2E20]">
                 {isEditing ? "Edit Tiffin Subscription" : "Create Tiffin Subscription"}
               </h2>
-              <p className="text-xs text-[#5A6C5E]">
-                Configure meal package, service schedule, delivery address, and agreed pricing.
-              </p>
             </div>
           </div>
           <button

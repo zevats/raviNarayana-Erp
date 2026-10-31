@@ -85,7 +85,7 @@ async function runAllSuites() {
   await asyncDb.execute(
     `INSERT INTO staff_users (id, username, email, full_name, password_hash, role, is_active, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-    [adminId, "perfadmin", "rishabh27kumar2006@gmail.com", "Performance Admin", passwordHash, "SUPER_ADMIN", now, now]
+    [adminId, "perfadmin", "perf.admin@example.com", "Performance Admin", passwordHash, "SUPER_ADMIN", now, now]
   );
 
   // ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ async function runAllSuites() {
   // Render OTP email
   const rendered = renderOtpEmail({
     otp: "849201",
-    recipientEmail: "rishabh27kumar2006@gmail.com",
+    recipientEmail: "perf.admin@example.com",
     expiresInMinutes: 10,
   });
 

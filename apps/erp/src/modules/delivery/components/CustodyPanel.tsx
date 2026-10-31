@@ -1,0 +1,516 @@
+"use client";
+
+import React, { useRef, useState } from "react";
+import { IndianRupee, ShieldCheck, AlertTriangle, X, ChevronRight } from "lucide-react";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { useCurrentUser } from "@/components/auth/CurrentUserContext";
+import { DriverCashHandover, StaffCustodyRow, StaffCustodyCollection } from "@/types";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
+
+const LIVE_MS = 20000;
+const inr = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
+const when = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+
+type Overview = { staff: StaffCustodyRow[]; totals: Omit<StaffCustodyRow, "staffId" | "staffName" | "role" | "status"> };
+type Detail = { custody: StaffCustodyRow; collections: StaffCustodyCollection[]; handovers: DriverCashHandover[] };
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { cache: "no-store" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Could not load custody.");
+  return data as T;
+}
+
+function StatusChip({ status }: { status: string }) {
+  const map: Record<string, [string, string]> = {
+    CLEAR: ["Clear", "bg-emerald-50 text-emerald-800 border-emerald-200"],
+    HOLDING: ["Holding money", "bg-blue-50 text-blue-800 border-blue-200"],
+    AWAITING_ACCEPTANCE: ["Awaiting verification", "bg-amber-50 text-amber-900 border-amber-200"],
+    DISCREPANCY: ["Discrepancy", "bg-red-50 text-red-800 border-red-200"],
+    DECLARED: ["Awaiting verification", "bg-amber-50 text-amber-900 border-amber-200"],
+    ACCEPTED: ["Accepted", "bg-emerald-50 text-emerald-800 border-emerald-200"],
+    DISCREPANCY_FLAGGED: ["Accepted with discrepancy", "bg-red-50 text-red-800 border-red-200"],
+  };
+  const [label, cls] = map[status] || [status, "bg-gray-50 text-gray-700 border-gray-200"];
+  return <span className={`px-2 py-0.5 rounded-full text-[11px] border whitespace-nowrap ${cls}`}>{label}</span>;
+}
+
+/** Handover history rows (shared by the employee view and the detail drawer). */
+function HandoverHistory({ handovers }: { handovers: DriverCashHandover[] }) {
+  if (handovers.length === 0) return <p className="text-xs text-[#8E9F89]">No handovers yet.</p>;
+  return (
+    <ul className="divide-y divide-[#E6E1DA] text-xs">
+      {handovers.map((h) => {
+        const cashShort = h.status === "DECLARED" ? 0 : h.declaredCash - h.acceptedCash;
+        const upiShort = h.status === "DECLARED" ? 0 : (h.declaredUpi || 0) - (h.acceptedUpi || 0);
+        return (
+          <li key={h.id} className="py-2 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-[#1A2E20]">
+                Declared {when(h.createdAt)}
+                {h.declaredByName && h.declaredBy !== h.driverId ? ` by ${h.declaredByName}` : ""}
+              </span>
+              <StatusChip status={h.status} />
+            </div>
+            <div className="font-mono text-[#5D7656]">
+              Cash {inr(h.declaredCash)} · UPI {inr(h.declaredUpi || 0)}
+              {h.status !== "DECLARED" && (
+                <>
+                  {" "}→ received cash {inr(h.acceptedCash)} · UPI {inr(h.acceptedUpi || 0)}
+                </>
+              )}
+            </div>
+            {h.status !== "DECLARED" && (
+              <div className="text-[#8E9F89]">
+                Verified by {h.acceptedByName || "—"} on {when(h.acceptedAt)}
+              </div>
+            )}
+            {(cashShort !== 0 || upiShort !== 0) && (
+              <div className="text-red-800">
+                {cashShort !== 0 && `Cash ${cashShort > 0 ? "short" : "over"} ${inr(Math.abs(cashShort))}. `}
+                {upiShort !== 0 && `UPI not received ${inr(upiShort)}. `}
+                {h.varianceReason ? `Reason: ${h.varianceReason}` : ""}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Employee view: own custody only
+// ---------------------------------------------------------------------------
+/** One employee's own custody: what they hold, declaring it, and their handover history. */
+export function MyCustody({ staffId }: { staffId: string }) {
+  const key = `/api/delivery/custody?staffId=${staffId}`;
+  const q = useErpQuery<Detail>(key, () => getJson<Detail>(key), { ttl: LIVE_MS, tags: ["custody", "handover", "delivery"], pollIntervalMs: LIVE_MS });
+  const [confirming, setConfirming] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const inFlight = useRef(false);
+
+  const c = q.data?.custody;
+  const pending = q.data?.handovers.find((h) => h.status === "DECLARED") || null;
+  const canDeclare = Boolean(c && !pending && (c.cashUndeclared > 0 || c.upiUndeclared > 0));
+
+  const declare = async () => {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/delivery/handover/declare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: note.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not submit the declaration.");
+      setMessage({ ok: true, text: `Declared ${inr(data.handover.declaredCash)} cash and ${inr(data.handover.declaredUpi || 0)} UPI. Hand the cash to the manager.` });
+      setConfirming(false);
+      setNote("");
+      invalidateErpCache(["custody", "handover"]);
+    } catch (err: any) {
+      setMessage({ ok: false, text: err.message });
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="p-4 bg-white rounded-3xl border border-[#E6E1DA] space-y-3" aria-label="My custody">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-serif text-base font-bold text-[#1A2E20] flex items-center gap-2">
+          <IndianRupee className="w-4 h-4 text-[#B58A57]" /> My custody
+        </h2>
+        {c && <StatusChip status={c.status} />}
+      </div>
+      {q.error && !q.data && <p className="text-xs text-red-700">{q.error.message}</p>}
+      {!c ? (
+        q.error ? null : <BikeLoader size="sm" label="Loading cash…" className="py-6" />
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA]">
+              <span className="block text-[11px] text-[#8E9F89]">Cash with me</span>
+              <span className="text-lg font-bold text-[#1A2E20]">{inr(c.cashPending)}</span>
+              {c.cashAwaitingAcceptance > 0 && <span className="block text-[11px] text-amber-800">{inr(c.cashAwaitingAcceptance)} declared, awaiting manager</span>}
+            </div>
+            <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA]">
+              <span className="block text-[11px] text-[#8E9F89]">UPI to be confirmed</span>
+              <span className="text-lg font-bold text-[#1A2E20]">{inr(c.upiPending)}</span>
+              {c.upiAwaitingAcceptance > 0 && <span className="block text-[11px] text-amber-800">{inr(c.upiAwaitingAcceptance)} declared</span>}
+            </div>
+          </div>
+          <p className="text-[11px] text-[#5D7656] font-mono">
+            Collected: cash {inr(c.cashCollected)} · UPI {inr(c.upiCollected)} — handed over: cash {inr(c.cashHandedOver)} · UPI {inr(c.upiReconciled)}
+          </p>
+          {(c.cashShort !== 0 || c.upiShort !== 0) && (
+            <p className="text-xs text-red-800 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" /> Manager recorded a difference: cash {c.cashShort > 0 ? "short" : "over"} {inr(Math.abs(c.cashShort))}
+              {c.upiShort !== 0 ? `, UPI not received ${inr(c.upiShort)}` : ""}.
+            </p>
+          )}
+          {pending && (
+            <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-2">
+              Declaration of {when(pending.createdAt)} is awaiting the manager: cash {inr(pending.declaredCash)}, UPI {inr(pending.declaredUpi || 0)}.
+            </p>
+          )}
+          {message && (
+            <p role={message.ok ? "status" : "alert"} className={`text-xs rounded-xl p-2 ${message.ok ? "bg-emerald-50 text-emerald-900" : "bg-red-50 text-red-800"}`}>
+              {message.text}
+            </p>
+          )}
+          {confirming ? (
+            <div className="p-3 rounded-2xl border border-[#1A2E20]/20 space-y-2">
+              <p className="text-sm text-[#1A2E20]">
+                Declare <strong>{inr(c.cashUndeclared)}</strong> cash and <strong>{inr(c.upiUndeclared)}</strong> UPI from your recorded collections?
+              </p>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Note for the manager (optional)"
+                className="w-full px-3 py-2 text-sm bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl"
+              />
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setConfirming(false)} className="flex-1 h-11 rounded-xl border border-[#DCD6CD] text-sm">
+                  Cancel
+                </button>
+                <button type="button" disabled={busy} onClick={declare} className="flex-1 h-11 rounded-xl bg-[#1A2E20] text-white text-sm font-bold disabled:opacity-50">
+                  {busy ? "Submitting…" : "Submit declaration"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={!canDeclare}
+              onClick={() => setConfirming(true)}
+              className="w-full h-11 rounded-xl bg-[#1A2E20] text-white text-sm font-bold disabled:opacity-40"
+            >
+              {pending ? "Waiting for manager verification" : canDeclare ? "Declare handover" : "Nothing to declare"}
+            </button>
+          )}
+          <details className="text-xs">
+            <summary className="cursor-pointer text-[#5D7656]">My handovers ({q.data!.handovers.length})</summary>
+            <div className="pt-2">
+              <HandoverHistory handovers={q.data!.handovers} />
+            </div>
+          </details>
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Verification (Manager / Owner)
+// ---------------------------------------------------------------------------
+function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; onClose: (msg?: string) => void }) {
+  const declaredUpi = handover.declaredUpi || 0;
+  const [cash, setCash] = useState("");
+  const [upi, setUpi] = useState(declaredUpi > 0 ? "" : "0");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const cashN = cash.trim() === "" ? NaN : Number(cash);
+  const upiN = upi.trim() === "" ? NaN : Number(upi);
+  const differs = Number.isFinite(cashN) && Number.isFinite(upiN) && (cashN !== handover.declaredCash || upiN !== declaredUpi);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inFlight.current) return;
+    setError(null);
+    if (!Number.isInteger(cashN) || cashN < 0) return setError("Enter the cash you counted (₹, whole number).");
+    if (!Number.isInteger(upiN) || upiN < 0 || upiN > declaredUpi) return setError(`Enter the UPI received in the account (₹0 to ${inr(declaredUpi)}).`);
+    if (differs && reason.trim().length < 5) return setError("Explain the difference (at least 5 characters).");
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/delivery/handover/${handover.id}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acceptedCash: cashN,
+          acceptedUpi: upiN,
+          varianceReason: differs ? reason.trim() : undefined,
+          expectedDriverId: handover.driverId,
+          expectedDeclaredCash: handover.declaredCash,
+          expectedDeclaredUpi: declaredUpi,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not record the verification.");
+      invalidateErpCache(["custody", "handover", "finance", "dashboard"]);
+      onClose(
+        data.handover.status === "DISCREPANCY_FLAGGED"
+          ? `${handover.driverName}: received ${inr(cashN)} cash and ${inr(upiN)} UPI; discrepancy recorded.`
+          : `${handover.driverName}: handover accepted (${inr(cashN)} cash, ${inr(upiN)} UPI).`
+      );
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+      <form
+        onSubmit={submit}
+        noValidate
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Verify handover from ${handover.driverName}`}
+        className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 max-h-[94dvh] overflow-y-auto"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <span className="text-[11px] text-[#8E9F89]">Verify handover from</span>
+            <h3 className="font-serif text-xl font-bold text-[#1A2E20]">{handover.driverName}</h3>
+            <span className="text-[11px] text-[#8E9F89]">
+              Declared {when(handover.createdAt)} · {handover.collectionCount ?? "—"} collections
+            </span>
+          </div>
+          <button type="button" aria-label="Close" onClick={() => onClose()} className="p-2 -m-1 text-[#8E9F89]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="text-sm bg-red-50 border border-red-200 text-red-800 rounded-xl p-2">
+            {error}
+          </p>
+        )}
+        {handover.notes && (
+          <p className={`text-sm rounded-xl p-3 ${/^Handing over ₹/.test(handover.notes) ? "bg-amber-50 border border-amber-200 text-amber-900 font-semibold" : "bg-[#FAF8F5] border border-[#E6E1DA] text-[#1A2E20]"}`}>
+            {handover.notes}
+          </p>
+        )}
+        <div className={`grid gap-3 ${declaredUpi > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
+          <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA] space-y-1">
+            <span className="block text-[11px] text-[#8E9F89]">Cash declared</span>
+            <span className="block text-base font-bold">{inr(handover.declaredCash)}</span>
+            <label htmlFor="cash-counted" className="block text-[11px] text-[#1A2E20] pt-1">
+              Cash counted
+            </label>
+            <input id="cash-counted" type="number" inputMode="numeric" min={0} step={1} value={cash} onChange={(e) => setCash(e.target.value)} className="w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl" />
+          </div>
+          {/* UPI is paid straight into the PG account (migration 0014); only older declarations carry UPI to confirm. */}
+          {declaredUpi > 0 && <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA] space-y-1">
+            <span className="block text-[11px] text-[#8E9F89]">UPI declared</span>
+            <span className="block text-base font-bold">{inr(declaredUpi)}</span>
+            <label htmlFor="upi-received" className="block text-[11px] text-[#1A2E20] pt-1">
+              UPI received in account
+            </label>
+            <input id="upi-received" type="number" inputMode="numeric" min={0} max={declaredUpi} step={1} value={upi} disabled={declaredUpi === 0} onChange={(e) => setUpi(e.target.value)} className="w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl disabled:bg-gray-50" />
+          </div>}
+        </div>
+        {differs && (
+          <div className="space-y-1">
+            <label htmlFor="variance-reason" className="block text-sm font-bold text-red-800">
+              Reason for the difference *
+            </label>
+            <input id="variance-reason" type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. ₹50 short, driver to pay tomorrow" className="w-full h-11 px-3 text-sm border border-red-300 rounded-xl" />
+          </div>
+        )}
+        <button type="submit" disabled={busy} className="w-full h-12 rounded-2xl bg-emerald-700 text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+          {busy ? <BikeLoader inline tone="light" label="Working" /> : <ShieldCheck className="w-5 h-5" />}
+          {differs ? "Record received amounts and discrepancy" : "Accept handover"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function StaffDetail({ staffId, onClose }: { staffId: string; onClose: () => void }) {
+  const key = `/api/delivery/custody?staffId=${staffId}`;
+  const q = useErpQuery<Detail>(key, () => getJson<Detail>(key), { ttl: LIVE_MS, tags: ["custody", "handover"] });
+  const d = q.data;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label="Employee custody" className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[94dvh] overflow-y-auto">
+        <div className="flex items-start justify-between">
+          <div>
+            <span className="text-[11px] text-[#8E9F89]">Custody ledger</span>
+            <h3 className="font-serif text-xl font-bold text-[#1A2E20]">{d?.custody.staffName || "…"}</h3>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose} className="p-2 -m-1 text-[#8E9F89]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {!d ? (
+          q.error ? <p role="alert" className="text-xs text-red-700">{q.error.message}</p> : <BikeLoader size="sm" label="Loading…" className="py-10" />
+        ) : (
+          <>
+            <p className="text-xs font-mono text-[#1A2E20]">
+              Holding: cash {inr(d.custody.cashPending)} · UPI {inr(d.custody.upiPending)} — handed over: cash {inr(d.custody.cashHandedOver)} · UPI {inr(d.custody.upiReconciled)}
+              {(d.custody.cashShort !== 0 || d.custody.upiShort !== 0) && ` — short: cash ${inr(d.custody.cashShort)}, UPI ${inr(d.custody.upiShort)}`}
+            </p>
+            <div>
+              <h4 className="text-sm font-bold text-[#1A2E20] mb-1">Handovers</h4>
+              <HandoverHistory handovers={d.handovers} />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-[#1A2E20] mb-1">Collections ({d.collections.length})</h4>
+              <ul className="divide-y divide-[#E6E1DA] text-xs">
+                {d.collections.map((c) => (
+                  <li key={c.id} className="py-1.5 flex items-center justify-between gap-2">
+                    <span className="text-[#1A2E20]">
+                      {c.customerName || "—"} <span className="text-[#8E9F89]">· {c.serviceDate}{c.orderId ? ` · order ${c.orderId.slice(-6).toUpperCase()}` : ""}</span>
+                    </span>
+                    <span className="font-mono whitespace-nowrap">
+                      {inr(c.amount)} {c.paymentMethod === "CASH" ? "cash" : c.paymentMethod} ·{" "}
+                      {c.handoverStatus === "DECLARED" ? "declared" : c.handoverStatus ? "handed over" : "with employee"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StaffOverview() {
+  const key = "/api/delivery/custody";
+  const q = useErpQuery<Overview>(key, () => getJson<Overview>(key), { ttl: LIVE_MS, tags: ["custody", "handover", "delivery"], pollIntervalMs: LIVE_MS });
+  const pendingKey = "/api/delivery/handover?status=DECLARED";
+  const pq = useErpQuery<DriverCashHandover[]>(
+    pendingKey,
+    async () => (await getJson<{ handovers: DriverCashHandover[] }>(pendingKey)).handovers || [],
+    { ttl: LIVE_MS, tags: ["custody", "handover"], pollIntervalMs: LIVE_MS }
+  );
+  const [verify, setVerify] = useState<DriverCashHandover | null>(null);
+  const [detail, setDetail] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const rows = q.data?.staff ?? [];
+  const t = q.data?.totals;
+  const pending = pq.data ?? [];
+  const me = useCurrentUser();
+  const myRow = rows.find((r) => r.staffId === me?.id);
+  const iHoldMoney = Boolean(myRow && (myRow.cashPending > 0 || myRow.upiPending > 0 || myRow.pendingHandovers > 0));
+
+  return (
+    <section className="p-4 bg-white rounded-3xl border border-[#E6E1DA] space-y-3" aria-label="Staff custody">
+      <h2 className="font-serif text-base font-bold text-[#1A2E20] flex items-center gap-2">
+        <IndianRupee className="w-4 h-4 text-[#B58A57]" /> Staff custody
+      </h2>
+      {message && (
+        <p role="status" className="text-xs bg-emerald-50 text-emerald-900 rounded-xl p-2">
+          {message}
+        </p>
+      )}
+      {pending.length > 0 && (
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-bold text-amber-900">Awaiting verification ({pending.length})</h3>
+          {pending.map((h) => (
+            <div key={h.id} className="flex items-center justify-between gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs">
+              <span>
+                <strong className="text-sm text-[#1A2E20]">{h.driverName}</strong>
+                <span className="block font-mono text-[#5D7656]">
+                  Cash {inr(h.declaredCash)} · UPI {inr(h.declaredUpi || 0)} · {when(h.createdAt)}
+                </span>
+                {h.notes && /^Handing over ₹/.test(h.notes) && <span className="block font-semibold text-amber-900">{h.notes}</span>}
+              </span>
+              <button type="button" onClick={() => setVerify(h)} className="h-10 px-4 rounded-xl bg-amber-800 text-white font-bold shrink-0">
+                Verify
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {q.error && !q.data && <p className="text-xs text-red-700">{q.error.message}</p>}
+      {/* One row per employee; the totals row is only the sum of the rows. */}
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-xs min-w-[640px]">
+          <thead>
+            <tr className="text-left text-[#8E9F89] border-b border-[#E6E1DA]">
+              <th className="py-1.5 px-1">Employee</th>
+              <th className="px-1 text-right">Cash collected</th>
+              <th className="px-1 text-right">UPI collected</th>
+              <th className="px-1 text-right">Cash handed over</th>
+              <th className="px-1 text-right">UPI reconciled</th>
+              <th className="px-1 text-right">Cash pending</th>
+              <th className="px-1 text-right">UPI pending</th>
+              <th className="px-1 text-right">Short</th>
+              <th className="px-1">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.staffId} className="border-b border-[#E6E1DA]/60 hover:bg-[#FAF8F5] cursor-pointer" onClick={() => setDetail(r.staffId)}>
+                <td className="py-2 px-1 font-medium text-[#1A2E20]">
+                  <span className="inline-flex items-center gap-1">
+                    {r.staffName} <ChevronRight className="w-3 h-3 text-[#8E9F89]" />
+                  </span>
+                </td>
+                <td className="px-1 text-right font-mono">{inr(r.cashCollected)}</td>
+                <td className="px-1 text-right font-mono">{inr(r.upiCollected)}</td>
+                <td className="px-1 text-right font-mono">{inr(r.cashHandedOver)}</td>
+                <td className="px-1 text-right font-mono">{inr(r.upiReconciled)}</td>
+                <td className="px-1 text-right font-mono font-bold">{inr(r.cashPending)}</td>
+                <td className="px-1 text-right font-mono font-bold">{inr(r.upiPending)}</td>
+                <td className={`px-1 text-right font-mono ${r.cashShort + r.upiShort !== 0 ? "text-red-800 font-bold" : ""}`}>{inr(r.cashShort + r.upiShort)}</td>
+                <td className="px-1">
+                  <StatusChip status={r.status} />
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={9} className="py-3 text-center text-[#8E9F89]">
+                  No staff custody yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          {t && rows.length > 0 && (
+            <tfoot>
+              <tr className="font-bold text-[#1A2E20]">
+                <td className="py-2 px-1">All staff (sum)</td>
+                <td className="px-1 text-right font-mono">{inr(t.cashCollected)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.upiCollected)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.cashHandedOver)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.upiReconciled)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.cashPending)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.upiPending)}</td>
+                <td className="px-1 text-right font-mono">{inr(t.cashShort + t.upiShort)}</td>
+                <td className="px-1" />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+      {verify && (
+        <VerifyHandover
+          handover={verify}
+          onClose={(msg) => {
+            setVerify(null);
+            if (msg) setMessage(msg);
+          }}
+        />
+      )}
+      {detail && <StaffDetail staffId={detail} onClose={() => setDetail(null)} />}
+      {/* A manager/owner who collected money declares it like anyone else (verified by someone else). */}
+      {iHoldMoney && me && <MyCustody staffId={me.id} />}
+    </section>
+  );
+}
+
+/** Custody section of the Delivery page: own ledger for staff, staff-wise oversight for Manager/Owner. */
+export function CustodyPanel() {
+  const user = useCurrentUser();
+  if (!user) return null;
+  const oversight = user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER" || user.role === "ACCOUNTANT";
+  return oversight ? <StaffOverview /> : <MyCustody staffId={user.id} />;
+}

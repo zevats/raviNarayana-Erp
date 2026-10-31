@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { History, X, Clock, CheckCircle2, AlertTriangle, Truck, User, RotateCcw } from "lucide-react";
 import { DeliveryTask, DeliveryTaskEvent } from "@/types";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 interface TaskTimelineModalProps {
   isOpen: boolean;
@@ -96,9 +97,7 @@ export function TaskTimelineModal({
         </div>
 
         {loading ? (
-          <div className="py-8 text-center text-xs text-[#5D7656] font-serif">
-            Loading timeline events...
-          </div>
+          <BikeLoader size="sm" label="Loading timeline…" className="py-8" />
         ) : error ? (
           <div className="p-3 bg-red-50 text-red-800 text-xs rounded-xl border border-red-200">
             {error}

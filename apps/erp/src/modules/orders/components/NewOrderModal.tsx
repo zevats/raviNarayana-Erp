@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType } from "@/types";
+import { businessToday } from "@/lib/businessDate";
 
 interface NewOrderModalProps {
   isOpen: boolean;
@@ -59,15 +60,39 @@ export function NewOrderModal({
   const [cart, setCart] = useState<Record<string, { product: TiffinProduct; quantity: number }>>({});
 
   // Operational Metadata
-  const [serviceDate, setServiceDate] = useState(defaultDate || new Date().toISOString().split("T")[0]);
+  const [serviceDate, setServiceDate] = useState(defaultDate || businessToday());
   const [mealType, setMealType] = useState<MealType>("LUNCH");
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI">("CASH");
   const [notes, setNotes] = useState("");
 
   // State guards
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // One idempotency key per order draft: a retry after a lost response or a double click is
+  // recognised by the server as the same order. A new key is issued only after a success.
+  const [draftKey, setDraftKey] = useState(() => `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+  const [reuseNotice, setReuseNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Each opening starts a clean draft: no customer, phone, address, items or notes carried over
+  // from the previous order (order type, meal and date stay as last chosen for fast repeat entry).
+  // A failed save does not close the form, so the entered data is kept for a retry.
+  useEffect(() => {
+    if (!isOpen) return;
+    setCustomerSearch("");
+    setSelectedCustomer(null);
+    setNewCustomerName("");
+    setNewCustomerPhone("");
+    setNewCustomerAddress("");
+    setDuplicateCustomer(null);
+    setOrderHistory([]);
+    setCart({});
+    setMenuSearch("");
+    setNotes("");
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    setReuseNotice(null);
+  }, [isOpen]);
 
   // Load products & initial customer list
   useEffect(() => {
@@ -77,12 +102,8 @@ export function NewOrderModal({
       .then((res) => (res.ok ? res.json() : { products: [] }))
       .then((data) => {
         if (data.products && Array.isArray(data.products)) {
-          setProducts(data.products);
-          // Auto-select first active product if cart is empty
-          if (data.products.length > 0 && Object.keys(cart).length === 0) {
-            const first = data.products[0];
-            setCart({ [first.id]: { product: first, quantity: 1 } });
-          }
+          // Monthly subscription packages are not order items.
+          setProducts(data.products.filter((p: TiffinProduct) => p.billingUnit !== "PER_MONTH"));
         }
       })
       .catch(() => {});
@@ -170,30 +191,25 @@ export function NewOrderModal({
   }, [selectedCustomer]);
 
   // Reuse previous order pattern
+  // Copies a previous order into a new draft (the old order is never changed). Items are matched to
+  // today's menu and priced at today's menu price; items no longer on the menu are left out.
   const handleReuseOrder = (pastOrder: any) => {
     const newCart: Record<string, { product: TiffinProduct; quantity: number }> = {};
+    const missing: string[] = [];
     if (Array.isArray(pastOrder.items)) {
       for (const item of pastOrder.items) {
-        // Find matching product in catalog, or create fallback
         const matchingProd = products.find(
-          (p) => (item.productId && p.id === item.productId) || p.name.toLowerCase() === item.productName.toLowerCase()
-        ) || {
-          id: item.productId || `prod_${item.productName}`,
-          name: item.productName,
-          category: "VEG",
-          price: item.unitPrice,
-          billingUnit: "PER_MEAL",
-          status: "ACTIVE",
-          createdAt: "",
-          updatedAt: "",
-        };
-
-        newCart[matchingProd.id] = {
-          product: matchingProd as TiffinProduct,
-          quantity: item.quantity,
-        };
+          (p) => (item.productId && p.id === item.productId) || p.name.toLowerCase() === String(item.productName).toLowerCase()
+        );
+        if (!matchingProd) {
+          missing.push(item.productName);
+          continue;
+        }
+        const prior = newCart[matchingProd.id]?.quantity || 0;
+        newCart[matchingProd.id] = { product: matchingProd, quantity: prior + Number(item.quantity) };
       }
     }
+    setReuseNotice(missing.length ? `Not on today's menu, left out: ${missing.join(", ")}.` : null);
     setCart(newCart);
     if (pastOrder.mealType) setMealType(pastOrder.mealType);
     if (pastOrder.deliveryAddress && selectedCustomer) {
@@ -323,7 +339,7 @@ export function NewOrderModal({
           paymentMethod: orderType === "DINE_IN" ? paymentMethod : undefined,
           paymentStatus: orderType === "DINE_IN" ? "PAID" : "PENDING",
           notes: notes.trim() || undefined,
-          idempotencyKey: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          idempotencyKey: draftKey,
         }),
       });
 
@@ -344,6 +360,7 @@ export function NewOrderModal({
       }
 
       onOrderCreated();
+      setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
       setTimeout(() => {
         onClose();
       }, 1500);
@@ -358,7 +375,7 @@ export function NewOrderModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-[#FAF8F5] rounded-3xl max-w-2xl w-full border border-[#DCD6CD] shadow-2xl flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="bg-[#FAF8F5] rounded-3xl max-w-2xl w-full border border-[#DCD6CD] shadow-2xl flex flex-col max-h-[92dvh] overflow-hidden">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-white border-b border-[#E6E1DA] flex items-center justify-between shrink-0">
           <div>
@@ -579,7 +596,7 @@ export function NewOrderModal({
                             <span>Quick Repeat: Past Orders</span>
                           </div>
                           <div className="space-y-1">
-                            {orderHistory.slice(0, 2).map((past, idx) => (
+                            {orderHistory.slice(0, 5).map((past, idx) => (
                               <div
                                 key={past.orderId || idx}
                                 className="flex items-center justify-between p-2 bg-white rounded-lg border border-[#E6E1DA] text-xs"
@@ -602,6 +619,8 @@ export function NewOrderModal({
                               </div>
                             ))}
                           </div>
+                          <p className="text-[10px] text-[#8E9F89]">Reuse copies the items into this new order at today's prices; change quantities below. Past orders are not changed.</p>
+                          {reuseNotice && <p role="status" className="text-[11px] text-amber-800">{reuseNotice}</p>}
                         </div>
                       )}
                     </div>
@@ -780,7 +799,8 @@ export function NewOrderModal({
                         type="button"
                         onClick={() => handleQuantityChange(p.id, -1)}
                         disabled={qty <= 0}
-                        className="w-7 h-7 rounded-lg bg-[#FAF8F5] hover:bg-[#E6E1DA] disabled:opacity-30 text-[#1A2E20] flex items-center justify-center font-bold text-sm transition"
+                        aria-label={`One less ${p.name}`}
+                        className="w-9 h-9 rounded-lg bg-[#FAF8F5] hover:bg-[#E6E1DA] disabled:opacity-30 text-[#1A2E20] flex items-center justify-center font-bold text-sm transition"
                       >
                         <Minus className="w-3.5 h-3.5" />
                       </button>
@@ -789,14 +809,16 @@ export function NewOrderModal({
                         type="number"
                         min="0"
                         value={qty}
+                        aria-label={`Quantity of ${p.name}`}
                         onChange={(e) => handleManualQtyInput(p.id, e.target.value)}
-                        className="w-12 text-center py-1 text-xs font-mono font-bold bg-[#FAF8F5] border border-[#DCD6CD] rounded-lg"
+                        className="w-12 h-9 text-center py-1 text-xs font-mono font-bold bg-[#FAF8F5] border border-[#DCD6CD] rounded-lg"
                       />
 
                       <button
                         type="button"
                         onClick={() => handleQuantityChange(p.id, 1)}
-                        className="w-7 h-7 rounded-lg bg-[#1A2E20] hover:bg-[#263B2D] text-white flex items-center justify-center font-bold text-sm transition"
+                        aria-label={`One more ${p.name}`}
+                        className="w-9 h-9 rounded-lg bg-[#1A2E20] hover:bg-[#263B2D] text-white flex items-center justify-center font-bold text-sm transition"
                       >
                         <Plus className="w-3.5 h-3.5" />
                       </button>

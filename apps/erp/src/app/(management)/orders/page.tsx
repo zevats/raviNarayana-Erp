@@ -20,85 +20,59 @@ import {
   BookOpen,
   Users,
 } from "lucide-react";
-import { UnifiedOrder, AuthenticatedUser } from "@/types";
+import { UnifiedOrder } from "@/types";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import { NewOrderModal } from "@/modules/orders/components/NewOrderModal";
 import Link from "next/link";
+import { businessToday } from "@/lib/businessDate";
+import { SubscriptionsToday } from "@/modules/delivery/ops/SubscriptionsToday";
+import { MenuCatalog } from "@/modules/delivery/ops/MenuCatalog";
+
+// Orders change through delivery completion by other staff; 20s keeps the board current.
+const ORDERS_POLL_MS = 20000;
 
 export default function OrdersPage() {
-  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null);
-  const [orders, setOrders] = useState<UnifiedOrder[]>([]);
-  const [counts, setCounts] = useState<{ today: number; active: number; completed: number }>({
-    today: 0,
-    active: 0,
-    completed: 0,
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [serviceDate, setServiceDate] = useState(new Date().toISOString().split("T")[0]);
+  // Signed-in user from the server-rendered shell (no /api/auth/me round-trip).
+  const currentUser = useCurrentUser();
+  const [serviceDate, setServiceDate] = useState(businessToday());
   const [orderTypeFilter, setOrderTypeFilter] = useState<"ALL" | "DELIVERY" | "DINE_IN">("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<"DAILY_ORDERS" | "SUBSCRIPTIONS" | "MENU_CATALOG">("DAILY_ORDERS");
 
-  // Load current user
-  useEffect(() => {
-    fetch("/api/auth/me")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.user) setCurrentUser(data.user);
-      })
-      .catch(() => {});
-  }, []);
 
-  // Fetch orders from real backend
-  const fetchOrders = useCallback(async () => {
-    try {
-      const params = new URLSearchParams({
-        serviceDate,
-        orderType: orderTypeFilter,
-      });
-      if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      if (statusFilter !== "ALL") params.set("status", statusFilter);
-
-      const res = await fetch(`/api/orders?${params.toString()}`);
+  // Orders are cached per filter set and reused across visits; refreshed every 20s while the
+  // tab is visible (orders also change through delivery completion), on focus, and after mutations.
+  const ordersParams = new URLSearchParams({ serviceDate, orderType: orderTypeFilter });
+  if (searchQuery.trim()) ordersParams.set("search", searchQuery.trim());
+  if (statusFilter !== "ALL") ordersParams.set("status", statusFilter);
+  const ordersKey = `/api/orders?${ordersParams.toString()}`;
+  const ordersQuery = useErpQuery<{ orders: UnifiedOrder[]; counts: { today: number; active: number; completed: number } }>(
+    ordersKey,
+    async () => {
+      const res = await fetch(ordersKey);
       if (!res.ok) throw new Error("Failed to load orders");
       const data = await res.json();
-      if (data.success) {
-        setOrders(data.orders || []);
-        if (data.counts) setCounts(data.counts);
-      }
-    } catch {
-      // Graceful error handling
-    } finally {
-      setIsLoading(false);
-    }
-  }, [serviceDate, orderTypeFilter, statusFilter, searchQuery]);
+      return { orders: data.orders || [], counts: data.counts || { today: 0, active: 0, completed: 0 } };
+    },
+    { ttl: ORDERS_POLL_MS, tags: ["orders"], pollIntervalMs: ORDERS_POLL_MS }
+  );
+  const orders = ordersQuery.data?.orders ?? [];
+  const counts = ordersQuery.data?.counts ?? { today: 0, active: 0, completed: 0 };
+  // First load shows the placeholder; background refreshes only spin the refresh icon.
+  const isLoading = ordersQuery.isLoading && !ordersQuery.data;
+  const isRefreshing = ordersQuery.isLoading || ordersQuery.isRevalidating;
+  const refreshOrders = useCallback(() => {
+    invalidateErpCache(["orders"]);
+  }, []);
 
-  // Initial load
   useEffect(() => {
-    fetchOrders();
-  }, [fetchOrders]);
-
-  // Live polling without manual refresh (every 4s when tab is active)
-  useEffect(() => {
-    const pollInterval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "visible") {
-        fetchOrders();
-      }
-    }, 4000);
-
-    const handleFocus = () => fetchOrders();
-    const handleCustomEvent = () => fetchOrders();
-
+    const handleFocus = () => ordersQuery.refetch();
     window.addEventListener("focus", handleFocus);
-    window.addEventListener("erp:order_created", handleCustomEvent);
-
-    return () => {
-      clearInterval(pollInterval);
-      window.removeEventListener("focus", handleFocus);
-      window.removeEventListener("erp:order_created", handleCustomEvent);
-    };
-  }, [fetchOrders]);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [ordersQuery.refetch]);
 
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -139,8 +113,8 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Action button & secondary section tabs */}
-        <div className="flex items-center gap-2">
+        {/* Action button & secondary section tabs (wraps on narrow phones) */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Section view toggle */}
           <div className="flex bg-white p-1 rounded-2xl border border-[#E6E1DA] shadow-2xs">
             <button
@@ -180,7 +154,7 @@ export default function OrdersPage() {
             className="px-5 py-2.5 bg-[#C89F6B] hover:bg-[#B58A57] text-[#1A2E20] font-serif font-bold text-xs rounded-2xl shadow-sm transition flex items-center gap-2 shrink-0"
           >
             <Plus className="w-4 h-4" />
-            + New Order
+            New Order
           </button>
         </div>
       </div>
@@ -232,12 +206,12 @@ export default function OrdersPage() {
               </select>
 
               <button
-                onClick={fetchOrders}
-                disabled={isLoading}
+                onClick={refreshOrders}
+                disabled={isRefreshing}
                 title="Refresh order list"
                 className="p-2 text-[#5D7656] hover:text-[#1A2E20] bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl transition"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
               </button>
             </div>
           </div>
@@ -328,9 +302,14 @@ export default function OrdersPage() {
                               <Truck className="w-3 h-3 animate-pulse" /> Out for Delivery
                             </span>
                           )}
-                          {order.orderStatus === "DELIVERED" && (
+                          {order.orderStatus === "DELIVERED" && order.deliveryOutcome !== "PARTIAL" && (
                             <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" /> Delivered
+                            </span>
+                          )}
+                          {order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL" && (
+                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" /> Partly delivered
                             </span>
                           )}
                           {order.orderStatus === "COMPLETED" && (
@@ -340,12 +319,17 @@ export default function OrdersPage() {
                           )}
                           {order.orderStatus === "EXCEPTION" && (
                             <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-red-50 text-red-800 border border-red-200 inline-flex items-center gap-1">
-                              <AlertTriangle className="w-3 h-3" /> Shortfall / Issue
+                              <AlertTriangle className="w-3 h-3" /> {order.deliveryOutcome === "NONE" ? "Not delivered" : "Shortfall / Issue"}
                             </span>
                           )}
                         </div>
 
-                        {/* Payment badge */}
+                        {/* Payment badge (delivery orders are due for what was delivered, at the saved prices) */}
+                        {order.deliveryOutcome === "NONE" ? (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded inline-block bg-[#FAF8F5] text-[#5D7656] border border-[#E6E1DA]">
+                            NOTHING DUE
+                          </span>
+                        ) : (
                         <span
                           className={`text-[10px] font-mono px-2 py-0.5 rounded inline-block ${
                             order.paymentStatus === "PAID"
@@ -356,11 +340,12 @@ export default function OrdersPage() {
                           }`}
                         >
                           {order.paymentStatus === "PAID"
-                            ? `PAID (₹${order.totalAmount})`
+                            ? `PAID (₹${order.amountDue ?? order.totalAmount})`
                             : order.paymentStatus === "PARTIALLY_PAID"
-                            ? `PARTIAL (₹${order.collectedAmount} / ₹${order.totalAmount})`
-                            : `UNPAID DUE ₹${order.remainingAmount}`}
+                            ? `PART PAID ₹${order.collectedAmount} · ₹${order.remainingAmount} PENDING`
+                            : `UNPAID ₹${order.remainingAmount}`}
                         </span>
+                        )}
                       </div>
                     </div>
 
@@ -413,55 +398,17 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* SECONDARY VIEW: SUBSCRIPTIONS */}
+      {/* Subscriptions: today's status, skip / extra for this meal, residents' room delivery */}
       {activeSection === "SUBSCRIPTIONS" && (
-        <div className="bg-white p-6 rounded-3xl border border-[#E6E1DA] space-y-4">
-          <div className="flex items-center justify-between border-b border-[#E6E1DA] pb-3">
-            <div>
-              <h2 className="font-serif text-lg text-[#1A2E20] font-bold">Monthly Tiffin Subscriptions</h2>
-              <p className="text-xs text-[#8E9F89]">
-                Commercial repeat meal plan subscriptions with automated daily kitchen counts.
-              </p>
-            </div>
-            <Link
-              href="/delivery"
-              className="text-xs font-serif text-[#B58A57] hover:underline"
-            >
-              Go to Delivery Queue &rarr;
-            </Link>
-          </div>
-
-          <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#E6E1DA] text-xs space-y-2">
-            <p className="font-serif font-medium text-[#1A2E20]">
-              Active Subscriptions are automatically integrated into daily kitchen preparation and the delivery dispatch board.
-            </p>
-            <p className="text-[#8E9F89]">
-              To create or pause customer meal subscriptions, select an existing customer when taking an order or manage via the customer directory.
-            </p>
-          </div>
+        <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#E6E1DA]">
+          <SubscriptionsToday canChange={currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "OPERATIONS_MANAGER"} />
         </div>
       )}
 
-      {/* SECONDARY VIEW: MENU CATALOG */}
+      {/* Menu: the real catalogue and current prices */}
       {activeSection === "MENU_CATALOG" && (
-        <div className="bg-white p-6 rounded-3xl border border-[#E6E1DA] space-y-4">
-          <div className="flex items-center justify-between border-b border-[#E6E1DA] pb-3">
-            <div>
-              <h2 className="font-serif text-lg text-[#1A2E20] font-bold">Menu &amp; Pricing Catalog</h2>
-              <p className="text-xs text-[#8E9F89]">
-                Menu offerings and base unit pricing used for order calculation.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#E6E1DA] text-xs space-y-2">
-            <p className="font-serif font-medium text-[#1A2E20]">
-              Historical Price Invariance Guard:
-            </p>
-            <p className="text-[#8E9F89]">
-              All confirmed orders snapshot their menu unit prices at time of creation. Modifying catalog prices will never rewrite existing orders or historical delivery balances.
-            </p>
-          </div>
+        <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#E6E1DA]">
+          <MenuCatalog />
         </div>
       )}
 
@@ -469,7 +416,7 @@ export default function OrdersPage() {
       <NewOrderModal
         isOpen={isNewOrderModalOpen}
         onClose={() => setIsNewOrderModalOpen(false)}
-        onOrderCreated={fetchOrders}
+        onOrderCreated={() => invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"])}
         defaultDate={serviceDate}
       />
     </div>

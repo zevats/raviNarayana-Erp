@@ -1,4 +1,5 @@
 import { getAsyncDb } from "../database/db";
+import { onBusinessDataChanged } from "../database/changeSignals";
 import { AuthenticatedUser, NotificationItem } from "@/types";
 
 export interface GetNotificationsOptions {
@@ -11,19 +12,41 @@ interface NotificationCacheEntry {
   expiresAt: number;
 }
 
+type NotificationFeed = NotificationCacheEntry["data"];
+
 const notificationsCache = new Map<string, NotificationCacheEntry>();
 const NOTIFICATIONS_CACHE_TTL_MS = 30_000;
+// Concurrent requests for the same feed (dashboard page render + header bell) share one computation.
+const inflightFeeds = new Map<string, Promise<NotificationFeed>>();
+// Bumped on every invalidation: a computation that started before it must not cache its result.
+let feedGeneration = 0;
+
+// Alerts are derived from business data; a committed business write drops every cached feed.
+onBusinessDataChanged(() => invalidateNotificationCache());
 
 export function invalidateNotificationCache(staffId?: string): void {
+  feedGeneration++;
   if (staffId) {
-    for (const key of notificationsCache.keys()) {
-      if (key.startsWith(`${staffId}:`)) {
-        notificationsCache.delete(key);
+    for (const map of [notificationsCache, inflightFeeds]) {
+      for (const key of map.keys()) {
+        if (key.startsWith(`${staffId}:`)) {
+          map.delete(key);
+        }
       }
     }
   } else {
     notificationsCache.clear();
+    inflightFeeds.clear();
   }
+}
+
+function sliceFeed(feed: NotificationFeed, options?: GetNotificationsOptions) {
+  const limit = options?.limit || 30;
+  const filtered = options?.unreadOnly ? feed.items.filter((i) => !i.isRead) : feed.items;
+  return {
+    notifications: filtered.slice(0, limit),
+    unreadCount: feed.unreadCount,
+  };
 }
 
 /**
@@ -35,20 +58,31 @@ export async function getNotifications(
   options?: GetNotificationsOptions
 ): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
   const cacheKey = `${actor.id}:${options?.unreadOnly ? 1 : 0}`;
-  const limit = options?.limit || 30;
-  const nowMs = Date.now();
   const cached = notificationsCache.get(cacheKey);
-  if (cached && cached.expiresAt > nowMs) {
-    let filtered = cached.data.items;
-    if (options?.unreadOnly) {
-      filtered = filtered.filter((i) => !i.isRead);
-    }
-    return {
-      notifications: filtered.slice(0, limit),
-      unreadCount: cached.data.unreadCount,
-    };
+  if (cached && cached.expiresAt > Date.now()) {
+    return sliceFeed(cached.data, options);
   }
 
+  let pending = inflightFeeds.get(cacheKey);
+  if (!pending) {
+    const generation = feedGeneration;
+    const promise: Promise<NotificationFeed> = buildNotificationFeed(actor)
+      .then((feed) => {
+        if (generation === feedGeneration) {
+          notificationsCache.set(cacheKey, { data: feed, expiresAt: Date.now() + NOTIFICATIONS_CACHE_TTL_MS });
+        }
+        return feed;
+      })
+      .finally(() => {
+        if (inflightFeeds.get(cacheKey) === promise) inflightFeeds.delete(cacheKey);
+      });
+    inflightFeeds.set(cacheKey, promise);
+    pending = promise;
+  }
+  return sliceFeed(await pending, options);
+}
+
+async function buildNotificationFeed(actor: AuthenticatedUser): Promise<NotificationFeed> {
   const db = getAsyncDb();
 
   // Execute all 7 notification aggregation queries concurrently
@@ -250,21 +284,7 @@ export async function getNotifications(
   items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   const unreadCount = items.filter((i) => !i.isRead).length;
-
-  notificationsCache.set(cacheKey, {
-    data: { items, unreadCount },
-    expiresAt: nowMs + NOTIFICATIONS_CACHE_TTL_MS,
-  });
-
-  let filtered = items;
-  if (options?.unreadOnly) {
-    filtered = items.filter((i) => !i.isRead);
-  }
-
-  return {
-    notifications: filtered.slice(0, limit),
-    unreadCount,
-  };
+  return { items, unreadCount };
 }
 
 /**

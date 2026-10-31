@@ -241,6 +241,7 @@ async function runTask66Tests() {
 
   const shellPath = path.resolve(ROOT, "apps/erp/src/components/layout/ErpShell.tsx");
   const shellContent = fs.readFileSync(shellPath, "utf-8");
+const staffShellContent = fs.readFileSync(path.join(path.dirname(shellPath), "DeliveryStaffShell.tsx"), "utf-8");
 
   // Delivery Person mobile navigation isolation
   assert(
@@ -248,8 +249,8 @@ async function runTask66Tests() {
     "ErpShell differentiates DELIVERY_PERSON navigation"
   );
   assert(
-    shellContent.includes('href="/delivery"') && shellContent.includes('href="/offline"'),
-    "ErpShell mobile bottom bar presents Stops and Offline Sync for delivery staff"
+    shellContent.includes("DeliveryStaffShell") && staffShellContent.includes('label: "My Stops"') && staffShellContent.includes('label: "My Cash"') && staffShellContent.includes('label: "History"') && staffShellContent.includes("queuedCount > 0"),
+    "Delivery staff shell presents My Stops (with the offline queue count), My Cash and History"
   );
   assert(
     shellContent.includes("pb-safe"),
@@ -410,6 +411,7 @@ async function runTask66Tests() {
   const queuedCompleteAction: QueuedDeliveryAction = {
     id: "queue_act_001",
     action: "COMPLETE_DELIVERY",
+    userId: driverUser.id,
     taskId: taskOrder1.id,
     payload: {
       recipientName: "Ashok Self",
@@ -461,6 +463,7 @@ async function runTask66Tests() {
   const queuedExceptionAction: QueuedDeliveryAction = {
     id: "queue_act_002",
     action: "REPORT_EXCEPTION",
+    userId: driverUser.id,
     taskId: taskOrder2.id,
     payload: {
       exceptionType: "RESIDENT_UNAVAILABLE",
@@ -491,6 +494,7 @@ async function runTask66Tests() {
   const conflictingExceptionAction: QueuedDeliveryAction = {
     id: "queue_act_003",
     action: "REPORT_EXCEPTION",
+    userId: driverUser.id,
     taskId: taskOrder1.id, // Already delivered!
     payload: {
       exceptionType: "OTHER",
@@ -518,6 +522,7 @@ async function runTask66Tests() {
   const unauthorizedDriverAction: QueuedDeliveryAction = {
     id: "queue_act_004",
     action: "COMPLETE_DELIVERY",
+    userId: driverUser.id,
     taskId: taskOrder3.id, // Assigned to otherDriverUser (driver_pwa_02)
     payload: {
       recipientName: "Chitra",

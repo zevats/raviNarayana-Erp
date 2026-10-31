@@ -22,13 +22,14 @@ import {
   KitchenProductionConsumption,
   MealType,
 } from "@/types";
+import { businessToday, addBusinessDays } from "@/lib/businessDate";
 
 interface ProductionConsumptionViewProps {
   onNotify?: (msg: string) => void;
 }
 
 export default function ProductionConsumptionView({ onNotify }: ProductionConsumptionViewProps) {
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = businessToday();
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
   const [plans, setPlans] = useState<DailyMealPlan[]>([]);
@@ -81,9 +82,7 @@ export default function ProductionConsumptionView({ onNotify }: ProductionConsum
   }, [loadData]);
 
   const stepDate = (days: number) => {
-    const d = new Date(selectedDate);
-    d.setDate(d.getDate() + days);
-    setSelectedDate(d.toISOString().slice(0, 10));
+    setSelectedDate(addBusinessDays(selectedDate, days));
   };
 
   const handleConfirmConsumption = async (planId: string, mealType: string) => {
@@ -163,9 +162,6 @@ export default function ProductionConsumptionView({ onNotify }: ProductionConsum
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#8E9F89]/20 pb-4">
         <div>
           <h2 className="text-lg font-serif text-[#FAF8F5]">Recipe-Based Production Consumption</h2>
-          <p className="text-xs text-[#8E9F89]">
-            Deduct ingredient inventory according to actual cooked quantities reconciled for each service.
-          </p>
         </div>
 
         <div className="flex items-center gap-3">

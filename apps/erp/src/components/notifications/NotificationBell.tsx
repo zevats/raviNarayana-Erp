@@ -15,49 +15,34 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { NotificationItem, NotificationDomain } from "@/types";
+import { useErpQuery } from "@/lib/cache/erpDataCache";
+
+// The shell renders a bell in both the desktop and the mobile header. They share this cached
+// query, so a single poll every 30s (while visible) serves both instead of two polling loops.
+const NOTIFICATIONS_KEY = "/api/notifications?limit=15";
+const NOTIFICATIONS_POLL_MS = 30000;
+
+type NotificationFeed = { notifications: NotificationItem[]; unreadCount: number };
 
 export function NotificationBell() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const feed = useErpQuery<NotificationFeed>(
+    NOTIFICATIONS_KEY,
+    async () => {
+      const res = await fetch(NOTIFICATIONS_KEY);
+      if (!res.ok) throw new Error("Failed to fetch notifications");
+      const data = await res.json();
+      return { notifications: data.notifications || [], unreadCount: data.unreadCount || 0 };
+    },
+    { ttl: NOTIFICATIONS_POLL_MS, tags: ["notifications"], pollIntervalMs: NOTIFICATIONS_POLL_MS }
+  );
+  const notifications = feed.data?.notifications ?? [];
+  const unreadCount = feed.data?.unreadCount ?? 0;
+  const updateFeed = (fn: (current: NotificationFeed) => NotificationFeed) =>
+    feed.mutate((current) => fn(current ?? { notifications: [], unreadCount: 0 }), false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const fetchNotifications = async () => {
-    try {
-      const res = await fetch("/api/notifications?limit=15");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setNotifications(data.notifications || []);
-          setUnreadCount(data.unreadCount || 0);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to fetch notifications:", err);
-    }
-  };
-
-  useEffect(() => {
-    // Defer initial notification fetch so primary route data gets immediate connection priority
-    const initialTimer = setTimeout(() => {
-      if (typeof document === "undefined" || document.visibilityState === "visible") {
-        fetchNotifications();
-      }
-    }, 500);
-
-    const interval = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState === "visible") {
-        fetchNotifications();
-      }
-    }, 30000);
-
-    return () => {
-      clearTimeout(initialTimer);
-      clearInterval(interval);
-    };
-  }, []);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -85,10 +70,10 @@ export function NotificationBell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "mark_read", notificationId: id }),
       });
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      );
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      updateFeed((cur) => ({
+        notifications: cur.notifications.map((n) => (n.id === id ? { ...n, isRead: true } : n)),
+        unreadCount: Math.max(0, cur.unreadCount - 1),
+      }));
     } catch (err) {
       console.error("Failed to mark notification as read:", err);
     }
@@ -102,8 +87,7 @@ export function NotificationBell() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "mark_all_read" }),
       });
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-      setUnreadCount(0);
+      updateFeed((cur) => ({ notifications: cur.notifications.map((n) => ({ ...n, isRead: true })), unreadCount: 0 }));
     } catch (err) {
       console.error("Failed to mark all as read:", err);
     } finally {
@@ -153,6 +137,8 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         aria-label={`Notifications (${unreadCount} unread)`}
         className="relative p-2 rounded-lg text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors focus:outline-hidden"
       >
@@ -166,7 +152,7 @@ export function NotificationBell() {
 
       {/* Dropdown Panel */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#8E9F89]/25 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+        <div role="dialog" aria-label="Notifications" className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-[#8E9F89]/25 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
           {/* Header */}
           <div className="px-4 py-3 bg-[#FAF8F5] border-b border-[#8E9F89]/20 flex items-center justify-between">
             <div className="flex items-center gap-2">

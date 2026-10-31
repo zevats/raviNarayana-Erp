@@ -380,13 +380,24 @@ async function runRbacTests() {
   const validatedRoleBefore = await auth.validateSession(freshOpsSession.sessionToken);
   assert(validatedRoleBefore?.role === "OPERATIONS_MANAGER", "Session reflects initial OPERATIONS_MANAGER role");
 
-  // Super Admin updates user's role to ACCOUNTANT
-  await updateStaffRole(superAdminUser, newOpsManager.id, "ACCOUNTANT", "192.168.1.1");
+  // Retired roles cannot be assigned (ISSUE-012); the role is unchanged after the rejection.
+  let retiredRoleRejected = false;
+  try {
+    await updateStaffRole(superAdminUser, newOpsManager.id, "ACCOUNTANT", "192.168.1.1");
+  } catch (err: any) {
+    retiredRoleRejected = err.message.includes("retired");
+  }
+  assert(retiredRoleRejected, "Assigning retired role ACCOUNTANT is rejected");
+  const validatedAfterReject = await auth.validateSession(freshOpsSession.sessionToken);
+  assert(validatedAfterReject?.role === "OPERATIONS_MANAGER", "Rejected role change leaves the role unchanged");
+
+  // Super Admin updates user's role to DELIVERY_PERSON
+  await updateStaffRole(superAdminUser, newOpsManager.id, "DELIVERY_PERSON", "192.168.1.1");
 
   // Next session validation immediately reflects new role without requiring re-login
   const validatedRoleAfter = await auth.validateSession(freshOpsSession.sessionToken);
-  assert(validatedRoleAfter?.role === "ACCOUNTANT", "Role change takes effect immediately on subsequent session validation");
-  assert(hasPermission(validatedRoleAfter?.role, "finance.manage"), "User now holds ACCOUNTANT permissions");
+  assert(validatedRoleAfter?.role === "DELIVERY_PERSON", "Role change takes effect immediately on subsequent session validation");
+  assert(hasPermission(validatedRoleAfter?.role, "delivery.update"), "User now holds DELIVERY_PERSON permissions");
   assert(!hasPermission(validatedRoleAfter?.role, "rooms.manage"), "User no longer holds OPERATIONS_MANAGER permissions");
 
   // -----------------------------------------------------------------------------

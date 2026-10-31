@@ -58,18 +58,31 @@ function isResidentCategory(category: DocumentCategory): boolean {
 /**
  * Enforces category-specific authorization rules.
  */
+// Receipts for entries a Manager may record (finance.record). Settlement receipts and every
+// delete/supersede of a financial document stay Owner-level (finance.manage).
+const RECORDABLE_FINANCIAL_CATEGORIES: ReadonlySet<DocumentCategory> = new Set<DocumentCategory>([
+  "RENT_RECEIPT",
+  "SECURITY_DEPOSIT_RECEIPT",
+  "EXPENSE_RECEIPT",
+]);
+
 function assertCategoryPermission(
   actor: AuthenticatedUser,
   category: DocumentCategory,
-  operation: "read" | "manage",
+  operation: "read" | "upload" | "manage",
   clientIp?: string
 ): void {
   if (isResidentCategory(category)) {
-    const perm = operation === "manage" ? "residents.manage" : "residents.read";
+    const perm = operation === "read" ? "residents.read" : "residents.manage";
     requirePermission(actor, perm, { ip: clientIp, action: `document.${operation}` });
   } else {
     // Financial categories (RENT_RECEIPT, SECURITY_DEPOSIT_RECEIPT, CHECKOUT_SETTLEMENT_RECEIPT, EXPENSE_RECEIPT)
-    const perm = operation === "manage" ? "finance.manage" : "finance.read";
+    const perm =
+      operation === "read"
+        ? "finance.read"
+        : operation === "upload" && RECORDABLE_FINANCIAL_CATEGORIES.has(category)
+          ? "finance.record"
+          : "finance.manage";
     requirePermission(actor, perm, { ip: clientIp, action: `document.${operation}` });
   }
 }
@@ -87,7 +100,7 @@ export async function uploadDocument(
   const db = asyncDb ?? getAsyncDb();
 
   // 1. Authorization enforcement
-  assertCategoryPermission(actor, input.category, "manage", clientIp);
+  assertCategoryPermission(actor, input.category, "upload", clientIp);
 
   // 2. Validate parent record relationship
   const residentId = input.residentId?.trim() || null;

@@ -392,7 +392,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
       {/* CREATE / EDIT MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-          <div className="bg-[#1A2E20] border border-[#B58A57]/40 rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
+          <div className="bg-[#1A2E20] border border-[#B58A57]/40 rounded-xl p-6 max-w-2xl w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-[#8E9F89]/20 pb-3">
               <div>
                 <h2 className="text-lg font-serif text-[#FAF8F5]">

@@ -5,6 +5,7 @@ import { X, FileText, Plus, Trash2, AlertCircle, Info } from "lucide-react";
 import { ResidentListItem, Invoice, InvoiceType } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
 import { formatINR } from "../../utils/formatUtils";
+import { businessToday, addBusinessDays } from "@/lib/businessDate";
 
 interface CreateInvoiceModalProps {
   isOpen: boolean;
@@ -33,9 +34,7 @@ export function CreateInvoiceModal({
   const currentMonthPeriod = `${now.toLocaleString("default", { month: "long" })} ${now.getFullYear()}`;
 
   // Next week for due date
-  const nextWeek = new Date();
-  nextWeek.setDate(nextWeek.getDate() + 7);
-  const defaultDueDate = nextWeek.toISOString().slice(0, 10);
+  const defaultDueDate = addBusinessDays(businessToday(), 7);
 
   const [residentId, setResidentId] = useState(initialResidentId || "");
   const [invoiceType, setInvoiceType] = useState<InvoiceType>("REGULAR_BILL");
@@ -210,7 +209,7 @@ export function CreateInvoiceModal({
       aria-labelledby="create-invoice-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -221,9 +220,6 @@ export function CreateInvoiceModal({
               <h2 id="create-invoice-title" className="text-lg font-bold text-[#1A2E20]">
                 Generate Resident Invoice
               </h2>
-              <p className="text-xs text-[#5A6C5E]">
-                Issue a sequential branded bill or GST tax invoice with ledger integration.
-              </p>
             </div>
           </div>
           <button

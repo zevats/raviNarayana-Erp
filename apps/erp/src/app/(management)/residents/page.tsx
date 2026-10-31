@@ -45,6 +45,8 @@ import {
 } from "@/types";
 import { ResidentKycSection } from "@/modules/residents/components/ResidentKycSection";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { businessToday } from "@/lib/businessDate";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 /**
  * Maps database floor integer to human-readable full label.
@@ -78,7 +80,8 @@ export default function ResidentsPage() {
         rooms: dataRooms.rooms || [],
       };
     },
-    { ttl: 60000, tags: ["residents", "rooms"] }
+    // Reference data: reused across visits for 5 min; resident/room mutations invalidate it at once.
+    { ttl: 300000, tags: ["residents", "rooms"] }
   );
 
   const residents = residentsData?.residents || [];
@@ -115,7 +118,7 @@ export default function ResidentsPage() {
   const [checkInForm, setCheckInForm] = useState({
     residentId: "",
     roomId: "",
-    checkInDate: new Date().toISOString().slice(0, 10),
+    checkInDate: businessToday(),
     monthlyRent: 8500,
     securityDeposit: 5000,
   });
@@ -124,7 +127,7 @@ export default function ResidentsPage() {
   // 3. Check-Out Modal
   const [checkOutResidentTarget, setCheckOutResidentTarget] = useState<ResidentListItem | null>(null);
   const [checkOutDate, setCheckOutDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    businessToday()
   );
   const [targetOutstandingBalance, setTargetOutstandingBalance] = useState<number | null>(null);
   const [settlementPreview, setSettlementPreview] = useState<ResidentSettlementPreview | null>(null);
@@ -160,7 +163,7 @@ export default function ResidentsPage() {
   const [transferTargetResident, setTransferTargetResident] = useState<ResidentListItem | null>(null);
   const [transferForm, setTransferForm] = useState({
     targetRoomId: "",
-    transferDate: new Date().toISOString().slice(0, 10),
+    transferDate: businessToday(),
     newMonthlyRent: 8500,
     reason: "",
   });
@@ -395,7 +398,7 @@ export default function ResidentsPage() {
     setCheckInForm({
       residentId: residentId || "",
       roomId: "",
-      checkInDate: new Date().toISOString().slice(0, 10),
+      checkInDate: businessToday(),
       monthlyRent: 8500,
       securityDeposit: 5000,
     });
@@ -510,7 +513,7 @@ export default function ResidentsPage() {
   const handleOpenCheckOut = async (resItem: ResidentListItem) => {
     setActionError(null);
     setCheckOutResidentTarget(resItem);
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessToday();
     setCheckOutDate(today);
     setDeductions([]);
     setNewDeductionReason("");
@@ -624,7 +627,7 @@ export default function ResidentsPage() {
     const initialTarget = availableRooms.length > 0 ? availableRooms[0] : null;
     setTransferForm({
       targetRoomId: initialTarget ? initialTarget.id : "",
-      transferDate: new Date().toISOString().slice(0, 10),
+      transferDate: businessToday(),
       newMonthlyRent: initialTarget ? initialTarget.baseRentMonthly : 8500,
       reason: "",
     });
@@ -696,9 +699,6 @@ export default function ResidentsPage() {
           <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1A2E20]">
             Residents &amp; Stay History
           </h1>
-          <p className="text-xs sm:text-sm text-[#5A6C5E] mt-1 font-sans">
-            Authoritative resident directory, room assignments, stay lifecycles, and historical ledger accounts.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -844,10 +844,7 @@ export default function ResidentsPage() {
       {/* 4. REFINED RESIDENTS TABLE (Compact, Clean, Scan-Optimized)     */}
       {/* ============================================================== */}
       {loading ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs">
-          <RefreshCw className="w-6 h-6 text-[#B58A57] animate-spin mx-auto mb-2" />
-          <p className="text-xs text-[#5A6C5E]">Loading resident records from database...</p>
-        </div>
+        <BikeLoader tone="forest" label="Loading residents…" className="p-12 bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs" />
       ) : filteredResidents.length === 0 ? (
         <div className="p-12 text-center bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs space-y-3">
           <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20]">
@@ -1030,7 +1027,7 @@ export default function ResidentsPage() {
       {/* ============================================================== */}
       {viewHistoryResident && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-xl w-full p-6 shadow-2xl space-y-5 animate-scale-in max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-xl w-full p-6 shadow-2xl space-y-5 animate-scale-in max-h-[90dvh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-3">
@@ -1707,7 +1704,7 @@ export default function ResidentsPage() {
       {/* ============================================================== */}
       {checkOutResidentTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto animate-scale-in">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <LogOut className="w-5 h-5 text-amber-700" />
@@ -1771,8 +1768,8 @@ export default function ResidentsPage() {
               {/* Settlement Preview Card */}
               {loadingSettlementPreview ? (
                 <div className="p-6 rounded-2xl bg-[#FAF8F5] border border-[#8E9F89]/20 text-center text-xs text-[#5A6C5E] flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-emerald-800" />
-                  Calculating live financial settlement...
+                  <BikeLoader inline tone="forest" label="Calculating" />
+                  Calculating the settlement…
                 </div>
               ) : settlementPreview ? (
                 <div className="space-y-4">
@@ -2062,7 +2059,7 @@ export default function ResidentsPage() {
                 >
                   {submitting ? (
                     <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <BikeLoader inline tone="light" label="Finalizing" />
                       Finalizing Settlement...
                     </>
                   ) : (
@@ -2209,7 +2206,7 @@ export default function ResidentsPage() {
       {/* ============================================================== */}
       {transferTargetResident && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <ArrowRightLeft className="w-5 h-5 text-[#B58A57]" />

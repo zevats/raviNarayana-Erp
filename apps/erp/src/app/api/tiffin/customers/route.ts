@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -108,6 +109,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/customers", error);
+    if (dbError) return dbError;
 
     console.error("[API_TIFFIN_CUSTOMERS_GET_ERROR]", error);
     const statusCode = error.statusCode || 500;
@@ -140,6 +143,8 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/customers", error);
+    if (dbError) return dbError;
 
     if (error.message?.includes("POTENTIAL_DUPLICATE")) {
       return NextResponse.json(
