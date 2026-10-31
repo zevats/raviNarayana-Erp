@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
-import { Banknote, Clock, HandCoins, QrCode, Hourglass, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Clock, HandCoins, QrCode, Hourglass, CheckCircle2, AlertTriangle } from "lucide-react";
 import type { AuthenticatedUser, DriverCashHandover, StaffCustodyCollection, StaffCustodyRow } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { postJsonRequest } from "@/lib/http/requestJson";
+import { CashIcon } from "@/components/brand/CashIcon";
 import { businessToday } from "@/lib/businessDate";
 import { getJson, LIVE_MS } from "./data";
 import { rupees } from "./ui";
@@ -96,16 +97,14 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
       {msg && <p role={msg.tone === "error" ? "alert" : "status"} className={`rn-enter rounded-xl px-4 py-3 text-sm font-medium ${msg.tone === "ok" ? "bg-[#DDF1D6] text-[#2F6B24]" : "bg-[#FBE3DD] text-[#9A3423]"}`}>{msg.text}</p>}
 
       {/* Cash with you */}
-      <section className={`${K.card} p-5 sm:p-6`}>
+      <section className={`${K.card} p-4`}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-[14px] font-semibold text-[#5A6C5E]">Cash with you</p>
             <p className="mt-1 text-[40px] leading-none font-extrabold tracking-[-0.02em] text-[#1F2320]">{rupees(cashWithYou)}</p>
             <p className="mt-2 text-[13px] text-[#5A6C5E]">{cashWithYou > 0 ? `From ${plural(withYou.length, "delivery", "deliveries")}` : "No cash with you right now."}</p>
           </div>
-          <span className="w-12 h-12 rounded-2xl bg-[#FCE9DD] text-[#B4440F] flex items-center justify-center shrink-0">
-            <Banknote className="w-6 h-6" />
-          </span>
+          <CashIcon size={56} className="shrink-0" />
         </div>
 
         {waiting && (

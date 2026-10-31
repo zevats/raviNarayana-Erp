@@ -72,7 +72,7 @@ export function ProfileMenu({ user, open, onClose, onLogout, isLoggingOut }: { u
           role="menuitem"
           onClick={onLogout}
           disabled={isLoggingOut}
-          className="rn-press mt-2 w-full flex items-center justify-center gap-2 h-12 rounded-2xl bg-[#FBE3DD] text-[14px] font-bold text-[#9A3423] hover:bg-[#F7D3CA] active:bg-[#F2C4B8] disabled:opacity-70 outline-none focus-visible:ring-4 focus-visible:ring-[#9A3423]/20"
+          className="rn-press mt-2 w-full flex items-center justify-center gap-2 h-12 rounded-full bg-[#FBE3DD] text-[14px] font-bold text-[#9A3423] hover:bg-[#F7D3CA] active:bg-[#F2C4B8] disabled:opacity-70 outline-none focus-visible:ring-4 focus-visible:ring-[#9A3423]/20"
         >
           {isLoggingOut ? (
             <>

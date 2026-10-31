@@ -88,7 +88,7 @@ export function paymentLabel(t: DeliveryTask): { text: string; tone: "success" |
 
 function Stepper({ value, max, onChange, label, variant }: { value: number; max: number; onChange: (v: number) => void; label: string; variant: "panel" | "sheet" }) {
   const set = (v: number) => onChange(Math.max(0, Math.min(max, v)));
-  const b = `rn-press w-10 h-10 rounded-lg flex items-center justify-center text-[#1A2E20] disabled:opacity-30 ${variant === "panel" ? "bg-white shadow-[0_1px_2px_rgba(26,46,32,0.08)]" : "bg-[#F1ECE3]"}`;
+  const b = `rn-press w-10 h-10 rounded-full flex items-center justify-center text-[#1A2E20] disabled:opacity-30 ${variant === "panel" ? "bg-white shadow-[0_1px_2px_rgba(26,46,32,0.08)]" : "bg-[#F1ECE3]"}`;
   return (
     <div className="flex items-center gap-2 shrink-0" role="group" aria-label={label}>
       <button type="button" aria-label={`${label}: one less`} disabled={value <= 0} onClick={() => set(value - 1)} className={b}>
@@ -316,7 +316,7 @@ export function DeliveryForm({
                     <p className="text-[12px] font-semibold text-[#5A6C5E]">Where are the {short} undelivered?</p>
                     <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={`Where the undelivered ${l.productName} went`}>
                       {DISPOSITIONS.map((d) => (
-                        <button key={d} type="button" role="radio" aria-checked={st.disposition === d} onClick={() => setLine(l.lineId, { disposition: d })} className={`rn-press h-11 rounded-lg text-[12px] font-semibold ${st.disposition === d ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}>
+                        <button key={d} type="button" role="radio" aria-checked={st.disposition === d} onClick={() => setLine(l.lineId, { disposition: d })} className={`rn-press h-11 rounded-full text-[12px] font-semibold ${st.disposition === d ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}>
                           {d === "WITH_STAFF" ? "With me" : DISPOSITION_LABEL[d]}
                         </button>
                       ))}
@@ -329,10 +329,10 @@ export function DeliveryForm({
         </section>
       ) : (
         <section className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => setLegacyDelivered(true)} className={`rn-press h-12 rounded-xl font-semibold ${legacyDelivered ? "bg-[#C9501C] text-white" : "bg-[#EFEAE1]"}`}>
+          <button type="button" onClick={() => setLegacyDelivered(true)} className={`rn-press h-12 rounded-full font-semibold ${legacyDelivered ? "bg-[#C9501C] text-white" : "bg-[#EFEAE1]"}`}>
             Delivered
           </button>
-          <button type="button" onClick={() => setLegacyDelivered(false)} className={`rn-press h-12 rounded-xl font-semibold ${!legacyDelivered ? "bg-[#9A3423] text-white" : "bg-[#EFEAE1]"}`}>
+          <button type="button" onClick={() => setLegacyDelivered(false)} className={`rn-press h-12 rounded-full font-semibold ${!legacyDelivered ? "bg-[#9A3423] text-white" : "bg-[#EFEAE1]"}`}>
             Not delivered
           </button>
           {!legacyDelivered && <input value={legacyReason} onChange={(e) => setLegacyReason(e.target.value)} placeholder="Reason" className="col-span-2 h-11 px-3 rounded-lg border border-[#E2DBCE] bg-white text-sm" />}
@@ -371,9 +371,9 @@ export function DeliveryForm({
           </div>
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-lg bg-white" role="radiogroup" aria-label="Paid by">
+            <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-white" role="radiogroup" aria-label="Paid by">
               {(["CASH", "UPI"] as const).map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`rn-press h-10 px-4 rounded-md text-sm font-semibold ${method === m ? "bg-[#C9501C] text-white" : "text-[#3E4E42]"}`}>
+                <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`rn-press h-10 px-4 rounded-full text-sm font-semibold ${method === m ? "bg-[#C9501C] text-white" : "text-[#3E4E42]"}`}>
                   {m === "CASH" ? "Cash" : "UPI"}
                 </button>
               ))}

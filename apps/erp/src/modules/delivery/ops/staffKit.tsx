@@ -18,9 +18,9 @@ export const K = {
   soft: "bg-[#F4F0E8] rounded-xl",
   eyebrow: "text-[11px] font-bold uppercase tracking-[0.08em] text-[#5A6C5E]",
   primaryBtn:
-    "rn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[#C9501C] text-white font-semibold hover:bg-[#A9400F] disabled:opacity-50 transition-colors",
+    "rn-press inline-flex items-center justify-center gap-2 rounded-full bg-[#C9501C] text-white font-semibold hover:bg-[#A9400F] disabled:opacity-50 transition-colors",
   greyBtn:
-    "rn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[#EFEAE1] text-[#1F2320] font-semibold hover:bg-[#E6E0D4] disabled:opacity-50 transition-colors",
+    "rn-press inline-flex items-center justify-center gap-2 rounded-full bg-[#EFEAE1] text-[#1F2320] font-semibold hover:bg-[#E6E0D4] disabled:opacity-50 transition-colors",
 };
 
 export const PILL = {
@@ -139,7 +139,7 @@ export function EmptyState({ title, detail, compact = false }: { title: string; 
     );
   }
   return (
-    <div className={`${K.card} px-6 py-9 flex flex-col items-center text-center gap-2`}>
+    <div className={`${K.card} px-4 py-9 flex flex-col items-center text-center gap-2`}>
       <span className="rn-bike-still opacity-80">
         <BikeGraphic tone="orange" width={72} />
       </span>

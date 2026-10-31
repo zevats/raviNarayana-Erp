@@ -62,8 +62,12 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
 
   // The selected meal loads first; the other meal's count is fetched once it is on screen.
   const other: MealType = meal === "LUNCH" ? "DINNER" : "LUNCH";
-  const tasksQ = useDeliveryTasks(today, meal);
-  const otherQ = useDeliveryTasks(today, other); // both meals load together, so both counts arrive at once
+  // One fixed list per meal (never "selected" vs "other"): switching meals only swaps which list is
+  // shown, so the lists never mix and a stop is announced only when it really is new.
+  const lunchQ = useDeliveryTasks(today, "LUNCH");
+  const dinnerQ = useDeliveryTasks(today, "DINNER");
+  const tasksQ = meal === "LUNCH" ? lunchQ : dinnerQ;
+  const otherQ = meal === "LUNCH" ? dinnerQ : lunchQ;
   useManifest(today, meal); // opening the screen after 08:00 / 15:30 prepares that meal's list
   const tasks = useMemo(() => (tasksQ.data ?? []).filter((t) => t.status !== "CANCELLED"), [tasksQ.data]);
   const numbers = useMemo(() => stopNumbers(tasks), [tasks]);
@@ -74,7 +78,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   // announced at once: live updates refetch the list and the new stop is called out.
   const known = useRef<Map<MealType, Set<string>>>(new Map());
   useEffect(() => {
-    for (const [m, data] of [[meal, tasksQ.data], [other, otherQ.data]] as Array<[MealType, DeliveryTask[] | undefined]>) {
+    for (const [m, data] of [["LUNCH", lunchQ.data], ["DINNER", dinnerQ.data]] as Array<[MealType, DeliveryTask[] | undefined]>) {
       if (!data) continue;
       const ids = new Set(data.filter((t) => t.status !== "CANCELLED").map((t) => t.id));
       const before = known.current.get(m);
@@ -92,7 +96,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       }
       known.current.set(m, ids);
     }
-  }, [meal, other, tasksQ.data, otherQ.data]);
+  }, [lunchQ.data, dinnerQ.data]);
   useEffect(() => {
     if (!arrival) return;
     const t = setTimeout(() => setArrival(null), 8000);
@@ -128,6 +132,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const selected = tasks.find((t) => t.id === selectedId) ?? next;
   const completed = done.length;
   const pct = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+  const toCollect = open.filter((t) => t.paymentMode === "DOORSTEP").reduce((n, t) => n + (t.orderTotal || 0), 0);
   const mealWord = meal === "LUNCH" ? "Lunch" : "Dinner";
 
   const start = async (t: DeliveryTask) => {
@@ -174,19 +179,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       <section className="md:hidden space-y-4">
         <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
-        {tasks.length > 0 && (
-        <div>
-          <div className="flex justify-between text-[14px]">
-            <span className="font-medium">
-              {completed} of {tasks.length} deliveries completed
-            </span>
-            <span className="text-[#6E7F70]">{open.length} remaining</span>
-          </div>
-          <div className="mt-2 h-1.5 rounded-full bg-[#EFEAE1] overflow-hidden">
-            <div className="h-full rounded-full bg-[#C9501C] transition-[width] duration-700" style={{ width: `${pct}%` }} />
-          </div>
-        </div>
-        )}
+        {tasks.length > 0 && <ProgressCard done={completed} total={tasks.length} remaining={open.length} toCollect={toCollect} pct={pct} />}
       </section>
 
       {/* Tablet / desktop hero (screenshot 2) */}
@@ -243,17 +236,30 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
           ) : (
             <>
               {next && matches(next) && (
-                <NextUp task={next} stopNo={numbers.get(next.id)} selected={wide && selected?.id === next.id} starting={starting === next.id} onStart={() => start(next)} onDeliver={() => deliver(next)} />
+                <NextUp task={next} stopNo={numbers.get(next.id)} queueTotal={open.length} selected={wide && selected?.id === next.id} starting={starting === next.id} onStart={() => start(next)} onDeliver={() => deliver(next)} />
               )}
               {!next && (
                 <EmptyState title="All stops done" detail={`${completed} of ${tasks.length} ${mealWord.toLowerCase()} stops recorded`} />
               )}
               <ul className="space-y-2.5">
-                {rest.map((t) => (
-                  <li key={t.id}>
-                    <StopRow task={t} stopNo={numbers.get(t.id)} selected={wide && selected?.id === t.id} onOpen={() => (isOpen(t) ? deliver(t) : wide ? setSelectedId(t.id) : setRecordTask(t))} />
-                  </li>
-                ))}
+                {rest.map((t) => {
+                  const row = <StopRow task={t} stopNo={numbers.get(t.id)} selected={wide && selected?.id === t.id} onOpen={() => (isOpen(t) ? deliver(t) : wide ? setSelectedId(t.id) : setRecordTask(t))} />;
+                  return (
+                    <li key={t.id}>
+                      {isOpen(t) ? (
+                        <>
+                          <div className="md:hidden space-y-2 pt-1">
+                            <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">{open.indexOf(t) + 1} of {open.length}</span>
+                            <OpenStopCard task={t} label={`Stop ${open.indexOf(t) + 1} of ${open.length}`} starting={starting === t.id} onStart={() => start(t)} onDeliver={() => deliver(t)} />
+                          </div>
+                          <div className="hidden md:block">{row}</div>
+                        </>
+                      ) : (
+                        row
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}
@@ -278,7 +284,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   );
 }
 
-function NextUp({ task, stopNo, selected, starting, onStart, onDeliver }: { task: DeliveryTask; stopNo?: number; selected: boolean; starting: boolean; onStart: () => void; onDeliver: () => void }) {
+function NextUp({ task, stopNo, selected, starting, onStart, onDeliver, queueTotal }: { task: DeliveryTask; stopNo?: number; selected: boolean; starting: boolean; onStart: () => void; onDeliver: () => void; queueTotal?: number }) {
   const pay = paymentLabel(task);
   const map = mapsHref(task);
   const lines = task.lines ?? [];
@@ -290,45 +296,9 @@ function NextUp({ task, stopNo, selected, starting, onStart, onDeliver }: { task
           <span className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.08em] text-[#B4440F]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#B4440F]" /> Next delivery
           </span>
-          <span className="text-[13px] text-[#5A6C5E]">{stopNo !== undefined ? `Stop #${stopNo}` : ""}</span>
+          <span className="text-[13px] font-semibold text-[#5A6C5E]">{queueTotal ? `1 of ${queueTotal}` : ""}</span>
         </div>
-        <article aria-label="Next stop" className={`${K.card} p-4 space-y-3`}>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-[20px] font-extrabold tracking-[-0.01em] truncate">{displayName(task)}</h2>
-              <p className="text-[14px] text-[#1A2E20]">{placeLine(task)}</p>
-              {task.landmark && <p className="text-[13px] text-[#B4440F]">{task.landmark}</p>}
-            </div>
-            <Pill tone="grey">{task.paymentMode === "MONTHLY" ? "Subscription" : task.paymentMode === "NONE" ? "Room" : pay.text}</Pill>
-          </div>
-          {lines.length > 0 && <p className="text-[13px] text-[#5A6C5E]">{lines.map((l) => `${l.quantity}× ${l.productName}`).join(" · ")}</p>}
-          <div className="space-y-2">
-            {(telHref(task.customerPhone) || map) && (
-              <div className="flex gap-2">
-                {telHref(task.customerPhone) && (
-                  <CallLink phone={task.customerPhone} wrapClassName="relative flex flex-1" className={`${K.greyBtn} h-11 text-[13px] w-full`}>
-                    <Phone className="w-4 h-4" /> Call
-                  </CallLink>
-                )}
-                {map && (
-                  <a href={map} target="_blank" rel="noreferrer" className={`${K.greyBtn} h-11 text-[13px] flex-1`}>
-                    <Send className="w-4 h-4" /> Directions
-                  </a>
-                )}
-              </div>
-            )}
-            <div className="flex gap-2">
-              {task.status === "ASSIGNED" && (
-                <button type="button" onClick={onStart} disabled={starting} className={`${K.greyBtn} h-12 text-[14px] flex-1`}>
-                  <PlayCircle className="w-4 h-4" /> {starting ? "Starting…" : "Start"}
-                </button>
-              )}
-              <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-12 text-[15px] flex-1`}>
-                Deliver
-              </button>
-            </div>
-          </div>
-        </article>
+        <OpenStopCard task={task} label="Next stop" starting={starting} onStart={onStart} onDeliver={onDeliver} />
       </div>
 
       {/* Tablet / desktop (screenshot 2) */}
@@ -393,6 +363,83 @@ function NextUp({ task, stopNo, selected, starting, onStart, onDeliver }: { task
         </div>
       </article>
     </>
+  );
+}
+
+/** A pending stop in full (phones): who, where, what, how it is paid, and every action. */
+function OpenStopCard({ task, label, starting, onStart, onDeliver }: { task: DeliveryTask; label: string; starting: boolean; onStart: () => void; onDeliver: () => void }) {
+  const pay = paymentLabel(task);
+  const map = mapsHref(task);
+  const lines = task.lines ?? [];
+  return (
+    <article aria-label={label} className={`${K.card} p-4 space-y-3`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[20px] font-extrabold tracking-[-0.01em] truncate">{displayName(task)}</h2>
+          <p className="text-[14px] text-[#1A2E20]">{placeLine(task)}</p>
+          {task.landmark && <p className="text-[13px] text-[#B4440F]">{task.landmark}</p>}
+        </div>
+        <Pill tone="grey">{task.paymentMode === "MONTHLY" ? "Subscription" : task.paymentMode === "NONE" ? "Room" : pay.text}</Pill>
+      </div>
+      {lines.length > 0 && <p className="text-[13px] text-[#5A6C5E]">{lines.map((l) => `${l.quantity}× ${l.productName}`).join(" · ")}</p>}
+      <div className="space-y-2">
+        {(telHref(task.customerPhone) || map) && (
+          <div className="flex gap-2">
+            {telHref(task.customerPhone) && (
+              <CallLink phone={task.customerPhone} wrapClassName="relative flex flex-1" className={`${K.greyBtn} h-11 text-[13px] w-full`}>
+                <Phone className="w-4 h-4" /> Call
+              </CallLink>
+            )}
+            {map && (
+              <a href={map} target="_blank" rel="noreferrer" className={`${K.greyBtn} h-11 text-[13px] flex-1`}>
+                <Send className="w-4 h-4" /> Directions
+              </a>
+            )}
+          </div>
+        )}
+        <div className="flex gap-2">
+          {task.status === "ASSIGNED" && (
+            <button type="button" onClick={onStart} disabled={starting} className={`${K.greyBtn} h-12 text-[14px] flex-1`}>
+              <PlayCircle className="w-4 h-4" /> {starting ? "Starting…" : "Start"}
+            </button>
+          )}
+          <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-12 text-[15px] flex-1`}>
+            Deliver
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** Today's run at a glance (phones): done of total, a bar, and what is left — stops and cash. */
+function ProgressCard({ done, total, remaining, toCollect, pct }: { done: number; total: number; remaining: number; toCollect: number; pct: number }) {
+  const stat = (dot: string, value: string, label: string) => (
+    <div className="flex-1 min-w-0 rounded-xl bg-[#F7F3EC] px-3 py-2">
+      <p className="flex items-center gap-1.5 text-[12px] text-[#6E7F70]">
+        <span className={`w-1.5 h-1.5 rounded-full ${dot}`} /> {label}
+      </p>
+      <p className="mt-0.5 text-[16px] font-extrabold tabular-nums text-[#1F2320] truncate">{value}</p>
+    </div>
+  );
+  return (
+    <section aria-label="Today's progress" className={`${K.card} p-4 space-y-3`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[15px] font-bold text-[#1F2320]">
+          <span className="text-[22px] font-extrabold tabular-nums">{done}</span>
+          <span className="text-[#6E7F70] font-semibold"> / {total} done</span>
+        </p>
+        <span className={`text-[14px] font-extrabold tabular-nums ${remaining === 0 ? "text-[#2F6B24]" : "text-[#C9501C]"}`}>{remaining === 0 ? "All done" : `${pct}%`}</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-[#EFEAE1] overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={done} aria-label="Deliveries done">
+        <div className={`h-full rounded-full transition-[width] duration-700 ${remaining === 0 ? "bg-[#2F6B24]" : "bg-[#C9501C]"}`} style={{ width: `${pct}%` }} />
+      </div>
+      <div className="flex gap-2">
+        {stat("bg-[#C9501C]", String(remaining), "Remaining")}
+        {stat("bg-[#2F6B24]", String(done), "Done")}
+        {toCollect > 0 && stat("bg-[#E9A23B]", rupees(toCollect), "To collect")}
+      </div>
+    </section>
   );
 }
 

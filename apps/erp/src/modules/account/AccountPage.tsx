@@ -263,7 +263,7 @@ function PasswordSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () 
               </li>
             ))}
           </ul>
-          <button type="button" onClick={submit} disabled={!ready || busy} className={`rn-press w-full h-12 rounded-xl font-semibold disabled:opacity-40 ${t.btn}`}>
+          <button type="button" onClick={submit} disabled={!ready || busy} className={`rn-press w-full h-12 rounded-full font-semibold disabled:opacity-40 ${t.btn}`}>
             <Busy busy={busy} idle="Send OTP" label="Sending OTP…" />
           </button>
         </>
@@ -274,7 +274,7 @@ function PasswordSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () 
           </p>
           <CodeField label="OTP" value={code} onChange={setCode} ring={t.ring} />
           {r.sentAgain && <p className="text-[12px] text-[#2F6B24]">New OTP sent.</p>}
-          <button type="button" onClick={confirm} disabled={code.length !== 6 || busy} className={`rn-press w-full h-12 rounded-xl font-semibold disabled:opacity-40 ${t.btn}`}>
+          <button type="button" onClick={confirm} disabled={code.length !== 6 || busy} className={`rn-press w-full h-12 rounded-full font-semibold disabled:opacity-40 ${t.btn}`}>
             <Busy busy={busy} idle="Confirm new password" label="Checking…" />
           </button>
           <div className="flex items-center justify-between text-[13px]">
@@ -347,7 +347,7 @@ function EmailSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () => 
           </p>
           <Field label="New email" type="email" inputMode="email" value={email} onChange={setEmail} autoComplete="email" ring={t.ring} />
           <Field label="Current password" value={password} onChange={setPassword} autoComplete="current-password" ring={t.ring} reveal />
-          <button type="button" onClick={send} disabled={!validEmail || !password || busy} className={`rn-press w-full h-12 rounded-xl font-semibold disabled:opacity-40 ${t.btn}`}>
+          <button type="button" onClick={send} disabled={!validEmail || !password || busy} className={`rn-press w-full h-12 rounded-full font-semibold disabled:opacity-40 ${t.btn}`}>
             <Busy busy={busy} idle="Send OTP" label="Sending OTP…" />
           </button>
         </>
@@ -374,7 +374,7 @@ function EmailSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () => 
             ring={t.ring}
           />
           {r.sentAgain && <p className="text-[12px] text-[#2F6B24]">New OTPs sent.</p>}
-          <button type="button" onClick={confirm} disabled={currentCode.length !== 6 || newCode.length !== 6 || busy} className={`rn-press w-full h-12 rounded-xl font-semibold disabled:opacity-40 ${t.btn}`}>
+          <button type="button" onClick={confirm} disabled={currentCode.length !== 6 || newCode.length !== 6 || busy} className={`rn-press w-full h-12 rounded-full font-semibold disabled:opacity-40 ${t.btn}`}>
             <Busy busy={busy} idle="Confirm new email" label="Checking…" />
           </button>
           <div className="flex items-center justify-between text-[13px]">
@@ -434,15 +434,15 @@ function DevicesCard({ me, onDone }: { me: MyAccount; onDone: (msg: string) => v
               <p className="text-[13px] text-[#3E4540] flex-1 min-w-[180px]">
                 Sign out {me.otherSessions} other {me.otherSessions === 1 ? "device" : "devices"}?
               </p>
-              <button type="button" onClick={() => setConfirming(false)} className="rn-press h-10 px-4 rounded-xl bg-[#EFEAE1] text-[13px] font-semibold">
+              <button type="button" onClick={() => setConfirming(false)} className="rn-press h-10 px-4 rounded-full bg-[#EFEAE1] text-[13px] font-semibold">
                 Cancel
               </button>
-              <button type="button" onClick={signOutOthers} disabled={busy} className="rn-press h-10 px-4 rounded-xl bg-[#9A3423] text-white text-[13px] font-semibold disabled:opacity-60">
+              <button type="button" onClick={signOutOthers} disabled={busy} className="rn-press h-10 px-4 rounded-full bg-[#9A3423] text-white text-[13px] font-semibold disabled:opacity-60">
                 <Busy busy={busy} idle="Sign out" label="Signing out…" />
               </button>
             </div>
           ) : (
-            <button type="button" onClick={() => setConfirming(true)} className="rn-press h-11 w-full rounded-xl bg-[#FBE3DD] text-[14px] font-bold text-[#9A3423] flex items-center justify-center gap-2 hover:bg-[#F7D3CA] active:bg-[#F2C4B8]">
+            <button type="button" onClick={() => setConfirming(true)} className="rn-press h-11 w-full rounded-full bg-[#FBE3DD] text-[14px] font-bold text-[#9A3423] flex items-center justify-center gap-2 hover:bg-[#F7D3CA] active:bg-[#F2C4B8]">
               <LogOut className="w-4 h-4" /> Sign out other devices
             </button>
           )}
@@ -519,7 +519,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
               setRetrying(false);
             }
           }}
-          className={`rn-press h-11 px-6 rounded-xl font-semibold ${t.btn}`}
+          className={`rn-press h-11 px-6 rounded-full font-semibold ${t.btn}`}
         >
           <Busy busy={retrying} idle="Try again" label="Trying again" />
         </button>
@@ -539,7 +539,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
         </p>
       )}
 
-      <section className="rounded-2xl bg-white border border-[#ECE6DB] p-5 flex items-center gap-4">
+      <section className="rounded-2xl bg-white border border-[#ECE6DB] p-4 flex items-center gap-4">
         <UserAvatar size={64} tone={tone} />
         <div className="min-w-0">
           <p className="text-[20px] font-extrabold tracking-[-0.01em] truncate">{me.fullName}</p>
@@ -592,7 +592,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
         </div>
       </section>
 
-      <button type="button" onClick={signOut} disabled={signingOut} className="rn-press w-full h-12 rounded-2xl bg-[#FBE3DD] text-[#9A3423] font-bold flex items-center justify-center gap-2 hover:bg-[#F7D3CA] active:bg-[#F2C4B8] disabled:opacity-70">
+      <button type="button" onClick={signOut} disabled={signingOut} className="rn-press w-full h-12 rounded-full bg-[#FBE3DD] text-[#9A3423] font-bold flex items-center justify-center gap-2 hover:bg-[#F7D3CA] active:bg-[#F2C4B8] disabled:opacity-70">
         {signingOut ? (
           <>
             <BikeLoader inline tone={tone} label="Signing out" /> Signing out…
