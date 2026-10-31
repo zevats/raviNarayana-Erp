@@ -29,6 +29,8 @@ import { CurrentUserProvider } from "@/components/auth/CurrentUserContext";
 import { DeliveryStaffShell } from "./DeliveryStaffShell";
 import { UserAvatar } from "@/components/brand/BrandMark";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { forgetPushToken } from "@/lib/native";
+import { rememberBrand } from "@/lib/brand";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -94,6 +96,12 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
 
   // Client data cache belongs to this user; set synchronously before children read from it.
   setCacheOwner(user.id);
+
+  // Remember which edition this phone shows (green ERP / orange Delivery) for the next launch's
+  // splash and sign-in screen; taken from the signed-in account's role, never chosen by hand.
+  useEffect(() => {
+    rememberBrand(user.role === "DELIVERY_PERSON" ? "delivery" : "standard");
+  }, [user.role]);
 
   // Server-rendered pages (dashboard, staff) are reused from the Next router cache between visits.
   // When a mutation invalidates their data, refresh so the next visit renders fresh numbers.
@@ -328,6 +336,7 @@ export function ErpShell({ user, children, isDemo = false }: ErpShellProps) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
+      await forgetPushToken();
       clearErpCache();
       await fetch("/api/auth/logout", {
         method: "POST",

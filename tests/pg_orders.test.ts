@@ -70,7 +70,7 @@ async function main() {
   );
   assert(tables.length === 2, "orders and order_items exist");
   const migrations = await count(db, "SELECT COUNT(*)::int AS n FROM drizzle.__drizzle_migrations");
-  assert(migrations === 15, `15 migrations recorded (got ${migrations})`);
+  assert(migrations === 16, `16 migrations recorded (got ${migrations})`);
   let badTotal: any = null;
   try {
     await db.transaction(async (tx) => {

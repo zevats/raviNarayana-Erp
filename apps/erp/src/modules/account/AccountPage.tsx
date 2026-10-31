@@ -10,6 +10,7 @@ import { FullPageLoader, useFillHeight } from "@/components/feedback/FullPageLoa
 import { useErpQuery, invalidateErpCache, clearErpCache } from "@/lib/cache/erpDataCache";
 import { requestJson, postJsonRequest } from "@/lib/http/requestJson";
 import { useSheetDrag } from "@/components/feedback/useSheetDrag";
+import { forgetPushToken } from "@/lib/native";
 
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const longDate = (iso: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(iso));
@@ -493,6 +494,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
     if (signingOut) return;
     setSigningOut(true);
     try {
+      await forgetPushToken();
       clearErpCache();
       await fetch("/api/auth/logout", { method: "POST", headers: { "X-RN-CSRF": "1" } });
     } finally {

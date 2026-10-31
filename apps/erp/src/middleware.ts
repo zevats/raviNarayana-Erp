@@ -40,7 +40,9 @@ export function middleware(request: NextRequest) {
     pathname === "/logo.png" ||
     pathname.startsWith("/icons/") ||
     pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password")
+    pathname.startsWith("/reset-password") ||
+    pathname === "/download" ||
+    pathname.startsWith("/download/")
   ) {
     return NextResponse.next();
   }

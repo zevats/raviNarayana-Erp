@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "@/styles/globals.css";
 import { PwaRegistrar } from "@/components/pwa/PwaRegistrar";
+import { NativeBridge } from "@/components/native/NativeBridge";
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -47,6 +48,7 @@ export default function RootLayout({
     <html lang="en" className="h-full">
       <body className="min-h-full bg-[#FAF8F5] text-[#1A2E20] font-sans antialiased selection:bg-[#B58A57]/25 selection:text-[#1A2E20]">
         <PwaRegistrar />
+        <NativeBridge />
         {children}
       </body>
     </html>

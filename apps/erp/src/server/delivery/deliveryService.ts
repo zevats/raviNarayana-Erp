@@ -5,6 +5,7 @@ import { hasPermission } from "../authorization/permissions";
 import { recordAuditEventAsync } from "../audit/audit";
 import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateString } from "../finance/financeService";
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility } from "./deliveryRules";
+import { notifyStopsAssigned } from "../notifications/pushService";
 import {
   AuthenticatedUser,
   MealType,
@@ -1101,6 +1102,7 @@ export async function assignDeliveryTask(
     }, tx);
   });
 
+  if (currentTask.assignedTo !== staff.id) notifyStopsAssigned([taskId], staff.id);
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }
@@ -1255,6 +1257,7 @@ export async function batchAssignDeliveryTasks(
     SELECT * FROM delivery_tasks WHERE id IN (${inPlaceholders})
   `, taskIds);
 
+  notifyStopsAssigned(taskIds, staff.id);
   return {
     assignedCount: updatedRows.length,
     assignedStaffId: staff.id,
@@ -2234,6 +2237,7 @@ export async function retryDeliveryTask(
     }, tx);
   });
 
+  if (targetStaffId) notifyStopsAssigned([taskId], targetStaffId);
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }

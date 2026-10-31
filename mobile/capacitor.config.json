@@ -1,0 +1,44 @@
+{
+  "appId": "com.ravinarayan.erp",
+  "appName": "Ravinarayan",
+  "webDir": "www",
+  "server": {
+    "url": "https://ravinarayan-erp-demo.onrender.com",
+    "androidScheme": "https",
+    "allowNavigation": [
+      "ravinarayan-erp-demo.onrender.com"
+    ],
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#173A29",
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 12000,
+      "backgroundColor": "#173A29",
+      "showSpinner": false,
+      "androidScaleType": "CENTER",
+      "launchFadeOutDuration": 300
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_rn",
+      "iconColor": "#C9501C"
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "backgroundColor": "#173A29",
+      "style": "DARK"
+    }
+  }
+}

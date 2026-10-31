@@ -29,6 +29,7 @@ import {
 } from "./deliveryRules";
 import { getEligibleTiffinSubscriptionsForDate, listDeliveryTasks, getDeliveryTaskById } from "./deliveryService";
 import { summarizeDeliveries, needsFollowUp, deliveryOutcome } from "@/lib/delivery/outcome";
+import { notifyStopCancelled } from "../notifications/pushService";
 
 /**
  * Delivery operations (round 11, migration 0014):
@@ -445,16 +446,19 @@ export async function cancelDeliveryTask(
   if (reason.length < 3) throw new Error("Give a reason for cancelling this delivery.");
   const now = clock?.now ?? new Date();
   const at = now.toISOString();
+  let holder: string | null = null;
   await db.transaction(async (tx) => {
     const row = await lockTask(tx, taskId);
     if (row.status === "CANCELLED") return;
     if (row.status === "DELIVERED") throw new Error("A delivered delivery cannot be cancelled.");
+    holder = row.assigned_to || null;
     const past = isPastCutoff(row.service_date, row.meal_type, now);
     if (past && !input.overrideCutoff) {
       throw new Error(`This is after ${cutoffText(row.meal_type)}. Confirm the Manager override to cancel it.`);
     }
     await cancelTaskInTx(tx, actor, row, reason, past, at, clientIp);
   });
+  notifyStopCancelled(taskId, holder);
   return (await getDeliveryTaskById(actor, taskId, db))!.task;
 }
 

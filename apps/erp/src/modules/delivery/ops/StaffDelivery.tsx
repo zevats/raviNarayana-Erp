@@ -148,6 +148,22 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
     }
   };
   const deliver = (t: DeliveryTask) => (wide ? setSelectedId(t.id) : setSheetTask(t));
+  // Opened from a notification (/delivery?task=…): show that stop once the lists are loaded.
+  const linked = useRef(false);
+  useEffect(() => {
+    if (linked.current || lunchQ.data === undefined || dinnerQ.data === undefined) return;
+    const id = new URLSearchParams(window.location.search).get("task");
+    if (!id) return;
+    linked.current = true;
+    const t = [...lunchQ.data, ...dinnerQ.data].find((x) => x.id === id);
+    window.history.replaceState(window.history.state, "", "/delivery");
+    if (!t) return;
+    setMeal(t.mealType);
+    if (isOpen(t)) deliver(t);
+    else if (wide) setSelectedId(t.id);
+    else setRecordTask(t);
+  });
+
   const saved = (text: string, done?: DeliveryTask) => {
     // Put the saved stop into the list straight away (it moves to completed and the next stop comes
     // up), then refresh everything affected in the background.

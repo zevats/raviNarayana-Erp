@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ravinarayan — no connection</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #F4F1EA; color: #16241B; display: flex; flex-direction: column; }
+  header { background: radial-gradient(120% 90% at 50% 0%, #22533A 0%, #173A29 55%, #0F2A1D 100%); padding: 64px 24px 96px; text-align: center; color: #fff; }
+  header p { margin: 14px 0 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; }
+  main { margin: -64px 16px 24px; background: #fff; border-radius: 28px; padding: 28px 22px; box-shadow: 0 18px 50px -20px rgba(15,42,29,.35); text-align: center; }
+  h1 { margin: 0; font-size: 21px; }
+  .lead { margin: 8px 0 22px; color: #5B6B5F; font-size: 15px; line-height: 1.45; }
+  button { width: 100%; height: 48px; border: 0; border-radius: 999px; background: #173A29; color: #fff; font-size: 15px; font-weight: 700; }
+  button:active { transform: scale(.98); }
+</style>
+</head>
+<body>
+<header>
+  <svg width="76" height="76" viewBox="0 0 108 108" aria-hidden="true"><rect width="108" height="108" rx="28" fill="#173A29" stroke="rgba(255,255,255,.18)"/><g fill="none" stroke="#F7F1E3" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"><path d="M42 80V33"/><path d="M42 33H58a12.5 12.5 0 0 1 0 25H42"/><path d="M55 58L70 80"/></g><circle cx="76" cy="31" r="6" fill="#D4A24E"/></svg>
+  <p>Ravinarayan</p>
+</header>
+<main>
+  <h1>No connection</h1>
+  <p class="lead">Check your internet, then try again. Anything you saved is safe.</p>
+  <button onclick="location.replace('https://ravinarayan-erp-demo.onrender.com')">Try again</button>
+</main>
+<script>
+  // This page replaces the ERP when the server cannot be reached: let it be seen.
+  try { window.Capacitor && window.Capacitor.Plugins.SplashScreen && window.Capacitor.Plugins.SplashScreen.hide({ fadeOutDuration: 250 }); } catch (e) {}
+  try { window.Capacitor && window.Capacitor.Plugins.StatusBar && window.Capacitor.Plugins.StatusBar.setBackgroundColor({ color: "#173A29" }); } catch (e) {}
+</script>
+</body>
+</html>

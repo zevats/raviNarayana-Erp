@@ -17,6 +17,7 @@ export function PwaRegistrar() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if ((window as any).Capacitor?.isNativePlatform?.()) return; // the Android app needs neither
 
     // 1. Detect if running in standalone PWA window
     const isStandaloneMode =

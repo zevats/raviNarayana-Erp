@@ -142,6 +142,9 @@ export async function POST(request: NextRequest) {
         status: "OTP_REQUIRED",
         challengeId: challenge.challengeId,
         emailMasked: challenge.maskedEmail,
+        // Which edition of the app to show from here on (sent only after the password is right,
+        // so it cannot be used to find out which emails belong to delivery staff).
+        appearance: user.role === "DELIVERY_PERSON" ? "delivery" : "standard",
       },
       { status: 200 }
     );
