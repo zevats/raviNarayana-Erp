@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { X, FileText, CheckCircle2, AlertCircle, AlertTriangle, ShieldCheck, Calendar, Info } from "lucide-react";
 import { TiffinBillingPeriodPreview, GenerateTiffinInvoicesResult } from "@/types";
 
@@ -23,6 +23,8 @@ export function GenerateTiffinInvoicesModal({
   const [paymentTermsDays, setPaymentTermsDays] = useState(15);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen || !preview) return null;
@@ -33,6 +35,8 @@ export function GenerateTiffinInvoicesModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
     setError(null);
 
@@ -58,6 +62,7 @@ export function GenerateTiffinInvoicesModal({
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

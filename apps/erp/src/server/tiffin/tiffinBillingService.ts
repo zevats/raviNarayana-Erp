@@ -3,9 +3,11 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
-import { getCompanyBillingConfig } from "../database/env";
+import { getInvoiceCompanyConfig } from "../settings/settingsService";
 import { assertClosingDateNotFinalized, acquireLedgerKeyLock } from "../finance/financeService";
 import { assertValidGstin } from "../finance/gstinValidator";
+import { canonicalBillingMonth } from "../finance/billingPeriod";
+import { hasInvoiceIdempotencySchema } from "../database/schemaFeatures";
 import {
   generateNextInvoiceNumber,
   calculateInvoiceTotals,
@@ -134,6 +136,9 @@ export async function previewTiffinBilling(
   let alreadyBilledInvoicesCount = 0;
 
   const itemLines = await hasDeliveryOpsSchema(db);
+  // With migration 0020 an invoice for the same month written another way ("Nov 2026" / "2026-11")
+  // counts as already billed.
+  const month = (await hasInvoiceIdempotencySchema(db)) ? canonicalBillingMonth(billingPeriod) : null;
   for (const row of subRows) {
     const subscriptionId = row.subscription_id;
     const customerId = row.customer_id;
@@ -147,10 +152,10 @@ export async function previewTiffinBilling(
       FROM invoices
       WHERE customer_id = ?
         AND subscription_id = ?
-        AND billing_period = ?
+        AND (billing_period = ?${month ? " OR billing_month = ?" : ""})
         AND status != 'CANCELLED'
       LIMIT 1
-    `, [customerId, subscriptionId, billingPeriod]);
+    `, month ? [customerId, subscriptionId, billingPeriod, month] : [customerId, subscriptionId, billingPeriod]);
 
     // Query delivery tasks for this subscription in the date window
     // With item lines (migration 0014) a delivery bills the boxes actually delivered (a partial
@@ -318,7 +323,7 @@ export async function generateTiffinInvoices(
     return true;
   });
 
-  const companyConfig = getCompanyBillingConfig();
+  const companyConfig = await getInvoiceCompanyConfig(db);
 
   // GST guard
   if (invoiceType === "GST_TAX_INVOICE") {
@@ -332,27 +337,31 @@ export async function generateTiffinInvoices(
   }
 
   const generatedInvoices: Invoice[] = [];
+  const billingMonth = (await hasInvoiceIdempotencySchema(db)) ? canonicalBillingMonth(billingPeriod) : null;
   const skippedDetails: Array<{ customerId: string; customerName: string; reason: string }> = [];
   const now = new Date().toISOString();
   const issueDate = now.slice(0, 10);
   const year = parseInt(issueDate.slice(0, 4), 10);
 
   await db.transaction(async (tx) => {
+    // Runs for the same period are serialised: without this, two runs started together both saw
+    // "no invoice yet" for a customer and billed them twice. Taken first, before any other lock.
+    await acquireLedgerKeyLock(tx, `tiffin-billing:${billingPeriod}`);
     if (input.autoIssue && eligibleList.length > 0) {
       await assertClosingDateNotFinalized(tx, issueDate, "TIFFIN");
     }
 
     for (const cust of eligibleList) {
-      // 1. Concurrency-safe duplicate prevention at DB transaction level
+      // 1. Duplicate prevention (made concurrency-safe by the period lock above)
       const existing = await tx.queryOne<any>(`
         SELECT id, invoice_number, status
         FROM invoices
         WHERE customer_id = ?
           AND subscription_id = ?
-          AND billing_period = ?
+          AND (billing_period = ?${billingMonth ? " OR billing_month = ?" : ""})
           AND status != 'CANCELLED'
         LIMIT 1
-      `, [cust.customerId, cust.subscriptionId, billingPeriod]);
+      `, billingMonth ? [cust.customerId, cust.subscriptionId, billingPeriod, billingMonth] : [cust.customerId, cust.subscriptionId, billingPeriod]);
 
       if (existing) {
         skippedDetails.push({
@@ -480,6 +489,11 @@ export async function generateTiffinInvoices(
         now,
       ]);
 
+      if (billingMonth) {
+        // Migration 0020's unique index: one active invoice per customer, subscription and month.
+        await tx.execute("UPDATE invoices SET billing_month = ? WHERE id = ?", [billingMonth, invoiceId]);
+      }
+
       // Insert line item
       const itemId = `inv_item_${crypto.randomUUID()}`;
       await tx.execute(`
@@ -563,13 +577,17 @@ export async function recordTiffinPayment(
   actor: AuthenticatedUser,
   input: RecordTiffinPaymentInput,
   clientIp?: string,
-  asyncDb?: AsyncDb
+  asyncDb?: AsyncDb,
+  /** Recorded through Finance → Receivables → Receive payment, against the invoice it pays. */
+  options?: { asAccountPayment?: boolean }
 ): Promise<{ transaction: FinancialTransaction; allocation?: any }> {
   let dbInstance = asyncDb;
   const db = dbInstance ?? getAsyncDb();
 
-  // Privilege Guard: Requires finance.manage (Super Admin, Accountant)
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "tiffin.payment_recorded" });
+  // Tiffin payments stay Owner-only (finance.manage, ISSUE-010), except a payment received for a
+  // specific invoice through Finance → Receivables, which Owner and Manager may record (decision
+  // D6, 2026-11: both collect at the office).
+  requirePermission(actor, options?.asAccountPayment && input.invoiceId ? "finance.record" : "finance.manage", { ip: clientIp, action: "tiffin.payment_recorded" });
 
   const customerId = input.customerId?.trim();
   const amount = Number(input.amount);
@@ -709,7 +727,8 @@ export async function recordTiffinPayment(
           notes: input.notes?.trim() || null,
         },
         clientIp,
-        tx as any
+        tx as any,
+        { asPartOfPayment: true }
       );
       allocatedResult = alloc.allocation;
     }
@@ -784,15 +803,21 @@ export async function getTiffinCustomerBalance(
   const totalPaid = Number(totals?.totalPaid || 0);
   const outstandingBalance = Math.max(0, totalCharged - totalPaid);
 
-  // Compute unallocated payments
+  // Unallocated money: per posted payment, its amount minus what is allocated from it, summed.
+  // (Joining allocations and summing t.amount repeated each payment once per allocation row, so a
+  // ₹1,000 payment split ₹300 + ₹200 showed ₹1,500 unallocated instead of ₹500.) Reversed payments
+  // are excluded with their allocations; an allocation only counts while its payment is POSTED.
   const unallocRow = await db.queryOne<any>(`
-    SELECT
-      COALESCE(SUM(t.amount), 0) - COALESCE(SUM(a.amount), 0) as unallocated
-    FROM financial_transactions t
-    LEFT JOIN invoice_payment_allocations a ON a.payment_transaction_id = t.id
-    WHERE t.customer_id = ?
-      AND t.transaction_type = 'TIFFIN_PAYMENT'
-      AND t.status = 'POSTED'
+    SELECT COALESCE(SUM(CASE WHEN rest > 0 THEN rest ELSE 0 END), 0) as unallocated
+    FROM (
+      SELECT t.amount - COALESCE((
+        SELECT SUM(a.amount) FROM invoice_payment_allocations a WHERE a.payment_transaction_id = t.id
+      ), 0) AS rest
+      FROM financial_transactions t
+      WHERE t.customer_id = ?
+        AND t.transaction_type = 'TIFFIN_PAYMENT'
+        AND t.status = 'POSTED'
+    ) per_payment
   `, [customerId]);
 
   const unallocatedPaymentAmount = Math.max(0, Number(unallocRow?.unallocated || 0));

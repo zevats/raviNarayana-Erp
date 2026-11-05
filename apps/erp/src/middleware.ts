@@ -54,8 +54,8 @@ export function middleware(request: NextRequest) {
       loginUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(loginUrl);
     }
-    // Retired sections live inside Orders; redirect before any page renders.
-    if (pathname === "/kitchen" || pathname === "/tiffin") {
+    // Kitchen is out of scope and lives on only as a redirect to Orders.
+    if (pathname === "/kitchen") {
       return NextResponse.redirect(sameOriginUrl(request, "/orders"));
     }
     // The management layout reads the path to send roles away from sections they cannot use

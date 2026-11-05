@@ -1,5 +1,6 @@
 import { AsyncDb } from "../database/db";
 import { MealType } from "@/types";
+import { getSettings } from "../settings/settingsService";
 
 /**
  * Delivery operations rules shared by the delivery services (no imports from them, so both the
@@ -12,6 +13,26 @@ export const MEAL_SCHEDULE: Record<MealType, { prepareAt: string | null; cutoffA
   LUNCH: { prepareAt: "08:00", cutoffAt: "07:30" },
   DINNER: { prepareAt: "15:30", cutoffAt: "15:00" },
 };
+
+let activeSchedule: Record<MealType, { prepareAt: string | null; cutoffAt: string | null }> = MEAL_SCHEDULE;
+
+/** The schedule in force: the Owner's saved meal times (Settings), else MEAL_SCHEDULE. */
+export function mealSchedule(): Record<MealType, { prepareAt: string | null; cutoffAt: string | null }> {
+  return activeSchedule;
+}
+
+/**
+ * Loads the saved meal times before cutoff/preparation decisions. Called at the start of every
+ * delivery operation that uses them, so each server instance follows the database setting.
+ */
+export async function refreshMealSchedule(db: AsyncDb): Promise<void> {
+  const m = (await getSettings(db)).meals;
+  activeSchedule = {
+    BREAKFAST: MEAL_SCHEDULE.BREAKFAST,
+    LUNCH: { prepareAt: m.lunchPrepareAt, cutoffAt: m.lunchCutoffAt },
+    DINNER: { prepareAt: m.dinnerPrepareAt, cutoffAt: m.dinnerCutoffAt },
+  };
+}
 
 const toMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 
@@ -38,13 +59,13 @@ export function isPastCutoff(serviceDate: string, mealType: MealType, now: Date 
   const clock = businessClock(now);
   if (serviceDate < clock.date) return true;
   if (serviceDate > clock.date) return false;
-  const cutoff = MEAL_SCHEDULE[mealType]?.cutoffAt;
+  const cutoff = activeSchedule[mealType]?.cutoffAt;
   return cutoff ? clock.minutes >= toMinutes(cutoff) : false;
 }
 
 /** Whether the delivery list for this meal is due for automatic preparation (today, after its time). */
 export function isPreparationDue(serviceDate: string, mealType: MealType, now: Date = new Date()): boolean {
-  const prepareAt = MEAL_SCHEDULE[mealType]?.prepareAt;
+  const prepareAt = activeSchedule[mealType]?.prepareAt;
   if (!prepareAt) return false;
   const clock = businessClock(now);
   return serviceDate === clock.date && clock.minutes >= toMinutes(prepareAt);
@@ -71,6 +92,16 @@ export async function hasDeliveryOpsSchema(db: AsyncDb): Promise<boolean> {
   opsSchemaPresent = Boolean(row?.t);
   opsSchemaCheckedAt = Date.now();
   return opsSchemaPresent;
+}
+
+/**
+ * A delivery collection counts unless the cashbook entry it was booked as (UPI paid straight to the
+ * PG account, migration 0014) has been reversed. Cash has no entry of its own until its handover is
+ * accepted, so a cash collection always counts. The collection row itself is never deleted, so the
+ * history stays. Use only when hasDeliveryOpsSchema() is true (the transaction_id column is 0014).
+ */
+export function activeCollectionSql(alias = "dc"): string {
+  return `NOT EXISTS (SELECT 1 FROM financial_transactions rv WHERE rv.id = ${alias}.transaction_id AND rv.status = 'REVERSED')`;
 }
 
 /** Thrown when a feature needs migration 0014 and it is not installed (mapped to HTTP 409). */

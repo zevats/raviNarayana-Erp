@@ -63,6 +63,7 @@ export function AccountingPeriodSelector({
         <button
           type="button"
           onClick={() => handleSelectPreset("THIS_MONTH")}
+          aria-pressed={activePreset === "THIS_MONTH"}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
             activePreset === "THIS_MONTH"
               ? "bg-[#1A2E20] text-white shadow-xs"
@@ -75,6 +76,7 @@ export function AccountingPeriodSelector({
         <button
           type="button"
           onClick={() => handleSelectPreset("LAST_30_DAYS")}
+          aria-pressed={activePreset === "LAST_30_DAYS"}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
             activePreset === "LAST_30_DAYS"
               ? "bg-[#1A2E20] text-white shadow-xs"
@@ -87,6 +89,7 @@ export function AccountingPeriodSelector({
         <button
           type="button"
           onClick={() => handleSelectPreset("ALL_TIME")}
+          aria-pressed={activePreset === "ALL_TIME"}
           className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
             activePreset === "ALL_TIME"
               ? "bg-[#1A2E20] text-white shadow-xs"

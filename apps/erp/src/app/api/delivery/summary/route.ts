@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessToday } from "@/lib/businessDate";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
@@ -16,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
-    const serviceDate = url.searchParams.get("serviceDate") || new Date().toISOString().slice(0, 10);
+    const serviceDate = url.searchParams.get("serviceDate") || businessToday();
     const mealType = (url.searchParams.get("mealType") as MealType | "ALL") || "ALL";
 
     const summary = await getDeliveryDashboardSummary(user, serviceDate, mealType);

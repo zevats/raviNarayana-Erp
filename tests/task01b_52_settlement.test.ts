@@ -101,6 +101,17 @@ async function runTests() {
     role: "OPERATIONS_MANAGER",
   };
 
+  // Decision 2026-11-01: a settlement that moves deposit money is finalized by the Owner; the
+  // Manager prepares it and sends it for approval. The settlement arithmetic below therefore runs
+  // as the Owner, and Scenario 0 checks the Manager is refused.
+  const ownerActor: AuthenticatedUser = {
+    id: "usr_owner_52",
+    username: "owner_52",
+    email: "owner52@ravinarayana.com",
+    fullName: "Owner 52",
+    role: "SUPER_ADMIN",
+  };
+
   const accountantActor: AuthenticatedUser = {
     id: "usr_acct_52",
     username: "accountant_52",
@@ -128,7 +139,7 @@ async function runTests() {
   const now = new Date().toISOString();
 
   // Seed staff users
-  for (const u of [adminActor, opsActor, accountantActor, kitchenActor, deliveryActor]) {
+  for (const u of [adminActor, ownerActor, opsActor, accountantActor, kitchenActor, deliveryActor]) {
     await db.execute(`
       INSERT INTO staff_users (id, username, email, full_name, role, password_hash, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, 'hash', 1, ?, ?)
@@ -218,7 +229,17 @@ async function runTests() {
   assert(prev1.suggestedRefund === 16000, "Scenario 1: Suggested deposit refund is full ₹16,000");
   assert(prev1.suggestedRemainingPayable === 0, "Scenario 1: Suggested remaining payable is ₹0");
 
-  const stl1 = await finalizeResidentCheckoutSettlement(opsActor, {
+  let managerRefundBlocked = false;
+  try {
+    await finalizeResidentCheckoutSettlement(opsActor, {
+      residentId: s1.residentId, checkOutDate: "2026-09-30", refundAmount: 16000, refundPaymentMethod: "UPI",
+    }, undefined, db);
+  } catch (err: any) {
+    managerRefundBlocked = err.statusCode === 403 && /Owner's approval/.test(err.message);
+  }
+  assert(managerRefundBlocked, "Scenario 0: the Manager cannot finalize a deposit refund (Owner approval required)");
+
+  const stl1 = await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s1.residentId,
     checkOutDate: "2026-09-30",
     refundAmount: 16000,
@@ -339,7 +360,7 @@ async function runTests() {
   assert(prev3.suggestedRemainingPayable === 13000, "Scenario 3: Suggested remaining payable is ₹13,000");
 
   // Finalize with remaining balance pending payment
-  const stl3 = await finalizeResidentCheckoutSettlement(opsActor, {
+  const stl3 = await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s3.residentId,
     checkOutDate: "2026-09-30",
     depositAppliedAmount: 5000,
@@ -385,7 +406,7 @@ async function runTests() {
   assert(prev4.suggestedRemainingPayable === 3000, "Scenario 4: Remaining payable is ₹3,000");
 
   // Resident pays remaining ₹3,000 at checkout
-  const stl4 = await finalizeResidentCheckoutSettlement(opsActor, {
+  const stl4 = await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s4.residentId,
     checkOutDate: "2026-09-30",
     depositAppliedAmount: 0,
@@ -511,7 +532,7 @@ async function runTests() {
     { reason: "Wall patch repair", amount: 1000 },
   ];
 
-  const stl7 = await finalizeResidentCheckoutSettlement(opsActor, {
+  const stl7 = await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s7.residentId,
     checkOutDate: "2026-09-30",
     deductions: deductions7,
@@ -635,7 +656,7 @@ async function runTests() {
 
   let malformedDateError = false;
   try {
-    await finalizeResidentCheckoutSettlement(opsActor, {
+    await finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s10.residentId,
       checkOutDate: "31-10-2026", // Invalid format
     }, undefined, db);
@@ -650,7 +671,7 @@ async function runTests() {
   // s1 was already checked out in Scenario 1
   let duplicateCheckoutError = false;
   try {
-    await finalizeResidentCheckoutSettlement(opsActor, {
+    await finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s1.residentId,
       checkOutDate: "2026-10-01",
     }, undefined, db);
@@ -790,7 +811,7 @@ async function runTests() {
 
   let invalidMethodError = false;
   try {
-    await finalizeResidentCheckoutSettlement(opsActor, {
+    await finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s17.residentId,
       checkOutDate: "2026-10-20",
       refundAmount: 9000,
@@ -803,7 +824,7 @@ async function runTests() {
   assert(invalidMethodError, "Scenario 17: Invalid refund payment method rejected");
 
   // Valid canonical payment method succeeds
-  const stl17 = await finalizeResidentCheckoutSettlement(opsActor, {
+  const stl17 = await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s17.residentId,
     checkOutDate: "2026-10-20",
     refundAmount: 9000,
@@ -834,7 +855,7 @@ async function runTests() {
   // Intentionally pass an invalid deduction with 0 amount to trigger mid-transaction failure
   let atomicRollbackTriggered = false;
   try {
-    await finalizeResidentCheckoutSettlement(opsActor, {
+    await finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s18.residentId,
       checkOutDate: "2026-10-20",
       deductions: [{ reason: "Bad entry", amount: 0 }],
@@ -861,7 +882,7 @@ async function runTests() {
   }, db);
 
   // Finalize s18 with a refund of ₹7,000
-  await finalizeResidentCheckoutSettlement(opsActor, {
+  await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s18.residentId,
     checkOutDate: "2026-10-20",
     refundAmount: 7000,
@@ -908,13 +929,13 @@ async function runTests() {
 
   // Fire two settlement attempts concurrently
   const [resA, resB] = await Promise.allSettled([
-    finalizeResidentCheckoutSettlement(opsActor, {
+    finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s21.residentId,
       checkOutDate: "2026-10-25",
       refundAmount: 10000,
       refundPaymentMethod: "UPI",
     }, undefined, db),
-    finalizeResidentCheckoutSettlement(opsActor, {
+    finalizeResidentCheckoutSettlement(ownerActor, {
       residentId: s21.residentId,
       checkOutDate: "2026-10-25",
       refundAmount: 10000,
@@ -1002,7 +1023,7 @@ async function runTests() {
   const activeResidentsBefore = await db.queryOne<any>("SELECT count(*) as count FROM resident_stays WHERE room_id = 'rm_101' AND status = 'ACTIVE'");
   const occupancyBefore = Number(activeResidentsBefore.count);
 
-  await finalizeResidentCheckoutSettlement(opsActor, {
+  await finalizeResidentCheckoutSettlement(ownerActor, {
     residentId: s23.residentId,
     checkOutDate: "2026-10-25",
     refundAmount: 8000,

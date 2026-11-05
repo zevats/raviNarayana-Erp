@@ -3,6 +3,8 @@
  * Disposable local database only (RN_PG_VERIFY_URL, see helpers/pgVerifyTarget); synthetic data.
  */
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { getAsyncDb, AsyncDb } from "../apps/erp/src/server/database/db";
 import { closePg } from "../apps/erp/src/server/database/client";
 import { createUnifiedOrder, listUnifiedOrders, getCustomerOrderHistory, backfillLegacyOrders } from "../apps/erp/src/server/orders/orderService";
@@ -70,7 +72,10 @@ async function main() {
   );
   assert(tables.length === 2, "orders and order_items exist");
   const migrations = await count(db, "SELECT COUNT(*)::int AS n FROM drizzle.__drizzle_migrations");
-  assert(migrations === 16, `16 migrations recorded (got ${migrations})`);
+  // Every migration in the journal is applied (additive migrations after 0012 keep this true).
+  const journal = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "..", "..", "apps", "erp", "src", "server", "database", "drizzle", "meta", "_journal.json"), "utf8"));
+  const expected = journal.entries.length;
+  assert(migrations === expected, `${expected} migrations recorded (got ${migrations})`);
   let badTotal: any = null;
   try {
     await db.transaction(async (tx) => {

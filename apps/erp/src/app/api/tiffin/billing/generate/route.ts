@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessToday, addBusinessDays } from "@/lib/businessDate";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
   resolveUserFromRequest,
@@ -26,14 +27,12 @@ export async function POST(request: NextRequest) {
     }
 
     const [year, month] = body.billingPeriod.split("-");
-    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
     const defaultStart = `${body.billingPeriod}-01`;
     const defaultEnd = `${body.billingPeriod}-${String(lastDay).padStart(2, "0")}`;
 
     const paymentTerms = (body as any).paymentTermsDays ?? 15;
-    const due = new Date();
-    due.setDate(due.getDate() + paymentTerms);
-    const defaultDue = due.toISOString().slice(0, 10);
+    const defaultDue = addBusinessDays(businessToday(), Number(paymentTerms) || 0);
 
     const input: GenerateTiffinInvoicesInput = {
       billingPeriod: body.billingPeriod,

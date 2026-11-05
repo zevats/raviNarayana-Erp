@@ -18,8 +18,11 @@ export function sectionRedirectFor(role: string, pathname: string): string | nul
     return inSection("/delivery") ? null : "/delivery";
   }
   if (inSection("/staff")) return role === "SUPER_ADMIN" ? null : fallback;
+  if (inSection("/settings") || inSection("/activity")) return hasPermission(role, "system.manage") ? null : fallback;
   if (inSection("/rooms")) return hasPermission(role, "rooms.read") ? null : fallback;
   if (inSection("/residents")) return hasPermission(role, "residents.read") ? null : fallback;
   if (inSection("/finance")) return hasPermission(role, "finance.read") ? null : fallback;
+  if (inSection("/tiffin")) return hasPermission(role, "tiffin.read") ? null : fallback;
+  if (inSection("/reports")) return hasPermission(role, "finance.read") ? null : fallback;
   return null;
 }

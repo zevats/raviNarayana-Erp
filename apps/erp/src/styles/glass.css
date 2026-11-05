@@ -1,0 +1,452 @@
+/* =============================================================================
+   Ravinarayan ERP — glass design system (manager ERP only).
+   Everything here is scoped to .rn-app (the manager shell). The delivery staff app
+   (DeliveryStaffShell) and the sign-in pages are not inside .rn-app and are unchanged.
+
+   Themes: green (brand, default) and orange (Orders & Delivery, data-accent="orange").
+   Colours are the @ravinarayan/brand values (forest, sage, ivory, brass) and the delivery
+   edition's burnt orange (#C9501C family) already used by the delivery app.
+   ============================================================================= */
+
+.rn-app {
+  /* Accent (green) */
+  --rn-accent: #1A2E20;        /* forest.deepest — primary actions, active states */
+  --rn-accent-strong: #263B2D; /* forest.dark — hover */
+  --rn-accent-mid: #5D7656;    /* forest — secondary marks */
+  --rn-accent-soft: #DCE5D7;   /* sage.pale — chips, soft fills */
+  --rn-accent-tint: #EEF3EA;   /* row hover, selected rows */
+  --rn-highlight: #B58A57;     /* brass — small accents only */
+  --rn-ink: #1A2E20;           /* headings */
+  --rn-ink-2: #3E4E42;         /* body */
+  --rn-ink-3: #5A6C5E;         /* labels */
+  --rn-line: rgba(26, 46, 32, 0.08);
+  --rn-canvas: #F2F0E9;
+  --rn-side-top: rgba(38, 59, 45, 0.94);
+  --rn-side-bottom: rgba(22, 34, 26, 0.96);
+  --rn-tip-bg: rgba(22, 34, 26, 0.94);
+  --rn-bike-body: #263B2D;
+
+  /* Glass levels: 1 navigation & floating, 2 content, 3 secondary/overlays, 4 popovers, 5 dialogs */
+  --rn-glass-1: rgba(255, 255, 255, 0.58);
+  --rn-glass-2: rgba(255, 255, 255, 0.70);
+  --rn-glass-3: rgba(255, 255, 255, 0.82);
+  --rn-glass-4: rgba(255, 255, 255, 0.90);
+  --rn-glass-5: rgba(253, 252, 249, 0.96);
+  --rn-glass-border: rgba(255, 255, 255, 0.70);
+  --rn-glass-shadow: 0 1px 1px rgba(26, 46, 32, 0.03), 0 12px 32px -18px rgba(26, 46, 32, 0.28);
+  --rn-glass-shadow-lg: 0 2px 2px rgba(26, 46, 32, 0.04), 0 28px 60px -28px rgba(26, 46, 32, 0.40);
+
+  /* Motion */
+  --rn-ease: cubic-bezier(0.22, 0.8, 0.22, 1);
+  --rn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --rn-fast: 140ms;
+  --rn-med: 220ms;
+  --rn-slow: 360ms;
+
+  font-family: var(--font-rn-display), var(--font-sans);
+  color: var(--rn-ink);
+}
+
+.rn-app[data-accent="orange"] {
+  --rn-accent: #B4461A;        /* burnt orange */
+  --rn-accent-strong: #8F3612;
+  --rn-accent-mid: #D9692F;    /* warm amber-orange */
+  --rn-accent-soft: #F8DCC8;   /* soft peach */
+  --rn-accent-tint: #FDF1E7;   /* warm cream */
+  --rn-highlight: #C9822F;     /* warm amber */
+  --rn-ink: #2B2420;           /* charcoal */
+  --rn-ink-2: #4A3F38;
+  --rn-ink-3: #6E5F55;
+  --rn-line: rgba(60, 36, 20, 0.09);
+  --rn-canvas: #F5EFE8;
+  --rn-side-top: rgba(74, 40, 22, 0.95);
+  --rn-side-bottom: rgba(43, 24, 14, 0.97);
+  --rn-tip-bg: rgba(43, 24, 14, 0.94);
+  --rn-bike-body: #B4461A;
+  --rn-bike-box: #FCE9DD;
+  --rn-bike-line: #C9501C;
+  --rn-bike-light: #F2B33D;
+  --rn-glass-shadow: 0 1px 1px rgba(60, 36, 20, 0.03), 0 12px 32px -18px rgba(90, 50, 20, 0.28);
+  --rn-glass-shadow-lg: 0 2px 2px rgba(60, 36, 20, 0.04), 0 28px 60px -28px rgba(90, 50, 20, 0.40);
+}
+
+/* ---------------------------------------------------------------- Canvas */
+.rn-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 620px at 8% -8%, #D8E3D2 0%, rgba(216, 227, 210, 0) 62%),
+    radial-gradient(900px 520px at 100% 0%, #E7EEE1 0%, rgba(231, 238, 225, 0) 58%),
+    radial-gradient(900px 700px at 70% 115%, #EFE7D6 0%, rgba(239, 231, 214, 0) 60%),
+    var(--rn-canvas);
+  transition: background var(--rn-slow) var(--rn-ease);
+}
+.rn-app[data-accent="orange"] .rn-canvas {
+  background:
+    radial-gradient(1100px 620px at 8% -8%, #F6DCC6 0%, rgba(246, 220, 198, 0) 62%),
+    radial-gradient(900px 520px at 100% 0%, #F8E8D9 0%, rgba(248, 232, 217, 0) 58%),
+    radial-gradient(900px 700px at 70% 115%, #EFE2D2 0%, rgba(239, 226, 210, 0) 60%),
+    var(--rn-canvas);
+}
+
+/* ---------------------------------------------------------------- Glass primitives */
+.rn-glass, .rn-glass-strong, .rn-pop, .rn-dialog {
+  border: 1px solid var(--rn-glass-border);
+  box-shadow: var(--rn-glass-shadow);
+}
+.rn-glass { background: var(--rn-glass-2); }
+.rn-glass-strong { background: var(--rn-glass-3); }
+.rn-pop { background: var(--rn-glass-4); box-shadow: var(--rn-glass-shadow-lg); }
+.rn-dialog { background: var(--rn-glass-5); box-shadow: var(--rn-glass-shadow-lg); }
+/* Performance: a backdrop blur costs a compositing layer and a re-blur on every scroll frame.
+   Cards, tiles and the sidebar sit on the soft canvas, where a blur cannot be seen, so they
+   keep the same translucent fill without one. Only surfaces that float over content blur:
+   the phone top and bottom bars (.rn-blur), popovers and dialogs. */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .rn-blur { -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%); }
+  .rn-pop, .rn-dialog { -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); }
+}
+/* Without backdrop-filter, floating glass falls back to near-solid surfaces so text stays readable. */
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .rn-blur { background: rgba(255, 255, 255, 0.94); }
+  .rn-pop, .rn-dialog { background: #FFFFFF; }
+}
+/* Small floating labels (chart tooltips) follow the pointer: no blur, near-solid fill. */
+.rn-tooltip { background: rgba(255, 255, 255, 0.96); border: 1px solid var(--rn-glass-border); box-shadow: var(--rn-glass-shadow-lg); }
+
+/* Sidebar surface: deep glass in the section colour (forest / burnt umber) */
+.rn-sidebar {
+  background: linear-gradient(180deg, var(--rn-side-top) 0%, var(--rn-side-bottom) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 60px -30px rgba(10, 20, 14, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 30px;
+  transition: width var(--rn-med) var(--rn-ease), border-radius var(--rn-med) var(--rn-ease);
+}
+/* Collapsed rail: a capsule (fully rounded ends), the circular counterpart of the panel. */
+.rn-sidebar.rn-sidebar-rail { border-radius: 42px; }
+.rn-sidebar .rn-nav-icon { background: rgba(255, 255, 255, 0.07); }
+.rn-sidebar .rn-nav-item.is-active { color: var(--rn-ink); }
+.rn-sidebar .rn-nav-item.is-active .rn-nav-icon { background: var(--rn-accent); color: #fff; }
+.rn-side-toggle { color: rgba(255, 255, 255, 0.6); transition: color var(--rn-fast) linear, background-color var(--rn-fast) linear; }
+.rn-side-toggle:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.rn-side-toggle:focus-visible, .rn-sidebar a:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
+.rn-side-avatar { background: rgba(255, 255, 255, 0.12); color: #fff; }
+/* Text brand mark */
+.rn-brandmark { display: flex; flex-direction: column; line-height: 1; }
+.rn-brandmark-name { font-family: var(--font-rn-display), var(--font-sans); font-size: 19px; font-weight: 700; letter-spacing: -0.03em; color: #fff; }
+.rn-brandmark-name::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 3px; border-radius: 9999px; background: var(--rn-highlight); vertical-align: baseline; }
+.rn-brandmark-sub { margin-top: 5px; font-size: 10.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); }
+.rn-nav-indicator {
+  transition: transform var(--rn-med) var(--rn-ease-out), height var(--rn-med) var(--rn-ease-out), opacity var(--rn-fast) linear;
+}
+.rn-nav-item { transition: color var(--rn-fast) linear, background-color var(--rn-fast) linear; }
+.rn-nav-item .rn-nav-icon { transition: background-color var(--rn-med) var(--rn-ease), color var(--rn-med) var(--rn-ease), transform var(--rn-fast) var(--rn-ease); }
+.rn-nav-item:hover .rn-nav-icon { transform: translateY(-1px); }
+.rn-label-fade { transition: opacity var(--rn-fast) linear; }
+
+/* Collapsed-sidebar tooltips */
+.rn-tip { position: relative; }
+.rn-tip[data-tip]:hover::after, .rn-tip[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: calc(100% + 14px);
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--rn-tip-bg);
+  color: #FBF9F3;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.45);
+  z-index: 60;
+  pointer-events: none;
+  animation: rn-fade-up 140ms ease-out both;
+}
+
+/* ---------------------------------------------------------------- Page motion
+   Entrance animations never keep their final frame ("backwards", not "both"): a held transform,
+   even an identity one, makes that element the containing block of every position:fixed child,
+   which trapped dialogs inside the page or inside another dialog's panel. */
+/* Targeted (a universal selector here doubled the cost of every full restyle, measured). */
+.rn-app :is(.rn-page, .rn-rise, .rn-enter, .rn-sheet, .rn-menu, .animate-fade-in, .animate-scale-in, .animate-fadeIn, .animate-in, .animate-slide-up) {
+  animation-fill-mode: backwards !important;
+}
+@keyframes rn-page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.rn-app .rn-page { animation: rn-page-in 180ms var(--rn-ease-out) backwards; }
+@keyframes rn-rise { from { opacity: 0; transform: translateY(10px) scale(0.995); } to { opacity: 1; transform: none; } }
+.rn-rise { animation: rn-rise 260ms var(--rn-ease-out) backwards; }
+.rn-rise-1 { animation-delay: 30ms; } .rn-rise-2 { animation-delay: 60ms; } .rn-rise-3 { animation-delay: 90ms; } .rn-rise-4 { animation-delay: 120ms; }
+.rn-hover-lift { transition: transform var(--rn-med) var(--rn-ease), background-color var(--rn-fast) linear; }
+.rn-hover-lift:hover { transform: translateY(-2px); }
+
+/* ---------------------------------------------------------------- Existing page content inside the new shell
+   Pages written before the redesign use white cards, hex borders and forest buttons. Inside .rn-main they
+   take the glass look, the shared radii and the section accent, without changing their markup or behaviour. */
+.rn-main { color: var(--rn-ink-2); }
+.rn-main h1, .rn-main h2, .rn-main h3 { color: var(--rn-ink); letter-spacing: -0.015em; }
+.rn-main h1 { font-weight: 650; }
+
+/* Large white cards → content glass (blur only on large surfaces, not on every element) */
+.rn-main :is(div, section, article, form, li, figure, a).bg-white:is(.rounded-2xl, .rounded-3xl),
+.rn-main :is(div, section, article, figure).bg-\[\#FAF8F5\]:is(.rounded-2xl, .rounded-3xl).border {
+  background: var(--rn-glass-2);
+  border-color: var(--rn-glass-border) !important;
+  box-shadow: var(--rn-glass-shadow);
+  border-radius: 28px;
+}
+/* A card inside a card is flattened to a quiet panel: no second shadow and no second glass
+   edge, so pages do not show boxes within boxes. */
+.rn-main :is(.rn-card, .bg-white.rounded-2xl, .bg-white.rounded-3xl) :is(div, section, article, form, li, figure, a).bg-white:is(.rounded-2xl, .rounded-3xl) {
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: none;
+  border-color: var(--rn-line) !important;
+  border-radius: 20px;
+}
+.rn-main .rounded-3xl { border-radius: 26px; }
+/* One display face: pages written with a serif heading use the ERP's face. */
+.rn-main .font-serif { font-family: inherit; letter-spacing: -0.015em; }
+.rn-main .shadow-2xs, .rn-main .shadow-xs { box-shadow: none; }
+/* Smaller white boxes: semi-opaque, no blur */
+.rn-main :is(div, section, li, span, label).bg-white:not(.rounded-2xl):not(.rounded-3xl) { background: rgba(255, 255, 255, 0.82); }
+/* Ivory/cream fills become a soft tint of the section accent */
+.rn-main :is(div, section, li, thead, tr, span).bg-\[\#FAF8F5\]:not(.rounded-2xl):not(.rounded-3xl),
+.rn-main :is(div, section, li, thead, tr, span).bg-surface-canvas:not(.rounded-2xl):not(.rounded-3xl) { background: rgba(255, 255, 255, 0.55); }
+
+/* Borders: quieter hairlines */
+.rn-main [class*="border-[#8E9F89]"], .rn-main [class*="border-[#E6E1DA]"], .rn-main [class*="border-[#DCD6CD]"],
+.rn-main .border-surface-subtle, .rn-main [class*="divide-[#8E9F89]"] > *, .rn-main [class*="divide-[#E6E1DA]"] > *, .rn-main .divide-surface-subtle > * {
+  border-color: var(--rn-line);
+}
+
+/* Inputs */
+.rn-main :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  border-color: rgba(26, 46, 32, 0.14);
+  background-color: rgba(255, 255, 255, 0.86);
+  transition: border-color var(--rn-fast) linear, box-shadow var(--rn-fast) linear, background-color var(--rn-fast) linear;
+}
+.rn-main :is(input, select, textarea):focus {
+  border-color: var(--rn-accent-mid) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--rn-accent-mid) 18%, transparent);
+  outline: none;
+}
+.rn-main input[type="checkbox"], .rn-main input[type="radio"] { accent-color: var(--rn-accent); }
+
+/* Primary actions take the section accent and the pill shape of the references */
+.rn-main :is(button, a).bg-\[\#1A2E20\], .rn-main :is(button, a).bg-forest-deepest, .rn-main :is(button, a).bg-\[\#263B2D\] {
+  background-color: var(--rn-accent) !important;
+  border-radius: 9999px;
+  box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--rn-accent) 80%, transparent);
+  transition: background-color var(--rn-fast) linear, transform var(--rn-fast) var(--rn-ease), box-shadow var(--rn-med) var(--rn-ease);
+}
+.rn-main :is(button, a).bg-\[\#1A2E20\]:hover, .rn-main :is(button, a).bg-forest-deepest:hover, .rn-main :is(button, a).bg-\[\#263B2D\]:hover {
+  background-color: var(--rn-accent-strong) !important;
+}
+.rn-main :is(button, a).bg-\[\#1A2E20\]:active, .rn-main :is(button, a).bg-forest-deepest:active { transform: scale(0.98); }
+/* Secondary bordered buttons become soft pills */
+.rn-main button:is(.rounded-xl, .rounded-lg).border:not(.bg-\[\#1A2E20\]):not(.bg-forest-deepest) { border-radius: 9999px; }
+
+/* Tables */
+.rn-main table { border-collapse: separate; border-spacing: 0; }
+.rn-main thead tr, .rn-main thead { background: transparent !important; }
+.rn-main thead th { color: var(--rn-ink-3); font-weight: 600; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; border-bottom: 1px solid var(--rn-line); }
+.rn-main tbody tr { transition: background-color var(--rn-fast) linear; }
+.rn-main tbody tr:hover { background-color: color-mix(in srgb, var(--rn-accent-tint) 75%, transparent) !important; }
+.rn-main td, .rn-main th { font-variant-numeric: tabular-nums; }
+.rn-main tbody td { border-color: var(--rn-line) !important; }
+
+/* Overlays opened by existing pages (fixed scrim + panel) */
+.rn-main .fixed.inset-0[class*="bg-[#1A2E20]/"], .rn-main .fixed.inset-0[class*="bg-black/"] {
+  background-color: rgba(18, 28, 22, 0.32) !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: rn-scrim 160ms ease-out both;
+}
+.rn-main .fixed.inset-0 > :is(div, form):is(.rounded-2xl, .rounded-3xl) {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--rn-glass-5) !important;
+  border-color: var(--rn-glass-border) !important;
+  box-shadow: var(--rn-glass-shadow-lg);
+  border-radius: 26px;
+  animation: rn-rise var(--rn-med) var(--rn-ease-out) backwards;
+}
+
+/* Phones: dialogs become bottom sheets that use the full width and almost the full height. */
+@media (max-width: 639.98px) {
+  .rn-main .fixed.inset-0:is([class*="bg-black/"], [class*="bg-[#1A2E20]/"], [class*="bg-stone-900/"]) { align-items: flex-end !important; padding: 0 !important; }
+  .rn-main .fixed.inset-0 > :is(div, form):is(.rounded-2xl, .rounded-3xl) {
+    width: 100% !important; max-width: none !important; max-height: 94dvh;
+    border-radius: 26px 26px 0 0 !important;
+    padding-bottom: max(1.25rem, env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Brass accents map to the section highlight; forest ink to the section ink */
+.rn-main .text-\[\#B58A57\], .rn-main .text-brass, .rn-main .text-\[\#C89F6B\] { color: var(--rn-highlight); }
+.rn-main .text-\[\#1A2E20\], .rn-main .text-text-primary, .rn-main .text-forest-deepest { color: var(--rn-ink); }
+.rn-main .text-\[\#5A6C5E\], .rn-main .text-text-muted { color: var(--rn-ink-3); }
+
+/* ---------------------------------------------------------------- Orange section remaps (Orders & Delivery) */
+.rn-app[data-accent="orange"] .rn-main .bg-\[\#1A2E20\]:not(button):not(a),
+.rn-app[data-accent="orange"] .rn-main .bg-forest-deepest:not(button):not(a),
+.rn-app[data-accent="orange"] .rn-main .bg-\[\#263B2D\]:not(button):not(a),
+.rn-app[data-accent="orange"] .rn-main .bg-forest-dark,
+.rn-app[data-accent="orange"] .rn-main .bg-forest { background-color: var(--rn-accent) !important; }
+.rn-app[data-accent="orange"] .rn-main .bg-\[\#1A2E20\]\/5,
+.rn-app[data-accent="orange"] .rn-main .bg-surface-cream,
+.rn-app[data-accent="orange"] .rn-main .bg-surface-ivory { background-color: var(--rn-accent-tint) !important; }
+.rn-app[data-accent="orange"] .rn-main :is(.text-\[\#5D7656\], .text-forest, .text-brass-dark, .text-\[\#8B6538\]) { color: var(--rn-accent); }
+.rn-app[data-accent="orange"] .rn-main :is(.text-sage-pale, .text-sage-light) { color: #FBE6D6; }
+.rn-app[data-accent="orange"] .rn-main :is(.text-\[\#8E9F89\], .text-text-subdued) { color: #9A8678; }
+.rn-app[data-accent="orange"] .rn-main :is(.border-\[\#B58A57\], .border-brass, .border-\[\#C89F6B\], .border-forest-deepest, .border-\[\#1A2E20\]) { border-color: var(--rn-accent-mid) !important; }
+.rn-app[data-accent="orange"] .rn-main :is(.bg-brass, .bg-\[\#B58A57\], .bg-\[\#C89F6B\], .bg-brass-light, .bg-sage-light) { background-color: var(--rn-highlight) !important; }
+.rn-app[data-accent="orange"] .rn-main .accent-forest { accent-color: var(--rn-accent); }
+.rn-app[data-accent="orange"] .rn-main .bg-\[\#B58A57\]\/10, .rn-app[data-accent="orange"] .rn-main .bg-\[\#B58A57\]\/20 { background-color: color-mix(in srgb, var(--rn-highlight) 16%, transparent) !important; }
+
+/* ---------------------------------------------------------------- No horizontal scrolling
+   Tables fill their card and wrap their text. Below 1024 px each row becomes a small card: one
+   line per column, with the column's name (data-label, set by useStackedTables). */
+.rn-main table { width: 100%; min-width: 0 !important; }
+.rn-main td { overflow-wrap: anywhere; }
+.rn-main :is(table, div)[class*="min-w-["] { min-width: 0 !important; }
+.rn-main .overflow-x-auto { overflow-x: visible; }
+
+@media (max-width: 1023.98px) {
+  .rn-main table, .rn-main tbody, .rn-main tfoot { display: block; }
+  .rn-main thead { display: none; }
+  .rn-main tr { display: block; padding: 12px 16px; border-bottom: 1px solid var(--rn-line); }
+  .rn-main tbody tr:last-child, .rn-main tfoot tr:last-child { border-bottom: 0; }
+  .rn-main td { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 3px 0 !important; border: 0 !important; text-align: right !important; white-space: normal !important; min-width: 0 !important; width: auto !important; max-width: none !important; }
+  .rn-main td::before { content: attr(data-label); flex-shrink: 0; max-width: 45%; text-align: left; font-size: 11.5px; font-weight: 500; color: var(--rn-ink-3); }
+  .rn-main td[data-label=""]::before, .rn-main td:not([data-label])::before, .rn-main td:first-child::before { content: none; }
+  .rn-main td:first-child { text-align: left !important; justify-content: flex-start; font-weight: 600; color: var(--rn-ink); }
+  .rn-main td[colspan] { display: block; text-align: center !important; }
+  .rn-main td > * { min-width: 0; }
+}
+/* 1024-1279 px with the sidebar expanded leaves about 690 px for content: tables stay tables,
+   but headers and cells may wrap and use tighter side padding instead of running past the card. */
+@media (min-width: 1024px) and (max-width: 1279.98px) {
+  .rn-app:not([data-rail="collapsed"]) .rn-main table { table-layout: fixed; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main :is(th, td) { white-space: normal !important; overflow-wrap: anywhere; padding-left: 10px !important; padding-right: 10px !important; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main td .whitespace-nowrap { white-space: normal; }
+  /* Very wide tables (nine or more columns) do not fit there either: they stack like on tablets. */
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) { display: block; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) :is(tbody, tfoot) { display: block; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) thead { display: none; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) tr { display: block; padding: 12px 16px; border-bottom: 1px solid var(--rn-line); }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) td { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0 !important; border: 0 !important; text-align: right !important; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) td::before { content: attr(data-label); flex-shrink: 0; max-width: 45%; text-align: left; font-size: 11.5px; font-weight: 500; color: var(--rn-ink-3); }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) :is(td:first-child, td[data-label=""])::before { content: none; }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) td:first-child { text-align: left !important; justify-content: flex-start; font-weight: 600; color: var(--rn-ink); }
+  .rn-app:not([data-rail="collapsed"]) .rn-main table:has(> thead > tr > th:nth-child(9)) td[colspan] { display: block; text-align: center !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rn-page, .rn-rise, .rn-main .fixed.inset-0 > *, .rn-tip[data-tip]:hover::after { animation: none !important; }
+  .rn-sidebar, .rn-nav-indicator, .rn-hover-lift, .rn-canvas { transition: none !important; }
+  .rn-hover-lift:hover { transform: none; }
+}
+
+/* ---------------------------------------------------------------- Section loaders
+   Orders and Delivery (orange) keep the scooter; every other manager section shows the house
+   being built. Outside the manager shell (delivery app, sign-in) only the scooter exists. */
+.rn-house { display: none; }
+.rn-app:not([data-accent="orange"]) .rn-house { display: block; }
+.rn-app:not([data-accent="orange"]) .rn-bike { display: none; }
+.rn-app { --rn-house-wall: var(--rn-accent-mid); --rn-house-roof: var(--rn-accent); }
+@keyframes rn-brick { 0% { opacity: 0; transform: translateY(-5px); } 12% { opacity: 1; transform: none; } 82% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes rn-roof { 0%, 52% { opacity: 0; } 62%, 82% { opacity: 1; } 100% { opacity: 0; } }
+.rn-house-brick { opacity: 0; transform-box: fill-box; animation: rn-brick 2.6s var(--rn-ease-out, ease-out) infinite; }
+.rn-house-roof, .rn-house-door { opacity: 0; animation: rn-roof 2.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .rn-house-brick, .rn-house-roof, .rn-house-door { animation: none; opacity: 1; transform: none; }
+}
+
+/* ---------------------------------------------------------------- Green <-> orange theme flow
+   The theme lives in CSS variables on .rn-app (above). A click that changes the section colour
+   runs a View Transition (ErpShell): the new colours spread from the click point as a widening
+   circle with a soft edge, over the old snapshot. Only the two snapshots animate (GPU), not each
+   element. Browsers without View Transitions cross-fade the registered colour tokens instead. */
+@property --rn-vt-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root[data-rn-theme-flow] ::view-transition-new(root) {
+  -webkit-mask-image: radial-gradient(circle at var(--rn-vt-x, 50%) var(--rn-vt-y, 50%), #000 calc(var(--rn-vt-r) - 140px), transparent var(--rn-vt-r));
+  mask-image: radial-gradient(circle at var(--rn-vt-x, 50%) var(--rn-vt-y, 50%), #000 calc(var(--rn-vt-r) - 140px), transparent var(--rn-vt-r));
+  animation: rn-theme-flow 720ms cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+@keyframes rn-theme-flow { from { --rn-vt-r: 0px; } to { --rn-vt-r: calc(150vmax + 140px); } }
+
+@property --rn-accent { syntax: "<color>"; inherits: true; initial-value: #1A2E20; }
+@property --rn-accent-strong { syntax: "<color>"; inherits: true; initial-value: #263B2D; }
+@property --rn-accent-mid { syntax: "<color>"; inherits: true; initial-value: #5D7656; }
+@property --rn-accent-soft { syntax: "<color>"; inherits: true; initial-value: #DCE5D7; }
+@property --rn-accent-tint { syntax: "<color>"; inherits: true; initial-value: #EEF3EA; }
+@property --rn-highlight { syntax: "<color>"; inherits: true; initial-value: #B58A57; }
+@property --rn-ink { syntax: "<color>"; inherits: true; initial-value: #1A2E20; }
+@property --rn-ink-2 { syntax: "<color>"; inherits: true; initial-value: #3E4E42; }
+@property --rn-ink-3 { syntax: "<color>"; inherits: true; initial-value: #5A6C5E; }
+@property --rn-side-top { syntax: "<color>"; inherits: true; initial-value: rgba(38, 59, 45, 0.94); }
+@property --rn-side-bottom { syntax: "<color>"; inherits: true; initial-value: rgba(22, 34, 26, 0.96); }
+.rn-app {
+  transition: --rn-accent 420ms ease, --rn-accent-strong 420ms ease, --rn-accent-mid 420ms ease, --rn-accent-soft 420ms ease,
+    --rn-accent-tint 420ms ease, --rn-highlight 420ms ease, --rn-ink 420ms ease, --rn-ink-2 420ms ease, --rn-ink-3 420ms ease,
+    --rn-side-top 420ms ease, --rn-side-bottom 420ms ease;
+}
+/* During the circular flow the snapshots carry the change; no second (property) transition. */
+:root[data-rn-theme-flow] .rn-app { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .rn-app { transition: none; }
+  :root[data-rn-theme-flow] ::view-transition-new(root) { animation: none; -webkit-mask-image: none; mask-image: none; }
+}
+
+/* ---------------------------------------------------------------- Sign-in (ERP edition)
+   Same canvas, brand mark and glass card as the ERP. The delivery edition does not use these. */
+.rn-login {
+  background:
+    radial-gradient(1100px 620px at 8% -8%, #D8E3D2 0%, rgba(216, 227, 210, 0) 62%),
+    radial-gradient(900px 520px at 100% 0%, #E7EEE1 0%, rgba(231, 238, 225, 0) 58%),
+    radial-gradient(900px 700px at 70% 115%, #EFE7D6 0%, rgba(239, 231, 214, 0) 60%),
+    #F2F0E9;
+}
+.rn-login-mark { font-family: var(--font-rn-display), var(--font-sans); font-size: 32px; font-weight: 700; letter-spacing: -0.035em; color: #1A2E20; }
+.rn-login-mark::after { content: ""; display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 9999px; background: #B58A57; }
+.rn-login-sub { margin-top: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #5A6C5E; }
+.rn-login-card {
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 28px;
+  box-shadow: 0 2px 2px rgba(26, 46, 32, 0.04), 0 28px 60px -28px rgba(26, 46, 32, 0.40);
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .rn-login-card { -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); }
+}
+
+/* ---------------------------------------------------------------- Forms inside dialogs
+   One field height, radius and text size for every form opened from a page (the pages' own
+   dialogs keep their structure; these rules give them the shared look). */
+.rn-main .fixed.inset-0 :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]), select) {
+  min-height: 42px; border-radius: 14px; font-size: 14px;
+}
+.rn-main .fixed.inset-0 textarea { border-radius: 14px; font-size: 14px; }
+.rn-main .fixed.inset-0 label { color: var(--rn-ink-2); }
+.rn-main .fixed.inset-0 > :is(div, form) > :first-child :is(h2, h3):first-of-type { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.rn-main .fixed.inset-0 :is(button, a).bg-\[\#1A2E20\], .rn-main .fixed.inset-0 :is(button, a).bg-forest-deepest { min-height: 42px; }
+.rn-sidetip {
+  position: fixed; transform: translateY(-50%); z-index: 60; pointer-events: none; white-space: nowrap;
+  padding: 6px 10px; border-radius: 10px; background: var(--rn-tip-bg); color: #FBF9F3;
+  font-size: 12px; font-weight: 500; box-shadow: 0 10px 24px -10px rgba(0, 0, 0, 0.45);
+  animation: rn-scrim 120ms ease-out backwards; /* opacity only: the transform centres it */
+}
+
+/* Wide tables (eight or more columns, e.g. some reports) on laptops and desktops: fixed layout
+   across the card's width, and headers and cells (amounts included) may wrap, so they never run
+   past the card. Narrower tables keep content-sized columns. */
+@media (min-width: 1024px) {
+  .rn-main table:has(> thead > tr > th:nth-child(8)) { table-layout: fixed; width: 100%; }
+  .rn-main table:has(> thead > tr > th:nth-child(8)) :is(th, td) { white-space: normal !important; overflow-wrap: anywhere; padding-left: 8px !important; padding-right: 8px !important; }
+}

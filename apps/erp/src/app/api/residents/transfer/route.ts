@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
         transferDate: body.transferDate,
         newMonthlyRent: body.newMonthlyRent !== undefined ? Number(body.newMonthlyRent) : undefined,
         reason: body.reason,
+        bedId: typeof body.bedId === "string" && body.bedId ? body.bedId : null,
       },
       clientIp
     );

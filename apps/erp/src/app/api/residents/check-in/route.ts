@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
         checkInDate: body.checkInDate,
         monthlyRent: body.monthlyRent,
         securityDeposit: body.securityDeposit,
+        bedId: typeof body.bedId === "string" && body.bedId ? body.bedId : null,
       },
       clientIp
     );

@@ -319,7 +319,7 @@ export function InvoiceLedgerView({
         <div className="flex flex-wrap items-center gap-2 flex-1">
           {/* Search Box */}
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="w-4 h-4 text-[#8E9F89] absolute left-3 top-2.5" />
+            <Search className="pointer-events-none w-4 h-4 text-[#8E9F89] absolute left-3 top-2.5" />
             <input
               type="text"
               placeholder="Search invoice #, resident, room..."

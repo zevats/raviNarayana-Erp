@@ -494,12 +494,14 @@ async function runTestSuite() {
   // --------------------------------------------------------------------------
   console.log("\n--- Section 9: Navigation & Route Consolidation ---");
   const erpShellPath = path.resolve(ROOT, "apps", "erp", "src", "components", "layout", "ErpShell.tsx");
-  const erpShellContent = fs.readFileSync(erpShellPath, "utf-8");
+  // The manager links live in shell/nav.ts since the 2026-11 redesign.
+  const erpShellContent = fs.readFileSync(erpShellPath, "utf-8") + fs.readFileSync(path.join(path.dirname(erpShellPath), "shell", "nav.ts"), "utf-8");
 
   assert(erpShellContent.includes('href: "/orders"'), "Navigation includes Orders ('/orders')");
   assert(erpShellContent.includes('href: "/delivery"'), "Navigation includes Delivery ('/delivery')");
   assert(!erpShellContent.includes('href: "/kitchen"'), "Separate Kitchen page removed from operational navigation");
-  assert(!erpShellContent.includes('href: "/tiffin"'), "Old Tiffin directory page replaced by Orders in navigation");
+  // Tiffin management was restored as its own section (2026-11-01 scope decision); Kitchen stays retired.
+  assert(erpShellContent.includes('href: "/tiffin"'), "Navigation includes Tiffin management ('/tiffin')");
 
   // Verify redirects on old routes
   const kitchenPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "kitchen", "page.tsx");
@@ -509,7 +511,7 @@ async function runTestSuite() {
 
   const tiffinPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "tiffin", "page.tsx");
   const tiffinPageContent = fs.readFileSync(tiffinPagePath, "utf-8");
-  assert(tiffinPageContent.includes('redirect("/orders")'), "/tiffin redirects cleanly to /orders");
+  assert(!tiffinPageContent.includes('redirect(') && tiffinPageContent.includes("TiffinSubscriptionList"), "/tiffin is the Tiffin management page (customers, subscriptions, menu, billing)");
 
   // --------------------------------------------------------------------------
   // SECTION 10: Primary Database Immutability Guard

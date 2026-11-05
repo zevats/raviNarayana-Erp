@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, Receipt, AlertCircle } from "lucide-react";
 import { ResidentListItem, FinancialTransaction } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
@@ -33,8 +33,13 @@ export function RentChargeModal({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // One idempotency key per entry: a double click or a retry after a lost response is recognised
+  // by the server as the same charge, never recorded twice. A new key is issued each time the form opens.
+  const entryKey = useRef<string>("");
+  const inFlight = useRef(false);
   useEffect(() => {
     if (isOpen) {
+      entryKey.current = `chg_${crypto.randomUUID()}`;
       setError(null);
       setTransactionDate(toLocalDateString());
       if (initialResidentId) {
@@ -61,9 +66,11 @@ export function RentChargeModal({
       return;
     }
 
+    if (inFlight.current) return; // a second click while this one is being sent
+    inFlight.current = true;
     setSubmitting(true);
     try {
-      const idempotencyKey = `chg_${crypto.randomUUID()}`;
+      const idempotencyKey = entryKey.current || `chg_${crypto.randomUUID()}`;
       const res = await fetch("/api/finance/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,6 +98,7 @@ export function RentChargeModal({
     } catch (err: any) {
       setError(err.message || "An error occurred while issuing rent charge.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

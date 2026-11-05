@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessToday } from "@/lib/businessDate";
 import {
   resolveUserFromRequest,
   unauthorizedResponse,
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
     if (!user) return unauthorizedResponse();
 
     const url = new URL(request.url);
-    const closingDate = url.searchParams.get("closingDate") || new Date().toISOString().slice(0, 10);
+    const closingDate = url.searchParams.get("closingDate") || businessToday();
     const division = (url.searchParams.get("division") as ClosingDivision) || "COMBINED";
 
     const preview = await previewDailyClosing(user, closingDate, division);

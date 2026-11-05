@@ -1,4 +1,5 @@
 import { getAsyncDb, AsyncDb } from "../database/db";
+import { businessToday, businessMonthStart } from "@/lib/businessDate";
 import { requirePermission } from "../authorization/authorize";
 import { getCashbookSummary } from "../finance/financeService";
 import {
@@ -22,13 +23,8 @@ import {
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function normalizeDateRange(startDate?: string, endDate?: string): { startDate: string; endDate: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
-  const defaultStart = `${year}-${month}-01`;
-  const defaultEnd = `${year}-${month}-${day}`;
+  const defaultStart = businessMonthStart();
+  const defaultEnd = businessToday();
 
   const validStart = startDate && DATE_REGEX.test(startDate) ? startDate : defaultStart;
   const validEnd = endDate && DATE_REGEX.test(endDate) ? endDate : defaultEnd;
@@ -176,8 +172,7 @@ export async function getInvoiceAgeingReport(
 
   const db = asyncDb ?? getAsyncDb();
   const division = options.division || "COMBINED";
-  const now = new Date();
-  const defaultAsOf = now.toISOString().slice(0, 10);
+  const defaultAsOf = businessToday();
   const asOfDate = options.asOfDate && DATE_REGEX.test(options.asOfDate) ? options.asOfDate : defaultAsOf;
 
   let divisionFilter = "";

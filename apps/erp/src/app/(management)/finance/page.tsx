@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Receipt,
   Users,
@@ -25,23 +26,81 @@ import { ResidentStatementsView } from "@/modules/finance/components/ResidentSta
 import { InvoiceLedgerView } from "@/modules/finance/components/InvoiceLedgerView";
 import { DailyClosingView } from "@/modules/finance/components/DailyClosingView";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
+import { Segmented } from "@/components/ui/kit";
 
-import { PaymentModal } from "@/modules/finance/components/modals/PaymentModal";
-import { RentChargeModal } from "@/modules/finance/components/modals/RentChargeModal";
-import { SecurityDepositModal } from "@/modules/finance/components/modals/SecurityDepositModal";
-import { ExpenseModal } from "@/modules/finance/components/modals/ExpenseModal";
-import { ReceiptModal } from "@/modules/finance/components/modals/ReceiptModal";
-import { ReversalModal } from "@/modules/finance/components/modals/ReversalModal";
 import {
   toLocalDateString,
   getLocalFirstDayOfMonth,
 } from "@/modules/finance/utils/dateUtils";
 import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
+import dynamic from "next/dynamic";
+import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
+
+// Dialogs and secondary views load on demand, off the navigation path.
+const loadPaymentModal = () => import("@/modules/finance/components/modals/PaymentModal");
+const PaymentModal = dynamic(() => loadPaymentModal().then((m) => m.PaymentModal), { ssr: false });
+const loadRentChargeModal = () => import("@/modules/finance/components/modals/RentChargeModal");
+const RentChargeModal = dynamic(() => loadRentChargeModal().then((m) => m.RentChargeModal), { ssr: false });
+const loadRentRunModal = () => import("@/modules/finance/components/modals/RentRunModal");
+const RentRunModal = dynamic(() => loadRentRunModal().then((m) => m.RentRunModal), { ssr: false });
+const loadSecurityDepositModal = () => import("@/modules/finance/components/modals/SecurityDepositModal");
+const SecurityDepositModal = dynamic(() => loadSecurityDepositModal().then((m) => m.SecurityDepositModal), { ssr: false });
+const loadExpenseModal = () => import("@/modules/finance/components/modals/ExpenseModal");
+const ExpenseModal = dynamic(() => loadExpenseModal().then((m) => m.ExpenseModal), { ssr: false });
+const loadReceiptModal = () => import("@/modules/finance/components/modals/ReceiptModal");
+const ReceiptModal = dynamic(() => loadReceiptModal().then((m) => m.ReceiptModal), { ssr: false });
+const loadReversalModal = () => import("@/modules/finance/components/modals/ReversalModal");
+const ReversalModal = dynamic(() => loadReversalModal().then((m) => m.ReversalModal), { ssr: false });
+// Receivables is its own tab: its code loads when the tab opens (preloaded when idle), and until
+// then the tab shows the same summary and list skeleton the view uses, never a spinner.
+const loadReceivablesView = () => import("@/modules/finance/components/ReceivablesView");
+const ReceivablesView = dynamic(() => loadReceivablesView().then((m) => m.ReceivablesView), {
+  ssr: false,
+  loading: () => (
+    <div className="space-y-5" aria-busy="true">
+      <div className="rn-card p-4 sm:p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <span key={i} className="rn-skel block h-10 rounded" />
+        ))}
+      </div>
+      <div className="rn-card p-4 sm:p-5 space-y-3">
+        <span className="rn-skel block h-10 w-full rounded-full" />
+        <span className="rn-skel block h-10 w-2/3 rounded" />
+      </div>
+      <div className="rn-card divide-y divide-[var(--rn-line)]">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="px-4 sm:px-5 py-4 flex items-center gap-4">
+            <span className="rn-skel block h-4 w-1/3 rounded" />
+            <span className="rn-skel block h-4 w-16 rounded ml-auto" />
+          </div>
+        ))}
+      </div>
+    </div>
+  ),
+});
 
 export default function FinancePage() {
+  // Fetch the dialog and tab code in the background so the first click opens at once.
+  useEffect(() => preloadWhenIdle([loadPaymentModal, loadRentChargeModal, loadRentRunModal, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadReceivablesView]), []);
   // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
-  const [activeTab, setActiveTab] = useState<"cashbook" | "residents" | "invoices" | "closing">("cashbook");
+  type FinanceTab = "cashbook" | "receivables" | "residents" | "invoices" | "closing";
+  const SECTION_TITLE: Record<FinanceTab, string> = { cashbook: "Cashbook", receivables: "Receivables", residents: "Resident dues", invoices: "Invoices", closing: "Daily closing" };
+  const [activeTab, setTabState] = useState<FinanceTab>("cashbook");
+  // The tab follows the address (/finance?tab=closing), so the sidebar's Cashbook, Resident Dues,
+  // Invoices and Daily Closing links, notifications and reports all open the right view.
+  const searchParams = useSearchParams();
+  const urlTab = searchParams?.get("tab");
+  useEffect(() => {
+    if (urlTab === "cashbook" || urlTab === "receivables" || urlTab === "residents" || urlTab === "invoices" || urlTab === "closing") setTabState(urlTab);
+    else if (!urlTab) setTabState("cashbook");
+  }, [urlTab]);
+  const setActiveTab = (t: FinanceTab) => {
+    setTabState(t);
+    // Update the address only: the tabs share this page's data, so a router navigation (server
+    // render and remount of the page) is not needed. useSearchParams follows replaceState.
+    window.history.replaceState(window.history.state, "", `/finance?tab=${t}`);
+  };
 
   // Local calendar date filters (defaults to current calendar month)
   const [startDate, setStartDate] = useState(getLocalFirstDayOfMonth());
@@ -102,6 +161,7 @@ export default function FinancePage() {
   // Modal dialog states
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isChargeOpen, setIsChargeOpen] = useState(false);
+  const [isRentRunOpen, setIsRentRunOpen] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
   const [paymentResidentId, setPaymentResidentId] = useState<string | undefined>(undefined);
@@ -179,9 +239,9 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-7xl w-full mx-auto min-w-0 pb-12">
-      {/* 1. Executive Header & Action Buttons */}
+    <div className="space-y-5 w-full min-w-0">
       <FinanceHeader
+        title={SECTION_TITLE[activeTab]}
         onRefresh={fetchData}
         isLoading={loading || isRevalidating}
         onOpenPayment={() => {
@@ -189,6 +249,7 @@ export default function FinancePage() {
           setIsPaymentOpen(true);
         }}
         onOpenCharge={() => setIsChargeOpen(true)}
+        onOpenRentRun={() => setIsRentRunOpen(true)}
         onOpenDeposit={() => setIsDepositOpen(true)}
         onOpenExpense={() => setIsExpenseOpen(true)}
         onExport={handleExportCashbook}
@@ -233,83 +294,21 @@ export default function FinancePage() {
         </div>
       )}
 
-      {/* 2. Controls Toolbar: Segmented Tabs + Accounting Period */}
+      {/* Section switch for phones and tablets; on desktop the sidebar lists these four sections. */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 min-w-0">
-        {/* Segmented View Switcher Tabs */}
-        <div className="inline-flex p-1 bg-[#FAF8F5] border border-[#8E9F89]/25 rounded-xl text-xs font-semibold gap-1 min-w-0 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab("cashbook")}
-            aria-pressed={activeTab === "cashbook"}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
-              activeTab === "cashbook"
-                ? "bg-[#1A2E20] text-white shadow-xs"
-                : "text-[#5A6C5E] hover:text-[#1A2E20]"
-            }`}
-          >
-            <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
-            <span>Cashbook &amp; Transactions</span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold tabular-nums ${
-                activeTab === "cashbook"
-                  ? "bg-white/20 text-white"
-                  : "bg-[#8E9F89]/20 text-[#5A6C5E]"
-              }`}
-            >
-              {transactions.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("residents")}
-            aria-pressed={activeTab === "residents"}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
-              activeTab === "residents"
-                ? "bg-[#1A2E20] text-white shadow-xs"
-                : "text-[#5A6C5E] hover:text-[#1A2E20]"
-            }`}
-          >
-            <Users className="w-3.5 h-3.5 text-[#5D7656]" />
-            <span>Resident Statements</span>
-            <span
-              className={`px-2 py-0.5 rounded-full text-[10px] font-sans font-semibold tabular-nums ${
-                activeTab === "residents"
-                  ? "bg-white/20 text-white"
-                  : "bg-[#8E9F89]/20 text-[#5A6C5E]"
-              }`}
-            >
-              {residents.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("invoices")}
-            aria-pressed={activeTab === "invoices"}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
-              activeTab === "invoices"
-                ? "bg-[#1A2E20] text-white shadow-xs"
-                : "text-[#5A6C5E] hover:text-[#1A2E20]"
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5 text-[#B58A57]" />
-            <span>Invoices &amp; Billing</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("closing")}
-            aria-pressed={activeTab === "closing"}
-            className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg transition-all shrink-0 ${
-              activeTab === "closing"
-                ? "bg-[#1A2E20] text-white shadow-xs"
-                : "text-[#5A6C5E] hover:text-[#1A2E20]"
-            }`}
-          >
-            <Lock className="w-3.5 h-3.5 text-[#B58A57]" />
-            <span>Daily Closing &amp; Reconciliation</span>
-          </button>
+        <div className="lg:hidden">
+        <Segmented
+          label="Finance sections"
+          value={activeTab}
+          onChange={setActiveTab}
+          options={[
+            { value: "cashbook", label: "Cashbook" },
+            { value: "receivables", label: "Receivables" },
+            { value: "residents", label: "Resident dues" },
+            { value: "invoices", label: "Invoices" },
+            { value: "closing", label: "Daily closing" },
+          ]}
+        />
         </div>
 
         {/* Accounting Period Selector (only in Cashbook tab) */}
@@ -326,7 +325,7 @@ export default function FinancePage() {
 
       {/* 3. Tab Content */}
       {activeTab === "cashbook" ? (
-        <div className="space-y-6 sm:space-y-8">
+        <div className="space-y-5">
           {/* 5 Financial Summary KPI Cards */}
           <FinancialSummaryCards summary={cashbook} isLoading={loading} />
 
@@ -345,6 +344,9 @@ export default function FinancePage() {
             onOpenExpense={() => setIsExpenseOpen(true)}
           />
         </div>
+      ) : activeTab === "receivables" ? (
+        /* Who owes what: PG rent, tiffin invoices and delivered orders (read from those records) */
+        <ReceivablesView initialReviewOnly={searchParams?.get("review") === "1"} />
       ) : activeTab === "residents" ? (
         /* Resident Statements Directory */
         <ResidentStatementsView
@@ -379,6 +381,8 @@ export default function FinancePage() {
         initialResidentId={paymentResidentId}
         onSuccess={handleMutationSuccess}
       />
+
+      <RentRunModal isOpen={isRentRunOpen} onClose={() => setIsRentRunOpen(false)} onDone={fetchData} />
 
       <RentChargeModal
         isOpen={isChargeOpen}

@@ -113,6 +113,48 @@
       "when": 1792471200000,
       "tag": "0015_push_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792557600000,
+      "tag": "0016_business_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792644000000,
+      "tag": "0017_beds_and_room_maintenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792730400000,
+      "tag": "0018_settlement_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792816800000,
+      "tag": "0019_order_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792903200000,
+      "tag": "0020_invoice_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792989600000,
+      "tag": "0021_pay_later",
+      "breakpoints": true
     }
   ]
 }

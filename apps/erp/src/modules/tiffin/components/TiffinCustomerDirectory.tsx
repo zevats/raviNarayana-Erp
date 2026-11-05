@@ -25,6 +25,7 @@ import { TiffinCustomer, CustomerType, CustomerStatus, DietaryPreference } from 
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { CustomerModal } from "./modals/CustomerModal";
 import { CustomerDetailModal } from "./modals/CustomerDetailModal";
+import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 const ITEMS_PER_PAGE = 10;
@@ -43,6 +44,7 @@ export function TiffinCustomerDirectory() {
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<TiffinCustomer | null>(null);
+  const [accountCustomerId, setAccountCustomerId] = useState<string | null>(null);
 
   // Status toggle confirmation dialog
   const [statusTarget, setStatusTarget] = useState<TiffinCustomer | null>(null);
@@ -76,7 +78,7 @@ export function TiffinCustomerDirectory() {
       }
       return res.json();
     },
-    { ttl: 15000, tags: ["tiffin_customers"] }
+    { ttl: 15000, tags: ["tiffin_customers", "customers"] }
   );
 
   const customers = customersData?.customers || [];
@@ -264,11 +266,12 @@ export function TiffinCustomerDirectory() {
       )}
 
       {/* Control bar: search, filters, actions */}
-      <div className="bg-white border border-[#8E9F89]/30 rounded-2xl p-4 shadow-xs space-y-3">
+      <div className="rn-card">
+<div className="p-4 sm:p-5 border-b border-[var(--rn-line)] space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Search box */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <Search className="pointer-events-none w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               placeholder="Search by customer name, phone number, delivery address, or landmark..."
@@ -372,7 +375,7 @@ export function TiffinCustomerDirectory() {
       </div>
 
       {/* Directory Table */}
-      <div className="bg-white border border-[#8E9F89]/30 rounded-2xl shadow-xs overflow-hidden">
+      <div>
         {isLoading ? (
           <BikeLoader tone="forest" label="Loading customers…" className="p-12" />
         ) : customersError ? (
@@ -570,6 +573,7 @@ export function TiffinCustomerDirectory() {
           </div>
         )}
       </div>
+</div>
 
       {/* Status Toggle Confirmation Modal */}
       {statusTarget && (
@@ -665,6 +669,17 @@ export function TiffinCustomerDirectory() {
           setIsDetailModalOpen(false);
           setStatusTarget(customer);
         }}
+        onViewAccount={(customer) => {
+          setIsDetailModalOpen(false);
+          setAccountCustomerId(customer.id);
+        }}
+      />
+
+      {/* Invoices, payments and outstanding balance */}
+      <TiffinCustomerBalanceModal
+        isOpen={accountCustomerId !== null}
+        onClose={() => setAccountCustomerId(null)}
+        customerId={accountCustomerId}
       />
     </div>
   );

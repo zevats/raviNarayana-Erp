@@ -18,6 +18,7 @@ import { closePg } from "../apps/erp/src/server/database/client";
 import { createRoom } from "../apps/erp/src/server/rooms/roomService";
 import { registerResident, assignResidentToRoom } from "../apps/erp/src/server/residents/residentService";
 import { finalizeResidentCheckoutSettlement } from "../apps/erp/src/server/residents/residentSettlementService";
+import { proposeResidentSettlement, approveSettlementProposal } from "../apps/erp/src/server/residents/settlementApprovalService";
 import {
   recordRentCharge,
   recordRentPayment,
@@ -25,7 +26,7 @@ import {
   recordExpense,
   reverseTransaction,
 } from "../apps/erp/src/server/finance/financeService";
-import { finalizeDailyClosing, saveDailyClosingDraft, reopenDailyClosing } from "../apps/erp/src/server/finance/cashbookClosingService";
+import { finalizeDailyClosing, saveDailyClosingDraft, reopenDailyClosing, previewDailyClosing } from "../apps/erp/src/server/finance/cashbookClosingService";
 import { getBusinessDateString } from "../apps/erp/src/server/finance/financeService";
 import { uploadDocument, archiveDocument } from "../apps/erp/src/server/documents/documentService";
 import { generateTiffinInvoices } from "../apps/erp/src/server/tiffin/tiffinBillingService";
@@ -173,6 +174,25 @@ async function main() {
       mgrRev = e;
     }
     assert(mgrRev?.statusCode === 403, "Manager cannot reverse transactions (403)");
+
+    // Reversals are dated today. Reversing a charge moves no money, so today's closing must not
+    // show it as an outflow; reversing a cash payment must (it is money handed back).
+    const today = getBusinessDateString(new Date());
+    const before = await previewDailyClosing(owner, today, "COMBINED", db);
+    const charge3 = await recordRentCharge(owner, { residentId, stayId, amount: 700, transactionDate: day, billingPeriod: "Verify Month" }, IP, db);
+    await reverseTransaction(owner, charge3.id, "Charge raised in error (closing check)", IP, db);
+    const afterCharge = await previewDailyClosing(owner, today, "COMBINED", db);
+    assert(
+      afterCharge.totalOutflow === before.totalOutflow && afterCharge.expectedCashBalance === before.expectedCashBalance,
+      `Reversing a rent charge is not a cash outflow in the daily closing (outflow ${before.totalOutflow} -> ${afterCharge.totalOutflow})`
+    );
+    const payment = await recordRentPayment(owner, { residentId, stayId, amount: 100, transactionDate: day, paymentMethod: "CASH" }, IP, db);
+    await reverseTransaction(owner, payment.id, "Payment recorded in error (closing check)", IP, db);
+    const afterPayment = await previewDailyClosing(owner, today, "COMBINED", db);
+    assert(
+      afterPayment.channelBreakdown.CASH.outflow === afterCharge.channelBreakdown.CASH.outflow + 100,
+      "Reversing a cash payment shows as a cash outflow in the daily closing"
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -195,10 +215,22 @@ async function main() {
     // the deposit refund. Recorded as an open owner question in ISSUE_REGISTER (ISSUE-026).
     const other = await residentWithStay(db, owner, day);
     await recordSecurityDeposit(manager, { residentId: other.residentId, stayId: other.stayId, amount: 3000, transactionDate: day, paymentMethod: "CASH" }, IP, db);
-    const mgrSettlement = await finalizeResidentCheckoutSettlement(manager, {
-      residentId: other.residentId, checkOutDate: day, refundAmount: 3000, refundPaymentMethod: "CASH",
-    } as any, IP, db);
-    assert(Boolean(mgrSettlement?.id), "Manager can finalize a checkout settlement with refund (current rule)");
+    // Decision 2026-11-01 (closes ISSUE-026): the Manager prepares, the Owner approves refunds.
+    let mgrDenied: any = null;
+    try {
+      await finalizeResidentCheckoutSettlement(manager, {
+        residentId: other.residentId, checkOutDate: day, refundAmount: 3000, refundPaymentMethod: "CASH",
+      } as any, IP, db);
+    } catch (e) {
+      mgrDenied = e;
+    }
+    assert(mgrDenied?.statusCode === 403 && /Owner's approval/.test(mgrDenied.message), "Manager cannot finalize a deposit refund (needs the Owner's approval)");
+    const proposal = await proposeResidentSettlement(manager, { residentId: other.residentId, checkOutDate: day, refundAmount: 3000, refundPaymentMethod: "CASH" } as any, IP, db);
+    const stillIn = await db.queryOne<any>("SELECT status FROM resident_stays WHERE id = ?", [other.stayId]);
+    assert(proposal.status === "PENDING" && stillIn?.status === "ACTIVE", "Manager's settlement waits for approval; the stay stays open and nothing is posted");
+    const mgrSettlement = await approveSettlementProposal(owner, proposal.id, "Checked the room", IP, db);
+    const decided = await db.queryOne<any>("SELECT status, settlement_id FROM settlement_proposals WHERE id = ?", [proposal.id]);
+    assert(Boolean(mgrSettlement?.id) && decided?.status === "APPROVED" && decided?.settlement_id === mgrSettlement.id, "Owner approves: settlement finalized and the proposal marked approved with it");
 
     const both = settled(
       await Promise.allSettled([

@@ -160,6 +160,7 @@ export async function POST(request: NextRequest) {
       error.message?.includes("inactive") ||
       error.message?.includes("earlier than") ||
       error.message?.includes("characters long") ||
+      error.message?.includes("must be") ||
       error.message?.includes("Invalid");
 
     return NextResponse.json(

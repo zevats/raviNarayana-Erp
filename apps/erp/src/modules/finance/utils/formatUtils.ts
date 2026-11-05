@@ -1,11 +1,13 @@
 import { TransactionType, TransactionStatus } from "@/types";
+import { formatMoney } from "@/lib/format";
 
 /**
  * Formats a numeric value into INR with standard Indian grouping (e.g. ₹2,85,200).
+ * Uses a reused formatter: this runs for every amount in every list row on each render.
  */
 export function formatINR(amount: number): string {
-  const safeAmount = Number.isFinite(amount) ? Math.round(amount) : 0;
-  return "₹" + safeAmount.toLocaleString("en-IN");
+  // Negative amounts read −₹1,234 across the ERP (lib/format.ts).
+  return formatMoney(amount);
 }
 
 /**

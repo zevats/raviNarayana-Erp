@@ -341,9 +341,17 @@ export function LoginForm() {
   const t = BRAND_UI[brand];
   const titles: Record<typeof step, string> = { LOGIN: "Sign in", OTP: "Verify it’s you", FORGOT: "Reset your password", RESET: "Set a new password" };
 
+  // The ERP (green) edition uses the ERP's own look: text brand mark over the soft canvas and one
+  // glass card. The delivery (orange) edition keeps its app's layout unchanged.
+  const erp = brand !== "delivery";
   return (
-    <div className="min-h-[100dvh] w-full flex flex-col" style={{ background: t.page }}>
-      {/* Brand panel */}
+    <div className={`min-h-[100dvh] w-full flex flex-col ${erp ? "rn-login sm:justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
+      {erp ? (
+        <header className="px-6 pt-[max(3rem,calc(env(safe-area-inset-top)+2rem))] sm:pt-0 pb-7 text-center">
+          <p className="rn-login-mark">Ravinarayan</p>
+          <p className="rn-login-sub">PG &amp; Tiffin ERP</p>
+        </header>
+      ) : (
       <header className="relative px-6 pt-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] pb-24 sm:pb-28 text-center overflow-hidden" style={{ background: t.hero }}>
         <div aria-hidden="true" className="absolute -right-16 -top-16 w-64 h-64 rounded-full opacity-[0.07] bg-white" />
         <div aria-hidden="true" className="absolute -left-20 bottom-0 w-56 h-56 rounded-full opacity-[0.05] bg-white" />
@@ -355,10 +363,11 @@ export function LoginForm() {
           {brand === "delivery" ? "Delivery" : "ERP"}
         </p>
       </header>
+      )}
 
       {/* Form card */}
-      <section className="relative -mt-16 sm:-mt-20 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex-1">
-        <div className="mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7">
+      <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:flex-none flex-1" : "relative -mt-16 sm:-mt-20 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex-1"}>
+        <div className={erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"}>
           <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-[#16241B]">{titles[step]}</h1>
           {step === "OTP" && (
             <p className="mt-1 text-[14px] text-[#5B6B5F]">

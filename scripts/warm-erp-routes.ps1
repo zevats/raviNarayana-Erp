@@ -34,7 +34,7 @@ if (-not $mutex.WaitOne(0)) {
 }
 
 try {
-    $pages = @("/login", "/dashboard", "/rooms", "/residents", "/finance", "/orders", "/delivery", "/staff", "/offline", "/forgot-password")
+    $pages = @("/login", "/dashboard", "/rooms", "/residents", "/finance", "/orders", "/delivery", "/staff", "/tiffin", "/reports", "/activity", "/settings", "/account", "/notifications", "/offline", "/forgot-password")
     # GET endpoints the pages above call on first load (route handlers compile separately from pages).
     # The sign-in routes are POST-only: a GET compiles them and returns 405 without running a handler.
     $apis = @(

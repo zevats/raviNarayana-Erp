@@ -908,11 +908,11 @@ async function runFinanceTests() {
           priorExpenseRefunds: "0",
         } as unknown as T;
       }
-      // getCashbookSummary global outstanding
-      if (sql.includes("COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE'") && !sql.includes("resident_id =")) {
+      // getCashbookSummary global outstanding (per-resident balances, positive ones summed)
+      if (sql.includes("WHERE due > 0")) {
         return {
-          allCharges: "20000",
-          allPayments: "14000",
+          total: "6000",
+          residents: "1",
         } as unknown as T;
       }
       return null;
@@ -940,7 +940,7 @@ async function runFinanceTests() {
   assert(pgCashbook.totalDepositsCollected === 10000, `getCashbookSummary deposits collected normalized (got ₹${pgCashbook.totalDepositsCollected})`);
   assert(pgCashbook.totalExpensesPaid === 2500, `getCashbookSummary expenses paid normalized (got ₹${pgCashbook.totalExpensesPaid})`);
   assert(pgCashbook.netCashMovement === 16500, `getCashbookSummary net cash movement normalized (9000+10000-2500 = ₹16,500, got ₹${pgCashbook.netCashMovement})`);
-  assert(pgCashbook.totalOutstandingRent === 6000, `getCashbookSummary total global outstanding rent normalized (20000-14000 = ₹6,000, got ₹${pgCashbook.totalOutstandingRent})`);
+  assert(pgCashbook.totalOutstandingRent === 6000, `getCashbookSummary total outstanding rent normalized from string bigints (₹6,000, got ₹${pgCashbook.totalOutstandingRent})`);
 
   // Test getResidentFinancialSummary against mock PostgreSQL driver
   const pgSummary = await getResidentFinancialSummary(accountantUser, "res_pg_1", mockPgDb);

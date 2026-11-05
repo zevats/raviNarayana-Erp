@@ -143,7 +143,9 @@ export function DeliveryForm({
   const [choice, setChoice] = useState("customer");
   const [otherName, setOtherName] = useState("");
   const [collectedText, setCollectedText] = useState<string | null>(null);
-  const [method, setMethod] = useState<"CASH" | "UPI">("CASH");
+  // Cash, UPI or Pay Later (migration 0021). Pay Later is offered only when the server says the
+  // customer is approved; without migration 0021 the form keeps its Cash / UPI behaviour.
+  const [method, setMethod] = useState<"CASH" | "UPI" | "PAY_LATER">("CASH");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState(false);
@@ -171,9 +173,14 @@ export function DeliveryForm({
   const nothing = lines.length > 0 ? deliveredUnits === 0 : !legacyDelivered;
   const shortLines = lines.filter((l) => (state[l.lineId]?.delivered ?? l.quantity) < l.quantity);
   const amountDue = lines.reduce((s, l) => s + (state[l.lineId]?.delivered ?? 0) * (l.unitPrice ?? 0), 0);
-  const collected = collectedText === null ? amountDue : collectedText.trim() === "" ? 0 : Number(collectedText);
+  const payLaterKnown = typeof task.payLaterAllowed === "boolean";
+  const payLaterAllowed = task.payLaterAllowed === true;
+  const payLater = method === "PAY_LATER";
+  const collected = payLater ? 0 : collectedText === null ? amountDue : collectedText.trim() === "" ? 0 : Number(collectedText);
   const collectedOk = Number.isInteger(collected) && collected >= 0 && collected <= amountDue;
   const balance = Math.max(0, amountDue - (collectedOk ? collected : 0));
+  // A balance left at the door is credit: only for customers approved for Pay Later (decision D3).
+  const balanceBlocked = doorstep && payLaterKnown && !payLaterAllowed && balance > 0;
   const setLine = (id: string, patch: Partial<LineState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   const setAll = (all: boolean) => setState((prev) => Object.fromEntries(lines.map((l) => [l.lineId, { ...(prev[l.lineId] || { reason: "", disposition: null }), delivered: all ? l.quantity : 0 }])));
 
@@ -191,6 +198,7 @@ export function DeliveryForm({
     }
     if (!nothing && !recipient) return setError("Enter the name of the person who received it.");
     if (doorstep && !nothing && !collectedOk) return setError(`Amount collected must be a whole number from ₹0 to ${rupees(amountDue)}.`);
+    if (!nothing && balanceBlocked) return setError(`This customer can't pay later. Collect the full ${rupees(amountDue)}, or call the office.`);
 
     const payload: Record<string, any> =
       lines.length > 0
@@ -210,9 +218,13 @@ export function DeliveryForm({
           }
         : { deliveredQuantity: legacyDelivered ? 1 : 0, undeliveredQuantity: legacyDelivered ? 0 : 1, undeliveredReason: legacyDelivered ? undefined : legacyReason.trim() };
     if (!nothing) payload.recipientName = recipient;
-    if (doorstep && !nothing && collected > 0) {
+    if (doorstep && !nothing && collected > 0 && !payLater) {
       payload.collectedAmount = collected;
       payload.paymentMethod = method;
+    }
+    if (doorstep && !nothing && payLaterKnown) {
+      payload.paymentChoice = method;
+      payload.payLaterAllowedAtSelection = payLaterAllowed;
     }
 
     setBusy(true);
@@ -355,30 +367,67 @@ export function DeliveryForm({
 
       {doorstep && !nothing ? (
         <section aria-label="Payment" className={`${K.soft} p-4 space-y-3`}>
-          <div className="grid grid-cols-3">
-            <div>
+          {/* Amounts shrink to fit their column so a large order never runs into the next figure. */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">Due</p>
-              <p className="text-lg font-extrabold"><span key={amountDue} className="rn-tick">{rupees(amountDue)}</span></p>
+              <p className="text-[clamp(0.85rem,4.4vw,1.125rem)] font-extrabold tabular-nums break-all"><span key={amountDue} className="rn-tick">{rupees(amountDue)}</span></p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">Collecting</p>
-              <p className="text-lg font-extrabold text-[#2F6B24]">{collectedOk ? rupees(collected) : "—"}</p>
+              <p className="text-[clamp(0.85rem,4.4vw,1.125rem)] font-extrabold tabular-nums break-all text-[#2F6B24]">{collectedOk ? rupees(collected) : "—"}</p>
             </div>
-            <div className="text-right">
-              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">Balance</p>
-              <p className={`text-lg font-extrabold ${balance > 0 ? "text-[#B4440F]" : "text-[#6E7F70]"}`}>{rupees(balance)}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-[1fr_auto] gap-2">
-            <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-white" role="radiogroup" aria-label="Paid by">
-              {(["CASH", "UPI"] as const).map((m) => (
-                <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`rn-press h-10 px-4 rounded-full text-sm font-semibold ${method === m ? "bg-[#C9501C] text-white" : "text-[#3E4E42]"}`}>
-                  {m === "CASH" ? "Cash" : "UPI"}
-                </button>
-              ))}
+            <div className="min-w-0 text-right">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">{payLaterKnown ? "Left to pay" : "Balance"}</p>
+              <p className={`text-[clamp(0.85rem,4.4vw,1.125rem)] font-extrabold tabular-nums break-all ${balance > 0 ? "text-[#B4440F]" : "text-[#6E7F70]"}`}>{rupees(balance)}</p>
             </div>
           </div>
+          {payLaterKnown ? (
+            <>
+              <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Payment">
+                {(["CASH", "UPI", "PAY_LATER"] as const).map((m) => {
+                  const off = m === "PAY_LATER" && !payLaterAllowed;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={method === m}
+                      disabled={off}
+                      onClick={() => setMethod(m)}
+                      className={`rn-press min-h-12 px-2 rounded-xl text-[14px] font-semibold leading-tight ${method === m ? "bg-[#C9501C] text-white" : off ? "bg-white/60 text-[#9AA59C] border border-dashed border-[#E2DBCE]" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}
+                    >
+                      {m === "CASH" ? "Cash" : m === "UPI" ? "UPI" : "Pay Later"}
+                      {off && <span className="block text-[10px] font-medium">Not approved</span>}
+                    </button>
+                  );
+                })}
+              </div>
+              {payLater ? (
+                <p className="text-[13px] text-[#3E4E42]">Nothing collected now. {rupees(amountDue)} goes on the customer&apos;s account.</p>
+              ) : (
+                <>
+                  <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`w-full h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk && !balanceBlocked ? "border-transparent" : "border-[#9A3423]"}`} />
+                  {balance > 0 && collectedOk && (
+                    <p className={`text-[13px] ${balanceBlocked ? "text-[#9A3423] font-semibold" : "text-[#3E4E42]"}`}>
+                      {balanceBlocked ? `Not approved for Pay Later: collect the full ${rupees(amountDue)}.` : `${rupees(balance)} goes on the customer's account.`}
+                    </p>
+                  )}
+                </>
+              )}
+            </>
+          ) : (
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
+              <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-white" role="radiogroup" aria-label="Paid by">
+                {(["CASH", "UPI"] as const).map((m) => (
+                  <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`rn-press h-10 px-4 rounded-full text-sm font-semibold ${method === m ? "bg-[#C9501C] text-white" : "text-[#3E4E42]"}`}>
+                    {m === "CASH" ? "Cash" : "UPI"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         !nothing &&
@@ -404,7 +453,9 @@ export function DeliveryForm({
                 ? "Save as Not Delivered"
                 : shortLines.length > 0
                   ? `Confirm Partial Delivery (${deliveredUnits} of ${orderedUnits})`
-                  : `Confirm Delivery${panel && stopNo !== undefined ? ` (Stop #${stopNo})` : ""}`}
+                  : doorstep && payLater
+                    ? "Mark as delivered · Pay Later"
+                    : `Confirm Delivery${panel && stopNo !== undefined ? ` (Stop #${stopNo})` : ""}`}
           </button>
         )}
         {!queued && (

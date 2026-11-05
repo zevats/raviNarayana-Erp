@@ -9,10 +9,12 @@ import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { FullPageLoader, useFillHeight } from "@/components/feedback/FullPageLoader";
 import { useErpQuery, invalidateErpCache, clearErpCache } from "@/lib/cache/erpDataCache";
 import { requestJson, postJsonRequest } from "@/lib/http/requestJson";
+import { formatMoney } from "@/lib/format";
 import { useSheetDrag } from "@/components/feedback/useSheetDrag";
 import { forgetPushToken } from "@/lib/native";
+import { PageHeader, StatStrip } from "@/components/ui/kit";
 
-const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+const rupees = (n: number) => formatMoney(n);
 const longDate = (iso: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(iso));
 const dateTime = (iso: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(new Date(iso));
 
@@ -46,6 +48,21 @@ function Row({ icon, label, value, action, onAction }: { icon: React.ReactNode; 
     </button>
   ) : (
     <div className="flex items-center gap-3.5 px-4 py-3.5">{inner}</div>
+  );
+}
+
+/** A label/value line in the manager account cards, with an optional action on the right. */
+function AccountRow({ label, value, action, onAction }: { label: string; value: React.ReactNode; action?: string; onAction?: () => void }) {
+  return (
+    <div className="flex items-center gap-4 px-5 sm:px-6 py-3.5">
+      <span className="min-w-0 flex-1">
+        <span className="block rn-t-label">{label}</span>
+        <span className="block text-[14px] text-[var(--rn-ink)] break-words">{value}</span>
+      </span>
+      {action && onAction && (
+        <button type="button" onClick={onAction} className="rn-btn rn-btn-sm shrink-0">{action}</button>
+      )}
+    </div>
   );
 }
 
@@ -532,6 +549,68 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
   }
 
   const s = me.summary;
+  // Owner and Manager: the ERP's shared card layout. Delivery staff keep their app's layout below.
+  if (me.role !== "DELIVERY_PERSON") {
+    const initial = (me.fullName.replace(/^(dr|mr|mrs|ms|shri|smt|prof)\.?\s+/i, "").trim()[0] || "?").toUpperCase();
+    return (
+      <div className="space-y-5 min-w-0">
+        <PageHeader title="My account" />
+        {notice && (
+          <p role="status" className="rn-notice rn-notice-good"><BadgeCheck className="w-4 h-4 shrink-0" /> {notice}</p>
+        )}
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start">
+          <div className="space-y-5 min-w-0">
+            <section className="rn-card p-5 sm:p-6 flex items-center gap-4">
+              <span className="grid place-items-center w-14 h-14 rounded-full bg-[var(--rn-accent)] text-white text-[22px] font-semibold shrink-0" aria-hidden>{initial}</span>
+              <div className="min-w-0">
+                <p className="rn-t-section truncate">{me.fullName}</p>
+                <p className="rn-t-meta">{ROLE_LABELS[me.role] || me.role} · since {longDate(me.memberSince)}</p>
+              </div>
+            </section>
+            <section className="rn-card">
+              <h2 className="rn-t-card px-5 sm:px-6 pt-5 pb-2">Account details</h2>
+              <div className="rn-rows pb-1">
+                <AccountRow label="Email" value={me.email} action="Change email" onAction={() => setSheet("email")} />
+                <AccountRow label="Member since" value={longDate(me.memberSince)} />
+              </div>
+            </section>
+            {s && (
+              <section className="space-y-2.5">
+                <h2 className="rn-t-card">{s.monthLabel}</h2>
+                <StatStrip
+                  items={[
+                    { label: "Deliveries", value: s.stopsThisMonth, note: `${s.deliveredThisMonth} in full` },
+                    { label: "Today", value: `${s.todayDone} / ${s.todayStops}`, note: "stops done" },
+                    { label: "Cash handed over", value: rupees(s.cashHandedOverThisMonth), note: s.cashWithYou > 0 ? `${rupees(s.cashWithYou)} with you now` : "nothing with you now" },
+                  ]}
+                />
+              </section>
+            )}
+          </div>
+          <div className="space-y-5 min-w-0">
+            <section className="rn-card">
+              <h2 className="rn-t-card px-5 sm:px-6 pt-5 pb-2">Security</h2>
+              <div className="rn-rows">
+                <AccountRow label="Password" value="Set" action="Change password" onAction={() => setSheet("password")} />
+                {me.lastSignIn && <AccountRow label="Last sign-in" value={dateTime(me.lastSignIn)} />}
+              </div>
+              <div className="px-5 sm:px-6 py-4 border-t border-[var(--rn-line)]">
+                <button type="button" onClick={signOut} disabled={signingOut} className="rn-btn rn-btn-danger">
+                  <LogOut /> {signingOut ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            </section>
+            <section className="rn-card">
+              <h2 className="rn-t-card px-5 sm:px-6 pt-5 pb-1">Devices</h2>
+              <DevicesCard me={me} onDone={done} />
+            </section>
+          </div>
+        </div>
+        {sheet === "password" && <PasswordSheet me={me} t={t} onClose={() => setSheet(null)} onDone={done} />}
+        {sheet === "email" && <EmailSheet me={me} t={t} onClose={() => setSheet(null)} onDone={done} />}
+      </div>
+    );
+  }
   return (
     <div className="mx-auto max-w-[720px] space-y-5 font-sans text-[#1F2320]">
       <h1 className="text-[28px] md:text-[32px] font-extrabold tracking-[-0.02em]">My account</h1>

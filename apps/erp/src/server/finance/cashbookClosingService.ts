@@ -123,7 +123,8 @@ async function computeOpeningBalances(
       ft.category,
       ft.status,
       ft.reversal_of_id,
-      orig.transaction_type as orig_tx_type
+      orig.transaction_type as orig_tx_type,
+      orig.category as orig_category
     FROM financial_transactions ft
     LEFT JOIN financial_transactions orig ON ft.reversal_of_id = orig.id
     WHERE ft.transaction_date < ?
@@ -138,46 +139,36 @@ async function computeOpeningBalances(
     const method = row.payment_method;
     const isCash = method === "CASH";
 
-    if (row.status === "POSTED") {
-      if (
-        (row.transaction_type === "RENT_PAYMENT" && row.category !== "DEPOSIT_APPLICATION") ||
-        row.transaction_type === "SECURITY_DEPOSIT" ||
-        row.transaction_type === "TIFFIN_PAYMENT"
-      ) {
-        totalBal += amt;
-        if (isCash) cashBal += amt;
-      } else if (row.transaction_type === "EXPENSE" || row.transaction_type === "DEPOSIT_REFUND") {
-        totalBal -= amt;
-        if (isCash) cashBal -= amt;
-      } else if (row.transaction_type === "REVERSAL") {
-        if (row.orig_tx_type === "EXPENSE") {
-          totalBal += amt;
-          if (isCash) cashBal += amt;
-        } else {
-          totalBal -= amt;
-          if (isCash) cashBal -= amt;
-        }
-      }
-    } else if (row.status === "REVERSED" && !row.reversal_of_id) {
-      // Original transaction that was reversed on a later date was an inflow at that time
-      if (
-        (row.transaction_type === "RENT_PAYMENT" && row.category !== "DEPOSIT_APPLICATION") ||
-        row.transaction_type === "SECURITY_DEPOSIT" ||
-        row.transaction_type === "TIFFIN_PAYMENT"
-      ) {
-        totalBal += amt;
-        if (isCash) cashBal += amt;
-      } else if (row.transaction_type === "EXPENSE" || row.transaction_type === "DEPOSIT_REFUND") {
-        totalBal -= amt;
-        if (isCash) cashBal -= amt;
-      }
-    }
+    const dir = movementDirection(row);
+    totalBal += dir * amt;
+    if (isCash) cashBal += dir * amt;
   }
 
   return {
     openingBalance: totalBal,
     openingCashBalance: cashBal,
   };
+}
+
+/** +1 money came in, -1 money went out, 0 a charge or other bookkeeping entry. */
+function receiptOrPaymentDirection(type: string, category: string | null): number {
+  if ((type === "RENT_PAYMENT" && category !== "DEPOSIT_APPLICATION") || type === "SECURITY_DEPOSIT" || type === "TIFFIN_PAYMENT") return 1;
+  if (type === "EXPENSE" || type === "DEPOSIT_REFUND") return -1;
+  return 0;
+}
+
+/**
+ * How a ledger row moves money on its own date. A reversal moves it the opposite way to the
+ * entry it reverses, so reversing a rent or tiffin charge (no money moved) is not an outflow.
+ * An original that was reversed later still counts on its own date.
+ */
+function movementDirection(row: { status: string; transaction_type: string; category: string | null; reversal_of_id: string | null; orig_tx_type: string | null; orig_category: string | null }): number {
+  if (row.status === "POSTED") {
+    if (row.transaction_type === "REVERSAL") return -receiptOrPaymentDirection(row.orig_tx_type ?? "", row.orig_category);
+    return receiptOrPaymentDirection(row.transaction_type, row.category);
+  }
+  if (row.status === "REVERSED" && !row.reversal_of_id) return receiptOrPaymentDirection(row.transaction_type, row.category);
+  return 0;
 }
 
 /**
@@ -229,7 +220,8 @@ export async function previewDailyClosing(
       r.full_name as resident_name,
       rm.room_number,
       tc.full_name as customer_name,
-      orig.transaction_type as orig_tx_type
+      orig.transaction_type as orig_tx_type,
+      orig.category as orig_category
     FROM financial_transactions ft
     LEFT JOIN residents r ON ft.resident_id = r.id
     LEFT JOIN resident_stays rs ON ft.stay_id = rs.id
@@ -274,50 +266,17 @@ export async function previewDailyClosing(
       createdAt: row.created_at,
     });
 
-    if (row.status === "POSTED") {
-      if (
-        (row.transaction_type === "RENT_PAYMENT" && row.category !== "DEPOSIT_APPLICATION") ||
-        row.transaction_type === "SECURITY_DEPOSIT" ||
-        row.transaction_type === "TIFFIN_PAYMENT"
-      ) {
-        bucket.inflow += amt;
-        bucket.net += amt;
-        bucket.transactionCount += 1;
-        totalInflow += amt;
-      } else if (row.transaction_type === "EXPENSE" || row.transaction_type === "DEPOSIT_REFUND") {
-        bucket.outflow += amt;
-        bucket.net -= amt;
-        bucket.transactionCount += 1;
-        totalOutflow += amt;
-      } else if (row.transaction_type === "REVERSAL") {
-        bucket.transactionCount += 1;
-        if (row.orig_tx_type === "EXPENSE") {
-          bucket.inflow += amt;
-          bucket.net += amt;
-          totalInflow += amt;
-        } else {
-          bucket.outflow += amt;
-          bucket.net -= amt;
-          totalOutflow += amt;
-        }
-      }
-    } else if (row.status === "REVERSED" && !row.reversal_of_id) {
-      // Original payment reversed on a later date was an inflow on this day
-      if (
-        (row.transaction_type === "RENT_PAYMENT" && row.category !== "DEPOSIT_APPLICATION") ||
-        row.transaction_type === "SECURITY_DEPOSIT" ||
-        row.transaction_type === "TIFFIN_PAYMENT"
-      ) {
-        bucket.inflow += amt;
-        bucket.net += amt;
-        bucket.transactionCount += 1;
-        totalInflow += amt;
-      } else if (row.transaction_type === "EXPENSE" || row.transaction_type === "DEPOSIT_REFUND") {
-        bucket.outflow += amt;
-        bucket.net -= amt;
-        bucket.transactionCount += 1;
-        totalOutflow += amt;
-      }
+    const dir = movementDirection(row);
+    if (dir === 0) continue;
+    bucket.transactionCount += 1;
+    if (dir > 0) {
+      bucket.inflow += amt;
+      bucket.net += amt;
+      totalInflow += amt;
+    } else {
+      bucket.outflow += amt;
+      bucket.net -= amt;
+      totalOutflow += amt;
     }
   }
 

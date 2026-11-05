@@ -340,35 +340,39 @@ async function runTask67Tests() {
   assert(fs.existsSync(shellPath), "ErpShell.tsx exists");
   const shellContent = fs.readFileSync(shellPath, "utf-8");
 
-  // Role optimization logic in ErpShell. Task 01B.69/70 consolidated operations to three
-  // canonical roles (Owner, Manager, Delivery) and folded /kitchen + /tiffin into /orders,
-  // so the bottom bar prioritises the two-page Orders/Delivery workflow (ISSUE-013).
+  // Since the 2026-11 redesign the manager navigation lives in components/layout/shell/:
+  // nav.ts holds the grouped links and their roles, MobileNav.tsx the bottom bar.
+  const navContent = fs.readFileSync(path.join(path.dirname(shellPath), "shell", "nav.ts"), "utf-8");
+  const mobileNavContent = fs.readFileSync(path.join(path.dirname(shellPath), "shell", "MobileNav.tsx"), "utf-8");
+
+  // Task 01B.69/70 consolidated operations to three canonical roles (Owner, Manager, Delivery)
+  // and folded /kitchen into /orders, so the bottom bar prioritises Orders/Delivery (ISSUE-013).
   assert(
-    shellContent.includes('user.role === "OPERATIONS_MANAGER"') &&
-    shellContent.includes('["/dashboard", "/residents", "/orders", "/delivery"]'),
-    "ErpShell optimizes bottom nav for OPERATIONS_MANAGER (Orders & Delivery prioritized)"
+    navContent.includes('"OPERATIONS_MANAGER"') &&
+    mobileNavContent.includes('const BAR_KEYS = ["dashboard", "orders", "delivery", "residents"]'),
+    "Manager bottom nav prioritises Orders & Delivery"
   );
 
   assert(
-    !shellContent.includes('user.role === "ACCOUNTANT"') &&
-      !/requiredRoles:[^\]]*"ACCOUNTANT"/.test(shellContent),
-    "ErpShell exposes no navigation for the retired ACCOUNTANT role"
+    !shellContent.includes("ACCOUNTANT") && !navContent.includes("ACCOUNTANT"),
+    "Shell exposes no navigation for the retired ACCOUNTANT role"
   );
 
   assert(
-    shellContent.includes('user.role === "SUPER_ADMIN"') &&
-    /href: "\/finance"[\s\S]*?requiredRoles: \["SUPER_ADMIN"/.test(shellContent),
-    "ErpShell bottom nav for SUPER_ADMIN is defined and Finance remains reachable for the Owner"
+    navContent.includes('"SUPER_ADMIN"') &&
+    /href: "\/finance\?tab=cashbook"[^\n]*roles: OM/.test(navContent) &&
+    /const OM: StaffRole\[\] = \["SUPER_ADMIN"/.test(navContent),
+    "Finance remains reachable for the Owner"
   );
 
   assert(
-    shellContent.includes("mobileBarItems.map"),
-    "ErpShell renders role-specific mobileBarItems in mobile bottom bar"
+    mobileNavContent.includes("items.map") && mobileNavContent.includes("links.find((l) => l.key === k)"),
+    "Bottom bar renders only the links the role can see"
   );
 
   assert(
-    shellContent.includes("pb-safe"),
-    "ErpShell mobile bar includes pb-safe padding"
+    shellContent.includes("MobileBottomBar") && mobileNavContent.includes("env(safe-area-inset-bottom)"),
+    "Manager mobile bar includes safe-area padding"
   );
 
   // ============================================================================
@@ -378,32 +382,30 @@ async function runTask67Tests() {
 
   const dashboardPath = path.resolve(ROOT, "apps/erp/src/app/(management)/dashboard/page.tsx");
   assert(fs.existsSync(dashboardPath), "Dashboard page.tsx exists");
-  const dashboardContent = fs.readFileSync(dashboardPath, "utf-8");
+  // The page loads the data; DashboardView.tsx renders it (2026-11 redesign).
+  const dashboardContent =
+    fs.readFileSync(dashboardPath, "utf-8") + fs.readFileSync(path.join(path.dirname(dashboardPath), "DashboardView.tsx"), "utf-8");
 
+  // Delivery staff never see the management dashboard; money is shown only to roles with finance.read.
   assert(
-    dashboardContent.includes('user?.role === "ACCOUNTANT"'),
-    "Dashboard renders dedicated Accountant Workflows"
+    dashboardContent.includes('user?.role === "DELIVERY_PERSON"') && dashboardContent.includes('redirect("/delivery")'),
+    "Dashboard sends delivery staff to their own app"
   );
   assert(
-    dashboardContent.includes('user?.role === "OPERATIONS_MANAGER"'),
-    "Dashboard renders dedicated Operations Workflows"
+    dashboardContent.includes('hasPermission(user?.role, "finance.read")') && dashboardContent.includes("{showMoney && ("),
+    "Dashboard shows money only to roles allowed to read finance"
   );
+  assert(!dashboardContent.includes("ACCOUNTANT"), "Dashboard has no branch for the retired ACCOUNTANT role");
   assert(
-    dashboardContent.includes("Owner & Executive Workflows"),
-    "Dashboard renders dedicated Owner & Executive Workflows"
-  );
-  assert(
-    dashboardContent.includes('href="/finance"') &&
+    dashboardContent.includes('href="/finance?tab=cashbook"') &&
     // Kitchen/Tiffin were consolidated into /orders (Task 01B.70); links now point there directly.
     dashboardContent.includes('href="/orders"') &&
     !dashboardContent.includes('href="/kitchen"') &&
-    dashboardContent.includes('href="/delivery"'),
-    "Dashboard quick action bar links directly to authorized operational destinations"
+    dashboardContent.includes('href="/delivery?tab=board"'),
+    "Dashboard tiles link directly to authorized operational destinations"
   );
   assert(
-    dashboardContent.includes("division=COMBINED") &&
-    dashboardContent.includes("division=PG") &&
-    dashboardContent.includes("division=TIFFIN"),
+    dashboardContent.includes('(["COMBINED", "PG", "TIFFIN"] as const)') && dashboardContent.includes("href={`/dashboard?division=${d}`}"),
     "Dashboard preserves canonical 3-way division filter"
   );
 

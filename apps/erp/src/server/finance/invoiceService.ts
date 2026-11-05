@@ -2,9 +2,12 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
-import { getCompanyBillingConfig, CompanyBillingConfig } from "../database/env";
-import { assertClosingDateNotFinalized } from "./financeService";
+import { CompanyBillingConfig } from "../database/env";
+import { getInvoiceCompanyConfig } from "../settings/settingsService";
+import { assertClosingDateNotFinalized, acquireLedgerKeyLock } from "./financeService";
 import { assertValidGstin } from "./gstinValidator";
+import { canonicalBillingMonth, chargeIsForMonth } from "./billingPeriod";
+import { hasInvoiceIdempotencySchema } from "../database/schemaFeatures";
 import {
   AuthenticatedUser,
   Invoice,
@@ -278,7 +281,89 @@ function mapRowToAllocation(row: any): InvoicePaymentAllocation {
     allocatedByName: row.allocated_by_name || null,
     notes: row.notes || null,
     createdAt: row.created_at,
+    paymentReversed: row.payment_status === "REVERSED",
   };
+}
+
+/**
+ * The rent charge a resident invoice stands for, inside the issuing transaction: links the
+ * resident's unbilled rent charge for the invoice's period, or posts a new charge.
+ *
+ * As before, an unbilled charge whose period text is exactly the invoice's is linked. In addition,
+ * when the invoice's period is a recognisable month ("Nov 2026", "November 2026", "2026-11"…), an
+ * unbilled charge of the same month and the same amount is linked even when the month is written
+ * differently, so the month the rent run (or a manual entry) already charged is not charged again.
+ * A charge is linked to at most one invoice (guarded update), and issues for a recognisable month
+ * take the monthly rent run's lock for that month, so an issue and a rent run cannot both post it.
+ * An invoice that matches no unbilled charge posts its own charge, as before: a resident can be
+ * invoiced more than once in a month (utilities, maintenance, a GST invoice), which is unchanged.
+ */
+async function resolveResidentRentCharge(
+  tx: AsyncDb,
+  p: {
+    invoiceId: string;
+    residentId: string;
+    stayId: string | null;
+    billingPeriod: string;
+    amount: number;
+    issueDate: string;
+    invoiceNumber: string;
+    linkExisting: boolean;
+    actorId: string;
+    now: string;
+  }
+): Promise<string> {
+  const month = canonicalBillingMonth(p.billingPeriod);
+  if (month) await acquireLedgerKeyLock(tx, `rent-run:${month}`);
+
+  const link = async (chargeId: string) =>
+    (await tx.execute(
+      "UPDATE financial_transactions SET invoice_id = ?, updated_at = ? WHERE id = ? AND invoice_id IS NULL AND status = 'POSTED'",
+      [p.invoiceId, p.now, chargeId]
+    )).changes === 1;
+
+  if (p.linkExisting) {
+    const exact = await tx.query<{ id: string }>(`
+      SELECT id FROM financial_transactions
+      WHERE resident_id = ? AND billing_period = ? AND transaction_type = 'RENT_CHARGE' AND status = 'POSTED' AND invoice_id IS NULL
+      ORDER BY transaction_date ASC, created_at ASC
+    `, [p.residentId, p.billingPeriod]);
+    for (const c of exact) if (await link(c.id)) return c.id;
+
+    if (month) {
+      const charges = await tx.query<{ id: string; stay_id: string | null; amount: number | string; billing_period: string | null; transaction_date: string }>(
+        `SELECT id, stay_id, amount, billing_period, transaction_date
+         FROM financial_transactions
+         WHERE resident_id = ? AND transaction_type = 'RENT_CHARGE' AND status = 'POSTED' AND invoice_id IS NULL
+         ORDER BY transaction_date ASC, created_at ASC`,
+        [p.residentId]
+      );
+      const sameMonth = charges.filter((c) => Number(c.amount) === p.amount && chargeIsForMonth(c, month));
+      sameMonth.sort((a, b) => Number(b.stay_id === p.stayId) - Number(a.stay_id === p.stayId));
+      for (const c of sameMonth) if (await link(c.id)) return c.id;
+    }
+  }
+
+  await assertClosingDateNotFinalized(tx, p.issueDate, "PG");
+  const chargeId = `txn_${crypto.randomUUID()}`;
+  await tx.execute(`
+    INSERT INTO financial_transactions (
+      id, transaction_type, amount, transaction_date, payment_method,
+      reference_number, resident_id, customer_id, stay_id, category,
+      description, billing_period, payee_vendor, idempotency_key, status,
+      reversal_of_id, invoice_id, created_by, created_at, updated_at
+    ) VALUES (
+      ?, 'RENT_CHARGE', ?, ?, NULL,
+      NULL, ?, NULL, ?, 'RENT', ?,
+      ?, NULL, NULL, 'POSTED',
+      NULL, ?, ?, ?, ?
+    )
+  `, [
+    chargeId, p.amount, p.issueDate, p.residentId, p.stayId,
+    `Invoice ${p.invoiceNumber} (${p.billingPeriod})`, p.billingPeriod,
+    p.invoiceId, p.actorId, p.now, p.now,
+  ]);
+  return chargeId;
 }
 
 /**
@@ -320,7 +405,7 @@ export async function createInvoice(
   }
 
   // Company billing configuration
-  const companyConfig = getCompanyBillingConfig();
+  const companyConfig = await getInvoiceCompanyConfig(db);
 
   // Strict PRD Guard: GST_TAX_INVOICE requires authentic registered GSTIN
   if (invoiceType === "GST_TAX_INVOICE") {
@@ -433,8 +518,34 @@ export async function createInvoice(
   let finalInvoiceNumber: string | null = null;
   let finalStatus: InvoiceStatus = "DRAFT";
   let linkedChargeId: string | null = null;
+  // One invoice per invoice-creation operation (migration 0020): the form sends the same key for a
+  // double click or a network retry, and the retry returns the invoice the first request created.
+  const idempotencyKey = input.idempotencyKey?.trim() || null;
+  const withMonth = await hasInvoiceIdempotencySchema(db);
+  let replayedId: string | null = null;
 
+  try {
   await db.transaction(async (tx) => {
+    if (idempotencyKey && withMonth) {
+      await acquireLedgerKeyLock(tx, `invoice:${idempotencyKey}`);
+      const prior = await tx.queryOne<{ id: string; invoice_category: string; resident_id: string | null; customer_id: string | null; total_amount: number | string; billing_period: string }>(
+        "SELECT id, invoice_category, resident_id, customer_id, total_amount, billing_period FROM invoices WHERE idempotency_key = ?",
+        [idempotencyKey]
+      );
+      if (prior) {
+        if (
+          prior.invoice_category !== invoiceCategory ||
+          (prior.resident_id ?? null) !== (residentId ?? null) ||
+          (prior.customer_id ?? null) !== (customerId ?? null) ||
+          Number(prior.total_amount) !== calculated.totalAmount ||
+          prior.billing_period !== billingPeriod
+        ) {
+          throw new Error("This invoice request was already used for a different invoice. Close the form and create the invoice again.");
+        }
+        replayedId = prior.id;
+        return;
+      }
+    }
     // If autoIssue requested, assign sequential invoice number and integrate with ledger
     if (input.autoIssue) {
       const year = parseInt(issueDate.slice(0, 4), 10);
@@ -493,56 +604,18 @@ export async function createInvoice(
           ]);
         }
       } else {
-        let existingCharge: { id: string; amount: number } | null = null;
-        if (input.linkExistingCharge !== false) {
-          existingCharge = await tx.queryOne<{ id: string; amount: number }>(`
-            SELECT id, amount
-            FROM financial_transactions
-            WHERE resident_id = ?
-              AND billing_period = ?
-              AND transaction_type = 'RENT_CHARGE'
-              AND status = 'POSTED'
-              AND invoice_id IS NULL
-            LIMIT 1
-          `, [residentId, billingPeriod]);
-        }
-
-        if (existingCharge) {
-          linkedChargeId = existingCharge.id;
-          await tx.execute(`
-            UPDATE financial_transactions
-            SET invoice_id = ?, updated_at = ?
-            WHERE id = ?
-          `, [invoiceId, now, existingCharge.id]);
-        } else {
-          await assertClosingDateNotFinalized(tx, issueDate, "PG");
-          linkedChargeId = `txn_${crypto.randomUUID()}`;
-          await tx.execute(`
-            INSERT INTO financial_transactions (
-              id, transaction_type, amount, transaction_date, payment_method,
-              reference_number, resident_id, customer_id, stay_id, category,
-              description, billing_period, payee_vendor, idempotency_key, status,
-              reversal_of_id, invoice_id, created_by, created_at, updated_at
-            ) VALUES (
-              ?, 'RENT_CHARGE', ?, ?, NULL,
-              NULL, ?, NULL, ?, 'RENT', ?,
-              ?, NULL, NULL, 'POSTED',
-              NULL, ?, ?, ?, ?
-            )
-          `, [
-            linkedChargeId,
-            calculated.totalAmount,
-            issueDate,
-            residentId,
-            stayId,
-            `Invoice ${finalInvoiceNumber} (${billingPeriod})`,
-            billingPeriod,
-            invoiceId,
-            actor.id,
-            now,
-            now,
-          ]);
-        }
+        linkedChargeId = await resolveResidentRentCharge(tx, {
+          invoiceId,
+          residentId: residentId!,
+          stayId,
+          billingPeriod,
+          amount: calculated.totalAmount,
+          issueDate,
+          invoiceNumber: finalInvoiceNumber!,
+          linkExisting: input.linkExistingCharge !== false,
+          actorId: actor.id,
+          now,
+        });
       }
     }
 
@@ -601,6 +674,15 @@ export async function createInvoice(
       now,
       now,
     ]);
+    if (withMonth) {
+      // The unique indexes of migration 0020 apply here: one invoice per key, and one active tiffin
+      // invoice per customer, subscription and month.
+      await tx.execute("UPDATE invoices SET idempotency_key = ?, billing_month = ? WHERE id = ?", [
+        idempotencyKey,
+        canonicalBillingMonth(billingPeriod),
+        invoiceId,
+      ]);
+    }
 
     // Insert invoice items
     for (const item of calculated.items) {
@@ -659,8 +741,16 @@ export async function createInvoice(
       ipAddress: clientIp,
     }, tx);
   });
+  } catch (err: any) {
+    // Migration 0020's unique index refused a second active tiffin invoice for the same
+    // subscription and month (a request that raced past the checks above): nothing was written.
+    if (/idx_invoices_tiffin_sub_month/.test(String(err?.message ?? ""))) {
+      throw new Error("This subscription already has an active invoice for that month.");
+    }
+    throw err;
+  }
 
-  return (await getInvoiceById(actor, invoiceId, db))!;
+  return (await getInvoiceById(actor, replayedId ?? invoiceId, db))!;
 }
 
 /**
@@ -697,7 +787,7 @@ export async function issueInvoice(
   }
 
   // Company billing configuration
-  const companyConfig = getCompanyBillingConfig();
+  const companyConfig = await getInvoiceCompanyConfig(db);
 
   // Strict GST guard
   if (existing.invoiceType === "GST_TAX_INVOICE") {
@@ -718,6 +808,17 @@ export async function issueInvoice(
   let linkedChargeId: string | null = null;
 
   await db.transaction(async (tx) => {
+    // Re-checked under the row lock: two concurrent issues of the same draft cannot both take a
+    // number and post a charge.
+    const locked = await tx.queryOne<{ status: string }>(
+      `SELECT status FROM invoices WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`,
+      [invoiceId]
+    );
+    if (!locked || locked.status !== "DRAFT") {
+      throw new Error(
+        `Cannot issue invoice '${invoiceId}'. Only DRAFT invoices can be issued. Current status is ${locked?.status ?? "missing"}.`
+      );
+    }
     assignedNumber = await generateNextInvoiceNumber(year, tx);
 
     // Ledger Linkage / Creation:
@@ -772,55 +873,18 @@ export async function issueInvoice(
         ]);
       }
     } else {
-      if (options?.linkExistingCharge !== false) {
-        existingCharge = await tx.queryOne<{ id: string; amount: number }>(`
-          SELECT id, amount
-          FROM financial_transactions
-          WHERE resident_id = ?
-            AND billing_period = ?
-            AND transaction_type = 'RENT_CHARGE'
-            AND status = 'POSTED'
-            AND invoice_id IS NULL
-          LIMIT 1
-        `, [existing.residentId, existing.billingPeriod]);
-      }
-
-      if (existingCharge) {
-        linkedChargeId = existingCharge.id;
-        await tx.execute(`
-          UPDATE financial_transactions
-          SET invoice_id = ?, updated_at = ?
-          WHERE id = ?
-        `, [invoiceId, now, existingCharge.id]);
-      } else {
-        await assertClosingDateNotFinalized(tx, existing.issueDate, "PG");
-        linkedChargeId = `txn_${crypto.randomUUID()}`;
-        await tx.execute(`
-          INSERT INTO financial_transactions (
-            id, transaction_type, amount, transaction_date, payment_method,
-            reference_number, resident_id, customer_id, stay_id, category,
-            description, billing_period, payee_vendor, idempotency_key, status,
-            reversal_of_id, invoice_id, created_by, created_at, updated_at
-          ) VALUES (
-            ?, 'RENT_CHARGE', ?, ?, NULL,
-            NULL, ?, NULL, ?, 'RENT', ?,
-            ?, NULL, NULL, 'POSTED',
-            NULL, ?, ?, ?, ?
-          )
-        `, [
-          linkedChargeId,
-          existing.totalAmount,
-          existing.issueDate,
-          existing.residentId,
-          existing.stayId,
-          `Invoice ${assignedNumber} (${existing.billingPeriod})`,
-          existing.billingPeriod,
-          invoiceId,
-          actor.id,
-          now,
-          now,
-        ]);
-      }
+      linkedChargeId = await resolveResidentRentCharge(tx, {
+        invoiceId,
+        residentId: existing.residentId!,
+        stayId: existing.stayId ?? null,
+        billingPeriod: existing.billingPeriod,
+        amount: existing.totalAmount,
+        issueDate: existing.issueDate,
+        invoiceNumber: assignedNumber,
+        linkExisting: options?.linkExistingCharge !== false,
+        actorId: actor.id,
+        now,
+      });
     }
 
     // Update invoice header
@@ -858,7 +922,9 @@ export async function allocatePaymentToInvoice(
   actor: AuthenticatedUser,
   input: AllocatePaymentInput,
   clientIpOrDb?: string | AsyncDb,
-  asyncDb?: AsyncDb
+  asyncDb?: AsyncDb,
+  /** The allocation of a payment being recorded right now for this invoice (recordTiffinPayment). */
+  options?: { asPartOfPayment?: boolean }
 ): Promise<{ invoice: Invoice; allocation: InvoicePaymentAllocation }> {
   let clientIp: string | undefined;
   let dbInstance = asyncDb;
@@ -870,101 +936,114 @@ export async function allocatePaymentToInvoice(
   }
   const db = dbInstance ?? getAsyncDb();
 
-  requirePermission(actor, "finance.manage", { ip: clientIp, action: "finance.payment_allocated" });
-
-  const invoice = await getInvoiceById(actor, input.invoiceId, db);
-  if (!invoice) {
-    throw new Error(`Invoice '${input.invoiceId}' not found.`);
-  }
-
-  if (invoice.status !== "ISSUED" && invoice.status !== "PARTIALLY_PAID") {
-    throw new Error(
-      `Payments can only be allocated to ISSUED or PARTIALLY_PAID invoices. Current status is ${invoice.status}.`
-    );
-  }
-
-  if (invoice.balanceDue <= 0) {
-    throw new Error(`Invoice '${invoice.invoiceNumber || invoice.id}' is already fully paid.`);
-  }
-
-  // Load payment transaction
-  const payment = await db.queryOne<{
-    id: string;
-    transaction_type: string;
-    amount: number | string;
-    resident_id: string | null;
-    customer_id: string | null;
-    status: string;
-  }>(
-    "SELECT id, transaction_type, amount, resident_id, customer_id, status FROM financial_transactions WHERE id = ?",
-    [input.paymentTransactionId]
-  );
-
-  if (!payment) {
-    throw new Error(`Payment transaction '${input.paymentTransactionId}' not found.`);
-  }
-
-  if (payment.status !== "POSTED") {
-    throw new Error(`Cannot allocate reversed payment '${input.paymentTransactionId}'.`);
-  }
-
-  if (invoice.invoiceCategory === "TIFFIN") {
-    if (payment.transaction_type !== "TIFFIN_PAYMENT") {
-      throw new Error(`Transaction '${input.paymentTransactionId}' is not a TIFFIN_PAYMENT (got ${payment.transaction_type}).`);
-    }
-    if (payment.customer_id !== invoice.customerId) {
-      throw new Error("Payment transaction does not belong to the invoice recipient customer.");
-    }
-  } else {
-    if (payment.transaction_type !== "RENT_PAYMENT") {
-      throw new Error(`Transaction '${input.paymentTransactionId}' is not a RENT_PAYMENT (got ${payment.transaction_type}).`);
-    }
-    if (payment.resident_id !== invoice.residentId) {
-      throw new Error("Payment transaction does not belong to the invoice recipient resident.");
-    }
-  }
-
-  const paymentAmount = Number(payment.amount);
-
-  // Compute existing allocations for this payment
-  const allocRes = await db.queryOne<{ totalAllocated: number | string }>(`
-    SELECT COALESCE(SUM(amount), 0) as "totalAllocated"
-    FROM invoice_payment_allocations
-    WHERE payment_transaction_id = ?
-  `, [input.paymentTransactionId]);
-
-  const totalAllocated = Number(allocRes?.totalAllocated || 0);
-  const remainingPayment = paymentAmount - totalAllocated;
-
-  if (remainingPayment <= 0) {
-    throw new Error(`Payment transaction '${input.paymentTransactionId}' has already been fully allocated to invoices.`);
-  }
-
-  let amountToAllocate: number;
-  if (input.amount !== undefined && input.amount !== null) {
-    const specified = Number(input.amount);
-    if (!Number.isInteger(specified) || specified <= 0) {
-      throw new Error("Allocation amount must be a positive integer in INR.");
-    }
-    if (specified > remainingPayment) {
-      throw new Error(
-        `Cannot allocate ₹${specified.toLocaleString("en-IN")}. Payment only has ₹${remainingPayment.toLocaleString("en-IN")} unallocated remaining.`
-      );
-    }
-    if (specified > invoice.balanceDue) {
-      throw new Error(
-        `Cannot allocate ₹${specified.toLocaleString("en-IN")}. Invoice balance due is only ₹${invoice.balanceDue.toLocaleString("en-IN")}.`
-      );
-    }
-    amountToAllocate = specified;
-  } else {
-    amountToAllocate = Math.min(remainingPayment, invoice.balanceDue);
-  }
+  // Re-allocating existing payments is Owner work (finance.manage); applying a payment to the
+  // invoice it is being recorded for belongs to recording it (finance.record).
+  requirePermission(actor, options?.asPartOfPayment ? "finance.record" : "finance.manage", { ip: clientIp, action: "finance.payment_allocated" });
 
   const allocationId = `inv_alloc_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
+  let invoiceIdForResult = input.invoiceId;
 
+  // Every check runs inside the transaction on locked rows, payment first and then invoice (the
+  // order a payment reversal uses), so concurrent allocations against the same payment or the same
+  // invoice are applied one after another and each sees the other's result.
   await db.transaction(async (tx) => {
+    const lock = tx.isPostgres ? " FOR UPDATE" : "";
+    const payment = await tx.queryOne<{
+      id: string;
+      transaction_type: string;
+      amount: number | string;
+      resident_id: string | null;
+      customer_id: string | null;
+      status: string;
+    }>(
+      `SELECT id, transaction_type, amount, resident_id, customer_id, status FROM financial_transactions WHERE id = ?${lock}`,
+      [input.paymentTransactionId]
+    );
+    const invoice = await tx.queryOne<{
+      id: string;
+      invoice_number: string | null;
+      invoice_category: string;
+      status: InvoiceStatus;
+      resident_id: string | null;
+      customer_id: string | null;
+      amount_paid: number | string;
+      balance_due: number | string;
+    }>(
+      `SELECT id, invoice_number, invoice_category, status, resident_id, customer_id, amount_paid, balance_due FROM invoices WHERE id = ?${lock}`,
+      [input.invoiceId]
+    );
+
+    if (!invoice) {
+      throw new Error(`Invoice '${input.invoiceId}' not found.`);
+    }
+    invoiceIdForResult = invoice.id;
+    if (invoice.status !== "ISSUED" && invoice.status !== "PARTIALLY_PAID") {
+      throw new Error(
+        `Payments can only be allocated to ISSUED or PARTIALLY_PAID invoices. Current status is ${invoice.status}.`
+      );
+    }
+    const amountPaid = Number(invoice.amount_paid);
+    const balanceDue = Number(invoice.balance_due);
+    if (balanceDue <= 0) {
+      throw new Error(`Invoice '${invoice.invoice_number || invoice.id}' is already fully paid.`);
+    }
+
+    if (!payment) {
+      throw new Error(`Payment transaction '${input.paymentTransactionId}' not found.`);
+    }
+    if (payment.status !== "POSTED") {
+      throw new Error(`Cannot allocate reversed payment '${input.paymentTransactionId}'.`);
+    }
+    if (invoice.invoice_category === "TIFFIN") {
+      if (payment.transaction_type !== "TIFFIN_PAYMENT") {
+        throw new Error(`Transaction '${input.paymentTransactionId}' is not a TIFFIN_PAYMENT (got ${payment.transaction_type}).`);
+      }
+      if (payment.customer_id !== invoice.customer_id) {
+        throw new Error("Payment transaction does not belong to the invoice recipient customer.");
+      }
+    } else {
+      if (payment.transaction_type !== "RENT_PAYMENT") {
+        throw new Error(`Transaction '${input.paymentTransactionId}' is not a RENT_PAYMENT (got ${payment.transaction_type}).`);
+      }
+      if (payment.resident_id !== invoice.resident_id) {
+        throw new Error("Payment transaction does not belong to the invoice recipient resident.");
+      }
+    }
+
+    // A posted payment's allocations are all active (they stop counting only when the payment is
+    // reversed, and a reversed payment cannot be allocated).
+    const allocRes = await tx.queryOne<{ totalAllocated: number | string }>(`
+      SELECT COALESCE(SUM(amount), 0) as "totalAllocated"
+      FROM invoice_payment_allocations
+      WHERE payment_transaction_id = ?
+    `, [input.paymentTransactionId]);
+    const remainingPayment = Number(payment.amount) - Number(allocRes?.totalAllocated || 0);
+    if (remainingPayment <= 0) {
+      throw new Error(`Payment transaction '${input.paymentTransactionId}' has already been fully allocated to invoices.`);
+    }
+
+    let amountToAllocate: number;
+    if (input.amount !== undefined && input.amount !== null) {
+      const specified = Number(input.amount);
+      if (!Number.isInteger(specified) || specified <= 0) {
+        throw new Error("Allocation amount must be a positive integer in INR.");
+      }
+      if (specified > remainingPayment) {
+        throw new Error(
+          `Cannot allocate ₹${specified.toLocaleString("en-IN")}. Payment only has ₹${remainingPayment.toLocaleString("en-IN")} unallocated remaining.`
+        );
+      }
+      if (specified > balanceDue) {
+        throw new Error(
+          `Cannot allocate ₹${specified.toLocaleString("en-IN")}. Invoice balance due is only ₹${balanceDue.toLocaleString("en-IN")}.`
+        );
+      }
+      amountToAllocate = specified;
+    } else {
+      amountToAllocate = Math.min(remainingPayment, balanceDue);
+    }
+
     await tx.execute(`
       INSERT INTO invoice_payment_allocations (
         id, invoice_id, payment_transaction_id, amount, allocated_at,
@@ -984,8 +1063,8 @@ export async function allocatePaymentToInvoice(
       now,
     ]);
 
-    const newAmountPaid = invoice.amountPaid + amountToAllocate;
-    const newBalanceDue = invoice.balanceDue - amountToAllocate;
+    const newAmountPaid = amountPaid + amountToAllocate;
+    const newBalanceDue = balanceDue - amountToAllocate;
     const newStatus: InvoiceStatus = newBalanceDue === 0 ? "PAID" : "PARTIALLY_PAID";
 
     await tx.execute(`
@@ -1014,7 +1093,7 @@ export async function allocatePaymentToInvoice(
     }, tx);
   });
 
-  const updatedInvoice = (await getInvoiceById(actor, invoice.id, db))!;
+  const updatedInvoice = (await getInvoiceById(actor, invoiceIdForResult, db))!;
   const allocation = updatedInvoice.allocations?.find((a) => a.id === allocationId)!;
 
   return { invoice: updatedInvoice, allocation };
@@ -1177,6 +1256,7 @@ export async function getInvoiceById(
       t.transaction_date as payment_date,
       t.payment_method,
       t.reference_number,
+      t.status as payment_status,
       u.full_name as allocated_by_name
     FROM invoice_payment_allocations a
     LEFT JOIN financial_transactions t ON a.payment_transaction_id = t.id

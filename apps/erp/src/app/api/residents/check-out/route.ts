@@ -9,6 +9,9 @@ import {
   finalizeResidentCheckoutSettlement,
 } from "@/server/residents/residentService";
 import { getClientIp } from "@/server/authentication/ip";
+import { hasPermission } from "@/server/authorization/permissions";
+import { settlementMovesDeposit } from "@/server/residents/residentSettlementService";
+import { proposeResidentSettlement } from "@/server/residents/settlementApprovalService";
 
 export const dynamic = "force-dynamic";
 
@@ -28,23 +31,31 @@ export async function POST(request: NextRequest) {
       body.refundAmount !== undefined ||
       body.remainingPayableAmount !== undefined
     ) {
-      const settlement = await finalizeResidentCheckoutSettlement(
-        user,
-        {
-          residentId: body.residentId,
-          checkOutDate: body.checkOutDate,
-          deductions: body.deductions,
-          depositAppliedAmount: body.depositAppliedAmount,
-          refundAmount: body.refundAmount,
-          refundPaymentMethod: body.refundPaymentMethod,
-          refundReference: body.refundReference,
-          remainingPayableAmount: body.remainingPayableAmount,
-          paymentMethod: body.paymentMethod,
-          paymentReference: body.paymentReference,
-          notes: body.notes,
-        },
-        clientIp
-      );
+      const input = {
+        residentId: body.residentId,
+        checkOutDate: body.checkOutDate,
+        deductions: body.deductions,
+        depositAppliedAmount: body.depositAppliedAmount,
+        refundAmount: body.refundAmount,
+        refundPaymentMethod: body.refundPaymentMethod,
+        refundReference: body.refundReference,
+        remainingPayableAmount: body.remainingPayableAmount,
+        paymentMethod: body.paymentMethod,
+        paymentReference: body.paymentReference,
+        notes: body.notes,
+      };
+
+      // A settlement that moves deposit money is the Owner's to finalize: from anyone else it is
+      // sent for approval (nothing posted, stay kept open).
+      if (settlementMovesDeposit(input) && !hasPermission(user.role, "finance.manage")) {
+        const proposal = await proposeResidentSettlement(user, input, clientIp);
+        return NextResponse.json(
+          { success: true, pendingApproval: true, proposal, message: "Sent to the Owner for approval. The resident stays checked in until it is approved." },
+          { status: 202 }
+        );
+      }
+
+      const settlement = await finalizeResidentCheckoutSettlement(user, input, clientIp);
 
       return NextResponse.json({
         success: true,

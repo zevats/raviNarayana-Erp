@@ -632,7 +632,21 @@ export async function verifyOtpChallenge(
     if (!delRes || delRes.changes === 0) {
       throw new Error("Invalid or expired verification challenge. Please log in again.");
     }
-    return createSession(challenge.staff_id, { ...metadata, preempt: true }, tx);
+    const created = await createSession(challenge.staff_id, { ...metadata, preempt: true }, tx);
+    // Activity log: who signed in, when, from where (never the code or the session token).
+    await recordAuditEventAsync(
+      {
+        actorId: challenge.staff_id,
+        actorUsername: challenge.username,
+        action: "auth.signed_in",
+        targetType: "staff",
+        targetId: challenge.staff_id,
+        metadata: { method: "password+email code", device: metadata?.userAgent ? metadata.userAgent.slice(0, 160) : null },
+        ipAddress: metadata?.ip,
+      },
+      tx
+    );
+    return created;
   });
 
   return {

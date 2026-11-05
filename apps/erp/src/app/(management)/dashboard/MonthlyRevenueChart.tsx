@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { ChevronDown, TrendingUp } from "lucide-react";
+import { formatNumberIN } from "@/lib/format";
 
 interface MonthlyDataPoint {
   month: string;
@@ -58,8 +59,8 @@ export function MonthlyRevenueChart({ data }: MonthlyRevenueChartProps) {
           {hoveredIdx !== null && data[hoveredIdx] ? (
             <div className="inline-flex items-center gap-3 px-3 py-1 rounded-full bg-[#1A2E20] text-white text-[11px] shadow-sm animate-in fade-in duration-100">
               <span className="font-semibold text-[#C89F6B]">{data[hoveredIdx].label} 2026</span>
-              <span>Collected: <strong className="font-semibold text-emerald-400">₹{data[hoveredIdx].collected.toLocaleString("en-IN")}</strong></span>
-              <span>Expenses: <strong className="font-semibold text-rose-300">₹{data[hoveredIdx].expenses.toLocaleString("en-IN")}</strong></span>
+              <span>Collected: <strong className="font-semibold text-emerald-400">₹{formatNumberIN(data[hoveredIdx].collected)}</strong></span>
+              <span>Expenses: <strong className="font-semibold text-rose-300">₹{formatNumberIN(data[hoveredIdx].expenses)}</strong></span>
             </div>
           ) : (
             <div className="text-[11px] text-[#8E9F89]">
@@ -132,7 +133,7 @@ export function MonthlyRevenueChart({ data }: MonthlyRevenueChartProps) {
       <div className="pt-4 border-t border-[#8E9F89]/20 flex items-center justify-between text-xs text-[#5A6C5E]">
         <div className="flex items-center gap-1.5">
           <TrendingUp className="w-3.5 h-3.5 text-emerald-700" />
-          <span>Peak Collection: <strong className="text-[#1A2E20] font-semibold">₹{peakCollected.toLocaleString("en-IN")}</strong></span>
+          <span>Peak Collection: <strong className="text-[#1A2E20] font-semibold">₹{formatNumberIN(peakCollected)}</strong></span>
         </div>
         <div className="text-[11px] text-[#8E9F89]">
           Database-backed posted transactions

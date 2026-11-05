@@ -121,7 +121,8 @@ async function main() {
     return sid;
   };
   // Earlier runs' subscriptions are retired so this run's list contains only its own.
-  await db.execute("UPDATE tiffin_subscriptions SET status = 'CANCELLED' WHERE id LIKE 'ts_ops_%'");
+  // Every other suite's subscriptions too (open-ended ones would deliver on this run's days).
+  await db.execute("UPDATE tiffin_subscriptions SET status = 'CANCELLED' WHERE status <> 'CANCELLED'");
   const S1 = await mkSub("Sub Lunch Two", "LUNCH", 2);
   const S2 = await mkSub("Sub Both One", "BOTH", 1);
   const S3 = await mkSub("Sub Paused", "LUNCH", 1, { status: "PAUSED", pauseStart: DAY1, pauseResume: DAY3 });

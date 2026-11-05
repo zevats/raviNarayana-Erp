@@ -20,11 +20,13 @@ import {
 } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType } from "@/types";
 import { businessToday } from "@/lib/businessDate";
+import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 interface NewOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onOrderCreated: () => void;
+  /** Called after the server confirmed the order, with the message to show; the dialog then closes. */
+  onOrderCreated: (message: string) => void;
   defaultDate?: string;
 }
 
@@ -72,7 +74,6 @@ export function NewOrderModal({
   const [draftKey, setDraftKey] = useState(() => `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   const [reuseNotice, setReuseNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Each opening starts a clean draft: no customer, phone, address, items or notes carried over
   // from the previous order (order type, meal and date stay as last chosen for fast repeat entry).
@@ -90,33 +91,38 @@ export function NewOrderModal({
     setMenuSearch("");
     setNotes("");
     setErrorMessage(null);
-    setSuccessMessage(null);
     setReuseNotice(null);
   }, [isOpen]);
 
-  // Load products & initial customer list
+  // Menu and the first customers come from the shared cache: fetched once while the Orders page
+  // is open (before the dialog is first used), reused on every opening, refreshed after changes.
+  const productsQuery = useErpQuery<TiffinProduct[]>(
+    "/api/tiffin/products?status=ACTIVE",
+    async () => {
+      const res = await fetch("/api/tiffin/products?status=ACTIVE");
+      if (!res.ok) throw new Error("Could not load the menu.");
+      const data = await res.json();
+      return Array.isArray(data.products) ? data.products : [];
+    },
+    { ttl: 60000, tags: ["products", "tiffin_products"] }
+  );
+  const customersQuery = useErpQuery<TiffinCustomer[]>(
+    "/api/tiffin/customers?status=ACTIVE&limit=20",
+    async () => {
+      const res = await fetch("/api/tiffin/customers?status=ACTIVE&limit=20");
+      if (!res.ok) throw new Error("Could not load customers.");
+      const data = await res.json();
+      return Array.isArray(data.customers) ? data.customers : [];
+    },
+    { ttl: 30000, tags: ["customers", "tiffin_customers"] }
+  );
   useEffect(() => {
-    if (!isOpen) return;
-
-    fetch("/api/tiffin/products?status=ACTIVE")
-      .then((res) => (res.ok ? res.json() : { products: [] }))
-      .then((data) => {
-        if (data.products && Array.isArray(data.products)) {
-          // Monthly subscription packages are not order items.
-          setProducts(data.products.filter((p: TiffinProduct) => p.billingUnit !== "PER_MONTH"));
-        }
-      })
-      .catch(() => {});
-
-    fetch("/api/tiffin/customers?status=ACTIVE&limit=20")
-      .then((res) => (res.ok ? res.json() : { customers: [] }))
-      .then((data) => {
-        if (data.customers && Array.isArray(data.customers)) {
-          setCustomers(data.customers);
-        }
-      })
-      .catch(() => {});
-  }, [isOpen]);
+    // Monthly subscription packages are not order items.
+    if (productsQuery.data) setProducts(productsQuery.data.filter((p) => p.billingUnit !== "PER_MONTH"));
+  }, [productsQuery.data]);
+  useEffect(() => {
+    if (isOpen && customersQuery.data) setCustomers(customersQuery.data);
+  }, [isOpen, customersQuery.data]);
 
   // Search existing customers
   useEffect(() => {
@@ -346,24 +352,23 @@ export function NewOrderModal({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to confirm order.");
 
-      setSuccessMessage(
+      const confirmed =
         orderType === "DELIVERY"
           ? data.order?.assignedToName
             ? `Delivery order confirmed! Assigned to ${data.order.assignedToName} for delivery.`
             : "Delivery order confirmed, but no active delivery staff account exists. Create or reactivate one in Staff Administration."
-          : `Dine-in counter order confirmed (₹${totalAmount} collected via ${paymentMethod}).`
-      );
+          : `Dine-in counter order confirmed (₹${totalAmount} collected via ${paymentMethod}).`;
 
       // Trigger cross-view instant refresh
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("erp:order_created"));
       }
 
-      onOrderCreated();
+      // Close as soon as the server confirmed; the page shows the confirmation. (A delayed close
+      // left the button active with a new draft key, so a second click created a second order.)
       setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
-      setTimeout(() => {
-        onClose();
-      }, 1500);
+      onOrderCreated(confirmed);
+      onClose();
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to submit order. Please check entered information.");
     } finally {
@@ -399,12 +404,6 @@ export function NewOrderModal({
             <div className="p-3.5 bg-red-50 border border-red-200 text-red-800 text-xs rounded-2xl flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
               <span>{errorMessage}</span>
-            </div>
-          )}
-          {successMessage && (
-            <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-2xl flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
-              <span>{successMessage}</span>
             </div>
           )}
 
@@ -515,7 +514,7 @@ export function NewOrderModal({
               {customerMode === "EXISTING" ? (
                 <div className="space-y-2">
                   <div className="relative">
-                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-[#8E9F89]" />
+                    <Search className="pointer-events-none w-4 h-4 absolute left-3 top-2.5 text-[#8E9F89]" />
                     <input
                       type="text"
                       placeholder="Search customer by name or phone..."
@@ -760,7 +759,7 @@ export function NewOrderModal({
             </div>
 
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#8E9F89]" />
+              <Search className="pointer-events-none w-3.5 h-3.5 absolute left-3 top-2.5 text-[#8E9F89]" />
               <input
                 type="text"
                 placeholder="Filter menu items..."

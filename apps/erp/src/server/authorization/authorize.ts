@@ -4,6 +4,7 @@ import { hasPermission } from "./permissions";
 import { recordAuditEvent } from "../audit/audit";
 import { AuthenticatedUser, Permission } from "@/types";
 import { AsyncDb } from "../database/db";
+import { changeOriginFor, setChangeOrigin } from "../database/changeSignals";
 
 export class AuthorizationError extends Error {
   public readonly statusCode: 401 | 403;
@@ -34,6 +35,8 @@ export async function resolveUserFromRequest(
   if (!sessionToken || sessionToken.length < 32) {
     return null;
   }
+  // Before the first await: writes made by this request are announced with its origin.
+  setChangeOrigin(changeOriginFor(sessionToken));
 
   const { user, isPreempted } = await validateSessionDetailed(sessionToken, asyncDb);
   if (isPreempted) {

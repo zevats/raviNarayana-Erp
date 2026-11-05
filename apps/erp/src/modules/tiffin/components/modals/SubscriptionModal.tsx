@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   Calendar,
@@ -58,6 +58,8 @@ export function SubscriptionModal({
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
 
   // Filter to active customers and products for selection
   const activeCustomers = customers.filter((c) => c.status === "ACTIVE");
@@ -68,6 +70,7 @@ export function SubscriptionModal({
   useEffect(() => {
     if (isOpen) {
       setError(null);
+      inFlight.current = false;
       setSubmitting(false);
 
       if (subscription) {
@@ -165,6 +168,10 @@ export function SubscriptionModal({
       return;
     }
 
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+
     setSubmitting(true);
 
     try {
@@ -207,6 +214,7 @@ export function SubscriptionModal({
     } catch (err: any) {
       setError(err.message || "Error saving subscription.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

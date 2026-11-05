@@ -5,6 +5,7 @@ import { validateSessionCached } from "@/server/authentication/cachedAuth";
 import { ErpShell } from "@/components/layout/ErpShell";
 import { checkDemoProvenance } from "@/server/database/db";
 import { ERP_PATHNAME_HEADER, sectionRedirectFor } from "@/server/authorization/sectionAccess";
+import { getSettings } from "@/server/settings/settingsService";
 
 export const dynamic = "force-dynamic";
 
@@ -37,5 +38,8 @@ export default async function ManagementLayout({
   const isDev = process.env.NODE_ENV !== "production";
   const isDemoData = isDev ? true : await checkDemoProvenance();
 
-  return <ErpShell user={user} isDemo={isDemoData}>{children}</ErpShell>;
+  // A settings read failure must never take the whole ERP down; the link is then just hidden.
+  const websiteUrl = await getSettings().then((s) => s.business.websiteUrl || null).catch(() => null);
+
+  return <ErpShell user={user} isDemo={isDemoData} websiteUrl={websiteUrl}>{children}</ErpShell>;
 }

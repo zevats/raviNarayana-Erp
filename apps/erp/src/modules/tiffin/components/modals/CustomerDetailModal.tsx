@@ -1,8 +1,19 @@
 "use client";
 
 import React from "react";
-import { X, User, Phone, MapPin, Compass, FileText, CheckCircle2, XCircle, Edit, Calendar } from "lucide-react";
-import { TiffinCustomer } from "@/types";
+import { X, User, Phone, MapPin, Compass, Edit, Calendar, Wallet } from "lucide-react";
+import { TiffinCustomer, TiffinSubscription } from "@/types";
+import { useErpQuery } from "@/lib/cache/erpDataCache";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { PayLaterPanel } from "../PayLaterPanel";
+
+const SUB_STATUS_STYLE: Record<string, string> = {
+  ACTIVE: "bg-green-100 text-green-800",
+  PAUSED: "bg-amber-100 text-amber-800",
+  CANCELLED: "bg-gray-200 text-gray-700",
+  COMPLETED: "bg-blue-100 text-blue-800",
+};
+const MEALS_LABEL: Record<string, string> = { LUNCH: "Lunch", DINNER: "Dinner", BOTH: "Lunch & dinner", BREAKFAST: "Breakfast" };
 
 interface CustomerDetailModalProps {
   isOpen: boolean;
@@ -10,6 +21,8 @@ interface CustomerDetailModalProps {
   customer: TiffinCustomer | null;
   onEdit?: (customer: TiffinCustomer) => void;
   onToggleStatus?: (customer: TiffinCustomer) => void;
+  /** Opens the customer's invoices, payments and balance. */
+  onViewAccount?: (customer: TiffinCustomer) => void;
 }
 
 export function CustomerDetailModal({
@@ -18,8 +31,21 @@ export function CustomerDetailModal({
   customer,
   onEdit,
   onToggleStatus,
+  onViewAccount,
 }: CustomerDetailModalProps) {
+  const subsKey = isOpen && customer ? `/api/tiffin/subscriptions?customerId=${encodeURIComponent(customer.id)}` : null;
+  const subsQ = useErpQuery<{ subscriptions: TiffinSubscription[] }>(
+    subsKey,
+    async () => {
+      const res = await fetch(subsKey as string, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not load subscriptions.");
+      return body;
+    },
+    { ttl: 15000, tags: ["tiffin_subscriptions", "subscriptions"] }
+  );
   if (!isOpen || !customer) return null;
+  const subscriptions = subsQ.data?.subscriptions ?? [];
 
   const isActive = customer.status === "ACTIVE";
 
@@ -87,6 +113,9 @@ export function CustomerDetailModal({
             </div>
           </div>
 
+          {/* Pay Later approval (Owner / Manager) */}
+          <PayLaterPanel customerId={customer.id} />
+
           {/* Contact Information */}
           <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
@@ -128,6 +157,43 @@ export function CustomerDetailModal({
             )}
           </div>
 
+          {/* Subscriptions */}
+          <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
+              Subscriptions
+            </div>
+            {subsQ.isLoading && !subsQ.data ? (
+              <BikeLoader inline label="Loading subscriptions" />
+            ) : subsQ.error && !subsQ.data ? (
+              <p className="text-xs text-rose-700">Couldn&apos;t load subscriptions. {subsQ.error.message}</p>
+            ) : subscriptions.length === 0 ? (
+              <p className="text-xs text-[#5A6C5E]">No subscriptions yet.</p>
+            ) : (
+              <ul className="divide-y divide-[#8E9F89]/15">
+                {subscriptions.map((sub) => (
+                  <li key={sub.id} className="py-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[#1A2E20] truncate">{sub.productName || "Meal plan"}</div>
+                      <div className="text-[11px] text-[#5A6C5E] flex items-center gap-1 mt-0.5">
+                        <Calendar className="w-3 h-3 text-[#8E9F89]" />
+                        <span>
+                          {MEALS_LABEL[sub.mealTypes] || sub.mealTypes} · {sub.quantityPerMeal} per meal · from {sub.startDate}
+                          {sub.endDate ? ` to ${sub.endDate}` : ""}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${SUB_STATUS_STYLE[sub.status] || "bg-gray-100 text-gray-700"}`}>
+                        {sub.status}
+                      </span>
+                      <div className="text-[11px] font-semibold text-[#1A2E20] mt-1 tabular-nums">₹{sub.price.toLocaleString("en-IN")}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           {/* Internal Notes */}
           {customer.notes && (
             <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-1">
@@ -166,6 +232,15 @@ export function CustomerDetailModal({
           ) : <div />}
 
           <div className="flex items-center gap-2">
+            {onViewAccount && (
+              <button
+                onClick={() => onViewAccount(customer)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#8E9F89]/30 text-[#1A2E20] hover:bg-[#FAF8F5] rounded-xl text-xs font-semibold transition-colors"
+              >
+                <Wallet className="w-3.5 h-3.5 text-[#B58A57]" />
+                Invoices &amp; payments
+              </button>
+            )}
             {onEdit && (
               <button
                 onClick={() => {

@@ -1,4 +1,7 @@
 import crypto from "crypto";
+import { claimBedForStay, hasBedsSchema } from "../rooms/bedService";
+import { settleAutomaticRentOnStayEnd } from "../finance/rentGenerationService";
+import { businessToday } from "@/lib/businessDate";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
@@ -26,6 +29,8 @@ export interface CheckInInput {
   checkInDate: string;
   monthlyRent: number;
   securityDeposit?: number;
+  /** Bed to put the resident in (optional; any free in-service bed counts when omitted). */
+  bedId?: string | null;
 }
 
 export interface CheckOutInput {
@@ -357,13 +362,24 @@ export async function assignResidentToRoom(
       );
     }
 
+    // Beds and maintenance (migration 0017): no check-in into a room under maintenance; the chosen
+    // bed must be free and in service, otherwise any free in-service bed must exist.
+    const bedId = await claimBedForStay(tx, { id: room.id, roomNumber: room.roomNumber }, input.bedId, occupancyCount);
+
     const stayId = `stay_${crypto.randomUUID()}`;
     const now = new Date().toISOString();
 
-    await tx.execute(`
-      INSERT INTO resident_stays (id, resident_id, room_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
-    `, [stayId, residentId, roomId, checkInDate, monthlyRent, securityDeposit, now, now]);
+    if (await hasBedsSchema(tx)) {
+      await tx.execute(`
+        INSERT INTO resident_stays (id, resident_id, room_id, bed_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+      `, [stayId, residentId, roomId, bedId, checkInDate, monthlyRent, securityDeposit, now, now]);
+    } else {
+      await tx.execute(`
+        INSERT INTO resident_stays (id, resident_id, room_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)
+      `, [stayId, residentId, roomId, checkInDate, monthlyRent, securityDeposit, now, now]);
+    }
 
     // Update resident active status
     await tx.execute("UPDATE residents SET status = 'ACTIVE', updated_at = ? WHERE id = ?", [now, residentId]);
@@ -419,7 +435,7 @@ export async function checkOutResident(
   requirePermission(actor, "residents.manage", { ip: clientIp, targetId: input.residentId, action: "resident.check_out" });
 
   const residentId = input.residentId?.trim();
-  const checkOutDate = input.checkOutDate?.trim() || new Date().toISOString().slice(0, 10);
+  const checkOutDate = input.checkOutDate?.trim() || businessToday();
 
   if (!residentId) throw new Error("Resident ID is required.");
   if (!DATE_REGEX.test(checkOutDate)) {
@@ -453,6 +469,7 @@ export async function checkOutResident(
       SET status = 'COMPLETED', check_out_date = ?, updated_at = ? 
       WHERE id = ?
     `, [checkOutDate, now, activeStay.id]);
+    await settleAutomaticRentOnStayEnd(tx, actor, activeStay.id, checkOutDate, clientIp);
 
     // Update resident status
     await tx.execute("UPDATE residents SET status = 'CHECKED_OUT', updated_at = ? WHERE id = ?", [now, residentId]);
@@ -598,24 +615,38 @@ export async function transferResidentRoom(
       );
     }
 
+    // Beds and maintenance (migration 0017): same rules as check-in.
+    const targetBedId = await claimBedForStay(tx, { id: targetRoom.id, roomNumber: targetRoom.roomNumber }, input.bedId, occupancyCount);
+
     const effectiveRent = newRentOverride !== undefined ? newRentOverride : Number(targetRoom.baseRentMonthly);
     const now = new Date().toISOString();
     const newStayId = `stay_${crypto.randomUUID()}`;
     const carriedSecurityDeposit = Number(activeStay.securityDeposit || 0);
 
-    // 7. Complete current stay
+    // 7. Complete current stay; its automatic rent for this month covers only the nights stayed
+    // (the new room is charged from the transfer date by the next rent run).
     await tx.execute(
       "UPDATE resident_stays SET status = 'COMPLETED', check_out_date = ?, updated_at = ? WHERE id = ?",
       [transferDate, now, activeStay.id]
     );
+    await settleAutomaticRentOnStayEnd(tx, actor, activeStay.id, transferDate, clientIp);
 
     // 8. Create new active stay in target room (deposit carried forward)
-    await tx.execute(
-      `INSERT INTO resident_stays (
-        id, resident_id, room_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
-      [newStayId, residentId, targetRoomId, transferDate, effectiveRent, carriedSecurityDeposit, now, now]
-    );
+    if (await hasBedsSchema(tx)) {
+      await tx.execute(
+        `INSERT INTO resident_stays (
+          id, resident_id, room_id, bed_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+        [newStayId, residentId, targetRoomId, targetBedId, transferDate, effectiveRent, carriedSecurityDeposit, now, now]
+      );
+    } else {
+      await tx.execute(
+        `INSERT INTO resident_stays (
+          id, resident_id, room_id, check_in_date, monthly_rent, security_deposit, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+        [newStayId, residentId, targetRoomId, transferDate, effectiveRent, carriedSecurityDeposit, now, now]
+      );
+    }
 
     // 9. Ensure resident status is ACTIVE
     await tx.execute(

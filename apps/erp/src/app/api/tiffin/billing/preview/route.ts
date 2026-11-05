@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     const [year, month] = billingPeriod.split("-");
-    const lastDay = new Date(Number(year), Number(month), 0).getDate();
+    const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
     const startDate = `${billingPeriod}-01`;
     const endDate = `${billingPeriod}-${String(lastDay).padStart(2, "0")}`;
 

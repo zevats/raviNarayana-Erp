@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { loadBedState, resizeRoomBeds, hasBedsSchema } from "./bedService";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
@@ -40,6 +41,33 @@ export function isValidRoomType(type: string): type is RoomType {
  * Lists rooms with server-calculated occupancy.
  * Requires rooms.read permission.
  */
+/**
+ * Adds beds, maintenance and bed-based availability to rooms (migration 0017). A room under
+ * maintenance offers no beds for new residents; otherwise free = in-service beds − residents.
+ * Without the migration rooms are returned unchanged (capacity − residents).
+ */
+async function withBeds(db: AsyncDb, rooms: RoomWithOccupancy[]): Promise<RoomWithOccupancy[]> {
+  if (rooms.length === 0 || !(await hasBedsSchema(db))) return rooms;
+  const state = await loadBedState(db, rooms.length <= 50 ? rooms.map((r) => r.id) : undefined);
+  return rooms.map((room) => {
+    const st = state.get(room.id);
+    if (!st) return room;
+    const inService = st.beds.filter((b) => b.status === "IN_SERVICE").length;
+    const bedOfStay = new Map(st.beds.filter((b) => b.occupant).map((b) => [b.occupant!.stayId, b]));
+    return {
+      ...room,
+      beds: st.beds,
+      maintenance: st.maintenance,
+      inServiceBeds: st.maintenance ? 0 : inService,
+      availableBeds: st.maintenance ? 0 : Math.max(0, inService - room.occupiedBeds),
+      occupants: (room.occupants || []).map((o) => {
+        const bed = bedOfStay.get(o.stayId);
+        return { ...o, bedId: bed?.id ?? null, bedLabel: bed?.label ?? null };
+      }),
+    };
+  });
+}
+
 export async function listRooms(
   actor: AuthenticatedUser,
   options?: {
@@ -138,14 +166,14 @@ export async function listRooms(
     };
   });
 
+  const decorated = await withBeds(db, results);
   if (options?.status === "VACANT") {
-    return results.filter((r) => r.isActive && r.availableBeds > 0);
+    return decorated.filter((r) => r.isActive && r.availableBeds > 0);
   }
   if (options?.status === "OCCUPIED") {
-    return results.filter((r) => r.isActive && r.occupiedBeds > 0);
+    return decorated.filter((r) => r.isActive && r.occupiedBeds > 0);
   }
-
-  return results;
+  return decorated;
 }
 
 /**
@@ -184,8 +212,7 @@ export async function getRoomById(
 
   const occupied = Number(row.occupiedBeds || 0);
   const capacity = Number(row.capacity);
-
-  return {
+  const [room] = await withBeds(db, [{
     id: row.id,
     roomNumber: row.roomNumber,
     floor: Number(row.floor),
@@ -198,7 +225,8 @@ export async function getRoomById(
     occupants,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-  };
+  }]);
+  return room;
 }
 
 /**
@@ -253,6 +281,8 @@ export async function createRoom(
       INSERT INTO rooms (id, room_number, floor, type, capacity, base_rent_monthly, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
     `, [id, cleanRoomNumber, floor, type, capacity, baseRentMonthly, now, now]);
+    // One bed row per bed ("Bed 1" … "Bed N"); capacity is kept equal to the bed count.
+    await resizeRoomBeds(tx, id, capacity, now);
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -383,6 +413,9 @@ export async function updateRoom(
 
   await db.transaction(async (tx) => {
     await tx.execute(`UPDATE rooms SET ${updates.join(", ")} WHERE id = ?`, params);
+    if (input.capacity !== undefined && Number(input.capacity) !== Number(current.capacity)) {
+      await resizeRoomBeds(tx, roomId, Number(input.capacity), new Date().toISOString());
+    }
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -489,6 +522,14 @@ export async function deleteRoom(
   }
 
   await db.transaction(async (tx) => {
+    if (await hasBedsSchema(tx)) {
+      const history = await tx.queryOne<{ n: number | string }>("SELECT COUNT(*) AS n FROM room_maintenance WHERE room_id = ?", [roomId]);
+      if (Number(history?.n || 0) > 0) {
+        throw new Error("This room has maintenance history and cannot be deleted. Deactivate it instead.");
+      }
+      // The room has no stays (checked above), so none of its beds was ever used.
+      await tx.execute("DELETE FROM room_beds WHERE room_id = ?", [roomId]);
+    }
     await tx.execute("DELETE FROM rooms WHERE id = ?", [roomId]);
 
     await recordAuditEventAsync({

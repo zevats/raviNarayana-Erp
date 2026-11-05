@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { Phone, RotateCcw, UserRoundCog, Ban, CheckCheck, IndianRupee, ClipboardCheck } from "lucide-react";
 import type { DeliveryTask, DeliveryTaskEvent } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -62,10 +62,16 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
   const [staffId, setStaffId] = useState("");
   const [text, setText] = useState("");
   const [override, setOverride] = useState(false);
+  const defaultId = staff.find((s) => s.isDefault)?.id ?? null;
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"CASH" | "UPI">("CASH");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  // One payment identity per opened "Collect balance": a double click or a retry after a failed
+  // request sends the same key, so the server records the payment once. Cleared after success.
+  const collectKey = useRef<string | null>(null);
+  // Set synchronously, so a second activation in the same instant (before `busy` re-renders) is ignored.
+  const inFlight = useRef(false);
 
   if (!taskId) return null;
   const t = q.data?.task;
@@ -79,9 +85,11 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
     setStaffId(t?.assignedTo || "");
     setAmount(t?.balanceDue ? String(t.balanceDue) : "");
     setMsg(null);
+    if (a === "collect") collectKey.current = `bal_${t?.id}_${crypto.randomUUID()}`;
   };
   const run = async (url: string, body: unknown, done: string) => {
-    if (busy) return;
+    if (busy || inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     setMsg(null);
     try {
@@ -89,10 +97,12 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
       invalidateErpCache(["delivery", "orders", "custody", "handover", "dashboard"]);
       setMsg({ tone: "ok", text: done });
       setAction(null);
+      collectKey.current = null;
       q.refetch();
     } catch (e: any) {
       setMsg({ tone: "error", text: e.message });
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   };
@@ -109,6 +119,11 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
             <div>
               <p className="text-[11px] uppercase tracking-wide text-text-muted">Delivery person</p>
               <p className="text-text-primary">{t.assignedToName || "Unassigned"}</p>
+              {t.assignedTo && defaultId && (
+                <p className={`text-[11px] ${t.assignedTo === defaultId ? "text-text-muted" : "text-status-warning-text"}`}>
+                  {t.assignedTo === defaultId ? "Default partner" : `Changed for this order (default: ${staff.find((s) => s.id === defaultId)?.fullName ?? "another partner"})`}
+                </p>
+              )}
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-wide text-text-muted">Payment</p>
@@ -252,11 +267,11 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                       </div>
                     </div>
                   ) : (
-                    action !== "assign" && (
+                    (
                       <input
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={action === "cancel" ? "Reason for cancelling (required)" : action === "resolve" ? "How was it resolved? (required)" : "Note (optional)"}
+                        placeholder={action === "cancel" ? "Reason for cancelling (required)" : action === "resolve" ? "How was it resolved? (required)" : action === "assign" ? "Reason (optional)" : "Note (optional)"}
                         className="w-full min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-surface-canvas text-sm"
                       />
                     )
@@ -273,12 +288,12 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                       disabled={busy || (action === "assign" && !staffId)}
                       className={action === "cancel" ? btn.danger : btn.primary}
                       onClick={() => {
-                        if (action === "assign") run(`/api/delivery/tasks/${t.id}/assign`, { assignedToStaffId: staffId }, "Assigned.");
+                        if (action === "assign") run(`/api/delivery/tasks/${t.id}/assign`, { assignedToStaffId: staffId, reason: text || undefined }, "Assigned.");
                         else if (action === "retry") run(`/api/delivery/tasks/${t.id}/retry`, { reassignToStaffId: staffId || undefined, notes: text || undefined }, "Sent again.");
                         else if (action === "cancel") run(`/api/delivery/tasks/${t.id}/cancel`, { reason: text, overrideCutoff: override }, "Cancelled.");
                         else if (action === "resolve") run(`/api/delivery/tasks/${t.id}/resolve`, { note: text }, "Resolved.");
                         else if (action === "collect")
-                          run(`/api/delivery/tasks/${t.id}/collect`, { collectedAmount: Number(amount), paymentMethod: method, idempotencyKey: `bal_${t.id}_${Date.now()}` }, "Payment recorded.");
+                          run(`/api/delivery/tasks/${t.id}/collect`, { collectedAmount: Number(amount), paymentMethod: method, idempotencyKey: collectKey.current ?? (collectKey.current = `bal_${t.id}_${crypto.randomUUID()}`) }, "Payment recorded.");
                       }}
                     >
                       {busy ? "Saving…" : "Confirm"}

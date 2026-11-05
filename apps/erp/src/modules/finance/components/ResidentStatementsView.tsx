@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
+import { StatStrip } from "@/components/ui/kit";
 import {
   Search,
   CreditCard,
@@ -154,68 +155,14 @@ export function ResidentStatementsView({
           </div>
         </div>
 
-        {/* 4 Standard Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 min-w-0">
-          {/* Outstanding Balance */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
-              Outstanding Rent
-            </span>
-            <div className="my-1.5">
-              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
-                {formatINR(selectedStatement.outstandingRentBalance)}
-              </span>
-            </div>
-            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
-              {hasOutstanding ? "Dues pending collection" : "All rent accounts settled"}
-            </span>
-          </div>
-
-          {/* Total Billed Rent */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
-              Total Billed Rent
-            </span>
-            <div className="my-1.5">
-              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
-                {formatINR(selectedStatement.totalRentCharges)}
-              </span>
-            </div>
-            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
-              Cumulative posted charges
-            </span>
-          </div>
-
-          {/* Total Rent Paid */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
-              Total Rent Paid
-            </span>
-            <div className="my-1.5">
-              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
-                {formatINR(selectedStatement.totalRentPaid)}
-              </span>
-            </div>
-            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
-              Cumulative rent receipts
-            </span>
-          </div>
-
-          {/* Security Deposit Held */}
-          <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between min-w-0 min-h-[110px]">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70] leading-snug">
-              Security Deposit Held
-            </span>
-            <div className="my-1.5">
-              <span className="text-xl sm:text-2xl font-bold tracking-tight text-[#1A2E20] font-sans tabular-nums whitespace-nowrap block">
-                {formatINR(selectedStatement.totalSecurityDepositHeld)}
-              </span>
-            </div>
-            <span className="text-xs text-[#5A6C5E] block font-normal leading-tight">
-              Refundable liability (not rent)
-            </span>
-          </div>
-        </div>
+        {/* Rent owed is shown in the statement header above. */}
+        <StatStrip
+          items={[
+            { label: "Rent charged", value: formatINR(selectedStatement.totalRentCharges), note: "to date" },
+            { label: "Rent paid", value: formatINR(selectedStatement.totalRentPaid), note: "to date", tone: "good" },
+            { label: "Deposit held", value: formatINR(selectedStatement.totalSecurityDepositHeld), note: "refundable, not rent" },
+          ]}
+        />
 
         {/* Chronological Account Ledger History */}
         <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">

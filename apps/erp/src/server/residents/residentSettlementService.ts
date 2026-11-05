@@ -1,9 +1,11 @@
 import crypto from "crypto";
+import { businessToday } from "@/lib/businessDate";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission, AuthorizationError } from "../authorization/authorize";
 import { hasPermission } from "../authorization/permissions";
 import { recordAuditEventAsync } from "../audit/audit";
 import { assertClosingDateNotFinalized } from "../finance/financeService";
+import { settleAutomaticRentOnStayEnd, pendingRentReductionOnStayEnd } from "../finance/rentGenerationService";
 import {
   AuthenticatedUser,
   ResidentSettlementPreview,
@@ -78,7 +80,7 @@ export async function previewResidentSettlement(
     throw new Error("Resident has no active room assignment to check out.");
   }
 
-  const effectiveCheckOutDate = checkOutDate?.trim() || new Date().toISOString().slice(0, 10);
+  const effectiveCheckOutDate = checkOutDate?.trim() || businessToday();
   if (!DATE_REGEX.test(effectiveCheckOutDate)) {
     throw new Error("Valid check-out date in YYYY-MM-DD format is required.");
   }
@@ -110,7 +112,10 @@ export async function previewResidentSettlement(
   const totalDeposits = Number(finTotals?.totalDeposits || 0);
   const priorRefunds = Number(finTotals?.priorRefunds || 0);
 
-  const outstandingRentDue = Math.max(0, totalRentCharged - totalRentPaid);
+  // An automatic rent charge for the check-out month covering nights after the check-out is
+  // replaced by the nights actually stayed when the settlement is finalized; show that figure now.
+  const rentReduction = await pendingRentReductionOnStayEnd(db, activeStay.id, effectiveCheckOutDate);
+  const outstandingRentDue = Math.max(0, totalRentCharged - rentReduction - totalRentPaid);
   const totalDepositHeld = Math.max(0, totalDeposits - priorRefunds);
   const refundableDepositAvailable = totalDepositHeld;
 
@@ -217,6 +222,16 @@ export async function finalizeResidentCheckoutSettlement(
     canonicalPaymentMethod = normalizePaymentMethod(input.paymentMethod);
   }
 
+  // Owner approval (2026-11-01): a settlement that moves deposit money — a refund, a deduction kept
+  // from the deposit, or the deposit applied to rent — is finalized by the Owner only. The Manager
+  // prepares it and sends it for approval (settlementApprovalService).
+  if (settlementMovesDeposit({ deductions, depositAppliedAmount, refundAmount }) && !canManageFinance) {
+    throw new AuthorizationError(
+      403,
+      "A deposit refund, deduction or deposit applied to rent needs the Owner's approval. Send the settlement for approval instead."
+    );
+  }
+
   // 3. Atomic Database Transaction
   return await db.transaction(async (tx) => {
     // Closing lock guard: verify checkout date is not locked by finalized cashbook closing
@@ -262,6 +277,10 @@ export async function finalizeResidentCheckoutSettlement(
     if (existingSettlement) {
       throw new Error(`Settlement has already been finalized for stay '${activeStay.id}'.`);
     }
+
+    // Automatic rent for the check-out month is cut to the nights actually stayed before the
+    // balance is read (prorated by days, Owner decision 2026-11-01).
+    await settleAutomaticRentOnStayEnd(tx, actor, activeStay.id, checkOutDate, clientIp);
 
     // C. Live balance recalculation on current committed records
     const finTotals = await tx.queryOne<{
@@ -410,6 +429,16 @@ export async function finalizeResidentCheckoutSettlement(
 
     // G. Insert immutable resident_settlements record
     const settlementId = generateId("stl");
+    // Approving a Manager's proposal: the proposal is marked approved in this same transaction, so a
+    // settlement and its approval are never recorded one without the other.
+    if (input.approvingProposalId) {
+      const approved = await tx.execute(
+        `UPDATE settlement_proposals SET status = 'APPROVED', decided_by = ?, decided_at = ?, decision_note = ?, settlement_id = ?, updated_at = ?
+         WHERE id = ? AND status = 'PENDING' AND stay_id = ?`,
+        [actor.id, new Date().toISOString(), input.approvalNote?.trim() || null, settId(settlementId), new Date().toISOString(), input.approvingProposalId, activeStay.id]
+      );
+      if (approved.changes === 0) throw new Error("This settlement proposal was already decided or no longer matches the resident's stay.");
+    }
     const deductionsBreakdownJson = deductions.length > 0 ? JSON.stringify(deductions) : null;
 
     await tx.execute(`
@@ -510,6 +539,12 @@ export async function finalizeResidentCheckoutSettlement(
       updatedAt: now,
     };
   });
+}
+
+/** Whether a settlement moves deposit money (and so needs the Owner). */
+export function settlementMovesDeposit(input: { deductions?: ResidentSettlementDeduction[]; depositAppliedAmount?: number; refundAmount?: number }): boolean {
+  const deductions = (input.deductions || []).reduce((a, d) => a + (Number(d.amount) || 0), 0);
+  return deductions > 0 || (Number(input.depositAppliedAmount) || 0) > 0 || (Number(input.refundAmount) || 0) > 0;
 }
 
 function settId(id: string): string {

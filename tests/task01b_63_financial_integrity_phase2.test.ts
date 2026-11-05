@@ -40,6 +40,7 @@ import {
 import {
   AuthenticatedUser,
 } from "../apps/erp/src/types";
+import { pinClock } from "./helpers/fixedClock";
 
 // Primary DB immutability guard
 const primaryDbPath = path.resolve(process.cwd(), "data", "erp.db");
@@ -79,6 +80,9 @@ console.log("TASK 01B.63 REGRESSION TEST SUITE: FINANCIAL INTEGRITY REMEDIATION 
 console.log("================================================================================\n");
 
 async function runTests() {
+  // The cross-period scenarios here are written for 20 October 2026 ("a September payment reversed in
+  // October"); reversals are dated with the current business date, so pin the clock to keep them there.
+  pinClock("2026-10-20T12:00:00+05:30");
   // 1. Initialize schema in isolated DB
   console.log("--- 1. Initializing isolated database with schema migrations ---");
   const rawDb = new Database(TEST_PHASE2_DB_PATH);

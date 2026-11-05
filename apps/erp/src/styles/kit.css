@@ -1,0 +1,219 @@
+/* =============================================================================
+   Shared components of the manager ERP (components/ui/kit.tsx), with the dashboard's values:
+   28px cards, 17px card titles, pill buttons and switches, hairline dividers.
+   Colours come from the section theme (glass.css), so Orders/Delivery turn orange by themselves.
+   Cards carry no backdrop blur: they sit on the soft canvas, where a blur is invisible but costs a
+   compositing layer each. Blur is kept for surfaces that float over content (.rn-blur).
+   ============================================================================= */
+
+:where(.rn-app) .rn-card {
+  background: var(--rn-glass-2);
+  border: 1px solid var(--rn-glass-border);
+  box-shadow: var(--rn-glass-shadow);
+  border-radius: 28px;
+  min-width: 0;
+}
+
+/* Key figures: one card, cells split by hairlines (no card per number). */
+:where(.rn-app) .rn-stats { overflow: hidden; padding: 0; }
+:where(.rn-app) .rn-stat {
+  display: block;
+  min-width: 0;
+  padding: 16px 20px;
+  border-left: 1px solid var(--rn-line);
+  border-top: 1px solid var(--rn-line);
+  margin-left: -1px;
+  margin-top: -1px;
+}
+
+/* Pill switch (dashboard division switch / chart range). */
+:where(.rn-app) .rn-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 22px;
+  background: var(--rn-glass-2);
+  border: 1px solid var(--rn-glass-border);
+  box-shadow: var(--rn-glass-shadow);
+  max-width: 100%;
+  flex-wrap: wrap;            /* never scrolls sideways: options wrap on narrow screens */
+}
+:where(.rn-app) .rn-seg > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--rn-ink-3);
+  transition: background-color var(--rn-fast) linear, color var(--rn-fast) linear;
+}
+:where(.rn-app) .rn-seg > button:hover { color: var(--rn-ink); }
+:where(.rn-app) .rn-seg > button[aria-pressed="true"] { background: var(--rn-accent); color: #fff; font-weight: 600; }
+:where(.rn-app) .rn-seg-sm > button { height: 30px; padding: 0 12px; font-size: 12px; }
+:where(.rn-app) .rn-seg-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.05);
+  font-variant-numeric: tabular-nums;
+}
+:where(.rn-app) .rn-seg > button[aria-pressed="true"] .rn-seg-count { background: rgba(255, 255, 255, 0.2); }
+
+/* Buttons */
+:where(.rn-app) .rn-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 9999px;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--rn-ink);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--rn-line);
+  transition: background-color var(--rn-fast) linear, transform var(--rn-fast) var(--rn-ease);
+}
+:where(.rn-app) .rn-btn:hover { background: #fff; }
+:where(.rn-app) .rn-btn:active { transform: scale(0.98); }
+:where(.rn-app) .rn-btn:disabled { opacity: 0.5; pointer-events: none; }
+:where(.rn-app) .rn-btn-primary { background: var(--rn-accent); border-color: transparent; color: #fff; font-weight: 600; box-shadow: 0 8px 18px -12px color-mix(in srgb, var(--rn-accent) 80%, transparent); }
+:where(.rn-app) .rn-btn-primary:hover { background: var(--rn-accent-strong); }
+:where(.rn-app) .rn-btn-icon { width: 40px; padding: 0; }
+:where(.rn-app) .rn-btn-sm { height: 32px; padding: 0 12px; font-size: 12.5px; gap: 6px; }
+:where(.rn-app) .rn-btn-sm.rn-btn-icon { width: 32px; padding: 0; }
+:where(.rn-app) .rn-btn-sm svg { width: 14px; height: 14px; }
+:where(.rn-app) .rn-btn-danger { color: #9A3423; border-color: rgba(154, 52, 35, 0.18); background: #FBEDE8; }
+:where(.rn-app) .rn-btn-danger:hover { background: #F7E0D8; }
+:where(.rn-app) .rn-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Inputs */
+:where(.rn-app) .rn-input {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  font-size: 13.5px;
+  color: var(--rn-ink);
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(26, 46, 32, 0.12);
+}
+:where(.rn-app) select.rn-input { padding-right: 32px; }
+:where(.rn-app) textarea.rn-input { height: auto; min-height: 72px; border-radius: 18px; padding: 10px 14px; line-height: 1.45; }
+:where(.rn-app) .rn-input-search { padding-left: 40px; }
+
+/* Badges */
+:where(.rn-app) .rn-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+:where(.rn-app) .rn-badge-neutral { background: rgba(0, 0, 0, 0.045); color: var(--rn-ink-2); }
+:where(.rn-app) .rn-badge-good { background: #E6F1E4; color: #2F6B24; }
+:where(.rn-app) .rn-badge-warn { background: #FBF4E6; color: #8F6710; }
+:where(.rn-app) .rn-badge-bad { background: #FBEDE8; color: #9A3423; }
+:where(.rn-app) .rn-badge-info { background: #E8F0FA; color: #2F5E9A; }
+:where(.rn-app) .rn-badge-accent { background: var(--rn-accent-tint); color: var(--rn-accent); }
+
+/* Tables inside a card */
+:where(.rn-app) .rn-table { width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; }
+:where(.rn-app) .rn-table th {
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rn-ink-3);
+  border-bottom: 1px solid var(--rn-line);
+  white-space: nowrap;
+}
+:where(.rn-app) .rn-table td { padding: 12px 16px; font-size: 13.5px; color: var(--rn-ink-2); border-bottom: 1px solid var(--rn-line); vertical-align: middle; }
+:where(.rn-app) .rn-table tbody tr:last-child td { border-bottom: 0; }
+:where(.rn-app) .rn-table tbody tr { transition: background-color var(--rn-fast) linear; }
+:where(.rn-app) .rn-table tbody tr:hover { background-color: color-mix(in srgb, var(--rn-accent-tint) 75%, transparent); }
+:where(.rn-app) .rn-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* A list of rows inside a card (phones, and lists that are not tables) */
+:where(.rn-app) .rn-rows > * + * { border-top: 1px solid var(--rn-line); }
+
+/* ---------------------------------------------------------------- Typography tokens
+   One scale for the whole manager ERP (dashboard values). Pages use these classes instead of
+   ad-hoc sizes. */
+:where(.rn-app) .rn-t-page { font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -0.02em; color: var(--rn-ink); }
+:where(.rn-app) .rn-t-section { font-size: 17px; line-height: 1.3; font-weight: 600; color: var(--rn-ink); }
+:where(.rn-app) .rn-t-card { font-size: 14px; line-height: 1.35; font-weight: 600; color: var(--rn-ink); }
+:where(.rn-app) .rn-t-metric { font-size: 22px; line-height: 1.15; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--rn-ink); }
+:where(.rn-app) .rn-t-body { font-size: 13.5px; line-height: 1.45; color: var(--rn-ink-2); }
+:where(.rn-app) .rn-t-label { font-size: 12px; line-height: 1.3; font-weight: 500; color: var(--rn-ink-3); }
+:where(.rn-app) .rn-t-meta { font-size: 12.5px; line-height: 1.4; color: var(--rn-ink-3); }
+:where(.rn-app) .rn-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------------------------------------------------------------- Menus */
+:where(.rn-app) .rn-menu { animation: rn-fade-up 120ms ease-out backwards; }
+:where(.rn-app) .rn-menu-item {
+  display: flex; align-items: flex-start; gap: 10px; width: 100%; text-align: left;
+  padding: 9px 12px; border-radius: 12px; font-size: 13.5px; font-weight: 500; color: var(--rn-ink);
+  transition: background-color var(--rn-fast) linear;
+}
+:where(.rn-app) .rn-menu-item svg { width: 16px; height: 16px; margin-top: 1px; flex-shrink: 0; color: var(--rn-ink-3); }
+:where(.rn-app) .rn-menu-item:hover, :where(.rn-app) .rn-menu-item:focus-visible { background: var(--rn-accent-tint); outline: none; }
+:where(.rn-app) .rn-menu-item:disabled { opacity: 0.55; cursor: not-allowed; background: transparent; }
+:where(.rn-app) .rn-menu-danger, :where(.rn-app) .rn-menu-danger svg { color: #9A3423; }
+:where(.rn-app) .rn-menu-danger:hover { background: #FBEDE8; }
+:where(.rn-app) .rn-menu-sep { height: 1px; margin: 4px 8px; background: var(--rn-line); }
+
+/* ---------------------------------------------------------------- Buttons (additions) */
+:where(.rn-app) .rn-btn-danger-solid { background: #9A3423; border-color: transparent; color: #fff; font-weight: 600; }
+:where(.rn-app) .rn-btn-danger-solid:hover { background: #82291B; }
+:where(.rn-app) .rn-btn:focus-visible, :where(.rn-app) .rn-seg > button:focus-visible, :where(.rn-app) .rn-menu-item:focus-visible {
+  outline: 2px solid var(--rn-accent-mid); outline-offset: 2px;
+}
+/* Refresh: the icon turns while a refresh runs; clicks are ignored meanwhile. */
+@keyframes rn-spin { to { transform: rotate(360deg); } }
+:where(.rn-app) .rn-refresh svg { transition: transform var(--rn-med) var(--rn-ease); }
+:where(.rn-app) .rn-refresh:hover svg { transform: rotate(45deg); }
+:where(.rn-app) .rn-refresh.is-spinning { pointer-events: none; }
+:where(.rn-app) .rn-refresh.is-spinning svg { animation: rn-spin 0.8s linear infinite; }
+:where(.rn-app) .rn-refresh-failed { border-color: rgba(154, 52, 35, 0.35); color: #9A3423; }
+
+/* ---------------------------------------------------------------- Notices (inline success / error) */
+:where(.rn-app) .rn-notice { display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; }
+:where(.rn-app) .rn-notice-good { background: #E6F1E4; color: #24521B; }
+:where(.rn-app) .rn-notice-bad { background: #FBEDE8; color: #7E2A1C; }
+:where(.rn-app) .rn-notice-warn { background: #FBF4E6; color: #6E500C; }
+:where(.rn-app) .rn-notice-info { background: var(--rn-accent-tint); color: var(--rn-ink-2); }
+
+/* ---------------------------------------------------------------- States */
+:where(.rn-app) .rn-state { text-align: center; padding-left: 24px; padding-right: 24px; }
+:where(.rn-app) .rn-state-icon {
+  display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 9999px;
+  background: var(--rn-accent-tint); color: var(--rn-accent-mid);
+}
+:where(.rn-app) .rn-state-icon svg { width: 20px; height: 20px; stroke-width: 1.7; }
+:where(.rn-app) .rn-state-bad .rn-state-icon { background: #FBEDE8; color: #9A3423; }
+:where(.rn-app) .rn-state-warn .rn-state-icon { background: #FBF4E6; color: #8F6710; }
+@keyframes rn-skel { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
+:where(.rn-app) .rn-skel { background: rgba(0, 0, 0, 0.06); animation: rn-skel 1.4s ease-in-out infinite; }
+
+/* Tables inside a card keep the card's rounded corners without clipping menus. */
+:where(.rn-app) .rn-card tbody tr:last-child td:first-child { border-bottom-left-radius: 28px; }
+:where(.rn-app) .rn-card tbody tr:last-child td:last-child { border-bottom-right-radius: 28px; }
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.rn-app) .rn-refresh.is-spinning svg, :where(.rn-app) .rn-skel, :where(.rn-app) .rn-menu { animation: none; }
+}

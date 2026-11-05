@@ -59,6 +59,41 @@ export function BikeGraphic({ tone = "auto", width = 96 }: { tone?: Tone; width?
   );
 }
 
+
+/**
+ * Manager ERP sections other than Orders and Delivery: a house being built brick by brick (the
+ * bricks are laid row by row, then the roof and door close it), looping. Which graphic shows is
+ * decided by CSS (styles/glass.css): the house inside the manager shell's green sections, the
+ * scooter everywhere else, so the delivery app and Orders/Delivery keep the scooter.
+ */
+export function HouseGraphic({ width = 96 }: { width?: number }) {
+  const rows = [0, 1, 2, 3];
+  return (
+    <svg width={width} height={(width * 64) / 112} viewBox="0 0 112 64" aria-hidden="true" className="rn-house overflow-visible">
+      <line x1="18" y1="61" x2="94" y2="61" strokeWidth="2.4" strokeLinecap="round" style={{ stroke: "#D8CFC0" }} />
+      {rows.flatMap((r) => {
+        // Staggered courses: four bricks, then three centred over the joints.
+        const count = r % 2 ? 3 : 4;
+        const start = r % 2 ? 37.25 : 31;
+        return Array.from({ length: count }, (_, c) => (
+          <rect
+            key={`${r}-${c}`}
+            className="rn-house-brick"
+            style={{ animationDelay: `${(r * 4 + c) * 90}ms`, fill: "var(--rn-house-wall, #8E9F89)" }}
+            x={start + c * 12.5}
+            y={52 - r * 8}
+            width="11.5"
+            height="6.5"
+            rx="1.4"
+          />
+        ));
+      })}
+      <path className="rn-house-roof" d="M26 30 L56 9 L86 30" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ fill: "none", stroke: "var(--rn-house-roof, #263B2D)" }} />
+      <rect className="rn-house-door" x="51.5" y="47" width="9" height="13" rx="1.6" style={{ fill: "var(--rn-house-roof, #263B2D)" }} />
+    </svg>
+  );
+}
+
 export function BikeLoader({
   label = "Loading…",
   tone = "auto",
@@ -76,6 +111,7 @@ export function BikeLoader({
     return (
       <span role="status" aria-label={label || "Loading"} className={`inline-flex items-center ${className}`}>
         <BikeGraphic tone={tone} width={30} />
+        {tone === "auto" && <HouseGraphic width={30} />}
       </span>
     );
   }
@@ -83,6 +119,7 @@ export function BikeLoader({
   return (
     <div role="status" aria-live="polite" className={`flex flex-col items-center justify-center gap-3 text-center ${className}`}>
       <BikeGraphic tone={tone} width={width} />
+      {tone === "auto" && <HouseGraphic width={width} />}
       {label && <p className={`text-[13px] font-semibold ${tone === "light" ? "text-white/80" : "text-[#5A6C5E]"}`}>{label}</p>}
     </div>
   );
