@@ -6,7 +6,11 @@
 |---|---|
 | Implemented | Yes: P0 fixes, migrations 0016–0021, Pay Later, Receivables, statements, Receive payment, Cashbook refund lines, production gate tooling |
 | Automated tests | Final candidate: **65 suites, 62 passed, 0 failed, 3 skipped by design** (live-resource suites: the shared local database and real email). Typecheck: app 0 errors, tests 0 errors |
-| Browser tests (disposable data, server serving the working tree) | P2 workflows 22/22 (Cashbook refund check now baseline-relative); states and errors 8/8 (server error + Try again, no-match search, over-amount validation, lost answer → changed retry refused → identical retry); offline 6/6; P2 screens at 360–1440 px 58/58. One intermittent failure seen once under load (driver part-payment field), passed on rerun: kept as a known flaky check |
+| Browser tests (disposable data, server serving the working tree) | P2 workflows 22/22 (Cashbook refund check now baseline-relative); states and errors 8/8 (server error + Try again, no-match search, over-amount validation, lost answer → changed retry refused → identical retry); offline 6/6; P2 screens at 360–1440 px 58/58. All-page horizontal-overflow audit (19 manager pages):
+  - 768 px: clean.
+  - 360, 390, 1024 and 1440 px: clean except the three minor items below.
+  - 1280 px: the Cashbook ledger ran 127 px past the screen; fixed in `glass.css` (wide-table cell wrapping now also applies at 1280–1439 px with the sidebar expanded). After the fix, 1280 px and 1366 px are both 19/19 clean.
+  - Remaining minor items: the Dashboard at 360 px scrolls 7 px sideways (one figure); the delivery board's animated number overhangs by 6–16 px at 360/390 px (the page does not scroll). One intermittent failure seen once under load (driver part-payment field), passed on rerun: kept as a known flaky check |
 | Built | ERP production build passes (sandbox; existing `emailAdapter` warning only). Lint: no ESLint configuration exists |
 | Committed / pushed | Branch `release/erp-p0-p2-2026-11` only. **`master` (production) unchanged at `a3a3ccc`** |
 | Deployed / production-verified | **No** |
