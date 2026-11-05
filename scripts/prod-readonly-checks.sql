@@ -8,7 +8,7 @@ BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 \echo '== Q0 session is read-only (must say on)'
 SHOW transaction_read_only;
 
-\echo '== Q1a migration level (expect applied 16, last 1792471200000)'
+\echo '== Q1a migration level (expect last 1792471200000; the count alone is not the gate, see Q1d/Q1e)'
 SELECT COUNT(*) AS applied, MAX(created_at) AS last_applied FROM drizzle.__drizzle_migrations;
 \echo '== Q1b last three migrations (0015 hash must start 0f0652008797519f)'
 SELECT created_at, left(hash, 16) AS hash_start FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 3;
@@ -19,6 +19,28 @@ SELECT to_regclass('public.business_settings') IS NOT NULL AS has_0016,
        to_regclass('public.order_revisions') IS NOT NULL AS has_0019,
        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'invoices' AND column_name = 'billing_month') AS has_0020,
        EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'payment_review') AS has_0021;
+
+\echo '== Q1d every migration record (timestamps only; compared with the journal to name any missing record)'
+SELECT created_at, left(hash, 16) AS hash_start FROM drizzle.__drizzle_migrations ORDER BY created_at;
+\echo '== Q1e schema of migrations 0000-0015 present (last table and/or column each creates; all must be true)'
+SELECT migration, present FROM (VALUES
+  ('0000', to_regclass('public.staff_users') IS NOT NULL),
+  ('0001', to_regclass('public.session_preemptions') IS NOT NULL),
+  ('0002', to_regclass('public.invoice_payment_allocations') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'financial_transactions' AND column_name = 'invoice_id')),
+  ('0003', to_regclass('public.tiffin_products') IS NOT NULL),
+  ('0004', to_regclass('public.tiffin_subscriptions') IS NOT NULL),
+  ('0005', EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'delivery_tasks' AND column_name = 'subscription_id')),
+  ('0006', EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'financial_transactions' AND column_name = 'customer_id')),
+  ('0007', to_regclass('public.kitchen_production_consumptions') IS NOT NULL),
+  ('0008', to_regclass('public.resident_settlements') IS NOT NULL),
+  ('0009', to_regclass('public.daily_cashbook_closings') IS NOT NULL),
+  ('0010', to_regclass('public.document_attachments') IS NOT NULL),
+  ('0011', to_regclass('public.driver_cash_handovers') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'delivery_tasks' AND column_name = 'handover_id')),
+  ('0012', to_regclass('public.order_items') IS NOT NULL),
+  ('0013', to_regclass('public.delivery_collections') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'driver_cash_handovers' AND column_name = 'declared_by')),
+  ('0014', to_regclass('public.subscription_day_overrides') IS NOT NULL AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'delivery_collections' AND column_name = 'transaction_id')),
+  ('0015', to_regclass('public.push_tokens') IS NOT NULL)
+) AS s(migration, present) ORDER BY migration;
 
 \echo '== Q2a customers sharing a phone (counts)'
 SELECT COUNT(*) AS shared_phone_numbers, COALESCE(SUM(n), 0) AS customers_involved

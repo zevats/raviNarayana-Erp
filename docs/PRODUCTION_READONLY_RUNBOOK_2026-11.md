@@ -67,7 +67,7 @@ It ends with `GATE` lines and `RESULT: CHECKS COMPLETE` (exit 0). `RESULT: CHECK
 
 | Check | PASS when | Blocks release |
 |---|---|---|
-| **Q1** migration level | 16 applied, last `1792471200000`, newest hash starts `0f0652008797519f` (the deployed 0015), and none of the 0016–0021 objects exist | Anything else: the actual level must be understood first |
+| **Q1** migration level | The newest record is 0015 (`1792471200000`, hash starting `0f0652008797519f`); the schema of every migration 0000–0015 is present (Q1e all true); no record matches no journal entry; none of the 0016–0021 objects exist. The record count is reported, not gated: the Neon history applied some early migrations by hand without a record, and Drizzle reads only the newest record. Production on 2026-11-05: 15 records | A missing 0000–0015 schema object, an unknown record, a newer record, or any 0016–0021 object. Never insert a missing record by hand |
 | **Q2** shared phones | 0 | No. REVIEW lists masked numbers and customer ids. Records are never merged |
 | **Q3** delivered work outside Receivables | 0 orders not marked completed, 0 tasks without an order, 0 unexplained collection differences | Unexplained differences > 0. Amounts owed are computed with the Receivables rule, which excludes reversed UPI |
 | **Q4** orders without a customer | None with money owed | No. Each becomes its own account in Receivables, without Pay Later |
@@ -130,7 +130,7 @@ Read only; change nothing. Note these values:
 | `DIRECT_URL` | Environment | Present (the migrator prefers it). Do not copy its value anywhere |
 | Disks | Disks | **None expected.** A persistent disk turns off zero-downtime deploys |
 | Instances | Settings / Scaling | Number of instances |
-| Last deploy log | Events → latest deploy → Logs | The line `[migrate-production] Migrations: X before, 16 now` confirms Q1 without the database |
+| Last deploy log | Events → latest deploy → Logs | The line `[migrate-production] Migrations: X before, 15 now` (production has 15 records; see Q1) |
 
 ---
 
@@ -140,7 +140,7 @@ Read only; change nothing. Note these values:
 |---|---|
 | Scan exit 2 (duplicates) | 0020 and the release, until each group is resolved and the scan returns exit 0 |
 | Scan exit 1 (failed or incomplete) | Everything: no decision without a complete scan |
-| Q1 not `16 / 1792471200000` | The release, until the actual level is understood (the plan assumes 0016–0021 are pending) |
+| Q1 GATE not PASS | The release, until the actual level is understood (the plan assumes 0016–0021 are pending) |
 | No restore branch created, or history window under 24 h | The deploy |
 | `ERP_PRODUCTION_MIGRATE` is not `apply` | The deploy as planned. The new code needs at least 0019, so it must not start against a 0015 database |
 | A persistent disk is attached | The zero-downtime assumption. The deploy then has downtime; plan a window |

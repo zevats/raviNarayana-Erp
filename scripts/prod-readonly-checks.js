@@ -16,7 +16,17 @@
 const fs = require("fs");
 const path = require("path");
 
-const EXPECTED = { applied: 16, last: "1792471200000", hash: "0f0652008797519f" };
+// Production baseline: the deployed commit a3a3ccc ends at 0015. Drizzle decides what to apply from
+// the NEWEST record only (created_at < journal "when"), so the gate checks that the newest record is
+// 0015 and that the schema of every migration up to 0015 is present; the record count is reported but
+// is not by itself the gate (older Neon history applied some migrations without a record).
+const EXPECTED = { lastIdx: 15, last: "1792471200000", hash: "0f0652008797519f" };
+
+/** Journal timestamps of migrations 0000..lastIdx, from the repository journal. */
+function journalUpTo(lastIdx, journalFile = path.resolve(__dirname, "../apps/erp/src/server/database/drizzle/meta/_journal.json")) {
+  const j = JSON.parse(fs.readFileSync(journalFile, "utf8"));
+  return j.entries.filter((e) => e.idx <= lastIdx).map((e) => ({ id: String(e.idx).padStart(4, "0"), when: String(e.when) }));
+}
 
 /** Removes channel_binding (unsupported by the driver) from a connection string; keeps everything else. */
 function withoutChannelBinding(url) {
@@ -70,9 +80,28 @@ function gate(r) {
   const q1 = r.Q1a?.[0];
   const q1b = r.Q1b?.[0];
   const q1c = r.Q1c?.[0];
-  const atBaseline = q1 && n(q1.applied) === EXPECTED.applied && String(q1.last_applied) === EXPECTED.last && q1b && String(q1b.hash_start) === EXPECTED.hash;
-  const pending = q1c && ["has_0016", "has_0017", "has_0018", "has_0019", "has_0020", "has_0021"].every((k) => q1c[k] === false);
-  out.push(`GATE Q1 migration level: ${atBaseline && pending ? "PASS" : "BLOCK"} - ${q1 ? `${q1.applied} applied, last ${q1.last_applied}, newest hash ${q1b ? q1b.hash_start : "?"}; 0016-0021 objects absent: ${pending ? "yes" : "NO"}` : "no result"} (expected ${EXPECTED.applied} / ${EXPECTED.last} / ${EXPECTED.hash})`);
+  const records = r.Q1d;
+  const schema = r.Q1e;
+  if (!q1 || !q1b || !q1c || !records || !schema) {
+    out.push("GATE Q1 migration level: BLOCK - incomplete result (Q1a-Q1e must all return rows)");
+  } else {
+    const journal = journalUpTo(EXPECTED.lastIdx);
+    const known = new Set(journal.map((m) => m.when));
+    const recorded = new Set(records.map((x) => String(x.created_at)));
+    const missing = journal.filter((m) => !recorded.has(m.when)).map((m) => m.id);
+    const unknown = [...recorded].filter((w) => !known.has(w));
+    const absentSchema = schema.filter((x) => x.present !== true).map((x) => x.migration);
+    const newestOk = String(q1.last_applied) === EXPECTED.last && String(q1b.hash_start) === EXPECTED.hash;
+    const pending = ["has_0016", "has_0017", "has_0018", "has_0019", "has_0020", "has_0021"].every((k) => q1c[k] === false);
+    const ok = newestOk && pending && unknown.length === 0 && absentSchema.length === 0 && schema.length === journal.length;
+    out.push(
+      `GATE Q1 migration level: ${ok ? "PASS" : "BLOCK"} - newest record ${q1.last_applied} hash ${q1b.hash_start} (expected 0015: ${EXPECTED.last} / ${EXPECTED.hash}); ` +
+        `0016-0021 objects absent: ${pending ? "yes" : "NO"}; schema of 0000-0015 present: ${absentSchema.length === 0 && schema.length === journal.length ? "all" : `MISSING ${absentSchema.join(", ") || "rows"}`}; ` +
+        `${q1.applied} record(s) for ${journal.length} migrations` +
+        (missing.length ? ` - no record for ${missing.join(", ")} (schema present; Drizzle uses only the newest record, nothing to insert)` : "") +
+        (unknown.length ? ` - UNKNOWN record timestamp(s) ${unknown.join(", ")}` : "")
+    );
+  }
   const q2 = r.Q2a?.[0];
   out.push(`GATE Q2 shared phones: ${q2 ? (n(q2.shared_phone_numbers) === 0 ? "PASS" : "REVIEW") : "BLOCK"} - ${q2 ? `${q2.shared_phone_numbers} number(s), ${q2.customers_involved} customer(s)` : "no result"}`);
   const q3a = r.Q3a || [];
@@ -135,7 +164,7 @@ async function main(env = process.env, io = { out: console.log, table: console.t
   return 0;
 }
 
-module.exports = { main, gate, loadSteps, withoutChannelBinding, hide };
+module.exports = { main, gate, loadSteps, withoutChannelBinding, hide, journalUpTo, EXPECTED };
 
 if (require.main === module) {
   main().then(

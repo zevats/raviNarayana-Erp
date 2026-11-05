@@ -1,43 +1,71 @@
 # Release status: ERP P0–P2 (2026-11-05)
 
-## Where things stand
+## Where things stand (updated 2026-11-05, after the production checks)
 
 | Stage | Status |
 |---|---|
 | Implemented | Yes: P0 fixes, migrations 0016–0021, Pay Later, Receivables, statements, Receive payment, Cashbook refund lines, production gate tooling |
-| Automated-tested | Yes, on disposable databases. Last full run: 64 suites, 61 passed, 0 failed, 3 skipped by design (live resources). After the gate tooling was added, the targeted suites ran: production checks 12/0, duplicate scan 13/0 |
-| Manually verified (browser) | Offline 6/6, layout 58/58 at 360–1440 px, P2 workflow 21/1. The one failure is a test defect: the Cashbook refund check expects ₹5,000 on a persistent database where repeated runs correctly add up refunds. Not yet fixed |
-| Built | ERP production build passes in the sandbox (existing `emailAdapter` warning only). Website: unchanged since `52dad00`, not rebuilt |
-| Lint | Not available: the ERP has no ESLint configuration (`next lint` would ask to create one). Typecheck: 0 errors |
-| Committed | `5f77d56` on branch `release/erp-p0-p2-2026-11` |
-| Pushed | Release branch only. **`master` (production) is unchanged at `a3a3ccc`** |
-| Deployed | **No** |
-| Production-verified | **No** |
+| Automated tests | Final candidate: **65 suites, 62 passed, 0 failed, 3 skipped by design** (live-resource suites: the shared local database and real email). Typecheck: app 0 errors, tests 0 errors |
+| Browser tests (disposable data, server serving the working tree) | P2 workflows 22/22 (Cashbook refund check now baseline-relative); states and errors 8/8 (server error + Try again, no-match search, over-amount validation, lost answer → changed retry refused → identical retry); offline 6/6; P2 screens at 360–1440 px 58/58. One intermittent failure seen once under load (driver part-payment field), passed on rerun: kept as a known flaky check |
+| Built | ERP production build passes (sandbox; existing `emailAdapter` warning only). Lint: no ESLint configuration exists |
+| Committed / pushed | Branch `release/erp-p0-p2-2026-11` only. **`master` (production) unchanged at `a3a3ccc`** |
+| Deployed / production-verified | **No** |
 
 Not committed:
 - `scratch/test-full-auth-flow.js`: real credentials, now in `.gitignore`. It was never committed, so there is no Git exposure.
 - `docs/performance-evidence-2026-11/`: 6 MB of screenshots.
 
-## Release gate (all must pass before `master` is updated)
+## Release gate
 
 | Check | Result |
 |---|---|
-| Duplicate invoice scan | PENDING: run `node scripts/scan-invoice-duplicates.js $env:PROD_DB_URL`; needs exit 0 |
-| Production checks Q0–Q5 | PENDING: run `node scripts/prod-readonly-checks.js`; Q1 must be PASS (16 / 1792471200000 / 0f0652008797519f); Q3 unexplained differences must be 0 |
-| Render configuration | PENDING: runbook §6 (start command `npm run render:start`, `ERP_PRODUCTION_MIGRATE=apply`, no disk, Auto-Deploy state, branch) |
-| Neon restore branch `pre-release-0016-0021` | PENDING: create immediately before release |
-| Migrations 0016–0021 | PENDING: rehearsed on disposable data (one transaction, full rollback on failure, retry safe, old code works on the new schema) |
-| Website | PENDING: deployment target is not in the repository; owner to confirm its URL and host |
-| Production deployment | PENDING |
+| Duplicate invoice scan (production) | **PASS**: exit 0, complete, zero duplicates |
+| Q0 read-only | **PASS** |
+| Q1 migration level | **PASS**: 15 records, newest 0015 (`1792471200000` / `0f0652008797519f`). Record 0002 is missing but its schema is present; this comes from early hand-applied Neon migrations. Nothing is to be inserted |
+| Q2 shared phones | **PASS** |
+| Q3 delivered work outside Receivables | **PASS**: 93 delivered tasks, 0 unexplained differences |
+| Q4 orders without a customer | **PASS** |
+| Q5 sizes | 9 orders, 4 collections, 0 invoices; 0017 creates 56 beds. Locks last about 1–2 s |
+| Render configuration | **PENDING**: owner, dashboard (below) |
+| Neon restore branch | **PENDING**: owner, immediately before the merge |
+| Migrations 0016–0021 | **Ready, pending the two items above** |
+| Website | **No release**: `apps/website` has not changed since `52dad00`. The live `ravinarayan.in` is served by nginx with a different page title, so it is not deployed from this repository (owner to confirm the host) |
+| Production deployment | **PENDING** |
 
-Steps: [PRODUCTION_READONLY_RUNBOOK_2026-11.md](PRODUCTION_READONLY_RUNBOOK_2026-11.md).
+## Remaining manual actions (owner)
+
+1. **Render** (Dashboard → ERP web service; read only):
+
+   | Where | Check |
+   |---|---|
+   | Settings → Build & Deploy | Branch = `master` |
+   | Settings → Build & Deploy | Start Command = `npm run render:start` (or `node scripts/migrate-production.js && npm run start:render`) |
+   | Settings → Build & Deploy | Pre-Deploy Command empty |
+   | Settings → Build & Deploy | Auto-Deploy On or Off (On: the merge push deploys) |
+   | Settings | Health Check Path = `/api/health`, or empty |
+   | Disks | None |
+   | Environment | Names `DATABASE_URL`, `DIRECT_URL`, `ERP_PRODUCTION_MIGRATE` (value `apply`) present; don't open other values |
+   | Events | Latest deploy is `a3a3ccc` and Live |
+
+   Also note the service's public URL.
+2. **Neon:**
+   - Project → Branches → create a branch from `main` at the current point, named `pre-release-0016-0021`;
+   - note its UTC time;
+   - optionally run `node scripts/prod-readonly-checks.js` against the branch's direct string (Q1 must match `main`).
+3. **Website:** tell us where `ravinarayan.in` is hosted and whether this repository's `apps/website` should replace it (a separate decision and release).
+4. **Release** (quiet time, after 1 and 2):
+   1. Merge `release/erp-p0-p2-2026-11` into `master` and push. With Auto-Deploy on this deploys; otherwise click **Manual Deploy** for that commit.
+   2. Watch the Render log for `[migrate-production] Migrations: 15 before, 21 now (6 applied)`, then Live.
+   3. Check `/api/health` returns 200.
+   4. Run the acceptance checklist below.
+5. **Driver app:** test it on a phone after release. Delivery files other than the approved payment changes were also changed by the earlier P0 and performance rounds (custody panel, history, manager board). Automated delivery suites and offline tests pass.
 
 ## Release procedure (after every gate passes)
 
 1. Create the Neon restore branch and record its UTC time.
 2. In a quiet window, merge `release/erp-p0-p2-2026-11` into `master` and push. With Auto-Deploy on, the push itself deploys and migrates.
 3. Watch the Render log for:
-   - `[migrate-production] Migrations: 16 before, 22 now (6 applied)`;
+   - `[migrate-production] Migrations: 15 before, 21 now (6 applied)`;
    - the service going Live;
    - `/api/health` returning 200.
 4. If the migration fails:

@@ -83,8 +83,8 @@ async function main() {
     r1.gates.forEach((g) => console.log(`  ${g}`));
     console.log(`  [exit ${r1.code}] ${r1.last}`);
     assert(r1.code === 0 && /^RESULT: CHECKS COMPLETE/.test(r1.last), "A Neon-style URL (channel_binding) is accepted; all queries ran and were rolled back (exit 0)");
-    assert(r1.gates.some((g) => /^GATE Q1 migration level: PASS - 16 applied, last 1792471200000, newest hash 0f0652008797519f; 0016-0021 objects absent: yes/.test(g)),
-      "Q1 PASS at the production baseline: 16 applied, 1792471200000, hash 0f0652008797519f, 0016-0021 absent");
+    assert(r1.gates.some((g) => /^GATE Q1 migration level: PASS - newest record 1792471200000 hash 0f0652008797519f .*0016-0021 objects absent: yes; schema of 0000-0015 present: all; 16 record\(s\) for 16 migrations$/.test(g)),
+      "Q1 PASS at the production baseline: newest record 0015 (1792471200000, hash 0f0652008797519f), 0016-0021 absent, all 0000-0015 schema present, 16 records");
     assert(r1.gates.some((g) => /^GATE Q2 shared phones: REVIEW - 1 number\(s\), 2 customer\(s\)/.test(g)), "Q2 finds the shared phone (REVIEW, not PASS)");
     assert(r1.text.includes(`******${phone.slice(-4)}`) && !r1.text.includes(phone) && !r1.text.includes(fullName) && !r1.text.includes("Gate Lane"),
       "Output shows only the last four digits: no full phone, name or address");
@@ -100,7 +100,36 @@ async function main() {
   console.log("\n--- 2. A database that is already past 0015 ---");
   const r2 = run(urlFor(at21));
   r2.gates.forEach((g) => console.log(`  ${g}`));
-  assert(r2.code === 0 && r2.gates.some((g) => /^GATE Q1 migration level: BLOCK - 22 applied/.test(g)), "Q1 BLOCK when the level is not the expected baseline (22 applied)");
+  assert(r2.code === 0 && r2.gates.some((g) => /^GATE Q1 migration level: BLOCK - newest record 1792989600000 .*0016-0021 objects absent: NO/.test(g)), "Q1 BLOCK when the database is already past 0015 (newest record 0021)");
+
+  console.log("\n--- 2b. Production's state: 0015 schema, one older record missing ---");
+  // Neon history applied some early migrations by hand, without a record. Drizzle reads only the
+  // newest record, so a missing OLDER record changes nothing; a missing SCHEMA must still block.
+  const db15b = postgres(urlFor(at15), { max: 1, onnotice: () => {} });
+  try {
+    await db15b`DELETE FROM drizzle.__drizzle_migrations WHERE created_at = 1792212000000`; // 0012, disposable copy only
+    const r2b = run(urlFor(at15));
+    r2b.gates.filter((g) => g.startsWith("GATE Q1")).forEach((g) => console.log(`  ${g}`));
+    assert(r2b.gates.some((g) => /^GATE Q1 migration level: PASS - .*schema of 0000-0015 present: all; 15 record\(s\) for 16 migrations - no record for 0012 \(schema present/.test(g)),
+      "15 records with newest = 0015 and all schema present: PASS, and the missing record (0012) is named");
+    await db15b.unsafe("ALTER TABLE push_tokens RENAME TO push_tokens_hidden");
+    const r2c = run(urlFor(at15));
+    await db15b.unsafe("ALTER TABLE push_tokens_hidden RENAME TO push_tokens");
+    r2c.gates.filter((g) => g.startsWith("GATE Q1")).forEach((g) => console.log(`  ${g}`));
+    assert(r2c.gates.some((g) => /^GATE Q1 migration level: BLOCK - .*schema of 0000-0015 present: MISSING 0015/.test(g)),
+      "A migration whose schema is absent BLOCKS even when the newest record looks right");
+    await db15b`INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ('stray', 1700000000000)`;
+    const r2d = run(urlFor(at15));
+    r2d.gates.filter((g) => g.startsWith("GATE Q1")).forEach((g) => console.log(`  ${g}`));
+    assert(r2d.gates.some((g) => /^GATE Q1 migration level: BLOCK - .*UNKNOWN record timestamp\(s\) 1700000000000/.test(g)), "A record that matches no journal entry BLOCKS");
+  } finally {
+    await db15b.end();
+  }
+  const quietRun = await quiet(() => migrate.runMigrations(urlFor(at15)));
+  const probe15 = postgres(urlFor(at15), { max: 1, onnotice: () => {} });
+  const objs = await probe15`SELECT to_regclass('public.business_settings') IS NOT NULL AS a, EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orders' AND column_name = 'payment_review') AS f`;
+  await probe15.end();
+  assert(Array.isArray(quietRun) && objs[0].a === true && objs[0].f === true, "Drizzle then applies 0016-0021 on top of that state (newest record decides; the missing older record is never re-run)");
 
   console.log("\n--- 3. Failures never look like a clean result ---");
   const secret = `pw-${tag}-secret`;
