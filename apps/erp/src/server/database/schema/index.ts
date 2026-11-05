@@ -634,6 +634,9 @@ export const invoices = pgTable(
       .references(() => staffUsers.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    // Migration 0020: one invoice per creation operation; canonical month (YYYY-MM) of billing_period.
+    idempotencyKey: text("idempotency_key"),
+    billingMonth: text("billing_month"),
   },
   (table) => [
     uniqueIndex("idx_invoices_number").on(table.invoiceNumber),
@@ -757,6 +760,10 @@ export const tiffinCustomers = pgTable(
     updatedBy: text("updated_by").references(() => staffUsers.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    // Migration 0021: Pay Later approval (Owner / Manager), last change.
+    payLaterEnabled: integer("pay_later_enabled").notNull().default(0),
+    payLaterUpdatedBy: text("pay_later_updated_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    payLaterUpdatedAt: text("pay_later_updated_at"),
   },
   (table) => [
     index("idx_tiffin_cust_phone").on(table.phone),
@@ -1270,6 +1277,12 @@ export const orders = pgTable(
     createdBy: text("created_by").references(() => staffUsers.id),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
+    // Migration 0021: what was chosen at the door, and a balance left without Pay Later approval.
+    paymentChoice: text("payment_choice"),
+    paymentReview: text("payment_review"),
+    paymentReviewDetail: text("payment_review_detail"),
+    paymentReviewedBy: text("payment_reviewed_by").references(() => staffUsers.id, { onDelete: "set null" }),
+    paymentReviewedAt: text("payment_reviewed_at"),
   },
   (table) => [
     index("idx_orders_service_date").on(table.serviceDate),

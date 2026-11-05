@@ -28,10 +28,10 @@ Evidence references point to [VERIFICATION_LOG.md](VERIFICATION_LOG.md) entries 
 | ISSUE-020 | S1 | Task 01B.49–75 work uncommitted | FIXED (local snapshot `7b175c3` on `wip/01b-takeover-snapshot`) |
 | ISSUE-021 | S2 | Concurrent delivery completions both applied | FIXED (verified on PG) |
 | ISSUE-022 | S1 | SQLite→PG utility defaulted its source to `data/erp.db` | FIXED (explicit `sqlitePath` required) |
-| ISSUE-023 | S6 | No manual assign/reassign UI on `/delivery` | OPEN |
+| ISSUE-023 | S6 | No manual assign/reassign UI on `/delivery` | RESOLVED (stale: `TaskPanel.tsx` has Assign/Reassign, Retry, Cancel, Resolve, Collect; `ManagerDelivery` has batch assign; re-checked 2026-11-01) |
 | ISSUE-024 | S5 | Partial-delivery data stored as free text | FIXED for orders since 0012 (`order_items.delivered_quantity`); legacy rows keep text |
 | ISSUE-025 | S1 | Login matched "any SUPER_ADMIN" for the admin email and rewrote Owners' emails | FIXED (verified) |
-| ISSUE-026 | S4 | Manager can finalize checkout settlements incl. deposit refunds (existing rule) | DECISION NEEDED |
+| ISSUE-026 | S4 | Manager can finalize checkout settlements incl. deposit refunds (existing rule) | FIXED (decision 2026-11-01: Manager prepares, Owner approves any deposit movement; migration 0018; pg_money_flows, task01b_52) |
 | ISSUE-027 | S2 | Concurrent rent payments could exceed rent charged (overpayment race) | FIXED (verified on PG) |
 | ISSUE-028 | S2 | Concurrent double reversal created two reversal rows | FIXED (verified on PG) |
 | ISSUE-029 | S3 | Idempotent retries / losing handover acceptance returned raw DB errors | FIXED (verified on PG) |
@@ -41,7 +41,7 @@ Evidence references point to [VERIFICATION_LOG.md](VERIFICATION_LOG.md) entries 
 | ISSUE-033 | S8 | Webpack "critical dependency" warning from dynamic `require` in `emailAdapter.ts` | OPEN (pre-existing, build passes) |
 | ISSUE-034 | S5 | `/api/kitchen/walkin-sale` posts counter sales without an `orders` row | OPEN (listed via legacy fallback; backfill converts) |
 | ISSUE-035 | S5 | Delivery modal still reads items from `[ORDER_JSON]`; JSON dual-write remains | OPEN (transition step) |
-| ISSUE-036 | S6 | Orders cannot be edited or cancelled (no endpoint) | DECISION NEEDED (refund/ledger rules) |
+| ISSUE-036 | S6 | Orders cannot be edited or cancelled (no endpoint) | FIXED (decision 2026-11-01: edit/cancel only before the delivery is attempted and with nothing collected; paid and dine-in orders cannot be cancelled; revisions kept; migration 0019; pg_order_lifecycle) |
 | ISSUE-037 | S3 | Local PostgreSQL stops whenever WSL idles out (login 500 `ECONNREFUSED`) | FIXED (`local-db.ps1` keep-alive; VL-25) |
 | ISSUE-038 | S7 | DB outage surfaced as raw 500 / misleading 401 on login and OTP routes | FIXED (503 + plain message; VL-25) |
 | ISSUE-039 | S5 | Local dev DB was at migration 0011; order screens read `orders` (0012) | FIXED (0012 applied to `ravinarayana_erp_local` 2026-10-30 with approval, after a verified backup; VL-51) |
@@ -86,6 +86,20 @@ Evidence references point to [VERIFICATION_LOG.md](VERIFICATION_LOG.md) entries 
 | ISSUE-078 | S2 | UPI collected on deliveries was never declared, reconciled or posted to the books | FIXED (declared UPI computed from collections, confirmed separately by the verifier, posted once as a UPI cashbook entry) |
 | ISSUE-079 | S7 | Owner/Manager saw one combined "Fleet Cash Custody" figure for the selected date; pending declarations were filtered by the page date (other days' declarations invisible) | FIXED (staff-wise table, totals = sum of rows, per-employee history; pending list not date-filtered) |
 | ISSUE-080 | S8 | Custody API defaulted to the UTC date | FIXED (business date) |
+| ISSUE-081 | S3 | Dashboard and several API defaults used the UTC date/month (`dashboardService` "today" and 6-month window, cashbook and business-report default periods, check-out default date, delivery summary, closing preview, executive CSV, tiffin invoice due date; finance date helpers used the browser's zone) | FIXED (one utility `lib/businessDate.ts`; `pg_financial_definitions` §1) |
+| ISSUE-082 | S2 | Deposits held kept counting checkout deductions (kept by the business, recorded only in `resident_settlements`) as a liability; executive CSV counted every deposit ever received | FIXED (`financialDefinitions.getDepositsHeld`; definition in `FINANCIAL_DEFINITIONS.md`; `pg_financial_definitions` §3) |
+| ISSUE-083 | S2 | Outstanding rent netted across all residents (one resident's credit hid another's debt) on the dashboard, cashbook summary and executive CSV | FIXED (`getOutstandingRent`, per resident; §2) |
+| ISSUE-084 | S3 | Tiffin revenue matched `description LIKE '%tiffin%'`; legacy rent-typed tiffin rows were counted as rent **and** tiffin | FIXED (stable `customer_id`/category references; rent excludes tiffin rows; §4) |
+| ISSUE-085 | S7 | "Public Site" link hard-coded to `http://localhost:3000` | FIXED (configured website URL; link hidden when none is set) |
+| ISSUE-086 | S8 | Calendar-dependent tests: `integration_audit` (1) and `task01b_63` (3) expect a reversal dated "today" to fall in October 2026; they fail from 1 Nov 2026 at the unmodified HEAD as well | OPEN (tests should derive the period from the reversal date) |
+| ISSUE-087 | S8 | `task01b_68` asserts the Android SDK is absent (true when written; the SDK is now installed); `fixture_isolation_and_transaction_integrity` has 6 failing static checks on `migrateSqliteToPg.ts` | OPEN (pre-existing at HEAD `a3a3ccc`; not caused by current work) |
+| ISSUE-088 | S6 | Tiffin customers, subscriptions, catalogue and billing had complete services but no reachable screen (`/tiffin` redirected to Orders) | FIXED (restored at `/tiffin`; pg_tiffin_management) |
+| ISSUE-089 | S3 | Editing a subscription left already-listed deliveries on the old terms (meals, days, end date, quantity, address) | FIXED (`syncSubscriptionDeliveriesAfterEdit`; pg_tiffin_management §5) |
+| ISSUE-090 | S4 | Creating a subscription silently turned quantity 0 / negative / fractional into a valid quantity | FIXED (rejected, same rule as editing) |
+| ISSUE-091 | S4 | Default-menu seeder could be run by a Manager with no preview | FIXED (Owner only, preview then confirm, adds only missing codes, never re-prices) |
+| ISSUE-092 | S3 | Notification feed was not filtered by role (money items for any caller); kitchen-plan item linked to the retired /kitchen with 0 portions; links did not open the right tab or stop | FIXED (permission-filtered feed, kitchen item removed, deep links honoured; pg_reports_and_admin §3) |
+| ISSUE-093 | S7 | Successful sign-in and sign-out were not in the audit log | FIXED (`auth.signed_in`, `auth.signed_out`) |
+| ISSUE-094 | S7 | Dashboard showed a hard-coded "39 beds across 21 rooms" | FIXED (live room and bed counts) |
 ---
 
 ## ISSUE-001 — Closing lock ordering deadlock (S2) — FIXED (verified)
@@ -201,7 +215,8 @@ Observed in the sandbox baseline (VL-05, VL-10):
 - `migrateSqliteToPostgres()` without `requireFixture` resolves its source via `resolveDbPath()`, which falls back to `data/erp.db` (and creates `data/` as a side effect). Any invocation with a configured PG URL would read the protected file. No script calls it today; the test now passes an explicit fixture.
 - **Acceptance:** the utility requires an explicit `sqlitePath`; no implicit fallback to `data/erp.db`.
 
-## ISSUE-023 — No manual assignment UI on the live Delivery page (S6) — OPEN
+## ISSUE-023 — No manual assignment UI on the live Delivery page (S6) — RESOLVED
+- **2026-11-01:** the description below is out of date. The manager stop panel (`modules/delivery/ops/TaskPanel.tsx`) assigns, reassigns, retries, cancels, resolves and collects, and the Board assigns in bulk. `TaskTimelineModal` is redundant (the panel shows the same timeline from the same API) and stays unused.
 - `/delivery` renders its own list plus `SingleScreenDeliveryModal`. `DispatchBoardView`, `DriverRunView` and `BatchAssignModal` are not imported anywhere. Reassigning a task (driver sick, second driver) is only possible through the API.
 - **Acceptance:** Owner/Manager can assign or reassign a PENDING/ASSIGNED/OUT_FOR_DELIVERY task from `/delivery`; dead components either wired in or removed.
 

@@ -104,7 +104,7 @@ export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
       </div>
 
       {listing && !listing.schemaReady && (
-        <Notice tone="warn">Skip today, extra today and room delivery are switched off until the delivery update (migration 0014) is approved and installed. The list below is read-only.</Notice>
+        <Notice tone="warn">Skip today, extra today and room delivery need the latest database update, which is not installed yet.</Notice>
       )}
       {pastCutoff && listing?.schemaReady && date >= today && <Notice tone="warn">This meal is past its cutoff: each change is recorded as a Manager override and needs a reason.</Notice>}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}

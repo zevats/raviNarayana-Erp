@@ -1024,6 +1024,56 @@ export async function seedDefaultCatalogIfEmpty(
   return inserted;
 }
 
+export interface DefaultCatalogSeedPlan {
+  /** Default items whose code is not in the menu yet; these would be added. */
+  toAdd: Array<{ code: string; name: string; price: number }>;
+  /** Default items already in the menu; never changed, even when the price differs. */
+  existing: Array<{ code: string; name: string; currentPrice: number; defaultPrice: number }>;
+}
+
+/** Dry run of the default-menu seed: what would be added and what already exists. Changes nothing. */
+export async function planDefaultCatalogSeed(actor: AuthenticatedUser, asyncDb?: AsyncDb): Promise<DefaultCatalogSeedPlan> {
+  requirePermission(actor, "system.manage", { action: "tiffin.catalog_seed_preview" });
+  const db = asyncDb ?? getAsyncDb();
+  const rows = await db.query<{ code: string; name: string; price: number | string }>("SELECT code, name, price FROM tiffin_products");
+  const byCode = new Map(rows.map((r) => [String(r.code).toUpperCase(), r]));
+  const plan: DefaultCatalogSeedPlan = { toAdd: [], existing: [] };
+  for (const item of INITIAL_TIFFIN_CATALOG) {
+    const row = byCode.get(item.code.toUpperCase());
+    if (row) plan.existing.push({ code: item.code, name: row.name, currentPrice: Number(row.price), defaultPrice: item.price });
+    else plan.toAdd.push({ code: item.code, name: item.name, price: item.price });
+  }
+  return plan;
+}
+
+/**
+ * Adds the default menu items that are missing (by code). Owner only, after a preview. Never
+ * deletes, renames or re-prices an existing product; safe to run again (a concurrent run that
+ * loses the race on a code is skipped, not an error).
+ */
+export async function seedMissingDefaultCatalog(
+  actor: AuthenticatedUser,
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<{ added: string[]; skipped: string[] }> {
+  requirePermission(actor, "system.manage", { ip: clientIp, action: "tiffin.catalog_seeded" });
+  const db = asyncDb ?? getAsyncDb();
+  const plan = await planDefaultCatalogSeed(actor, db);
+  const added: string[] = [];
+  const skipped = plan.existing.map((e) => e.code);
+  for (const missing of plan.toAdd) {
+    const item = INITIAL_TIFFIN_CATALOG.find((i) => i.code === missing.code)!;
+    try {
+      await createTiffinProduct(actor, item, clientIp, db);
+      added.push(item.code);
+    } catch (err: any) {
+      if (/already exists|duplicate|unique/i.test(String(err?.message))) skipped.push(item.code);
+      else throw err;
+    }
+  }
+  return { added, skipped };
+}
+
 // ============================================================================
 // 4. TIFFIN SUBSCRIPTIONS & SERVICE SCHEDULING SERVICES (Task 01B.44)
 // ============================================================================
@@ -1166,7 +1216,11 @@ export async function createTiffinSubscription(
     throw new Error(`Invalid serviceDays '${serviceDays}'. Allowed values: ALL_DAYS, MON_SAT, MON_FRI.`);
   }
 
-  const quantityPerMeal = Math.max(1, Math.round(Number(input.quantityPerMeal || 1)));
+  // Same rule as editing: a whole number of boxes, at least 1 (no silent rounding or clamping).
+  const quantityPerMeal = input.quantityPerMeal === undefined || input.quantityPerMeal === null ? 1 : Number(input.quantityPerMeal);
+  if (!Number.isInteger(quantityPerMeal) || quantityPerMeal < 1) {
+    throw new Error("Quantity per meal must be an integer greater than or equal to 1.");
+  }
 
   const deliveryAddress = input.deliveryAddress?.trim() || customer.deliveryAddress;
   if (!deliveryAddress || deliveryAddress.length < 5) {
@@ -1521,6 +1575,11 @@ export async function updateTiffinSubscription(
       },
       ipAddress: clientIp,
     }, tx);
+
+    // Deliveries already listed from today on follow the new terms (meals, days, end date,
+    // quantity, address) while their meal is before its cutoff.
+    const { syncSubscriptionDeliveriesAfterEdit } = await import("../delivery/deliveryOps");
+    await syncSubscriptionDeliveriesAfterEdit(tx, actor, id, clientIp);
   });
 
   return (await getTiffinSubscriptionById(actor, id, db))!;

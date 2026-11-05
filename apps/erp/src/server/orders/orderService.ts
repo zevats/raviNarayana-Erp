@@ -105,7 +105,7 @@ function assertCanReadOrders(actor: AuthenticatedUser): void {
  * (price snapshot), so later menu changes never alter placed orders and the browser cannot set
  * prices. Monthly subscription packages are not order items.
  */
-async function resolveCatalogItems(db: AsyncDb, items: CreateOrderInput["items"]): Promise<OrderItem[]> {
+export async function resolveCatalogItems(db: AsyncDb, items: CreateOrderInput["items"]): Promise<OrderItem[]> {
   if (items.length === 0) {
     throw new Error("Order must contain at least one menu item.");
   }
@@ -330,6 +330,8 @@ async function loadOrders(db: AsyncDb, where: string, params: any[]): Promise<Un
       assignedTo: r.task_assigned_to || null,
       assignedToName: r.task_assigned_name || null,
       notes: r.notes || null,
+      revision: r.revision !== undefined && r.revision !== null ? Number(r.revision) : 0,
+      cancelReason: r.cancel_reason || null,
       createdAt: r.created_at,
     } as UnifiedOrder;
   });
@@ -485,9 +487,10 @@ export async function createUnifiedOrder(
       // when the actor may dispatch and the task is waiting in ASSIGNED.
       const defaultDriver = await getDefaultDeliveryStaff(tx);
       if (defaultDriver) {
-        const assigned = await assignDeliveryTask(actor, extTask.id, { assignedToStaffId: defaultDriver.id }, clientIp, tx);
+        // Only the new status is needed here; the order is reloaded in full once committed.
+        const assigned = await assignDeliveryTask(actor, extTask.id, { assignedToStaffId: defaultDriver.id }, clientIp, tx, { detail: false });
         if (assigned.status === "ASSIGNED" && hasPermission(actor.role, "delivery.update")) {
-          await dispatchDeliveryTask(actor, extTask.id, clientIp, tx);
+          await dispatchDeliveryTask(actor, extTask.id, clientIp, tx, { detail: false });
         }
       }
 

@@ -23,6 +23,14 @@ function sanitizePayload(action: OfflineQueueActionType, payload: Record<string,
     if (payload.paymentMethod === "CASH" || payload.paymentMethod === "UPI") {
       clean.paymentMethod = payload.paymentMethod;
     }
+    // The payment chosen at the door and the Pay Later approval the phone showed at that moment
+    // must survive the queue, so the server records the same choice however late it syncs.
+    if (payload.paymentChoice === "CASH" || payload.paymentChoice === "UPI" || payload.paymentChoice === "PAY_LATER") {
+      clean.paymentChoice = payload.paymentChoice;
+    }
+    if (typeof payload.payLaterAllowedAtSelection === "boolean") {
+      clean.payLaterAllowedAtSelection = payload.payLaterAllowedAtSelection;
+    }
     if (typeof payload.deliveredQuantity === "number" && !isNaN(payload.deliveredQuantity)) {
       clean.deliveredQuantity = payload.deliveredQuantity;
     }

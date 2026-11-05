@@ -15,7 +15,7 @@ import {
   onErpCacheInvalidated,
   getCacheAgeMs,
 } from "../apps/erp/src/lib/cache/erpDataCache";
-import { isBusinessWrite, onBusinessDataChanged, signalBusinessDataChanged } from "../apps/erp/src/server/database/changeSignals";
+import { isBusinessWrite, onBusinessDataChanged, signalBusinessDataChanged, setChangeOrigin, changeOriginFor } from "../apps/erp/src/server/database/changeSignals";
 import { businessToday, addBusinessDays } from "../apps/erp/src/lib/businessDate";
 import { sectionRedirectFor } from "../apps/erp/src/server/authorization/sectionAccess";
 
@@ -82,6 +82,24 @@ async function main() {
   offSignal();
   signalBusinessDataChanged();
   assert(signals === 1, "Listeners receive signals until unsubscribed");
+
+  // Each signal names the session whose request wrote, so a browser can skip the echo of its own save.
+  const origins: Array<string | null> = [];
+  const offOrigin = onBusinessDataChanged((_tables, origin) => origins.push(origin));
+  signalBusinessDataChanged(["orders"]);
+  const tokenA = "a".repeat(64);
+  const tokenB = "b".repeat(64);
+  // Two concurrent "requests": each marks its own async context before its first await.
+  const request = async (token: string, delayMs: number) => {
+    setChangeOrigin(changeOriginFor(token));
+    await new Promise((r) => setTimeout(r, delayMs));
+    signalBusinessDataChanged(["orders"]);
+  };
+  await Promise.all([(async () => request(tokenA, 20))(), (async () => request(tokenB, 5))()]);
+  offOrigin();
+  assert(origins[0] === null, "A write outside any request has no origin");
+  assert(origins[1] === changeOriginFor(tokenB) && origins[2] === changeOriginFor(tokenA), "Concurrent requests each signal their own origin");
+  assert(changeOriginFor(tokenA) !== changeOriginFor(tokenB) && !changeOriginFor(tokenA).includes("a".repeat(8)), "Origins differ per session and do not reveal the token");
 
   console.log("\n[SUITE 5] Business date (Asia/Kolkata)");
   // 2026-10-29T20:00Z is 01:30 on 30 Oct in India: UTC would still say the 29th.

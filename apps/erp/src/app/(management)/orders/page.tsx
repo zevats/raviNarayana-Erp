@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useDeferredValue } from "react";
 import {
   ShoppingBag,
   Plus,
@@ -23,16 +23,31 @@ import {
 import { UnifiedOrder } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
-import { NewOrderModal } from "@/modules/orders/components/NewOrderModal";
 import Link from "next/link";
 import { businessToday } from "@/lib/businessDate";
-import { SubscriptionsToday } from "@/modules/delivery/ops/SubscriptionsToday";
-import { MenuCatalog } from "@/modules/delivery/ops/MenuCatalog";
+import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { PageHeader, Segmented, StatStrip, SearchField, EmptyState } from "@/components/ui/kit";
+import dynamic from "next/dynamic";
+import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
+import { RefreshButton } from "@/components/ui/states";
+import { formatDateTime } from "@/lib/format";
+
+// Dialogs and secondary views load on demand, off the navigation path.
+const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModal");
+const NewOrderModal = dynamic(() => loadNewOrderModal().then((m) => m.NewOrderModal), { ssr: false });
+const loadEditOrderModal = () => import("@/modules/orders/components/EditOrderModal");
+const EditOrderModal = dynamic(() => loadEditOrderModal().then((m) => m.EditOrderModal), { ssr: false });
+const loadSubscriptionsToday = () => import("@/modules/delivery/ops/SubscriptionsToday");
+const SubscriptionsToday = dynamic(() => loadSubscriptionsToday().then((m) => m.SubscriptionsToday), { ssr: false });
+const loadMenuCatalog = () => import("@/modules/delivery/ops/MenuCatalog");
+const MenuCatalog = dynamic(() => loadMenuCatalog().then((m) => m.MenuCatalog), { ssr: false });
 
 // Orders change through delivery completion by other staff; 20s keeps the board current.
 const ORDERS_POLL_MS = 20000;
 
 export default function OrdersPage() {
+  // Fetch the dialog and tab code in the background so the first click opens at once.
+  useEffect(() => preloadWhenIdle([loadNewOrderModal, loadEditOrderModal, loadSubscriptionsToday, loadMenuCatalog]), []);
   // Signed-in user from the server-rendered shell (no /api/auth/me round-trip).
   const currentUser = useCurrentUser();
   const [serviceDate, setServiceDate] = useState(businessToday());
@@ -40,15 +55,23 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+  // Change / cancel one delivery order (only while it has not gone out and nothing was collected).
+  const [editing, setEditing] = useState<{ order: UnifiedOrder; mode: "edit" | "cancel" } | null>(null);
+  const [orderNotice, setOrderNotice] = useState<string | null>(null);
+  // Each confirmation stays 5 s; a newer one restarts the timer instead of being cut short.
+  useEffect(() => {
+    if (!orderNotice) return;
+    const t = setTimeout(() => setOrderNotice(null), 5000);
+    return () => clearTimeout(t);
+  }, [orderNotice]);
   const [activeSection, setActiveSection] = useState<"DAILY_ORDERS" | "SUBSCRIPTIONS" | "MENU_CATALOG">("DAILY_ORDERS");
 
 
-  // Orders are cached per filter set and reused across visits; refreshed every 20s while the
+  // Orders are cached per date and type and reused across visits; refreshed every 20s while the
   // tab is visible (orders also change through delivery completion), on focus, and after mutations.
-  const ordersParams = new URLSearchParams({ serviceDate, orderType: orderTypeFilter });
-  if (searchQuery.trim()) ordersParams.set("search", searchQuery.trim());
-  if (statusFilter !== "ALL") ordersParams.set("status", statusFilter);
-  const ordersKey = `/api/orders?${ordersParams.toString()}`;
+  // Search and status filter the loaded day in the browser: no request per keystroke.
+  const ordersKey = `/api/orders?${new URLSearchParams({ serviceDate, orderType: orderTypeFilter }).toString()}`;
+  const deferredSearch = useDeferredValue(searchQuery);
   const ordersQuery = useErpQuery<{ orders: UnifiedOrder[]; counts: { today: number; active: number; completed: number } }>(
     ordersKey,
     async () => {
@@ -75,7 +98,19 @@ export default function OrdersPage() {
   }, [ordersQuery.refetch]);
 
   const filteredOrders = useMemo(() => {
+    // Same match as the server's search (name, phone, address).
+    const search = deferredSearch.toLowerCase().trim();
     return orders.filter((o) => {
+      if (
+        search &&
+        !(
+          o.customerName.toLowerCase().includes(search) ||
+          (o.customerPhone && o.customerPhone.includes(search)) ||
+          (o.deliveryAddress && o.deliveryAddress.toLowerCase().includes(search))
+        )
+      ) {
+        return false;
+      }
       if (statusFilter !== "ALL") {
         if (statusFilter === "ACTIVE" && !(o.orderStatus === "CONFIRMED" || o.orderStatus === "OUT_FOR_DELIVERY")) {
           return false;
@@ -86,173 +121,93 @@ export default function OrdersPage() {
       }
       return true;
     });
-  }, [orders, statusFilter]);
+  }, [orders, statusFilter, deferredSearch]);
+
+  // Busy days can have hundreds of orders: draw them in pages so opening and filtering stay quick.
+  // Search and filters always cover the whole day.
+  const PAGE = 60;
+  const [shown, setShown] = useState(PAGE);
+  useEffect(() => setShown(PAGE), [serviceDate, orderTypeFilter, statusFilter, deferredSearch]);
+  const visibleOrders = filteredOrders.length > shown ? filteredOrders.slice(0, shown) : filteredOrders;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      {/* HEADER SECTION */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E6E1DA] pb-5">
-        <div>
-          <span className="text-[11px] font-mono uppercase tracking-wider text-[#8E9F89] block">
-            Commercial PG &amp; Tiffin Services
-          </span>
-          <div className="flex items-center gap-3">
-            <h1 className="font-serif text-2xl sm:text-3xl text-[#1A2E20] font-bold">Orders</h1>
-            {/* Real data compact badges */}
-            <div className="flex items-center gap-1.5 text-xs font-mono">
-              <span className="px-2.5 py-0.5 rounded-full bg-[#1A2E20]/5 text-[#1A2E20] border border-[#1A2E20]/15">
-                Today: <strong>{counts.today}</strong>
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                Active: <strong>{counts.active}</strong>
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
-                Done: <strong>{counts.completed}</strong>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Action button & secondary section tabs (wraps on narrow phones) */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Section view toggle */}
-          <div className="flex bg-white p-1 rounded-2xl border border-[#E6E1DA] shadow-2xs">
-            <button
-              onClick={() => setActiveSection("DAILY_ORDERS")}
-              className={`px-3 py-1.5 text-xs font-serif rounded-xl transition ${
-                activeSection === "DAILY_ORDERS"
-                  ? "bg-[#1A2E20] text-white font-medium shadow-xs"
-                  : "text-[#5D7656] hover:text-[#1A2E20]"
-              }`}
-            >
-              Daily Orders
+    <div className="space-y-5 min-w-0">
+      <PageHeader
+        title="Orders"
+        actions={
+          <>
+            <Segmented
+              label="Orders sections"
+              value={activeSection}
+              onChange={setActiveSection}
+              options={[
+                { value: "DAILY_ORDERS", label: "Today", count: counts.today },
+                { value: "SUBSCRIPTIONS", label: "Subscriptions" },
+                { value: "MENU_CATALOG", label: "Menu" },
+              ]}
+            />
+            <button type="button" onClick={() => setIsNewOrderModalOpen(true)} className="rn-btn rn-btn-primary">
+              <Plus /> New order
             </button>
-            <button
-              onClick={() => setActiveSection("SUBSCRIPTIONS")}
-              className={`px-3 py-1.5 text-xs font-serif rounded-xl transition ${
-                activeSection === "SUBSCRIPTIONS"
-                  ? "bg-[#1A2E20] text-white font-medium shadow-xs"
-                  : "text-[#5D7656] hover:text-[#1A2E20]"
-              }`}
-            >
-              Subscriptions
-            </button>
-            <button
-              onClick={() => setActiveSection("MENU_CATALOG")}
-              className={`px-3 py-1.5 text-xs font-serif rounded-xl transition ${
-                activeSection === "MENU_CATALOG"
-                  ? "bg-[#1A2E20] text-white font-medium shadow-xs"
-                  : "text-[#5D7656] hover:text-[#1A2E20]"
-              }`}
-            >
-              Menu Catalog
-            </button>
-          </div>
-
-          <button
-            onClick={() => setIsNewOrderModalOpen(true)}
-            className="px-5 py-2.5 bg-[#C89F6B] hover:bg-[#B58A57] text-[#1A2E20] font-serif font-bold text-xs rounded-2xl shadow-sm transition flex items-center gap-2 shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            New Order
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {activeSection === "DAILY_ORDERS" && (
-        <div className="space-y-4">
-          {/* SEARCH & FILTERS BAR */}
-          <div className="bg-white p-3.5 rounded-2xl border border-[#E6E1DA] shadow-2xs flex flex-col md:flex-row items-center justify-between gap-3">
-            <div className="relative flex-1 w-full">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-[#8E9F89]" />
-              <input
-                type="text"
-                placeholder="Search by customer name, phone, or address..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl text-[#1A2E20] focus:outline-hidden focus:border-[#B58A57]"
-              />
-            </div>
+        <StatStrip
+          items={[
+            { label: "Today", value: counts.today },
+            { label: "In progress", value: counts.active },
+            { label: "Completed", value: counts.completed, tone: "good" },
+          ]}
+        />
+      )}
 
-            <div className="flex items-center gap-2 w-full md:w-auto shrink-0 flex-wrap">
-              {/* Date selector */}
-              <input
-                type="date"
-                value={serviceDate}
-                onChange={(e) => setServiceDate(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl text-[#1A2E20]"
-              />
-
-              {/* Order Type Filter */}
-              <select
-                value={orderTypeFilter}
-                onChange={(e) => setOrderTypeFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl text-[#1A2E20]"
-              >
-                <option value="ALL">All Orders</option>
-                <option value="DELIVERY">Delivery Only</option>
-                <option value="DINE_IN">Dine In Only</option>
+      {activeSection === "DAILY_ORDERS" && (
+        <div className="rn-card">
+          <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-2.5">
+            <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone or address" className="flex-1 basis-[240px]" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Service date" className="rn-input px-3 text-[12.5px]" />
+              <select value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value as any)} aria-label="Order type" className="rn-input">
+                <option value="ALL">All orders</option>
+                <option value="DELIVERY">Delivery</option>
+                <option value="DINE_IN">Dine in</option>
               </select>
-
-              {/* Status Filter */}
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-2.5 py-1.5 text-xs bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl text-[#1A2E20]"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="ACTIVE">Active (In Flight)</option>
+              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className="rn-input">
+                <option value="ALL">All statuses</option>
+                <option value="ACTIVE">In progress</option>
                 <option value="COMPLETED">Completed</option>
               </select>
-
-              <button
-                onClick={refreshOrders}
-                disabled={isRefreshing}
-                title="Refresh order list"
-                className="p-2 text-[#5D7656] hover:text-[#1A2E20] bg-[#FAF8F5] border border-[#DCD6CD] rounded-xl transition"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`} />
-              </button>
+              <RefreshButton onRefresh={refreshOrders} busy={isRefreshing} label="Refresh orders" />
             </div>
           </div>
 
           {/* ORDER CARDS LIST */}
           {isLoading ? (
-            <div className="p-12 text-center text-xs font-serif text-[#8E9F89]">
-              Loading live orders...
-            </div>
+            <BikeLoader label="Loading orders" className="py-12" />
           ) : filteredOrders.length === 0 ? (
-            <div className="p-12 bg-white rounded-3xl border border-[#E6E1DA] text-center space-y-3">
-              <ShoppingBag className="w-10 h-10 text-[#C89F6B] mx-auto opacity-40" />
-              <h3 className="font-serif text-lg text-[#1A2E20]">No Orders for this Date</h3>
-              <p className="text-xs text-[#8E9F89] max-w-sm mx-auto">
-                No orders match your current filters. Click "+ New Order" above to take a fast delivery or dine-in order.
-              </p>
-              <button
-                onClick={() => setIsNewOrderModalOpen(true)}
-                className="px-4 py-2 bg-[#1A2E20] text-white text-xs font-serif rounded-xl hover:bg-[#263B2D] transition inline-flex items-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                Take New Order
-              </button>
-            </div>
+            <EmptyState
+              title="No orders for this date"
+              action={<button type="button" onClick={() => setIsNewOrderModalOpen(true)} className="rn-btn rn-btn-primary"><Plus /> New order</button>}
+            >
+              Nothing matches these filters.
+            </EmptyState>
           ) : (
-            <div className="space-y-3">
-              {filteredOrders.map((order) => {
+            <div className="rn-rows">
+              {visibleOrders.map((order) => {
                 const isDelivery = order.orderType === "DELIVERY";
                 return (
                   <div
                     key={order.id}
-                    className="bg-white rounded-2xl border border-[#E6E1DA] p-4 sm:p-5 shadow-2xs hover:border-[#DCD6CD] transition space-y-3"
+                    className="p-4 sm:p-5 space-y-3"
                   >
                     {/* Top Row: Customer, Type Badge & Status */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
                         {/* Icon badge */}
                         <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                            isDelivery ? "bg-[#1A2E20] text-[#C89F6B]" : "bg-[#B58A57]/20 text-[#8B6538]"
-                          }`}
+                          className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-[var(--rn-accent-tint)] text-[var(--rn-accent)]"
                         >
                           {isDelivery ? <Truck className="w-5 h-5" /> : <Utensils className="w-5 h-5" />}
                         </div>
@@ -272,7 +227,7 @@ export default function OrdersPage() {
                               {order.mealType}
                             </span>
                             <span className="text-[10px] font-mono text-[#8E9F89]">
-                              {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              {formatDateTime(order.createdAt, undefined, { hour: "2-digit", minute: "2-digit" })}
                             </span>
                           </div>
 
@@ -354,10 +309,12 @@ export default function OrdersPage() {
                       <div className="p-2.5 bg-[#FAF8F5] rounded-xl border border-[#E6E1DA] text-xs flex items-start gap-2">
                         <MapPin className="w-3.5 h-3.5 text-[#B58A57] shrink-0 mt-0.5" />
                         <span className="text-[#1A2E20] font-medium">{order.deliveryAddress}</span>
-                        {order.assignedToName && (
+                        {order.assignedToName ? (
                           <span className="text-[#8E9F89] font-serif ml-auto shrink-0">
-                            Driver: <strong>{order.assignedToName}</strong>
+                            Delivered by: <strong>{order.assignedToName}</strong>
                           </span>
+                        ) : (
+                          <span className="text-amber-700 font-serif ml-auto shrink-0">Not assigned yet</span>
                         )}
                       </div>
                     )}
@@ -380,6 +337,23 @@ export default function OrdersPage() {
                         <span className="font-serif text-sm font-bold text-[#1A2E20]">
                           Total: ₹{order.totalAmount}
                         </span>
+                        {isDelivery &&
+                          order.orderStatus !== "CANCELLED" &&
+                          (order.deliveryStatus === "PENDING" || order.deliveryStatus === "ASSIGNED" || order.deliveryStatus === "OUT_FOR_DELIVERY") &&
+                          !(order.collectedAmount && order.collectedAmount > 0) && (
+                            <>
+                              <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="text-[11px] font-serif text-[#1A2E20] underline-offset-2 hover:underline">
+                                Change
+                              </button>
+                              <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="text-[11px] font-serif text-rose-700 underline-offset-2 hover:underline">
+                                Cancel
+                              </button>
+                            </>
+                          )}
+                        {(order.revision ?? 0) > 0 && <span className="text-[11px] text-[#8E9F89]">Edited</span>}
+                        {order.orderStatus === "CANCELLED" && order.cancelReason && (
+                          <span className="text-[11px] text-rose-700">Cancelled: {order.cancelReason}</span>
+                        )}
                         {isDelivery && (
                           <Link
                             href="/delivery"
@@ -393,6 +367,14 @@ export default function OrdersPage() {
                   </div>
                 );
               })}
+              {filteredOrders.length > visibleOrders.length && (
+                <div className="p-4 flex items-center justify-center gap-3">
+                  <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums">Showing {visibleOrders.length} of {filteredOrders.length}</span>
+                  <button type="button" className="rn-btn" onClick={() => setShown((n) => n + PAGE)}>
+                    Show {Math.min(PAGE, filteredOrders.length - visibleOrders.length)} more
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -400,23 +382,41 @@ export default function OrdersPage() {
 
       {/* Subscriptions: today's status, skip / extra for this meal, residents' room delivery */}
       {activeSection === "SUBSCRIPTIONS" && (
-        <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#E6E1DA]">
+        <div className="rn-card p-4 sm:p-6">
           <SubscriptionsToday canChange={currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "OPERATIONS_MANAGER"} />
         </div>
       )}
 
       {/* Menu: the real catalogue and current prices */}
       {activeSection === "MENU_CATALOG" && (
-        <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#E6E1DA]">
+        <div className="rn-card p-4 sm:p-6">
           <MenuCatalog />
         </div>
+      )}
+
+      {editing && (
+        <EditOrderModal
+          order={editing.order}
+          mode={editing.mode}
+          onClose={() => setEditing(null)}
+          onDone={(message) => {
+            setEditing(null);
+            setOrderNotice(message);
+          }}
+        />
+      )}
+      {orderNotice && (
+        <div role="status" className="fixed bottom-6 left-4 z-40 px-4 py-2.5 rounded-xl bg-[#1A2E20] text-white text-sm shadow-lg">{orderNotice}</div>
       )}
 
       {/* Fast Order Entry Modal */}
       <NewOrderModal
         isOpen={isNewOrderModalOpen}
         onClose={() => setIsNewOrderModalOpen(false)}
-        onOrderCreated={() => invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"])}
+        onOrderCreated={(message) => {
+          setOrderNotice(message);
+          invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"]);
+        }}
         defaultDate={serviceDate}
       />
     </div>

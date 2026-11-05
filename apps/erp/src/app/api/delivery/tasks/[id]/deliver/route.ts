@@ -29,6 +29,8 @@ export async function POST(
         notes: body.notes,
         collectedAmount: body.collectedAmount,
         paymentMethod: body.paymentMethod,
+        paymentChoice: body.paymentChoice,
+        payLaterAllowedAtSelection: typeof body.payLaterAllowedAtSelection === "boolean" ? body.payLaterAllowedAtSelection : undefined,
         idempotencyKey: body.idempotencyKey,
         deliveredQuantity: body.deliveredQuantity !== undefined ? Number(body.deliveredQuantity) : undefined,
         undeliveredQuantity: body.undeliveredQuantity !== undefined ? Number(body.undeliveredQuantity) : undefined,

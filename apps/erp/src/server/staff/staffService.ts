@@ -668,3 +668,89 @@ export async function getStaffStats(
     superAdmins: Number(row?.superAdmins || 0),
   };
 }
+
+/** Per-login data that is removed with an account (ON DELETE CASCADE; no business history). */
+const EPHEMERAL_STAFF_TABLES = new Set(["sessions", "session_preemptions", "auth_challenges", "password_resets", "staff_notification_reads"]);
+const SAFE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
+
+/**
+ * Records that tie a staff account to the business history: every foreign key pointing at
+ * staff_users (deliveries, handovers, transactions, documents, meal records, ...) found from
+ * the database catalogue, plus audit log entries the person made. Returns a short label per kind.
+ */
+async function staffHistoryReferences(db: AsyncDb, staffId: string): Promise<string[]> {
+  if (!db.isPostgres) {
+    throw new Error("Deleting a staff account needs the PostgreSQL database. Deactivate it instead.");
+  }
+  const fks = await db.query<{ table_name: string; column_name: string }>(`
+    SELECT tc.table_name, kcu.column_name
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
+    WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = 'staff_users' AND tc.table_schema = current_schema()
+  `);
+  const found = new Set<string>();
+  for (const fk of fks) {
+    if (EPHEMERAL_STAFF_TABLES.has(fk.table_name) || fk.table_name === "staff_users") continue;
+    if (!SAFE_IDENTIFIER.test(fk.table_name) || !SAFE_IDENTIFIER.test(fk.column_name)) continue;
+    const row = await db.queryOne<{ n: number | string }>(`SELECT COUNT(*) AS n FROM "${fk.table_name}" WHERE "${fk.column_name}" = ?`, [staffId]);
+    if (Number(row?.n || 0) > 0) found.add(fk.table_name.replace(/_/g, " "));
+  }
+  const audited = await db.queryOne<{ n: number | string }>(`SELECT COUNT(*) AS n FROM audit_logs WHERE actor_id = ?`, [staffId]);
+  if (Number(audited?.n || 0) > 0) found.add("activity log");
+  return Array.from(found);
+}
+
+/**
+ * Deletes a staff account that has no history (for example one created by mistake).
+ * An account referenced by any delivery, cash, financial, document or audit record is kept and
+ * the request is refused with the reason: those records must stay attributable, so such an
+ * account is deactivated instead. Owner only (staff.deactivate); never the caller's own account
+ * or an Owner account. Audited as staff.deleted.
+ */
+export async function deleteStaffUser(
+  actor: AuthenticatedUser,
+  targetUserId: string,
+  clientIpOrDb?: string | AsyncDb,
+  asyncDb?: AsyncDb
+): Promise<void> {
+  const clientIp = typeof clientIpOrDb === "string" ? clientIpOrDb : undefined;
+  const db = (typeof clientIpOrDb === "object" && clientIpOrDb !== null) ? clientIpOrDb : (asyncDb ?? getAsyncDb());
+
+  requirePermission(actor, "staff.deactivate", { ip: clientIp, targetId: targetUserId, action: "staff.delete" });
+  if (actor.id === targetUserId) {
+    throw new Error("You cannot delete your own account.");
+  }
+
+  const target = await db.queryOne<{ id: string; username: string; fullName: string; role: StaffRole }>(`
+    SELECT id, username, full_name as "fullName", role FROM staff_users WHERE id = ?
+  `, [targetUserId]);
+  if (!target) {
+    throw new Error(`Staff user '${targetUserId}' not found.`);
+  }
+  if (target.role === "SUPER_ADMIN") {
+    throw new Error("Owner accounts cannot be deleted. Deactivate it instead.");
+  }
+
+  const history = await staffHistoryReferences(db, targetUserId);
+  if (history.length > 0) {
+    throw new Error(`This account has history (${history.join(", ")}) and is kept so those records stay attributable. Deactivate it instead.`);
+  }
+
+  await db.transaction(async (tx) => {
+    // Sessions, sign-in codes, reset links and notification read-marks are declared
+    // ON DELETE CASCADE, so they go with the account.
+    await tx.execute("DELETE FROM staff_users WHERE id = ?", [targetUserId]);
+    await recordAuditEventAsync({
+      actorId: actor.id,
+      actorUsername: actor.username,
+      action: "staff.deleted",
+      targetType: "staff_user",
+      targetId: targetUserId,
+      metadata: { username: target.username, fullName: target.fullName, role: target.role },
+      ipAddress: clientIp,
+    }, tx);
+  });
+}

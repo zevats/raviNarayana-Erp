@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { resolveUserFromRequest, unauthorizedResponse } from "@/server/authorization/authorize";
-import { onBusinessDataChanged } from "@/server/database/changeSignals";
+import { changeOriginFor, onBusinessDataChanged } from "@/server/database/changeSignals";
 import { ERP_COOKIE_NAME, validateSession } from "@/server/authentication/auth";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,10 @@ const TABLE_TAGS: Record<string, string[]> = {
   residents: ["residents", "rooms", "dashboard"],
   resident_stays: ["residents", "rooms", "dashboard"],
   staff_users: ["staff"],
+  business_settings: ["settings"],
+  room_beds: ["rooms", "residents", "dashboard"],
+  room_maintenance: ["rooms", "dashboard"],
+  settlement_proposals: ["residents", "finance"],
 };
 
 /**
@@ -42,6 +46,7 @@ export async function GET(request: NextRequest) {
   const user = await resolveUserFromRequest(request);
   if (!user) return unauthorizedResponse();
   const sessionToken = request.cookies.get(ERP_COOKIE_NAME)?.value || "";
+  const ownOrigin = changeOriginFor(sessionToken);
   const encoder = new TextEncoder();
   let cleanup = () => {};
 
@@ -58,7 +63,11 @@ export async function GET(request: NextRequest) {
           cleanup();
         }
       };
-      const unsubscribe = onBusinessDataChanged((tables) => {
+      // True while every write in the pending batch came from this browser's own session, so the
+      // browser can skip refetching what it already refreshed after its own save.
+      let ownOnly = true;
+      const unsubscribe = onBusinessDataChanged((tables, origin) => {
+        if (origin !== ownOrigin) ownOnly = false;
         for (const t of tables.length ? tables : ["*"]) {
           for (const tag of TABLE_TAGS[t] ?? ["dashboard"]) pending.add(tag);
         }
@@ -67,14 +76,24 @@ export async function GET(request: NextRequest) {
         flushTimer = setTimeout(() => {
           flushTimer = null;
           const tags = Array.from(pending);
+          const self = ownOnly;
           pending = new Set();
-          send(`event: changed\ndata: ${JSON.stringify({ tags, at: Date.now() })}\n\n`);
+          ownOnly = true;
+          send(`event: changed\ndata: ${JSON.stringify({ tags, at: Date.now(), self })}\n\n`);
         }, 250);
       });
       // Heartbeat keeps the connection open through proxies and ends it once the session is gone
       // (signed out, revoked or replaced by a sign-in elsewhere).
       const heartbeat = setInterval(async () => {
-        const stillValid = await validateSession(sessionToken).catch(() => null);
+        // Only a definite "no such session" signs the browser out. A database error or timeout
+        // (e.g. the database restarting) skips this beat instead of sending people to sign-in.
+        let stillValid: Awaited<ReturnType<typeof validateSession>> | undefined;
+        try {
+          stillValid = await validateSession(sessionToken);
+        } catch {
+          send(`: ping ${Date.now()}\n\n`);
+          return;
+        }
         if (!stillValid) {
           send(`event: signed-out\ndata: {}\n\n`);
           cleanup();

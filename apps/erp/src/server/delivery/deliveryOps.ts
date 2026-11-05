@@ -19,14 +19,17 @@ import {
   DriverHandoverStatus,
 } from "@/types";
 import {
-  MEAL_SCHEDULE,
+  mealSchedule,
+  refreshMealSchedule,
   isPastCutoff,
   isPreparationDue,
   hasDeliveryOpsSchema,
   requireDeliveryOpsSchema,
   subscriptionDayEligibility,
   businessClock,
+  activeCollectionSql,
 } from "./deliveryRules";
+import { getSettings } from "../settings/settingsService";
 import { getEligibleTiffinSubscriptionsForDate, listDeliveryTasks, getDeliveryTaskById } from "./deliveryService";
 import { summarizeDeliveries, needsFollowUp, deliveryOutcome } from "@/lib/delivery/outcome";
 import { notifyStopCancelled } from "../notifications/pushService";
@@ -62,7 +65,7 @@ function checkDateMeal(serviceDate: string | undefined, mealType: MealType | und
 const mealLabel = (m: MealType) => m.charAt(0) + m.slice(1).toLowerCase();
 
 function cutoffText(mealType: MealType): string {
-  const c = MEAL_SCHEDULE[mealType]?.cutoffAt;
+  const c = mealSchedule()[mealType]?.cutoffAt;
   return c ? `the ${c} ${mealLabel(mealType).toLowerCase()} cutoff` : "the end of the service day";
 }
 
@@ -100,6 +103,7 @@ export async function getManifestStatus(
   requirePermission(actor, "delivery.read");
   const { serviceDate, mealType } = checkDateMeal(serviceDateIn, mealTypeIn);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   const now = clock?.now ?? new Date();
   const schemaReady = await hasDeliveryOpsSchema(db);
   const plan = schemaReady
@@ -124,8 +128,8 @@ export async function getManifestStatus(
     schemaReady,
     serviceDate,
     mealType,
-    prepareAt: MEAL_SCHEDULE[mealType].prepareAt,
-    cutoffAt: MEAL_SCHEDULE[mealType].cutoffAt,
+    prepareAt: mealSchedule()[mealType].prepareAt,
+    cutoffAt: mealSchedule()[mealType].cutoffAt,
     pastCutoff: isPastCutoff(serviceDate, mealType, now),
     due: schemaReady && !prepared && isPreparationDue(serviceDate, mealType, now),
     prepared,
@@ -164,6 +168,7 @@ export async function prepareDeliveryManifest(
   }
   const { serviceDate, mealType } = checkDateMeal(input.serviceDate, input.mealType);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   await requireDeliveryOpsSchema(db, "Preparing the delivery list");
   const now = clock?.now ?? new Date();
   const result = { ran: true, created: 0, alreadyExisted: 0, skipped: 0, autoAssigned: 0, unassigned: 0 } as Omit<DeliveryManifestRunResult, "status">;
@@ -198,6 +203,9 @@ export async function prepareDeliveryManifest(
     );
     const byId = new Map(staff.map((s) => [s.id, s]));
     const only = staff.length === 1 ? staff[0] : null;
+    // The delivery partner chosen in Settings (only an explicit, active choice; never a guess).
+    const chosenId = (await getSettings(tx)).delivery.defaultDriverId;
+    const chosen = chosenId ? byId.get(chosenId) : undefined;
     const usualFor = async (column: "subscription_id" | "resident_id", value: string) => {
       const prev = await tx.queryOne<{ assigned_to: string }>(
         `SELECT assigned_to FROM delivery_tasks
@@ -207,6 +215,7 @@ export async function prepareDeliveryManifest(
       );
       const usual = prev ? byId.get(prev.assigned_to) : undefined;
       if (usual) return { staff: usual, why: "usual delivery person" };
+      if (chosen) return { staff: chosen, why: "default delivery partner" };
       return only ? { staff: only, why: "only delivery person" } : null;
     };
 
@@ -441,6 +450,7 @@ export async function cancelDeliveryTask(
 ): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.task_cancelled" });
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   await requireDeliveryOpsSchema(db, "Cancelling a delivery");
   const reason = input.reason?.trim() || "";
   if (reason.length < 3) throw new Error("Give a reason for cancelling this delivery.");
@@ -511,6 +521,7 @@ export async function cancelSubscriptionDeliveriesForChange(
   clock?: OpsClock
 ): Promise<{ cancelled: number; keptPastCutoff: number }> {
   if (!(await hasDeliveryOpsSchema(tx))) return { cancelled: 0, keptPastCutoff: 0 };
+  await refreshMealSchedule(tx);
   const now = clock?.now ?? new Date();
   const rows = await tx.query<any>(
     `SELECT * FROM delivery_tasks WHERE subscription_id = ? AND service_date >= ?${untilExclusive ? " AND service_date < ?" : ""}
@@ -530,6 +541,81 @@ export async function cancelSubscriptionDeliveriesForChange(
   return { cancelled, keptPastCutoff };
 }
 
+/**
+ * After a subscription is edited, brings its deliveries already on a list (today onward, not yet
+ * attempted) in line with the new terms, using the same eligibility rule as list preparation:
+ * a delivery the subscription no longer makes is cancelled with the reason; one it still makes
+ * gets the new quantity (keeping any extra for that day) and address. Meals past their cutoff are
+ * left for the Manager, as for a pause.
+ */
+export async function syncSubscriptionDeliveriesAfterEdit(
+  tx: AsyncDb,
+  actor: AuthenticatedUser,
+  subscriptionId: string,
+  clientIp?: string,
+  clock?: OpsClock
+): Promise<{ cancelled: number; updated: number; keptPastCutoff: number }> {
+  const result = { cancelled: 0, updated: 0, keptPastCutoff: 0 };
+  if (!(await hasDeliveryOpsSchema(tx))) return result;
+  await refreshMealSchedule(tx);
+  const now = clock?.now ?? new Date();
+  const sub = await tx.queryOne<any>(
+    `SELECT s.*, c.status AS customer_status, p.status AS product_status
+     FROM tiffin_subscriptions s
+     JOIN tiffin_customers c ON c.id = s.customer_id
+     JOIN tiffin_products p ON p.id = s.product_id
+     WHERE s.id = ?`,
+    [subscriptionId]
+  );
+  if (!sub) return result;
+  const rows = await tx.query<any>(
+    `SELECT * FROM delivery_tasks WHERE subscription_id = ? AND service_date >= ?
+       AND status IN ('PENDING', 'ASSIGNED', 'OUT_FOR_DELIVERY')${tx.isPostgres ? " FOR UPDATE" : ""}`,
+    [subscriptionId, businessClock(now).date]
+  );
+  const at = now.toISOString();
+  for (const row of rows) {
+    if (isPastCutoff(row.service_date, row.meal_type, now)) {
+      result.keptPastCutoff++;
+      continue;
+    }
+    const verdict = subscriptionDayEligibility(
+      {
+        status: sub.status, customerStatus: sub.customer_status, productStatus: sub.product_status,
+        mealTypes: sub.meal_types, serviceDays: sub.service_days, startDate: sub.start_date, endDate: sub.end_date,
+        pauseStartDate: sub.pause_start_date, pauseResumeDate: sub.pause_resume_date,
+      },
+      row.service_date,
+      row.meal_type
+    );
+    if (!verdict.eligible) {
+      await cancelTaskInTx(tx, actor, row, `Subscription changed: ${verdict.reason}`, false, at, clientIp);
+      result.cancelled++;
+      continue;
+    }
+    const override = await tx.queryOne<any>(
+      "SELECT action, quantity FROM subscription_day_overrides WHERE subscription_id = ? AND service_date = ? AND meal_type = ?",
+      [subscriptionId, row.service_date, row.meal_type]
+    );
+    const quantity = Number(sub.quantity_per_meal || 1) + (override?.action === "EXTRA" ? Number(override.quantity || 0) : 0);
+    const line = await tx.queryOne<any>("SELECT quantity FROM delivery_task_items WHERE task_id = ? AND line_no = 1", [row.id]);
+    const changes: string[] = [];
+    if (line && Number(line.quantity) !== quantity) {
+      await tx.execute("UPDATE delivery_task_items SET quantity = ?, updated_at = ? WHERE task_id = ? AND line_no = 1", [quantity, at, row.id]);
+      changes.push(`${quantity} box${quantity === 1 ? "" : "es"}`);
+    }
+    if ((row.delivery_address || "") !== (sub.delivery_address || "")) {
+      await tx.execute("UPDATE delivery_tasks SET delivery_address = ?, updated_at = ? WHERE id = ?", [sub.delivery_address, at, row.id]);
+      changes.push("new address");
+    }
+    if (changes.length > 0) {
+      await insertEvent(tx, row.id, "UPDATED", row.status, row.status, actor, `Subscription changed: ${changes.join(", ")}.`, at);
+      result.updated++;
+    }
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Subscriptions: today's status, skip today, extra today
 // ---------------------------------------------------------------------------
@@ -545,6 +631,7 @@ export async function listSubscriptionDay(
   if (actor.role === "DELIVERY_PERSON") throw new AuthorizationError(403, "Delivery staff cannot view subscriptions.");
   const { serviceDate, mealType } = checkDateMeal(serviceDateIn, mealTypeIn);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   const schemaReady = await hasDeliveryOpsSchema(db);
   const subs = await db.query<any>(
     `SELECT s.id, s.status, s.meal_types, s.service_days, s.quantity_per_meal, s.start_date, s.end_date,
@@ -604,7 +691,7 @@ export async function listSubscriptionDay(
       task: t ? { id: t.id, status: t.status, assignedToName: t.assigned_to_name || null, quantity: t.quantity === null || t.quantity === undefined ? null : Number(t.quantity) } : null,
     };
   });
-  return { serviceDate, mealType, schemaReady, pastCutoff: isPastCutoff(serviceDate, mealType, clock?.now ?? new Date()), cutoffAt: MEAL_SCHEDULE[mealType].cutoffAt, rows };
+  return { serviceDate, mealType, schemaReady, pastCutoff: isPastCutoff(serviceDate, mealType, clock?.now ?? new Date()), cutoffAt: mealSchedule()[mealType].cutoffAt, rows };
 }
 
 /**
@@ -623,6 +710,7 @@ export async function setSubscriptionDayOverride(
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.subscription_day_changed" });
   const { serviceDate, mealType } = checkDateMeal(input.serviceDate, input.mealType);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   await requireDeliveryOpsSchema(db, "Skip today / extra today");
   const now = clock?.now ?? new Date();
   if (serviceDate < businessClock(now).date) throw new Error("Past days cannot be changed.");
@@ -706,6 +794,7 @@ export async function listResidentMealDelivery(
   if (actor.role === "DELIVERY_PERSON") throw new AuthorizationError(403, "Delivery staff cannot view resident meal settings.");
   const { serviceDate, mealType } = checkDateMeal(serviceDateIn, mealTypeIn);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   const schemaReady = await hasDeliveryOpsSchema(db);
   const optCol = mealType === "LUNCH" ? "lunch_opt_in" : mealType === "DINNER" ? "dinner_opt_in" : "breakfast_opt_in";
   const rows = await db.query<any>(
@@ -742,7 +831,7 @@ export async function listResidentMealDelivery(
       task: r.task_id ? { id: r.task_id, status: r.task_status } : null,
     };
   });
-  return { serviceDate, mealType, schemaReady, pastCutoff: isPastCutoff(serviceDate, mealType, clock?.now ?? new Date()), cutoffAt: MEAL_SCHEDULE[mealType].cutoffAt, rows: mapped };
+  return { serviceDate, mealType, schemaReady, pastCutoff: isPastCutoff(serviceDate, mealType, clock?.now ?? new Date()), cutoffAt: mealSchedule()[mealType].cutoffAt, rows: mapped };
 }
 
 /** Standing room-delivery preference for lunch and dinner (residents otherwise eat at the PG). */
@@ -787,6 +876,7 @@ export async function setResidentDaySkip(
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.resident_day_changed" });
   const { serviceDate, mealType } = checkDateMeal(input.serviceDate, input.mealType);
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   await requireDeliveryOpsSchema(db, "Skip today for residents");
   const now = clock?.now ?? new Date();
   if (serviceDate < businessClock(now).date) throw new Error("Past days cannot be changed.");
@@ -854,6 +944,7 @@ export async function getDeliveryCloseout(
   if (!DATE_REGEX.test(serviceDate)) throw new Error("Valid service date in YYYY-MM-DD format is required.");
   const mealType = mealTypeIn === "ALL" ? "ALL" : checkDateMeal(serviceDate, mealTypeIn).mealType;
   const db = asyncDb || getAsyncDb();
+  await refreshMealSchedule(db);
   const tasks = await listDeliveryTasks(actor, { serviceDate, mealType: mealType === "ALL" ? undefined : mealType, limit: 500 }, db);
   const summary = summarizeDeliveries(tasks);
 
@@ -896,6 +987,8 @@ export async function getDeliveryCloseout(
 
   const mealCond = mealType === "ALL" ? "" : " AND t.meal_type = ?";
   const params = mealType === "ALL" ? [serviceDate] : [serviceDate, mealType];
+  // A collection whose cashbook entry was reversed is no longer money received (cash is unaffected).
+  const activeCond = (await hasDeliveryOpsSchema(db)) ? ` AND ${activeCollectionSql("dc")}` : "";
   const collections = await db.query<any>(
     `SELECT dc.collected_by AS staff_id, u.full_name AS staff_name,
             SUM(CASE WHEN dc.payment_method = 'CASH' THEN dc.amount ELSE 0 END) AS cash,
@@ -907,7 +1000,7 @@ export async function getDeliveryCloseout(
      JOIN delivery_tasks t ON t.id = dc.delivery_task_id
      JOIN staff_users u ON u.id = dc.collected_by
      LEFT JOIN driver_cash_handovers h ON h.id = dc.handover_id
-     WHERE t.service_date = ?${mealCond}
+     WHERE t.service_date = ?${mealCond}${activeCond}
      GROUP BY dc.collected_by, u.full_name
      ORDER BY u.full_name`,
     params

@@ -150,6 +150,32 @@ export interface RoomOccupant {
   fullName: string;
   phone: string;
   checkInDate: string;
+  /** Bed the resident is in (null = not chosen yet, e.g. checked in before beds existed). */
+  bedId?: string | null;
+  bedLabel?: string | null;
+}
+
+/** One bed in a room (migration 0017). */
+export interface RoomBed {
+  id: string;
+  roomId: string;
+  label: string;
+  status: "IN_SERVICE" | "OUT_OF_SERVICE";
+  notes: string | null;
+  occupant: { stayId: string; residentId: string; fullName: string } | null;
+}
+
+export interface RoomMaintenanceRecord {
+  id: string;
+  roomId: string;
+  reason: string;
+  startDate: string;
+  endDate: string | null;
+  status: "OPEN" | "COMPLETED";
+  completionNote: string | null;
+  startedByName: string | null;
+  completedByName: string | null;
+  createdAt: string;
 }
 
 export interface RoomWithOccupancy {
@@ -163,6 +189,12 @@ export interface RoomWithOccupancy {
   baseRentMonthly: number;
   isActive: boolean;
   occupants?: RoomOccupant[];
+  /** Individual beds (when migration 0017 is installed). */
+  beds?: RoomBed[];
+  /** Beds that can be given to a resident (in service; the whole room counts as 0 under maintenance). */
+  inServiceBeds?: number;
+  /** Open maintenance record, if the room is under maintenance. */
+  maintenance?: RoomMaintenanceRecord | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -229,6 +261,8 @@ export interface TransferResidentRoomInput {
   transferDate: string;
   newMonthlyRent?: number;
   reason: string;
+  /** Bed in the destination room (optional). */
+  bedId?: string | null;
 }
 
 export interface ResidentTransferRecord {
@@ -290,6 +324,9 @@ export interface FinalizeSettlementInput {
   paymentMethod?: PaymentMethod;
   paymentReference?: string;
   notes?: string;
+  /** Internal: the Owner approving a Manager's settlement proposal (never taken from a request body). */
+  approvingProposalId?: string;
+  approvalNote?: string;
 }
 
 export interface ResidentSettlementRecord {
@@ -479,6 +516,17 @@ export interface CashbookSummary {
   totalOutstandingRent: number;
   totalRentBilledInPeriod: number;
   transactionCount: number;
+  /** Receipts and refunds of earlier receipts, unfloored (decision D9, option C). */
+  breakdown?: {
+    rentReceipts: number;
+    rentRefunds: number;
+    tiffinReceipts: number;
+    tiffinRefunds: number;
+    expensesPaid: number;
+    expenseRefunds: number;
+  };
+  /** Net cash movement from the unfloored figures; can be negative. */
+  netCashMovementExact?: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -531,6 +579,8 @@ export interface InvoicePaymentAllocation {
   allocatedByName?: string | null;
   notes: string | null;
   createdAt: string;
+  /** The payment was reversed: the allocation is kept as history but no longer counts. */
+  paymentReversed?: boolean;
 }
 
 export interface Invoice {
@@ -610,6 +660,8 @@ export interface CreateInvoiceInput {
   notes?: string | null;
   autoIssue?: boolean;
   linkExistingCharge?: boolean;
+  /** One key per invoice-creation operation (stable across retries); migration 0020. */
+  idempotencyKey?: string;
 }
 
 export interface AllocatePaymentInput {
@@ -896,6 +948,12 @@ export interface DeliveryTask {
   expectedAmount?: number | null;
   /** expectedAmount − collectedAmount (never negative). */
   balanceDue?: number | null;
+  /** Migration 0021, doorstep orders: the customer may pay later (a yes/no only; no balances). */
+  payLaterAllowed?: boolean;
+  /** Migration 0021: what was chosen at the door (null before delivery or for older orders). */
+  paymentChoice?: PaymentChoice | null;
+  /** Migration 0021: a balance was left without Pay Later approval and awaits a Manager's review. */
+  paymentReview?: string | null;
   /** Every item line (order lines or task items); empty for legacy deliveries without lines. */
   lines?: DeliveryLine[];
   paymentMode?: DeliveryPaymentMode;
@@ -947,9 +1005,18 @@ export interface DeliveryLineOutcome {
   disposition?: DeliveryDisposition;
 }
 
+/** The payment chosen at the door for a delivery order (migration 0021). */
+export type PaymentChoice = "CASH" | "UPI" | "PAY_LATER";
+
 export interface CompleteDeliveryTaskInput {
   /** Required for order-backed tasks: one entry per order line. */
   lines?: DeliveryLineOutcome[];
+  /** Cash or UPI (the amount in collectedAmount) or Pay Later (nothing collected). */
+  paymentChoice?: PaymentChoice;
+  /** Whether the phone showed the customer as approved for Pay Later when the choice was made. */
+  payLaterAllowedAtSelection?: boolean;
+  /** Set by the server for completions replayed from the offline queue (never by the client). */
+  viaOfflineSync?: boolean;
   recipientName?: string;
   notes?: string;
   collectedAmount?: number;
@@ -1120,6 +1187,9 @@ export interface UnifiedOrder {
   assignedTo?: string | null;
   assignedToName?: string | null;
   notes?: string | null;
+  /** Times the order was edited (migration 0019). */
+  revision?: number;
+  cancelReason?: string | null;
   createdAt: string;
 }
 

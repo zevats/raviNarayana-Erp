@@ -241,6 +241,8 @@ async function runTask66Tests() {
 
   const shellPath = path.resolve(ROOT, "apps/erp/src/components/layout/ErpShell.tsx");
   const shellContent = fs.readFileSync(shellPath, "utf-8");
+  // The manager shell's navigation lives in components/layout/shell/ since the 2026-11 redesign.
+  const mobileNavContent = fs.readFileSync(path.join(path.dirname(shellPath), "shell", "MobileNav.tsx"), "utf-8");
 const staffShellContent = fs.readFileSync(path.join(path.dirname(shellPath), "DeliveryStaffShell.tsx"), "utf-8");
 
   // Delivery Person mobile navigation isolation
@@ -253,8 +255,8 @@ const staffShellContent = fs.readFileSync(path.join(path.dirname(shellPath), "De
     "Delivery staff shell presents My Stops (with the offline queue count), My Cash and History"
   );
   assert(
-    shellContent.includes("pb-safe"),
-    "ErpShell bottom nav bar adheres to mobile safe area padding"
+    mobileNavContent.includes("data-bottom-bar") && mobileNavContent.includes("env(safe-area-inset-bottom)"),
+    "Manager bottom nav bar adheres to mobile safe area padding"
   );
 
   // Role redirection logic on root and dashboard

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import { StatStrip } from "@/components/ui/kit";
 import {
   Calendar,
   Lock,
@@ -27,6 +28,7 @@ import {
 } from "@/types";
 import { toLocalDateString } from "../utils/dateUtils";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
+import { formatNumberIN } from "@/lib/format";
 
 interface DailyClosingViewProps {
   onMutationSuccess?: (message: string) => void;
@@ -236,7 +238,6 @@ export function DailyClosingView({
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-4 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs">
         <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/20 rounded-xl text-xs font-medium text-[#1A2E20]">
-            <Calendar className="w-4 h-4 text-[#B58A57]" />
             <input
               type="date"
               value={selectedDate}
@@ -250,6 +251,7 @@ export function DailyClosingView({
             <button
               type="button"
               onClick={() => setSelectedDivision("COMBINED")}
+              aria-pressed={selectedDivision === "COMBINED"}
               className={`px-3 py-1 rounded-lg transition-all ${
                 selectedDivision === "COMBINED"
                   ? "bg-[#1A2E20] text-white shadow-xs"
@@ -261,6 +263,7 @@ export function DailyClosingView({
             <button
               type="button"
               onClick={() => setSelectedDivision("PG")}
+              aria-pressed={selectedDivision === "PG"}
               className={`px-3 py-1 rounded-lg transition-all ${
                 selectedDivision === "PG"
                   ? "bg-[#1A2E20] text-white shadow-xs"
@@ -272,6 +275,7 @@ export function DailyClosingView({
             <button
               type="button"
               onClick={() => setSelectedDivision("TIFFIN")}
+              aria-pressed={selectedDivision === "TIFFIN"}
               className={`px-3 py-1 rounded-lg transition-all ${
                 selectedDivision === "TIFFIN"
                   ? "bg-[#1A2E20] text-white shadow-xs"
@@ -286,17 +290,17 @@ export function DailyClosingView({
         {/* Status Pill */}
         <div className="flex items-center gap-2 self-start sm:self-auto">
           {preview?.existingClosing?.status === "FINALIZED" ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-full text-xs font-bold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#E6F1E4] text-[#2F6B24] border border-transparent rounded-full text-xs font-bold">
               <Lock className="w-3.5 h-3.5" />
               FINALIZED &amp; LOCKED
             </span>
           ) : preview?.existingClosing?.status === "REOPENED" ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-900 border border-amber-300 rounded-full text-xs font-bold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FBF4E6] text-[#8F6710] border border-transparent rounded-full text-xs font-bold">
               <Unlock className="w-3.5 h-3.5" />
               REOPENED DRAFT
             </span>
           ) : preview?.existingClosing?.status === "DRAFT" ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-900 border border-blue-300 rounded-full text-xs font-bold">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-black/[0.045] text-[var(--rn-ink-2)] border border-transparent rounded-full text-xs font-bold">
               <FileText className="w-3.5 h-3.5" />
               SAVED DRAFT
             </span>
@@ -320,80 +324,30 @@ export function DailyClosingView({
             <p>
               {preview.lateTransactionCount} financial transaction(s) were recorded for this date
               after the daily closing was locked, with a balance delta of ₹
-              {preview.lateTransactionDelta.toLocaleString("en-IN")}. The historical snapshot
+              {formatNumberIN(preview.lateTransactionDelta)}. The historical snapshot
               remains locked. To reconcile these transactions, an authorized manager must reopen this closing.
             </p>
           </div>
         </div>
       )}
 
-      {/* 2. Top KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Opening Cash Balance */}
-        <div className="p-4 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-[#5A6C5E] font-medium">
-            <span>Opening Cash in Drawer</span>
-            <DollarSign className="w-4 h-4 text-[#B58A57]" />
-          </div>
-          <p className="text-xl font-bold text-[#1A2E20] font-sans">
-            ₹{(preview?.openingCashBalance || 0).toLocaleString("en-IN")}
-          </p>
-          <p className="text-[11px] text-[#5A6C5E]">
-            Total start balance: ₹{(preview?.openingBalance || 0).toLocaleString("en-IN")}
-          </p>
-        </div>
-
-        {/* Inflows */}
-        <div className="p-4 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-emerald-700 font-medium">
-            <span>Total Day Inflows</span>
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-xl font-bold text-emerald-700 font-sans">
-            +₹{(preview?.totalInflow || 0).toLocaleString("en-IN")}
-          </p>
-          <p className="text-[11px] text-[#5A6C5E]">
-            Cash inflow: +₹{(preview?.channelBreakdown.CASH.inflow || 0).toLocaleString("en-IN")}
-          </p>
-        </div>
-
-        {/* Outflows */}
-        <div className="p-4 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-rose-700 font-medium">
-            <span>Total Day Outflows</span>
-            <TrendingDown className="w-4 h-4 text-rose-600" />
-          </div>
-          <p className="text-xl font-bold text-rose-700 font-sans">
-            -₹{(preview?.totalOutflow || 0).toLocaleString("en-IN")}
-          </p>
-          <p className="text-[11px] text-[#5A6C5E]">
-            Cash outflow: -₹{(preview?.channelBreakdown.CASH.outflow || 0).toLocaleString("en-IN")}
-          </p>
-        </div>
-
-        {/* Expected Cash in Hand */}
-        <div className="p-4 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-[#1A2E20] font-medium">
-            <span>Expected Cash in Hand</span>
-            <CheckCircle className="w-4 h-4 text-emerald-600" />
-          </div>
-          <p className="text-xl font-bold text-[#1A2E20] font-sans">
-            ₹{(preview?.expectedCashBalance || 0).toLocaleString("en-IN")}
-          </p>
-          <p className="text-[11px] text-[#5A6C5E]">
-            Expected total: ₹{(preview?.expectedClosingBalance || 0).toLocaleString("en-IN")}
-          </p>
-        </div>
-      </div>
+      {/* Day figures (same values and definitions as before) */}
+      <StatStrip
+        items={[
+          { label: "Opening cash", value: `₹${formatNumberIN(preview?.openingCashBalance || 0)}`, note: `all channels ₹${formatNumberIN(preview?.openingBalance || 0)}` },
+          { label: "Money in", value: `+₹${formatNumberIN(preview?.totalInflow || 0)}`, note: `cash +₹${formatNumberIN(preview?.channelBreakdown.CASH.inflow || 0)}`, tone: (preview?.totalInflow || 0) > 0 ? "good" : "default" },
+          { label: "Money out", value: `−₹${formatNumberIN(preview?.totalOutflow || 0)}`, note: `cash −₹${formatNumberIN(preview?.channelBreakdown.CASH.outflow || 0)}`, tone: (preview?.totalOutflow || 0) > 0 ? "bad" : "default" },
+          { label: "Expected cash in hand", value: `₹${formatNumberIN(preview?.expectedCashBalance || 0)}`, note: `all channels ₹${formatNumberIN(preview?.expectedClosingBalance || 0)}` },
+        ]}
+      />
 
       {/* 3. Channel Breakdown & Delivery Summary */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
         {/* Multi-Channel Table */}
-        <div className="lg:col-span-2 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-5 space-y-4">
+        <div className="xl:col-span-2 bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-[#1A2E20] flex items-center gap-2">
-              <Layers className="w-4 h-4 text-[#B58A57]" />
-              Payment Channel Movement Breakdown
+              Payments by channel
             </h3>
             <span className="text-xs text-[#5A6C5E]">
               {preview?.transactions.length || 0} transaction(s) today
@@ -419,14 +373,14 @@ export function DailyClosingView({
                       <td className="py-2.5 px-3 font-semibold text-[#1A2E20]">
                         {ch === "BANK_TRANSFER" ? "Bank Transfer (NEFT/RTGS/IMPS)" : ch}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-emerald-700 font-medium">
-                        ₹{(b?.inflow || 0).toLocaleString("en-IN")}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                        ₹{formatNumberIN(b?.inflow || 0)}
                       </td>
-                      <td className="py-2.5 px-3 text-right text-rose-700 font-medium">
-                        ₹{(b?.outflow || 0).toLocaleString("en-IN")}
+                      <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                        ₹{formatNumberIN(b?.outflow || 0)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
-                        ₹{(b?.net || 0).toLocaleString("en-IN")}
+                        ₹{formatNumberIN(b?.net || 0)}
                       </td>
                       <td className="py-2.5 px-3 text-center text-[#5A6C5E]">
                         {b?.transactionCount || 0}
@@ -442,8 +396,7 @@ export function DailyClosingView({
         {/* Delivery Operational Summary Card */}
         <div className="bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-5 space-y-4">
           <h3 className="text-sm font-bold text-[#1A2E20] flex items-center gap-2">
-            <Truck className="w-4 h-4 text-[#B58A57]" />
-            Delivery Operational Context
+            Deliveries this day
           </h3>
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
@@ -452,7 +405,7 @@ export function DailyClosingView({
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
               <span className="text-[#5A6C5E]">Delivered Successfully</span>
-              <span className="font-semibold text-emerald-700">
+              <span className="font-semibold text-[var(--rn-ink)]">
                 {preview?.deliverySummary.deliveredCount || 0}
               </span>
             </div>
@@ -485,8 +438,7 @@ export function DailyClosingView({
       {/* 4. Physical Count & Reconciliation Form */}
       <div className="bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-6 space-y-5">
         <h3 className="text-base font-bold text-[#1A2E20] flex items-center gap-2">
-          <ShieldAlert className="w-5 h-5 text-[#B58A57]" />
-          Physical Verification &amp; Daily Sign-Off
+          Count and sign off
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -504,7 +456,7 @@ export function DailyClosingView({
               className="w-full px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 disabled:bg-neutral-100 disabled:text-neutral-500"
             />
             <p className="text-[11px] text-[#5A6C5E]">
-              Expected: ₹{(preview?.expectedCashBalance || 0).toLocaleString("en-IN")}
+              Expected: ₹{formatNumberIN(preview?.expectedCashBalance || 0)}
             </p>
           </div>
 
@@ -529,21 +481,21 @@ export function DailyClosingView({
             <div className="flex items-center gap-2">
               {cashDiscrepancy === 0 ? (
                 <>
-                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <span className="text-sm font-bold text-emerald-700">₹0 (Perfect Match)</span>
+                  <CheckCircle className="w-5 h-5 text-[#2F6B24] shrink-0" />
+                  <span className="text-sm font-semibold text-[var(--rn-ink)]">₹0 · matches</span>
                 </>
               ) : cashDiscrepancy > 0 ? (
                 <>
                   <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                   <span className="text-sm font-bold text-amber-700">
-                    +₹{cashDiscrepancy.toLocaleString("en-IN")} (Surplus)
+                    +₹{formatNumberIN(cashDiscrepancy)} (Surplus)
                   </span>
                 </>
               ) : (
                 <>
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
                   <span className="text-sm font-bold text-rose-700">
-                    -₹{Math.abs(cashDiscrepancy).toLocaleString("en-IN")} (Shortage)
+                    -₹{formatNumberIN(Math.abs(cashDiscrepancy))} (Shortage)
                   </span>
                 </>
               )}
@@ -627,7 +579,6 @@ export function DailyClosingView({
                   onClick={handleFinalize}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1A2E20] text-white text-xs font-bold hover:bg-[#2A4430] transition-colors shadow-xs"
                 >
-                  <Check className="w-4 h-4 text-[#B58A57]" />
                   Finalize &amp; Lock Closing
                 </button>
               </>
@@ -635,9 +586,9 @@ export function DailyClosingView({
               <button
                 type="button"
                 onClick={() => setIsReopenModalOpen(true)}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-400 bg-amber-50 text-amber-900 text-xs font-bold hover:bg-amber-100 transition-colors"
+                className="rn-btn"
               >
-                <Unlock className="w-4 h-4 text-amber-600" />
+                <Unlock />
                 Reopen Finalized Closing
               </button>
             )}
@@ -648,8 +599,7 @@ export function DailyClosingView({
       {/* 5. Historical Daily Closings Register */}
       <div className="bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-5 space-y-4">
         <h3 className="text-sm font-bold text-[#1A2E20] flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-[#B58A57]" />
-          Historical Daily Closings &amp; Reconciliation Register
+          Past closings
         </h3>
 
         <div className="overflow-x-auto">
@@ -686,38 +636,38 @@ export function DailyClosingView({
                   >
                     <td className="py-2.5 px-3 font-bold text-[#1A2E20]">{c.closingDate}</td>
                     <td className="py-2.5 px-3 text-[#5A6C5E]">{c.division}</td>
-                    <td className="py-2.5 px-3 text-right text-emerald-700 font-medium">
-                      ₹{c.totalInflow.toLocaleString("en-IN")}
+                    <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                      ₹{formatNumberIN(c.totalInflow)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-rose-700 font-medium">
-                      ₹{c.totalOutflow.toLocaleString("en-IN")}
+                    <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                      ₹{formatNumberIN(c.totalOutflow)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-medium text-[#1A2E20]">
-                      ₹{c.expectedCashBalance.toLocaleString("en-IN")}
+                      ₹{formatNumberIN(c.expectedCashBalance)}
                     </td>
                     <td className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
-                      {c.actualCashCounted !== null ? `₹${c.actualCashCounted.toLocaleString("en-IN")}` : "—"}
+                      {c.actualCashCounted !== null ? `₹${formatNumberIN(c.actualCashCounted)}` : "—"}
                     </td>
                     <td className="py-2.5 px-3 text-right">
                       {c.cashDiscrepancy === 0 ? (
-                        <span className="text-emerald-700 font-semibold">₹0</span>
+                        <span className="text-[var(--rn-ink-3)]">₹0</span>
                       ) : (
                         <span className="text-rose-600 font-bold">
-                          {c.cashDiscrepancy > 0 ? "+" : ""}₹{c.cashDiscrepancy.toLocaleString("en-IN")}
+                          {c.cashDiscrepancy > 0 ? "+" : ""}₹{formatNumberIN(c.cashDiscrepancy)}
                         </span>
                       )}
                     </td>
                     <td className="py-2.5 px-3 text-center">
                       {c.status === "FINALIZED" ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E6F1E4] text-[#2F6B24]">
                           FINALIZED
                         </span>
                       ) : c.status === "REOPENED" ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FBF4E6] text-[#8F6710]">
                           REOPENED
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.045] text-[var(--rn-ink-2)]">
                           DRAFT
                         </span>
                       )}

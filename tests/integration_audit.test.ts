@@ -50,6 +50,7 @@ import {
 } from "../apps/erp/src/server/kitchen/kitchenService";
 import { getAuditLogs } from "../apps/erp/src/server/audit/audit";
 import { AuthenticatedUser } from "../apps/erp/src/types";
+import { pinClock } from "./helpers/fixedClock";
 
 // Isolated integration test database path
 const TEST_INTEGRATION_DB_PATH = path.resolve(__dirname, "test_integration_audit.db");
@@ -85,6 +86,9 @@ console.log("RAVINARAYAN ERP — COMPREHENSIVE INTEGRATION AUDIT TEST SUITE (PHA
 console.log("================================================================================\n");
 
 async function runIntegrationAuditTests() {
+  // The cross-period scenarios here are written for 20 October 2026 ("a September payment reversed in
+  // October"); reversals are dated with the current business date, so pin the clock to keep them there.
+  pinClock("2026-10-20T12:00:00+05:30");
   // Test actors matching valid StaffRole domain types
   const superAdminUser: AuthenticatedUser = {
     id: "usr_admin_audit",

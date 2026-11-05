@@ -192,3 +192,9 @@ html:has(.fixed.inset-0.z-50), html:has(.fixed.inset-0.z-50) body { overflow: hi
 @keyframes rn-logo-in { 0% { opacity: 0; transform: translateY(10px) scale(0.92); } 70% { opacity: 1; transform: translateY(-2px) scale(1.02); } 100% { opacity: 1; transform: none; } }
 .rn-logo-in { animation: rn-logo-in 560ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 @media (prefers-reduced-motion: reduce) { .rn-logo-in { animation: none; } }
+
+/* While a section opens, the shell shows its frame (NavSkeleton) in place of the previous page,
+   which stays mounted but hidden so an abandoned navigation can show it again unchanged. */
+.rn-main[data-nav-pending] > :not([data-nav-skeleton]) {
+  display: none !important;
+}

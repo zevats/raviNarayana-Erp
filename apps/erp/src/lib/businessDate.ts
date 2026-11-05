@@ -21,3 +21,15 @@ export function businessMeal(now: Date = new Date()): "LUNCH" | "DINNER" {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: BUSINESS_TIME_ZONE, hour: "2-digit", hourCycle: "h23" }).format(now));
   return hour >= 17 ? "DINNER" : "LUNCH";
 }
+
+/** First day (YYYY-MM-01) of the business month containing `now`. */
+export function businessMonthStart(now: Date = new Date()): string {
+  return `${businessToday(now).slice(0, 7)}-01`;
+}
+
+/** YYYY-MM of the business month `offset` months from the one containing `now` (negative = earlier). */
+export function businessMonthKey(offset = 0, now: Date = new Date()): string {
+  const [y, m] = businessToday(now).split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + offset, 1));
+  return d.toISOString().slice(0, 7);
+}

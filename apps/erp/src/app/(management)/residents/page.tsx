@@ -45,8 +45,12 @@ import {
 } from "@/types";
 import { ResidentKycSection } from "@/modules/residents/components/ResidentKycSection";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { SettlementApprovals } from "@/modules/residents/SettlementApprovals";
 import { businessToday } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { PageHeader, StatStrip, Card, SearchField, EmptyState, Badge } from "@/components/ui/kit";
+import { RefreshButton } from "@/components/ui/states";
+import { formatNumberIN } from "@/lib/format";
 
 /**
  * Maps database floor integer to human-readable full label.
@@ -166,6 +170,8 @@ export default function ResidentsPage() {
     transferDate: businessToday(),
     newMonthlyRent: 8500,
     reason: "",
+    // "" = any free bed in the destination room
+    bedId: "",
   });
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
 
@@ -541,7 +547,7 @@ export default function ResidentsPage() {
     const potentialTotal = totalDeductionsAmount + amount;
     if (settlementPreview && potentialTotal > settlementPreview.totalDepositHeld) {
       setActionError(
-        `Total deductions (₹${potentialTotal.toLocaleString("en-IN")}) cannot exceed security deposit held (₹${settlementPreview.totalDepositHeld.toLocaleString("en-IN")}).`
+        `Total deductions (₹${formatNumberIN(potentialTotal)}) cannot exceed security deposit held (₹${formatNumberIN(settlementPreview.totalDepositHeld)}).`
       );
       return;
     }
@@ -596,7 +602,9 @@ export default function ResidentsPage() {
       if (!res.ok) throw new Error(data.error || "Failed to check out resident");
 
       setActionSuccess(
-        `Resident ${checkOutResidentTarget.fullName} checked out and settlement finalized successfully. Bed in Room ${checkOutResidentTarget.currentRoomNumber} released.`
+        data.pendingApproval
+          ? `Settlement for ${checkOutResidentTarget.fullName} sent to the Owner for approval. They stay checked in until it is approved.`
+          : `Resident ${checkOutResidentTarget.fullName} checked out and settlement finalized successfully. Bed in Room ${checkOutResidentTarget.currentRoomNumber} released.`
       );
       setCheckOutResidentTarget(null);
 
@@ -630,6 +638,7 @@ export default function ResidentsPage() {
       transferDate: businessToday(),
       newMonthlyRent: initialTarget ? initialTarget.baseRentMonthly : 8500,
       reason: "",
+      bedId: "",
     });
     setShowTransferConfirm(false);
   };
@@ -640,6 +649,7 @@ export default function ResidentsPage() {
       ...prev,
       targetRoomId: roomId,
       newMonthlyRent: rm ? rm.baseRentMonthly : prev.newMonthlyRent,
+      bedId: "",
     }));
   };
 
@@ -659,6 +669,7 @@ export default function ResidentsPage() {
           transferDate: transferForm.transferDate,
           newMonthlyRent: Number(transferForm.newMonthlyRent),
           reason: transferForm.reason.trim(),
+          bedId: transferForm.bedId || null,
         }),
       });
 
@@ -690,47 +701,30 @@ export default function ResidentsPage() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="space-y-6 sm:space-y-8 animate-fade-in max-w-7xl mx-auto pb-12">
-      {/* ============================================================== */}
-      {/* 1. HEADER (Dashboard-Consistent Luxury Styling)                */}
-      {/* ============================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-[#8E9F89]/20">
-        <div className="border-l-4 border-[#B58A57] pl-3.5">
-          <h1 className="text-2xl sm:text-3xl font-serif font-bold tracking-tight text-[#1A2E20]">
-            Residents &amp; Stay History
-          </h1>
-        </div>
+    <div className="space-y-5 min-w-0">
+      <PageHeader
+        title="Residents"
+        actions={
+          <>
+            <RefreshButton onRefresh={fetchData} busy={loading || isRevalidating} label="Refresh residents" />
+            <button type="button" onClick={() => handleOpenCheckInModal()} className="rn-btn">
+              <BedDouble /> Check in
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setIsRegisterModalOpen(true);
+              }}
+              className="rn-btn rn-btn-primary"
+            >
+              <Plus /> Register resident
+            </button>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            onClick={fetchData}
-            disabled={loading || isRevalidating}
-            className="p-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs"
-            title="Refresh resident records"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading || isRevalidating ? "animate-spin" : ""}`} />
-          </button>
-
-          <button
-            onClick={() => handleOpenCheckInModal()}
-            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-[#B58A57]/40 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 text-[#654735] text-xs sm:text-sm font-semibold transition-all shadow-2xs"
-          >
-            <BedDouble className="w-4 h-4 text-[#B58A57]" />
-            <span>Assign Room / Check-In</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActionError(null);
-              setIsRegisterModalOpen(true);
-            }}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs sm:text-sm font-semibold transition-all shadow-md active:scale-95"
-          >
-            <Plus className="w-4 h-4 text-[#B58A57]" />
-            <span>Register Resident</span>
-          </button>
-        </div>
-      </div>
+      <SettlementApprovals onDecided={() => fetchData()} />
 
       {/* FEEDBACK BANNERS */}
       {actionSuccess && (
@@ -754,124 +748,47 @@ export default function ResidentsPage() {
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 2. SUMMARY KPI CARDS (Tabular Numerics & Distinct Definitions)  */}
-      {/* ============================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-        {/* Total Registered */}
-        <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#6E7F70]">
-            Total Registered
-          </span>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums">
-              {stats.total}
-            </span>
+      <StatStrip
+        items={[
+          { label: "In house", value: stats.active, tone: "good" },
+          { label: "Registered", value: stats.total },
+          { label: "Checked out", value: stats.checkedOutCount },
+          { label: "Not assigned", value: stats.unassignedCount, tone: stats.unassignedCount > 0 ? "warn" : "default" },
+        ]}
+      />
+
+      <Card flush>
+        <div className="p-4 sm:p-5 flex flex-wrap items-center gap-2.5 border-b border-[var(--rn-line)]">
+          <SearchField value={search} onChange={setSearch} placeholder="Search name, phone or room" className="flex-1 basis-[240px]" />
+          <div className="flex items-center gap-3">
+            <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as any)} aria-label="Status" className="rn-input">
+              <option value="ALL">All residents</option>
+              <option value="ACTIVE">In house</option>
+              <option value="CHECKED_OUT">Checked out</option>
+              <option value="UNASSIGNED">Not assigned</option>
+            </select>
+            <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length} of {residents.length}</span>
           </div>
-          <span className="text-xs text-[#5A6C5E] mt-2 block font-light">
-            Distinct registered profiles
-          </span>
         </div>
-
-        {/* In-House Residents */}
-        <div className="bg-white rounded-2xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-800">
-            In-House Residents
-          </span>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-bold tracking-tight text-emerald-950 font-serif tabular-nums">
-              {stats.active}
-            </span>
-          </div>
-          <span className="text-xs text-emerald-700/80 mt-2 block font-light">
-            Active bed occupants
-          </span>
-        </div>
-
-        {/* Checked Out / Unassigned */}
-        <div className="bg-white rounded-2xl border border-[#B58A57]/30 bg-[#FAF8F5] p-4 sm:p-5 shadow-2xs flex flex-col justify-between">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-[#654735]">
-            Checked Out / Unassigned
-          </span>
-          <div className="mt-2">
-            <span className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20] font-serif tabular-nums">
-              {stats.checkedOutTotal}
-            </span>
-          </div>
-          <span className="text-xs text-[#654735] mt-2 block font-light">
-            <span className="tabular-nums">{stats.checkedOutCount}</span> past stays &bull; <span className="tabular-nums">{stats.unassignedCount}</span> pending
-          </span>
-        </div>
-      </div>
-
-      {/* ============================================================== */}
-      {/* 3. SEARCH & FILTERS BAR                                        */}
-      {/* ============================================================== */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-3.5 sm:p-4 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-[#6E7F70] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, phone, or assigned room number..."
-            className="w-full pl-9 pr-4 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs sm:text-sm text-[#1A2E20] placeholder:text-[#6E7F70] focus:outline-hidden focus:border-[#1A2E20] focus:ring-1 focus:ring-[#1A2E20]"
-          />
-        </div>
-
-        {/* Status Filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value as any)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Residents</option>
-            <option value="ACTIVE">Currently In-House (Active)</option>
-            <option value="CHECKED_OUT">Checked Out (Past Stays)</option>
-            <option value="UNASSIGNED">Not Assigned / Pending</option>
-          </select>
-
-          <span className="text-xs text-[#6E7F70] pl-1 font-sans tabular-nums whitespace-nowrap">
-            {filteredResidents.length} of {residents.length}
-          </span>
-        </div>
-      </div>
-
-      {/* ============================================================== */}
-      {/* 4. REFINED RESIDENTS TABLE (Compact, Clean, Scan-Optimized)     */}
-      {/* ============================================================== */}
       {loading ? (
-        <BikeLoader tone="forest" label="Loading residents…" className="p-12 bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs" />
+        <BikeLoader tone="forest" label="Loading residents…" className="py-12" />
       ) : filteredResidents.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs space-y-3">
-          <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20]">
-            <Users className="w-6 h-6 text-[#B58A57]" />
-          </div>
-          <h3 className="font-serif text-lg text-[#1A2E20] font-bold">No Residents Found</h3>
-          <p className="text-xs text-[#5A6C5E] max-w-md mx-auto">
-            {residents.length === 0
-              ? "No residents registered in the system yet. Click 'Register Resident' to begin."
-              : "No residents match your search or filter selection."}
-          </p>
-        </div>
+        <EmptyState title={residents.length === 0 ? "No residents yet" : "No residents match"}>
+          {residents.length === 0 ? "Register the first resident to get started." : "Try another search or status."}
+        </EmptyState>
       ) : (
-        <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="rn-table">
               <thead>
-                <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
-                  <th className="py-3 px-4">Resident</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Current Room</th>
-                  <th className="py-3 px-4">Current Stay</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr>
+                  <th>Resident</th>
+                  <th>Contact</th>
+                  <th>Room</th>
+                  <th>Since</th>
+                  <th>Status</th>
+                  <th className="text-right"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
+              <tbody>
                 {filteredResidents.map((res) => {
                   const isInHouse = res.status === "ACTIVE" && Boolean(res.currentRoomNumber);
                   const isCheckedOut = !isInHouse && (res.totalStayCount ?? 0) > 0;
@@ -879,18 +796,18 @@ export default function ResidentsPage() {
                   return (
                     <tr
                       key={res.id}
-                      className="hover:bg-[#FAF8F5]/60 transition-colors group"
+                      
                     >
                       {/* Column 1: Resident Name & Avatar */}
-                      <td className="py-3 px-4">
+                      <td>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-[#1A2E20] text-[#B58A57] flex items-center justify-center font-serif font-bold text-xs shrink-0 shadow-2xs">
+                          <div className="w-8 h-8 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent-mid)] flex items-center justify-center font-semibold text-[12px] shrink-0">
                             {res.fullName.charAt(0).toUpperCase()}
                           </div>
                           <div>
                             <button
                               onClick={() => handleViewDetails(res.id)}
-                              className="font-bold text-xs text-[#1A2E20] hover:text-[#B58A57] transition-colors text-left truncate block max-w-[200px]"
+                              className="font-medium text-[13.5px] text-[var(--rn-ink)] hover:underline text-left break-words"
                               title="Click to view profile & stay history"
                             >
                               {res.fullName}
@@ -900,93 +817,81 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 2: Contact Info */}
-                      <td className="py-3 px-4 text-[#445448]">
+                      <td>
                         <div className="space-y-0.5">
-                          <p className="flex items-center gap-1.5 font-sans tabular-nums text-[11px]">
-                            <Phone className="w-3 h-3 text-[#B58A57] shrink-0" />
+                          <p className="tabular-nums">
                             <span>{res.phone}</span>
                           </p>
                           {res.email && (
-                            <p className="flex items-center gap-1.5 text-[11px] text-[#5E7060] truncate max-w-[180px]">
-                              <Mail className="w-3 h-3 text-[#6E7F70] shrink-0" />
-                              <span className="truncate">{res.email}</span>
+                            <p className="text-[12px] text-[var(--rn-ink-3)] break-all">
+                              <span>{res.email}</span>
                             </p>
                           )}
                         </div>
                       </td>
 
                       {/* Column 3: Current Room & Readable Floor Label */}
-                      <td className="py-3 px-4 whitespace-nowrap">
+                      <td>
                         {isInHouse ? (
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/25 text-xs font-semibold text-[#1A2E20]">
-                            <BedDouble className="w-3.5 h-3.5 text-[#B58A57] shrink-0" />
-                            <span className="tabular-nums">
+                          <div className="text-[var(--rn-ink)]">
+                            <span className="tabular-nums font-medium">
                               Room {res.currentRoomNumber}{" "}
-                              <span className="text-[11px] font-normal text-[#5A6C5E]">
+                              <span className="text-[12px] font-normal text-[var(--rn-ink-3)]">
                                 ({formatFloorLabel(res.currentFloor)})
                               </span>
                             </span>
                           </div>
                         ) : (
-                          <span className="text-xs text-[#8E9F89] italic font-light">
-                            Not assigned
-                          </span>
+                          <span className="text-[var(--rn-ink-3)]">—</span>
                         )}
                       </td>
 
                       {/* Column 4: Current Stay Date */}
-                      <td className="py-3 px-4 font-sans tabular-nums text-[11px] text-[#5A6C5E] whitespace-nowrap">
+                      <td className="tabular-nums text-[var(--rn-ink-3)]">
                         {isInHouse && res.checkInDate ? res.checkInDate : "—"}
                       </td>
 
                       {/* Column 5: Status Badge */}
-                      <td className="py-3 px-4 whitespace-nowrap">
+                      <td>
                         {isInHouse ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                            <span>In-House</span>
-                          </span>
+                          <Badge tone="good">In house</Badge>
                         ) : isCheckedOut ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-700 border border-stone-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
-                            <span>Checked Out</span>
-                          </span>
+                          <Badge>Checked out</Badge>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                            <span>Not Assigned</span>
-                          </span>
+                          <Badge tone="warn">Not assigned</Badge>
                         )}
                       </td>
 
                       {/* Column 6: Actions */}
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1.5">
+                      <td className="text-right">
+                        <div className="inline-flex flex-wrap justify-end items-center gap-1.5">
                           {/* View Details Button */}
                           <button
                             onClick={() => handleViewDetails(res.id)}
-                            className="p-1.5 rounded-lg border border-[#8E9F89]/30 text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors shadow-2xs"
-                            title="View resident profile & stay history"
+                            className="rn-btn rn-btn-sm rn-btn-icon"
+                            title="Profile and stay history"
+                            aria-label="Profile and stay history"
                           >
-                            <History className="w-3.5 h-3.5 text-[#B58A57]" />
+                            <History />
                           </button>
 
                           {/* Edit Profile Button */}
                           <button
                             onClick={() => handleOpenEdit(res.id)}
-                            className="p-1.5 rounded-lg border border-[#8E9F89]/30 text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors shadow-2xs"
-                            title="Edit resident profile"
+                            className="rn-btn rn-btn-sm rn-btn-icon"
+                            title="Edit profile"
+                            aria-label="Edit profile"
                           >
-                            <UserCog className="w-3.5 h-3.5 text-[#6E7F70]" />
+                            <UserCog />
                           </button>
 
                           {/* Check-In action if unassigned */}
                           {!isInHouse && (
                             <button
                               onClick={() => handleOpenCheckInModal(res.id)}
-                              className="px-2.5 py-1 rounded-lg bg-[#FAF8F5] border border-[#B58A57]/40 text-[#654735] text-xs font-semibold hover:bg-[#B58A57]/15 transition-colors shadow-2xs"
+                              className="rn-btn rn-btn-sm"
                             >
-                              Assign Room
+                              Assign room
                             </button>
                           )}
 
@@ -994,10 +899,10 @@ export default function ResidentsPage() {
                           {isInHouse && (
                             <button
                               onClick={() => handleOpenTransferModal(res)}
-                              className="px-2.5 py-1 rounded-lg border border-[#B58A57]/40 bg-[#FAF8F5] text-[#654735] text-xs font-semibold hover:bg-[#B58A57]/15 transition-colors shadow-2xs inline-flex items-center gap-1"
-                              title="Transfer resident to another room"
+                              className="rn-btn rn-btn-sm"
+                              title="Move to another room"
                             >
-                              <ArrowRightLeft className="w-3 h-3 text-[#B58A57]" />
+                              <ArrowRightLeft />
                               <span>Transfer</span>
                             </button>
                           )}
@@ -1006,9 +911,9 @@ export default function ResidentsPage() {
                           {isInHouse && (
                             <button
                               onClick={() => handleOpenCheckOut(res)}
-                              className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs font-semibold hover:bg-rose-100 transition-colors shadow-2xs"
+                              className="rn-btn rn-btn-sm rn-btn-danger"
                             >
-                              Check Out
+                              Check out
                             </button>
                           )}
                         </div>
@@ -1018,9 +923,8 @@ export default function ResidentsPage() {
                 })}
               </tbody>
             </table>
-          </div>
-        </div>
       )}
+      </Card>
 
       {/* ============================================================== */}
       {/* MODAL 1: RESIDENT DETAILS VIEW & STAY HISTORY (Dual Area)      */}
@@ -1108,7 +1012,7 @@ export default function ResidentsPage() {
                   </div>
                   <div className="flex items-center gap-2.5">
                     <span className="text-xs font-serif font-bold text-[#1A2E20] tabular-nums">
-                      ₹{viewHistoryResident.currentRoom.monthlyRent.toLocaleString("en-IN")} / mo
+                      ₹{formatNumberIN(viewHistoryResident.currentRoom.monthlyRent)} / mo
                     </span>
                     <button
                       onClick={() => {
@@ -1163,13 +1067,13 @@ export default function ResidentsPage() {
                   <div className="bg-[#FAF8F5] p-2 rounded-xl border border-[#8E9F89]/20">
                     <span className="text-[10px] text-[#6E7F70] block font-medium">Billed Rent</span>
                     <span className="font-bold text-[#1A2E20] tabular-nums font-serif">
-                      ₹{residentFinanceSummary.totalRentCharges.toLocaleString("en-IN")}
+                      ₹{formatNumberIN(residentFinanceSummary.totalRentCharges)}
                     </span>
                   </div>
                   <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-200">
                     <span className="text-[10px] text-emerald-800 block font-medium">Rent Paid</span>
                     <span className="font-bold text-emerald-950 tabular-nums font-serif">
-                      ₹{residentFinanceSummary.totalRentPaid.toLocaleString("en-IN")}
+                      ₹{formatNumberIN(residentFinanceSummary.totalRentPaid)}
                     </span>
                   </div>
                   <div className="bg-[#FAF8F5] p-2 rounded-xl border border-[#B58A57]/30">
@@ -1181,7 +1085,7 @@ export default function ResidentsPage() {
                           : "text-emerald-800"
                       }`}
                     >
-                      ₹{residentFinanceSummary.outstandingRentBalance.toLocaleString("en-IN")}
+                      ₹{formatNumberIN(residentFinanceSummary.outstandingRentBalance)}
                     </span>
                   </div>
                 </div>
@@ -1189,7 +1093,7 @@ export default function ResidentsPage() {
                 <div className="text-[11px] text-[#5A6C5E] flex items-center justify-between pt-1">
                   <span>Security Deposit Held:</span>
                   <span className="font-bold text-[#1A2E20] tabular-nums font-serif">
-                    ₹{residentFinanceSummary.totalSecurityDepositHeld.toLocaleString("en-IN")}
+                    ₹{formatNumberIN(residentFinanceSummary.totalSecurityDepositHeld)}
                   </span>
                 </div>
               </div>
@@ -1248,13 +1152,13 @@ export default function ResidentsPage() {
                           <p>
                             <strong>Agreed Rent:</strong>{" "}
                             <span className="tabular-nums font-semibold text-[#1A2E20]">
-                              ₹{stay.monthlyRent.toLocaleString("en-IN")} / mo
+                              ₹{formatNumberIN(stay.monthlyRent)} / mo
                             </span>
                           </p>
                           <p>
                             <strong>Deposit:</strong>{" "}
                             <span className="tabular-nums font-semibold text-[#1A2E20]">
-                              ₹{stay.securityDeposit.toLocaleString("en-IN")}
+                              ₹{formatNumberIN(stay.securityDeposit)}
                             </span>
                           </p>
                         </div>
@@ -1660,13 +1564,13 @@ export default function ResidentsPage() {
                     <p>
                       <strong>Monthly Rent:</strong>{" "}
                       <span className="text-[#1A2E20] tabular-nums font-bold">
-                        ₹{Number(checkInForm.monthlyRent).toLocaleString("en-IN")} / mo
+                        ₹{formatNumberIN(Number(checkInForm.monthlyRent))} / mo
                       </span>
                     </p>
                     <p>
                       <strong>Security Deposit:</strong>{" "}
                       <span className="text-[#1A2E20] tabular-nums">
-                        ₹{Number(checkInForm.securityDeposit || 0).toLocaleString("en-IN")}
+                        ₹{formatNumberIN(Number(checkInForm.securityDeposit || 0))}
                       </span>
                     </p>
                   </div>
@@ -1786,16 +1690,16 @@ export default function ResidentsPage() {
                         <span className="text-[#5A6C5E] block text-[11px]">Rent Liability</span>
                         <div className="flex justify-between text-[11px]">
                           <span>Billed Charges:</span>
-                          <span className="tabular-nums font-semibold">₹{settlementPreview.totalRentCharged.toLocaleString("en-IN")}</span>
+                          <span className="tabular-nums font-semibold">₹{formatNumberIN(settlementPreview.totalRentCharged)}</span>
                         </div>
                         <div className="flex justify-between text-[11px] text-emerald-700">
                           <span>Paid to Date:</span>
-                          <span className="tabular-nums font-semibold">-₹{settlementPreview.totalRentPaid.toLocaleString("en-IN")}</span>
+                          <span className="tabular-nums font-semibold">-₹{formatNumberIN(settlementPreview.totalRentPaid)}</span>
                         </div>
                         <div className="flex justify-between pt-1 border-t border-[#8E9F89]/20 font-bold text-xs">
                           <span>Outstanding Rent:</span>
                           <span className={`tabular-nums ${settlementPreview.outstandingRentDue > 0 ? "text-amber-800" : "text-emerald-800"}`}>
-                            ₹{settlementPreview.outstandingRentDue.toLocaleString("en-IN")}
+                            ₹{formatNumberIN(settlementPreview.outstandingRentDue)}
                           </span>
                         </div>
                       </div>
@@ -1805,18 +1709,18 @@ export default function ResidentsPage() {
                         <span className="text-[#5A6C5E] block text-[11px]">Security Deposit Held</span>
                         <div className="flex justify-between text-[11px]">
                           <span>Gross Deposits Held:</span>
-                          <span className="tabular-nums font-semibold">₹{(settlementPreview.totalDepositHeld + settlementPreview.priorRefunds).toLocaleString("en-IN")}</span>
+                          <span className="tabular-nums font-semibold">₹{formatNumberIN(settlementPreview.totalDepositHeld + settlementPreview.priorRefunds)}</span>
                         </div>
                         {settlementPreview.priorRefunds > 0 && (
                           <div className="flex justify-between text-[11px] text-amber-700">
                             <span>Prior Refunds:</span>
-                            <span className="tabular-nums font-semibold">-₹{settlementPreview.priorRefunds.toLocaleString("en-IN")}</span>
+                            <span className="tabular-nums font-semibold">-₹{formatNumberIN(settlementPreview.priorRefunds)}</span>
                           </div>
                         )}
                         <div className="flex justify-between pt-1 border-t border-[#8E9F89]/20 font-bold text-xs">
                           <span>Active Deposit Held:</span>
                           <span className="tabular-nums text-emerald-900">
-                            ₹{settlementPreview.totalDepositHeld.toLocaleString("en-IN")}
+                            ₹{formatNumberIN(settlementPreview.totalDepositHeld)}
                           </span>
                         </div>
                       </div>
@@ -1831,7 +1735,7 @@ export default function ResidentsPage() {
                         2. Authorized Deposit Deductions
                       </h4>
                       <span className="text-[11px] font-semibold text-[#5A6C5E]">
-                        Total Deductions: <strong className="text-rose-700">₹{totalDeductionsAmount.toLocaleString("en-IN")}</strong>
+                        Total Deductions: <strong className="text-rose-700">₹{formatNumberIN(totalDeductionsAmount)}</strong>
                       </span>
                     </div>
 
@@ -1841,7 +1745,7 @@ export default function ResidentsPage() {
                           <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/20 text-xs">
                             <span className="text-[#1A2E20] font-medium">{ded.reason}</span>
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-rose-700 tabular-nums">₹{ded.amount.toLocaleString("en-IN")}</span>
+                              <span className="font-bold text-rose-700 tabular-nums">₹{formatNumberIN(ded.amount)}</span>
                               <button
                                 type="button"
                                 onClick={() => handleRemoveDeduction(idx)}
@@ -1897,7 +1801,7 @@ export default function ResidentsPage() {
                       <div className="p-3 bg-white rounded-xl border border-[#8E9F89]/20 space-y-1.5">
                         <div className="flex justify-between items-center text-xs">
                           <span className="text-[#5A6C5E]">Apply Deposit Towards Outstanding Rent:</span>
-                          <span className="font-bold text-[#1A2E20] tabular-nums">₹{depositAppliedAmount.toLocaleString("en-IN")}</span>
+                          <span className="font-bold text-[#1A2E20] tabular-nums">₹{formatNumberIN(depositAppliedAmount)}</span>
                         </div>
                         <input
                           type="range"
@@ -1910,7 +1814,7 @@ export default function ResidentsPage() {
                         />
                         <div className="flex justify-between text-[10px] text-[#5A6C5E]">
                           <span>₹0 (Don't apply)</span>
-                          <span>Max: ₹{Math.min(settlementPreview.outstandingRentDue, availableDepositAfterDeductions).toLocaleString("en-IN")}</span>
+                          <span>Max: ₹{formatNumberIN(Math.min(settlementPreview.outstandingRentDue, availableDepositAfterDeductions))}</span>
                         </div>
                       </div>
                     )}
@@ -1923,7 +1827,7 @@ export default function ResidentsPage() {
                             Security Deposit Refund Due to Resident:
                           </span>
                           <span className="text-base font-bold text-emerald-900 font-serif tabular-nums">
-                            ₹{calculatedRefundAmount.toLocaleString("en-IN")}
+                            ₹{formatNumberIN(calculatedRefundAmount)}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -1967,7 +1871,7 @@ export default function ResidentsPage() {
                             Remaining Rent Due from Resident:
                           </span>
                           <span className="text-base font-bold text-amber-900 font-serif tabular-nums">
-                            ₹{calculatedRemainingRentPayable.toLocaleString("en-IN")}
+                            ₹{formatNumberIN(calculatedRemainingRentPayable)}
                           </span>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer text-xs text-amber-950">
@@ -2290,7 +2194,7 @@ export default function ResidentsPage() {
                       .filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber)
                       .map((rm) => (
                         <option key={rm.id} value={rm.id}>
-                          Room {rm.roomNumber} ({formatFloorLabel(rm.floor)}) &bull; {rm.type.replace(/_/g, " ")} &bull; {rm.availableBeds} bed(s) available &bull; ₹{rm.baseRentMonthly.toLocaleString("en-IN")}/mo
+                          Room {rm.roomNumber} ({formatFloorLabel(rm.floor)}) &bull; {rm.type.replace(/_/g, " ")} &bull; {rm.availableBeds} bed(s) available &bull; ₹{formatNumberIN(rm.baseRentMonthly)}/mo
                         </option>
                       ))}
                   </select>
@@ -2300,6 +2204,23 @@ export default function ResidentsPage() {
                     </p>
                   )}
                 </div>
+
+                {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds?.length ?? 0) > 0 && (
+                  <div>
+                    <label htmlFor="transfer-bed" className="block text-xs font-semibold text-[#1A2E20] mb-1">Bed in the new room</label>
+                    <select
+                      id="transfer-bed"
+                      value={transferForm.bedId}
+                      onChange={(e) => setTransferForm({ ...transferForm, bedId: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
+                    >
+                      <option value="">Any free bed (choose later)</option>
+                      {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds ?? []).filter((b) => b.status === "IN_SERVICE" && !b.occupant).map((b) => (
+                        <option key={b.id} value={b.id}>{b.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Transfer Date */}
                 <div>
@@ -2398,7 +2319,7 @@ export default function ResidentsPage() {
                     <div className="flex items-center justify-between">
                       <span>New Monthly Rent:</span>
                       <strong className="text-[#1A2E20] font-sans tabular-nums">
-                        ₹{Number(transferForm.newMonthlyRent).toLocaleString("en-IN")} / mo
+                        ₹{formatNumberIN(Number(transferForm.newMonthlyRent))} / mo
                       </strong>
                     </div>
                     <div className="pt-1.5 border-t border-[#8E9F89]/20">

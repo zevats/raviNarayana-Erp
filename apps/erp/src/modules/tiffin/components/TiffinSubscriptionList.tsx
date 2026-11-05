@@ -89,7 +89,7 @@ export function TiffinSubscriptionList() {
       }
       return res.json();
     },
-    { ttl: 15000, tags: ["tiffin_subscriptions"] }
+    { ttl: 15000, tags: ["tiffin_subscriptions", "subscriptions"] }
   );
 
   // 2. Fetch customers (for modal selection)
@@ -100,7 +100,7 @@ export function TiffinSubscriptionList() {
       if (!res.ok) return { customers: [] };
       return res.json();
     },
-    { ttl: 30000, tags: ["tiffin_customers"] }
+    { ttl: 30000, tags: ["tiffin_customers", "customers"] }
   );
 
   // 3. Fetch products (for modal selection)
@@ -111,7 +111,7 @@ export function TiffinSubscriptionList() {
       if (!res.ok) return { products: [] };
       return res.json();
     },
-    { ttl: 30000, tags: ["tiffin_products"] }
+    { ttl: 30000, tags: ["tiffin_products", "products"] }
   );
 
   const subscriptions = subscriptionsData?.subscriptions || [];
@@ -242,11 +242,12 @@ export function TiffinSubscriptionList() {
       )}
 
       {/* Action and Filter Controls Bar */}
-      <div className="bg-white border border-[#8E9F89]/30 rounded-2xl p-4 shadow-2xs space-y-3">
+      <div className="rn-card">
+<div className="p-4 sm:p-5 border-b border-[var(--rn-line)] space-y-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           {/* Search box */}
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <Search className="pointer-events-none w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
@@ -365,7 +366,7 @@ export function TiffinSubscriptionList() {
       </div>
 
       {/* Main Subscriptions Table */}
-      <div className="bg-white border border-[#8E9F89]/30 rounded-2xl overflow-hidden shadow-2xs">
+      <div>
         {isLoading ? (
           <BikeLoader tone="forest" label="Loading subscriptions…" className="p-12" />
         ) : subscriptionsError ? (
@@ -605,6 +606,7 @@ export function TiffinSubscriptionList() {
           </div>
         )}
       </div>
+</div>
 
       {/* Subscription Modal (Create / Edit) */}
       {isSubscriptionModalOpen && (

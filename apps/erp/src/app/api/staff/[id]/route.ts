@@ -7,6 +7,7 @@ import {
 import {
   getStaffUserById,
   updateStaffProfile,
+  deleteStaffUser,
 } from "@/server/staff/staffService";
 import { getClientIp } from "@/server/authentication/ip";
 
@@ -56,6 +57,27 @@ export async function PATCH(
 
     const msg = error.message || "Failed to update staff profile.";
     const status = msg.includes("already registered") ? 409 : 400;
+    return NextResponse.json({ error: msg }, { status });
+  }
+}
+
+/** Deletes an account with no history (Owner only); accounts with history are refused with 409. */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await resolveUserFromRequest(request);
+    if (!user) return unauthorizedResponse();
+
+    await deleteStaffUser(user, params.id, getClientIp(request));
+    return NextResponse.json({ success: true, message: "Staff account deleted." });
+  } catch (error: any) {
+    const authError = handleAuthorizationError(error);
+    if (authError) return authError;
+
+    const msg = error.message || "Failed to delete the staff account.";
+    const status = msg.includes("not found") ? 404 : msg.includes("has history") ? 409 : 400;
     return NextResponse.json({ error: msg }, { status });
   }
 }

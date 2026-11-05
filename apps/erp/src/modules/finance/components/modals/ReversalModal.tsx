@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { X, ShieldAlert, AlertCircle } from "lucide-react";
 import { FinancialTransaction } from "@/types";
 import { formatINR } from "../../utils/formatUtils";
@@ -19,6 +19,8 @@ export function ReversalModal({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
 
   if (!transaction) return null;
 
@@ -31,6 +33,10 @@ export function ReversalModal({
       setError("Please provide a meaningful reversal reason of at least 5 characters.");
       return;
     }
+
+    if (inFlight.current) return;
+
+    inFlight.current = true;
 
     setSubmitting(true);
     try {
@@ -52,6 +58,7 @@ export function ReversalModal({
     } catch (err: any) {
       setError(err.message || "An error occurred while reversing transaction.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

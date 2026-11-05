@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { businessToday } from "@/lib/businessDate";
+import { RENT_SETTLEMENT_SQL, TIFFIN_RECEIPT_SQL, getDepositsHeld, getOutstandingRent } from "@/server/finance/financialDefinitions";
 import { cookies } from "next/headers";
 import { validateSession, ERP_COOKIE_NAME } from "@/server/authentication/auth";
 import { getAsyncDb } from "@/server/database/db";
@@ -39,7 +41,7 @@ export async function GET(request: NextRequest) {
     const endDateParam = url.searchParams.get("endDate") || undefined;
     const division = (url.searchParams.get("division") as "COMBINED" | "PG" | "TIFFIN") || "COMBINED";
 
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = businessToday();
     const currentMonthPrefix = todayIso.slice(0, 7);
     const startDate = startDateParam || `${currentMonthPrefix}-01`;
     const endDate = endDateParam || todayIso;
@@ -72,24 +74,22 @@ export async function GET(request: NextRequest) {
       totalExpensesPaid: number | string;
       pgExpensesPaid: number | string;
       tiffinExpensesPaid: number | string;
-      totalDepositsHeld: number | string;
       totalTiffinCollected: number | string;
     }>(`
       SELECT
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
+        COALESCE(SUM(CASE WHEN ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
         COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
         COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
         COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
         COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
-        COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld",
-        COALESCE(SUM(CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
+        COALESCE(SUM(CASE WHEN ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
       FROM financial_transactions
     `);
 
     const rentMonthRow = await db.queryOne<{ rentMonth: number | string }>(`
       SELECT COALESCE(SUM(amount), 0) as "rentMonth"
       FROM financial_transactions
-      WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+      WHERE ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
     `, [startDate, endDate]);
 
     const expMonthRow = await db.queryOne<{ expMonth: number | string }>(`
@@ -97,19 +97,6 @@ export async function GET(request: NextRequest) {
       FROM financial_transactions
       WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
     `, [startDate, endDate]);
-
-    const overdueCountRow = await db.queryOne<{ count: number | string }>(`
-      SELECT COUNT(*) as count FROM (
-        SELECT r.id
-        FROM residents r
-        JOIN financial_transactions t ON t.resident_id = r.id AND t.status = 'POSTED'
-        GROUP BY r.id
-        HAVING (
-          SUM(CASE WHEN t.transaction_type = 'RENT_CHARGE' THEN t.amount ELSE 0 END) -
-          SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' THEN t.amount ELSE 0 END)
-        ) > 0
-      ) subq
-    `);
 
     // Tiffin Revenue & Attributable Operating Costs
     const kitchenCostRow = await db.queryOne<{ kitchenCost: number | string }>(`
@@ -123,10 +110,7 @@ export async function GET(request: NextRequest) {
     const tiffinRevRow = await db.queryOne<{ tiffinRev: number | string }>(`
       SELECT COALESCE(SUM(amount), 0) as "tiffinRev"
       FROM financial_transactions
-      WHERE (
-        transaction_type = 'TIFFIN_PAYMENT'
-        OR (transaction_type = 'RENT_PAYMENT' AND (category = 'TIFFIN' OR description LIKE '%tiffin%'))
-      ) AND status = 'POSTED'
+      WHERE ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED'
         AND transaction_date >= ? AND transaction_date <= ?
     `, [startDate, endDate]);
 
@@ -137,11 +121,12 @@ export async function GET(request: NextRequest) {
       : division === "TIFFIN"
       ? Number(finSummary?.tiffinExpensesPaid || 0)
       : Number(finSummary?.totalExpensesPaid || 0);
-    const totalDepositsHeld = division === "TIFFIN" ? 0 : Number(finSummary?.totalDepositsHeld || 0);
+    const totalDepositsHeld = division === "TIFFIN" ? 0 : await getDepositsHeld(db);
     const currentMonthRent = division === "TIFFIN" ? 0 : Number(rentMonthRow?.rentMonth || 0);
     const currentMonthExp = Number(expMonthRow?.expMonth || 0);
-    const outstandingRent = division === "TIFFIN" ? 0 : Math.max(0, totalRentBilled - totalRentCollected);
-    const overdueCount = division === "TIFFIN" ? 0 : Number(overdueCountRow?.count || 0);
+    const outstanding = division === "TIFFIN" ? { total: 0, residents: 0 } : await getOutstandingRent(db);
+    const outstandingRent = outstanding.total;
+    const overdueCount = outstanding.residents;
     const kitchenCosts = division === "PG" ? 0 : Number(kitchenCostRow?.kitchenCost || 0);
     const tiffinRevenue = division === "PG" ? 0 : Number(tiffinRevRow?.tiffinRev || 0);
     const tiffinNetResult = tiffinRevenue - kitchenCosts;

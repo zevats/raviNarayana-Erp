@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, CheckCircle2, AlertCircle, ArrowRight, DollarSign } from "lucide-react";
 import { PaymentMethod, TiffinCustomerBalanceSummary } from "@/types";
 import { businessToday } from "@/lib/businessDate";
@@ -35,7 +35,15 @@ export function RecordTiffinPaymentModal({
   const [balanceSummary, setBalanceSummary] = useState<TiffinCustomerBalanceSummary | null>(null);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  // One idempotency key per entry: a retry after a lost response is the same payment to the server
+  // (which already de-duplicates by key), never a second one. A new key each time the form opens.
+  const entryKey = useRef<string>("");
+  useEffect(() => {
+    if (isOpen) entryKey.current = `tpay_${crypto.randomUUID()}`;
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -95,6 +103,10 @@ export function RecordTiffinPaymentModal({
       return;
     }
 
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/tiffin/payments", {
@@ -108,6 +120,7 @@ export function RecordTiffinPaymentModal({
           referenceNumber: referenceNumber.trim() || undefined,
           notes: notes.trim() || undefined,
           invoiceId: invoiceId || undefined,
+          idempotencyKey: entryKey.current || undefined,
         }),
       });
 
@@ -121,6 +134,7 @@ export function RecordTiffinPaymentModal({
     } catch (err: any) {
       setError(err.message || "Failed to record payment.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

@@ -5,7 +5,7 @@ import {
   unauthorizedResponse,
   handleAuthorizationError,
 } from "@/server/authorization/authorize";
-import { listActiveDeliveryStaff } from "@/server/delivery/deliveryService";
+import { listActiveDeliveryStaff, getDefaultDeliveryStaff } from "@/server/delivery/deliveryService";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,10 @@ export async function GET(request: NextRequest) {
     if (!user) return unauthorizedResponse();
 
     const staff = await listActiveDeliveryStaff(user);
+    // Who new orders go to by default, so the board can tell a per-order change from the default.
+    const defaultStaff = await getDefaultDeliveryStaff();
 
-    return NextResponse.json({ success: true, staff });
+    return NextResponse.json({ success: true, staff, defaultStaffId: defaultStaff?.id ?? null });
   } catch (error: any) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;

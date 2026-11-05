@@ -1,20 +1,19 @@
 "use client";
 
 import React from "react";
-import {
-  CreditCard,
-  Receipt,
-  Wallet,
-  TrendingDown,
-  RefreshCw,
-  Download,
-} from "lucide-react";
+import { CreditCard, Receipt, Wallet, TrendingDown, RefreshCw, Download, CalendarClock } from "lucide-react";
+import { PageHeader } from "@/components/ui/kit";
+import { RefreshButton } from "@/components/ui/states";
 
 interface FinanceHeaderProps {
+  /** Current section, as named in the sidebar (Cashbook, Resident dues, Invoices, Daily closing). */
+  title: string;
   onRefresh: () => void;
   isLoading: boolean;
   onOpenPayment: () => void;
   onOpenCharge: () => void;
+  /** Monthly rent for everyone (preview, then charge). */
+  onOpenRentRun?: () => void;
   onOpenDeposit: () => void;
   onOpenExpense: () => void;
   onExport: () => void;
@@ -22,82 +21,45 @@ interface FinanceHeaderProps {
 }
 
 export function FinanceHeader({
+  title,
   onRefresh,
   isLoading,
   onOpenPayment,
   onOpenCharge,
+  onOpenRentRun,
   onOpenDeposit,
   onOpenExpense,
   onExport,
   canExport,
 }: FinanceHeaderProps) {
   return (
-    <div className="flex flex-col 2xl:flex-row 2xl:items-center 2xl:justify-between gap-4 pb-3 border-b border-[#8E9F89]/20 min-w-0">
-      <div className="border-l-4 border-[#B58A57] pl-3.5 min-w-0">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1A2E20]">
-          Finance &amp; Cashbook
-        </h1>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 min-w-0 w-full 2xl:w-auto">
-        {/* Refresh Button */}
-        <button
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="p-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs disabled:opacity-50"
-          title="Refresh financial records"
-          aria-label="Refresh financial records"
-        >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin text-[#B58A57]" : ""}`} />
-        </button>
-
-        {/* Export Button */}
-        <button
-          onClick={onExport}
-          disabled={!canExport || isLoading}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs sm:text-sm font-medium transition-colors shadow-2xs disabled:opacity-40"
-          title="Export current ledger records to CSV"
-        >
-          <Download className="w-4 h-4 text-[#5D7656]" />
-          <span>Export CSV</span>
-        </button>
-
-        {/* Secondary: Issue Rent Charge */}
-        <button
-          onClick={onOpenCharge}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#B58A57]/40 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 text-[#654735] text-xs sm:text-sm font-semibold transition-all shadow-2xs"
-        >
-          <Receipt className="w-4 h-4 text-[#B58A57]" />
-          <span>Issue Rent Charge</span>
-        </button>
-
-        {/* Secondary: Receive Deposit */}
-        <button
-          onClick={onOpenDeposit}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs sm:text-sm font-medium transition-all shadow-2xs"
-        >
-          <Wallet className="w-4 h-4 text-[#5D7656]" />
-          <span>Receive Deposit</span>
-        </button>
-
-        {/* Secondary: Record Expense */}
-        <button
-          onClick={onOpenExpense}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs sm:text-sm font-medium transition-all shadow-2xs"
-        >
-          <TrendingDown className="w-4 h-4 text-[#654735]" />
-          <span>Record Expense</span>
-        </button>
-
-        {/* Primary Action: Record Payment */}
-        <button
-          onClick={onOpenPayment}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs sm:text-sm font-semibold transition-all shadow-md active:scale-95"
-        >
-          <CreditCard className="w-4 h-4 text-[#B58A57]" />
-          <span>Record Payment</span>
-        </button>
-      </div>
-    </div>
+    <PageHeader
+      title={title}
+      actions={
+        <>
+          <RefreshButton onRefresh={onRefresh} busy={isLoading} label="Refresh financial records" />
+          <button type="button" onClick={onExport} disabled={!canExport || isLoading} className="rn-btn rn-btn-icon" title="Export the cashbook (CSV)" aria-label="Export the cashbook as CSV">
+            <Download />
+          </button>
+          {onOpenRentRun && (
+            <button type="button" onClick={onOpenRentRun} className="rn-btn">
+              <CalendarClock /> Monthly rent
+            </button>
+          )}
+          <button type="button" onClick={onOpenCharge} className="rn-btn">
+            <Receipt /> Rent charge
+          </button>
+          <button type="button" onClick={onOpenDeposit} className="rn-btn">
+            <Wallet /> Deposit
+          </button>
+          <button type="button" onClick={onOpenExpense} className="rn-btn">
+            <TrendingDown /> Expense
+          </button>
+          <button type="button" onClick={onOpenPayment} className="rn-btn rn-btn-primary">
+            <CreditCard /> Record payment
+          </button>
+        </>
+      }
+    />
   );
 }

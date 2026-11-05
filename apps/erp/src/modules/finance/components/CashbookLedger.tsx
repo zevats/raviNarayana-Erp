@@ -45,6 +45,8 @@ export function CashbookLedger({
   onOpenCharge,
 }: CashbookLedgerProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  // The box updates at once; the (up to 500-row) list follows without blocking typing.
+  const deferredQuery = React.useDeferredValue(searchQuery);
   const [divisionFilter, setDivisionFilter] = useState<string>("ALL");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [methodFilter, setMethodFilter] = useState<string>("ALL");
@@ -95,8 +97,8 @@ export function CashbookLedger({
         return false;
       }
       // Search query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
+      if (deferredQuery.trim()) {
+        const q = deferredQuery.toLowerCase().trim();
         const party = (tx.residentName || tx.customerName || tx.payeeVendor || "").toLowerCase();
         const desc = (tx.description || "").toLowerCase();
         const ref = (tx.referenceNumber || "").toLowerCase();
@@ -117,12 +119,12 @@ export function CashbookLedger({
       }
       return true;
     });
-  }, [transactions, divisionFilter, typeFilter, methodFilter, statusFilter, searchQuery]);
+  }, [transactions, divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery]);
 
   // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [divisionFilter, typeFilter, methodFilter, statusFilter, searchQuery]);
+  }, [divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
@@ -134,129 +136,11 @@ export function CashbookLedger({
   const startIndex = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const endIndex = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length);
 
-  return (
-    <div className="space-y-4">
-      {/* 1. Search and Filters Bar (Matching Residents & Rooms pattern) */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 p-3.5 sm:p-4 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        {/* Search */}
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-[#6E7F70] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by party, room, reference, or description..."
-            className="w-full pl-9 pr-8 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs sm:text-sm text-[#1A2E20] placeholder:text-[#6E7F70] focus:outline-hidden focus:border-[#1A2E20] focus:ring-1 focus:ring-[#1A2E20]"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E7F70] hover:text-[#1A2E20] text-sm font-bold"
-            >
-              &times;
-            </button>
-          )}
-        </div>
-
-        {/* Division, Type, Method & Status Filters */}
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Division:</span>
-          <select
-            value={divisionFilter}
-            onChange={(e) => setDivisionFilter(e.target.value)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-semibold focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Divisions</option>
-            <option value="PG">PG Guesthouse</option>
-            <option value="TIFFIN">Tiffin Service</option>
-          </select>
-
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Type:</span>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Types</option>
-            <option value="RENT_PAYMENT">Rent Payment</option>
-            <option value="RENT_CHARGE">Rent Charge (Billed)</option>
-            <option value="SECURITY_DEPOSIT">Security Deposit</option>
-            <option value="TIFFIN_PAYMENT">Tiffin Payment</option>
-            <option value="TIFFIN_CHARGE">Tiffin Charge</option>
-            <option value="EXPENSE">Expense</option>
-            <option value="REVERSAL">Reversal</option>
-          </select>
-
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Method:</span>
-          <select
-            value={methodFilter}
-            onChange={(e) => setMethodFilter(e.target.value)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Methods</option>
-            <option value="CASH">Cash</option>
-            <option value="UPI">UPI / QR</option>
-            <option value="BANK_TRANSFER">Bank Transfer</option>
-            <option value="CHEQUE">Cheque</option>
-            <option value="OTHER">Card / Other</option>
-          </select>
-
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Status</option>
-            <option value="POSTED">Posted</option>
-            <option value="REVERSED">Reversed</option>
-          </select>
-
-          <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
-            {filtered.length} record{filtered.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-      </div>
-
-      {/* 2. Table / Cards Container */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden">
-        {/* Loading State */}
-        {isLoading ? (
-          <BikeLoader tone="forest" label="Loading transactions…" className="p-12" />
-        ) : filtered.length === 0 ? (
-          /* Empty State */
-          <div className="p-12 text-center space-y-3">
-            <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20]">
-              <Receipt className="w-6 h-6 text-[#B58A57]" />
-            </div>
-            <h3 className="font-serif text-lg text-[#1A2E20] font-bold">No Transactions Found</h3>
-            <p className="text-xs text-[#5A6C5E] max-w-md mx-auto">
-              {transactions.length === 0
-                ? "No financial transactions recorded for this period. Use the action buttons above to record a payment, charge, deposit, or expense."
-                : "No transactions match your search query or filter selection."}
-            </p>
-            {transactions.length === 0 && (
-              <div className="flex items-center justify-center gap-2 pt-1">
-                <button
-                  onClick={onOpenPayment}
-                  className="px-4 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs"
-                >
-                  Record Payment
-                </button>
-                <button
-                  onClick={onOpenCharge}
-                  className="px-4 py-2 rounded-xl border border-[#B58A57]/40 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 text-[#654735] text-xs font-semibold shadow-2xs"
-                >
-                  Issue Rent Charge
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* Mobile Card List (< md screens) - Prevents Wide Table Viewport Overflow */}
-            <div className="block md:hidden divide-y divide-[#8E9F89]/15">
-              {paginated.map((tx) => {
+  // Rows are rebuilt only when the visible page or a row's state changes, not on every keystroke in
+  // the search box (the box updates at once; the list follows through the deferred query).
+  const mobileRows = useMemo(
+    () =>
+      paginated.map((tx) => {
                 const isPayment = tx.transactionType === "RENT_PAYMENT";
                 const isCharge = tx.transactionType === "RENT_CHARGE";
                 const isDeposit = tx.transactionType === "SECURITY_DEPOSIT";
@@ -416,25 +300,13 @@ export function CashbookLedger({
                     </div>
                   </div>
                 );
-              })}
-            </div>
-
-            {/* Dedicated Horizontally Scrollable Transaction Table (Desktop/Tablet) */}
-            <div className="hidden md:block overflow-x-auto w-full min-w-0">
-              <table className="w-full min-w-[760px] text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
-                    <th className="py-3 px-4 whitespace-nowrap">Date &amp; ID</th>
-                    <th className="py-3 px-4 whitespace-nowrap">Type</th>
-                    <th className="py-3 px-4 whitespace-nowrap">Party / Room</th>
-                    <th className="py-3 px-4 whitespace-nowrap">Payment Method &amp; Ref</th>
-                    <th className="py-3 px-4">Description</th>
-                    <th className="py-3 px-4 text-right whitespace-nowrap">Amount</th>
-                    <th className="py-3 px-4 text-center whitespace-nowrap">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
-                  {paginated.map((tx) => {
+              }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paginated, copiedId, onViewReceipt, onInitiateReversal]
+  );
+  const tableRows = useMemo(
+    () =>
+      paginated.map((tx) => {
                     const isPayment = tx.transactionType === "RENT_PAYMENT";
                     const isCharge = tx.transactionType === "RENT_CHARGE";
                     const isDeposit = tx.transactionType === "SECURITY_DEPOSIT";
@@ -613,7 +485,153 @@ export function CashbookLedger({
                         </td>
                       </tr>
                     );
-                  })}
+                  }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [paginated, copiedId, onViewReceipt, onInitiateReversal]
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* 1. Search and Filters Bar (Matching Residents & Rooms pattern) */}
+      <div className="rn-card">
+<div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3">
+        {/* Search */}
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-[#6E7F70] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by party, room, reference, or description..."
+            className="w-full pl-9 pr-8 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs sm:text-sm text-[#1A2E20] placeholder:text-[#6E7F70] focus:outline-hidden focus:border-[#1A2E20] focus:ring-1 focus:ring-[#1A2E20]"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6E7F70] hover:text-[#1A2E20] text-sm font-bold"
+            >
+              &times;
+            </button>
+          )}
+        </div>
+
+        {/* Division, Type, Method & Status Filters */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Division:</span>
+          <select
+            value={divisionFilter}
+            onChange={(e) => setDivisionFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-semibold focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Divisions</option>
+            <option value="PG">PG Guesthouse</option>
+            <option value="TIFFIN">Tiffin Service</option>
+          </select>
+
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Type:</span>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Types</option>
+            <option value="RENT_PAYMENT">Rent Payment</option>
+            <option value="RENT_CHARGE">Rent Charge (Billed)</option>
+            <option value="SECURITY_DEPOSIT">Security Deposit</option>
+            <option value="TIFFIN_PAYMENT">Tiffin Payment</option>
+            <option value="TIFFIN_CHARGE">Tiffin Charge</option>
+            <option value="EXPENSE">Expense</option>
+            <option value="REVERSAL">Reversal</option>
+          </select>
+
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Method:</span>
+          <select
+            value={methodFilter}
+            onChange={(e) => setMethodFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Methods</option>
+            <option value="CASH">Cash</option>
+            <option value="UPI">UPI / QR</option>
+            <option value="BANK_TRANSFER">Bank Transfer</option>
+            <option value="CHEQUE">Cheque</option>
+            <option value="OTHER">Card / Other</option>
+          </select>
+
+          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
+          >
+            <option value="ALL">All Status</option>
+            <option value="POSTED">Posted</option>
+            <option value="REVERSED">Reversed</option>
+          </select>
+
+          <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
+            {filtered.length} record{filtered.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      </div>
+
+      {/* 2. Table / Cards Container */}
+      <div>
+        {/* Loading State */}
+        {isLoading ? (
+          <BikeLoader tone="forest" label="Loading transactions…" className="p-12" />
+        ) : filtered.length === 0 ? (
+          /* Empty State */
+          <div className="p-12 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center mx-auto text-[#1A2E20]">
+              <Receipt className="w-6 h-6 text-[#B58A57]" />
+            </div>
+            <h3 className="font-serif text-lg text-[#1A2E20] font-bold">No Transactions Found</h3>
+            <p className="text-xs text-[#5A6C5E] max-w-md mx-auto">
+              {transactions.length === 0
+                ? "No financial transactions recorded for this period. Use the action buttons above to record a payment, charge, deposit, or expense."
+                : "No transactions match your search query or filter selection."}
+            </p>
+            {transactions.length === 0 && (
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button
+                  onClick={onOpenPayment}
+                  className="px-4 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs"
+                >
+                  Record Payment
+                </button>
+                <button
+                  onClick={onOpenCharge}
+                  className="px-4 py-2 rounded-xl border border-[#B58A57]/40 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 text-[#654735] text-xs font-semibold shadow-2xs"
+                >
+                  Issue Rent Charge
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Mobile Card List (< md screens) - Prevents Wide Table Viewport Overflow */}
+            <div className="block md:hidden divide-y divide-[#8E9F89]/15">
+              {mobileRows}
+            </div>
+
+            {/* Dedicated Horizontally Scrollable Transaction Table (Desktop/Tablet) */}
+            <div className="hidden md:block overflow-x-auto w-full min-w-0">
+              <table className="w-full min-w-[760px] text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
+                    <th className="py-3 px-4 whitespace-nowrap">Date &amp; ID</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Type</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Party / Room</th>
+                    <th className="py-3 px-4 whitespace-nowrap">Payment Method &amp; Ref</th>
+                    <th className="py-3 px-4">Description</th>
+                    <th className="py-3 px-4 text-right whitespace-nowrap">Amount</th>
+                    <th className="py-3 px-4 text-center whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#8E9F89]/15 text-xs text-[#1A2E20]">
+                  {tableRows}
                 </tbody>
               </table>
             </div>
@@ -655,6 +673,7 @@ export function CashbookLedger({
           </>
         )}
       </div>
+</div>
     </div>
   );
 }

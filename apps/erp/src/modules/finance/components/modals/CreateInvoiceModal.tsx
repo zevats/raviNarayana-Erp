@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, FileText, Plus, Trash2, AlertCircle, Info } from "lucide-react";
 import { ResidentListItem, Invoice, InvoiceType } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
@@ -57,9 +57,14 @@ export function CreateInvoiceModal({
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
+  // One key per opened form: a retry after a lost response returns the invoice already created.
+  const entryKey = useRef("");
 
   useEffect(() => {
     if (isOpen) {
+      entryKey.current = `inv_${crypto.randomUUID()}`;
       setError(null);
       setIssueDate(toLocalDateString());
       if (initialResidentId) {
@@ -158,6 +163,10 @@ export function CreateInvoiceModal({
       }
     }
 
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+
     setSubmitting(true);
     try {
       const res = await fetch("/api/finance/invoices", {
@@ -172,6 +181,7 @@ export function CreateInvoiceModal({
           notes: notes.trim() || undefined,
           autoIssue,
           linkExistingCharge,
+          idempotencyKey: entryKey.current || undefined,
           items: items.map((it) => ({
             description: it.description.trim(),
             sacHsnCode: it.sacHsnCode.trim() || undefined,
@@ -196,6 +206,7 @@ export function CreateInvoiceModal({
     } catch (err: any) {
       setError(err.message || "Failed to create invoice.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

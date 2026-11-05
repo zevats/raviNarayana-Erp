@@ -1,5 +1,7 @@
 import { getAsyncDb, AsyncDb } from "../database/db";
+import { businessToday, businessMonthKey } from "@/lib/businessDate";
 import { onBusinessDataChanged } from "../database/changeSignals";
+import { RENT_SETTLEMENT_SQL, TIFFIN_RECEIPT_SQL, getDepositsHeld, getOutstandingRent } from "../finance/financialDefinitions";
 import { ClosingDivision } from "@/types";
 
 export interface OccupancyMetrics {
@@ -122,7 +124,7 @@ export async function getDashboardMetrics(
     return cached.data;
   }
 
-  const todayIsoDate = new Date().toISOString().slice(0, 10);
+  const todayIsoDate = businessToday();
   const currentMonthPrefix = todayIsoDate.slice(0, 7);
   const startDate = options.startDate || `${currentMonthPrefix}-01`;
   const endDate = options.endDate || todayIsoDate;
@@ -163,9 +165,10 @@ export async function getDashboardMetrics(
       finSummary,
       rentMonthRow,
       expMonthRow,
-      overdueCountRow,
+      outstanding,
       kitchenCostRow,
       tiffinRevRow,
+      depositsHeld,
     ] = await Promise.all([
       db.queryOne<{
         totalRentCollected: number | string;
@@ -173,42 +176,28 @@ export async function getDashboardMetrics(
         totalExpensesPaid: number | string;
         pgExpensesPaid: number | string;
         tiffinExpensesPaid: number | string;
-        totalDepositsHeld: number | string;
         totalTiffinCollected: number | string;
       }>(`
         SELECT
-          COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
+          COALESCE(SUM(CASE WHEN ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
           COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
           COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
           COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
           COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
-          COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' THEN amount ELSE 0 END), 0) -
-          COALESCE(SUM(CASE WHEN (transaction_type = 'DEPOSIT_REFUND' OR (transaction_type = 'RENT_PAYMENT' AND COALESCE(category, '') = 'DEPOSIT_APPLICATION')) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalDepositsHeld",
-          COALESCE(SUM(CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))) AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
+          COALESCE(SUM(CASE WHEN ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
         FROM financial_transactions
       `),
       db.queryOne<{ rentMonth: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "rentMonth"
         FROM financial_transactions
-        WHERE transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
+        WHERE ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
       `, [startDate, endDate]),
       db.queryOne<{ expMonth: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "expMonth"
         FROM financial_transactions
         WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' AND transaction_date >= ? AND transaction_date <= ?
       `, [startDate, endDate]),
-      db.queryOne<{ count: number | string }>(`
-        SELECT COUNT(*) as count FROM (
-          SELECT r.id
-          FROM residents r
-          JOIN financial_transactions t ON t.resident_id = r.id AND t.status = 'POSTED'
-          GROUP BY r.id
-          HAVING (
-            SUM(CASE WHEN t.transaction_type = 'RENT_CHARGE' THEN t.amount ELSE 0 END) -
-            SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' THEN t.amount ELSE 0 END)
-          ) > 0
-        ) subq
-      `),
+      getOutstandingRent(db),
       db.queryOne<{ kitchenCost: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "kitchenCost"
         FROM financial_transactions
@@ -219,12 +208,10 @@ export async function getDashboardMetrics(
       db.queryOne<{ tiffinRev: number | string }>(`
         SELECT COALESCE(SUM(amount), 0) as "tiffinRev"
         FROM financial_transactions
-        WHERE (
-          transaction_type = 'TIFFIN_PAYMENT'
-          OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN' OR description LIKE '%tiffin%'))
-        ) AND status = 'POSTED'
+        WHERE ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED'
           AND transaction_date >= ? AND transaction_date <= ?
       `, [startDate, endDate]),
+      getDepositsHeld(db),
     ]);
 
     const rawTotalRentCollected = Number(finSummary?.totalRentCollected || 0);
@@ -232,18 +219,18 @@ export async function getDashboardMetrics(
     const rawTotalExpensesPaid = Number(finSummary?.totalExpensesPaid || 0);
     const rawPgExpensesPaid = Number(finSummary?.pgExpensesPaid || 0);
     const rawTiffinExpensesPaid = Number(finSummary?.tiffinExpensesPaid || 0);
-    const rawTotalDepositsHeld = Number(finSummary?.totalDepositsHeld || 0);
+    const rawTotalDepositsHeld = depositsHeld;
     const rawTotalTiffinCollected = Number(finSummary?.totalTiffinCollected || 0);
 
     const currentMonthRent = Number(rentMonthRow?.rentMonth || 0);
     const currentMonthExpenses = Number(expMonthRow?.expMonth || 0);
-    const overdueCount = Number(overdueCountRow?.count || 0);
+    const overdueCount = outstanding.residents;
     const kitchenCosts = Number(kitchenCostRow?.kitchenCost || 0);
     const tiffinRevenue = Number(tiffinRevRow?.tiffinRev || 0);
     const tiffinNetResult = tiffinRevenue - kitchenCosts;
 
     if (division === "PG") {
-      const outstandingRent = Math.max(0, rawTotalRentBilled - rawTotalRentCollected);
+      const outstandingRent = outstanding.total;
       return {
         currentMonthRent,
         currentMonthExpenses: Math.max(0, currentMonthExpenses - kitchenCosts),
@@ -274,7 +261,7 @@ export async function getDashboardMetrics(
     }
 
     // COMBINED
-    const outstandingRent = Math.max(0, rawTotalRentBilled - rawTotalRentCollected);
+    const outstandingRent = outstanding.total;
     return {
       currentMonthRent,
       currentMonthExpenses,
@@ -294,22 +281,18 @@ export async function getDashboardMetrics(
   const monthlyDataPromise = (async (): Promise<MonthlyRevenueData[]> => {
     const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
     const sixMonths: string[] = [];
-    const now = new Date();
     for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      sixMonths.push(`${y}-${m}`);
+      sixMonths.push(businessMonthKey(-i));
     }
 
-    let collectedSql = "CASE WHEN (transaction_type = 'RENT_PAYMENT' OR transaction_type = 'TIFFIN_PAYMENT') AND status = 'POSTED' THEN amount ELSE 0 END";
+    let collectedSql = `CASE WHEN (${RENT_SETTLEMENT_SQL} OR ${TIFFIN_RECEIPT_SQL}) AND status = 'POSTED' THEN amount ELSE 0 END`;
     let expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END";
 
     if (division === "PG") {
-      collectedSql = "CASE WHEN transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' THEN amount ELSE 0 END";
+      collectedSql = `CASE WHEN ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END`;
       expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
     } else if (division === "TIFFIN") {
-      collectedSql = "CASE WHEN (transaction_type = 'TIFFIN_PAYMENT' OR (transaction_type = 'RENT_PAYMENT' AND (customer_id IS NOT NULL OR category = 'TIFFIN'))) AND status = 'POSTED' THEN amount ELSE 0 END";
+      collectedSql = `CASE WHEN ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END`;
       expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
     }
 

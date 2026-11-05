@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, TrendingDown, AlertCircle } from "lucide-react";
 import { ExpenseCategory, PaymentMethod, FinancialTransaction } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
@@ -36,8 +36,13 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // One idempotency key per entry: a double click or a retry after a lost response is recognised
+  // by the server as the same expense, never recorded twice. A new key is issued each time the form opens.
+  const entryKey = useRef<string>("");
+  const inFlight = useRef(false);
   useEffect(() => {
     if (isOpen) {
+      entryKey.current = `exp_${crypto.randomUUID()}`;
       setError(null);
       setTransactionDate(toLocalDateString());
     }
@@ -57,9 +62,11 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
       return;
     }
 
+    if (inFlight.current) return; // a second click while this one is being sent
+    inFlight.current = true;
     setSubmitting(true);
     try {
-      const idempotencyKey = `exp_${crypto.randomUUID()}`;
+      const idempotencyKey = entryKey.current || `exp_${crypto.randomUUID()}`;
       const res = await fetch("/api/finance/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,6 +110,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
     } catch (err: any) {
       setError(err.message || "An error occurred while recording expense.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

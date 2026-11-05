@@ -1,24 +1,20 @@
+import { businessToday, businessMonthStart, addBusinessDays } from "@/lib/businessDate";
+
 /**
- * Local calendar date utilities for Ravinarayan ERP Finance.
+ * Business-calendar (Asia/Kolkata) date utilities for Ravinarayan ERP Finance.
  * Prevents UTC timezone shifts in IST (UTC+5:30) and other positive offsets.
  */
 
 export function toLocalDateString(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return businessToday(date);
 }
 
 export function getLocalFirstDayOfMonth(date: Date = new Date()): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${year}-${month}-01`;
+  return businessMonthStart(date);
 }
 
 export function getLocalDaysAgo(days: number, date: Date = new Date()): string {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate() - days);
-  return toLocalDateString(d);
+  return addBusinessDays(businessToday(date), -days);
 }
 
 export function formatIndianDate(dateString: string | null | undefined): string {

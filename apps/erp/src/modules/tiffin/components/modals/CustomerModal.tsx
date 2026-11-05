@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { TiffinCustomer, CustomerType, DietaryPreference } from "@/types";
 
@@ -34,12 +34,15 @@ export function CustomerModal({
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (isOpen) {
       setError(null);
       setDuplicateWarning(null);
       setConfirmDuplicate(false);
+      inFlight.current = false;
       setSubmitting(false);
 
       if (customer) {
@@ -85,6 +88,10 @@ export function CustomerModal({
       return;
     }
 
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+
     setSubmitting(true);
     try {
       const endpoint = isEditing ? `/api/tiffin/customers/${customer!.id}` : "/api/tiffin/customers";
@@ -117,6 +124,7 @@ export function CustomerModal({
       if (!res.ok) {
         if (data.isDuplicate) {
           setDuplicateWarning(data.error.replace("POTENTIAL_DUPLICATE: ", ""));
+          inFlight.current = false;
           setSubmitting(false);
           return;
         }
@@ -133,6 +141,7 @@ export function CustomerModal({
     } catch (err: any) {
       setError(err.message || "Failed to save customer.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

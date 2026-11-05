@@ -180,7 +180,8 @@ async function runRegressionSuite() {
     process.cwd(),
     "apps/erp/src/server/database/migrateSqliteToPg.ts"
   );
-  const migrationSource = fs.readFileSync(migrationFilePath, "utf-8");
+  // Normalise line endings: a Windows checkout (core.autocrlf) has CRLF, and the markers below use LF.
+  const migrationSource = fs.readFileSync(migrationFilePath, "utf-8").replace(/\r\n/g, "\n");
 
   // 1. Static assertion: Checksum validation executes INSIDE the transaction block
   const txBeginIdx = migrationSource.indexOf("await pgSql.begin(async (tx) => {");

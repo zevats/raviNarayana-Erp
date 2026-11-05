@@ -4,8 +4,10 @@ import { requirePermission, AuthorizationError } from "../authorization/authoriz
 import { hasPermission } from "../authorization/permissions";
 import { recordAuditEventAsync } from "../audit/audit";
 import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateString } from "../finance/financeService";
-import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility } from "./deliveryRules";
+import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
+import { hasPayLaterSchema } from "../database/schemaFeatures";
 import { notifyStopsAssigned } from "../notifications/pushService";
+import { getSettings } from "../settings/settingsService";
 import {
   AuthenticatedUser,
   MealType,
@@ -61,6 +63,44 @@ export interface GenerateDeliveryTasksInput {
 
 export interface AssignDeliveryTaskInput {
   assignedToStaffId: string;
+  /** Optional note on why (kept in the delivery's history), e.g. "Owner taking this one himself". */
+  reason?: string;
+}
+
+/**
+ * Who may be given a delivery: an active delivery staff member, or the Owner/Manager who is making
+ * the change taking that one delivery themselves. A self-assignment is a single-delivery override:
+ * it gives no delivery-staff role or access to the delivery staff app, it is not the default for
+ * later orders, and the daily list never carries it over as the "usual delivery person".
+ */
+async function resolveAssignee(
+  db: AsyncDb,
+  actor: AuthenticatedUser,
+  staffId: string
+): Promise<{ id: string; fullName: string; role: string; selfFulfilment: boolean }> {
+  const staff = await db.queryOne<any>(`
+    SELECT id, full_name as "fullName", role, is_active as "isActive"
+    FROM staff_users
+    WHERE id = ?
+  `, [staffId]);
+  if (!staff) {
+    throw new Error(`Staff member '${staffId}' not found.`);
+  }
+  if (!Number(staff.isActive)) {
+    throw new Error(`Staff member '${staff.fullName}' is currently inactive and cannot receive delivery assignments.`);
+  }
+  if (staff.role === "DELIVERY_PERSON") {
+    return { id: staff.id, fullName: staff.fullName, role: staff.role, selfFulfilment: false };
+  }
+  const managesDeliveries = staff.role === "SUPER_ADMIN" || staff.role === "OPERATIONS_MANAGER";
+  if (managesDeliveries && staff.id === actor.id) {
+    return { id: staff.id, fullName: staff.fullName, role: staff.role, selfFulfilment: true };
+  }
+  throw new Error(
+    managesDeliveries
+      ? `Only ${staff.fullName} can take a delivery for themselves. Assign it to delivery staff, or to yourself.`
+      : `Staff member '${staff.fullName}' holds role '${staff.role}'. Only active DELIVERY_PERSON staff can be assigned delivery tasks.`
+  );
 }
 
 export interface ReportDeliveryExceptionInput {
@@ -365,9 +405,10 @@ async function tableExists(db: AsyncDb, table: string): Promise<boolean> {
 async function loadCollectedTotals(db: AsyncDb, taskIds: string[]): Promise<Map<string, number>> {
   const totals = new Map<string, number>();
   if (taskIds.length === 0 || !(await tableExists(db, "delivery_collections"))) return totals;
+  const active = (await hasDeliveryOpsSchema(db)) ? ` AND ${activeCollectionSql("dc")}` : "";
   const rows = await db.query<any>(
-    `SELECT delivery_task_id, SUM(amount) AS total FROM delivery_collections
-     WHERE delivery_task_id IN (${taskIds.map(() => "?").join(", ")}) GROUP BY delivery_task_id`,
+    `SELECT dc.delivery_task_id, SUM(dc.amount) AS total FROM delivery_collections dc
+     WHERE dc.delivery_task_id IN (${taskIds.map(() => "?").join(", ")})${active} GROUP BY dc.delivery_task_id`,
     taskIds
   );
   for (const r of rows) totals.set(r.delivery_task_id, Number(r.total || 0));
@@ -375,8 +416,16 @@ async function loadCollectedTotals(db: AsyncDb, taskIds: string[]): Promise<Map<
 }
 
 /** Live landmark and standing delivery instructions from the customer behind each delivery. */
-async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Map<string, { landmark: string | null; instructions: string | null }>> {
-  const hints = new Map<string, { landmark: string | null; instructions: string | null }>();
+type CustomerHint = {
+  landmark: string | null;
+  instructions: string | null;
+  payLaterAllowed?: boolean;
+  paymentChoice?: "CASH" | "UPI" | "PAY_LATER" | null;
+  paymentReview?: string | null;
+};
+
+async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Map<string, CustomerHint>> {
+  const hints = new Map<string, CustomerHint>();
   const subIds = Array.from(new Set(tasks.map((t) => t.subscriptionId).filter(Boolean))) as string[];
   const orderIds = Array.from(new Set(tasks.map((t) => t.orderId).filter(Boolean))) as string[];
   if (subIds.length > 0) {
@@ -389,13 +438,28 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
     for (const r of rows) hints.set(`sub:${r.id}`, { landmark: r.landmark || null, instructions: r.instructions || null });
   }
   if (orderIds.length > 0) {
+    // With migration 0021: whether the customer may pay later (only this yes/no reaches the
+    // delivery app, never a balance), and what was chosen at the door.
+    const pay = await hasPayLaterSchema(db);
     const rows = await db.query<any>(
-      `SELECT o.id, c.landmark, c.delivery_instructions AS instructions
-       FROM orders o JOIN tiffin_customers c ON c.id = o.customer_id
+      `SELECT o.id, c.landmark, c.delivery_instructions AS instructions${pay ? ", c.pay_later_enabled, o.payment_choice, o.payment_review, o.payment_reviewed_at" : ""}
+       FROM orders o LEFT JOIN tiffin_customers c ON c.id = o.customer_id
        WHERE o.id IN (${orderIds.map(() => "?").join(", ")})`,
       orderIds
     );
-    for (const r of rows) hints.set(`ord:${r.id}`, { landmark: r.landmark || null, instructions: r.instructions || null });
+    for (const r of rows) {
+      hints.set(`ord:${r.id}`, {
+        landmark: r.landmark || null,
+        instructions: r.instructions || null,
+        ...(pay
+          ? {
+              payLaterAllowed: Number(r.pay_later_enabled) === 1,
+              paymentChoice: r.payment_choice || null,
+              paymentReview: r.payment_review && !r.payment_reviewed_at ? r.payment_review : null,
+            }
+          : {}),
+      });
+    }
   }
   return hints;
 }
@@ -451,6 +515,11 @@ async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<Deli
     const h = (task.subscriptionId && hints.get(`sub:${task.subscriptionId}`)) || (task.orderId && hints.get(`ord:${task.orderId}`)) || null;
     task.landmark = h?.landmark ?? null;
     task.deliveryInstructions = h?.instructions ?? null;
+    if (task.orderId && h && h.payLaterAllowed !== undefined) {
+      task.payLaterAllowed = h.payLaterAllowed;
+      task.paymentChoice = h.paymentChoice ?? null;
+      task.paymentReview = h.paymentReview ?? null;
+    }
   }
   return tasks;
 }
@@ -985,7 +1054,9 @@ export async function assignDeliveryTask(
   taskId: string,
   input: AssignDeliveryTaskInput,
   clientIp?: string,
-  asyncDb?: AsyncDb
+  asyncDb?: AsyncDb,
+  /** detail: false skips reloading the task: the result has the new status (and assignee); other fields are as before. */
+  opts: { detail?: boolean } = {}
 ): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.task_assigned" });
 
@@ -996,24 +1067,9 @@ export async function assignDeliveryTask(
 
   const db = asyncDb || getAsyncDb();
 
-  // Validate target staff user exists, is active, and holds DELIVERY_PERSON role
-  const staff = await db.queryOne<any>(`
-    SELECT id, full_name as fullName, role, is_active as isActive
-    FROM staff_users
-    WHERE id = ?
-  `, [assignedToStaffId]);
-
-  if (!staff) {
-    throw new Error(`Staff member '${assignedToStaffId}' not found.`);
-  }
-  if (!Boolean(staff.isActive)) {
-    throw new Error(`Staff member '${staff.fullName}' is currently inactive and cannot receive delivery assignments.`);
-  }
-  if (staff.role !== "DELIVERY_PERSON") {
-    throw new Error(
-      `Staff member '${staff.fullName}' holds role '${staff.role}'. Only active DELIVERY_PERSON staff can be assigned delivery tasks.`
-    );
-  }
+  // Target: active delivery staff, or the Owner/Manager taking this delivery themselves.
+  const staff = await resolveAssignee(db, actor, assignedToStaffId);
+  const reason = input.reason?.trim().slice(0, 300) || null;
 
   // Fetch target delivery task
   const taskRow = await db.queryOne<any>(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
@@ -1079,9 +1135,11 @@ export async function assignDeliveryTask(
       toStatus,
       actor.id,
       actor.fullName,
-      isReassignment
+      (isReassignment
         ? `Reassigned from ${currentTask.assignedToName || "prior staff"} to ${staff.fullName}`
-        : `Assigned to ${staff.fullName}`,
+        : `Assigned to ${staff.fullName}`) +
+        (staff.selfFulfilment ? " (handling it personally)" : "") +
+        (reason ? `. Reason: ${reason}` : ""),
       now,
     ]);
 
@@ -1095,6 +1153,9 @@ export async function assignDeliveryTask(
         assignedToStaffId: staff.id,
         assignedToStaffName: staff.fullName,
         previousAssignedTo: currentTask.assignedTo,
+        previousAssignedToName: currentTask.assignedToName,
+        selfFulfilment: staff.selfFulfilment,
+        reason,
         fromStatus,
         toStatus,
       },
@@ -1102,7 +1163,9 @@ export async function assignDeliveryTask(
     }, tx);
   });
 
-  if (currentTask.assignedTo !== staff.id) notifyStopsAssigned([taskId], staff.id);
+  // The phone alert is for delivery staff; someone taking a delivery themselves needs none.
+  if (currentTask.assignedTo !== staff.id && !staff.selfFulfilment) notifyStopsAssigned([taskId], staff.id);
+  if (opts.detail === false) return { ...currentTask, status: "ASSIGNED", assignedTo: staff.id, assignedToName: staff.fullName };
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }
@@ -1136,24 +1199,8 @@ export async function batchAssignDeliveryTasks(
 
   const db = asyncDb || getAsyncDb();
 
-  // Validate target staff user exists, is active, and holds DELIVERY_PERSON role
-  const staff = await db.queryOne<any>(`
-    SELECT id, full_name as fullName, role, is_active as isActive
-    FROM staff_users
-    WHERE id = ?
-  `, [assignedToStaffId]);
-
-  if (!staff) {
-    throw new Error(`Staff member '${assignedToStaffId}' not found.`);
-  }
-  if (!Boolean(staff.isActive)) {
-    throw new Error(`Staff member '${staff.fullName}' is currently inactive and cannot receive delivery assignments.`);
-  }
-  if (staff.role !== "DELIVERY_PERSON") {
-    throw new Error(
-      `Staff member '${staff.fullName}' holds role '${staff.role}'. Only active DELIVERY_PERSON staff can be assigned delivery tasks.`
-    );
-  }
+  // Target: active delivery staff, or the Owner/Manager taking these deliveries themselves.
+  const staff = await resolveAssignee(db, actor, assignedToStaffId);
 
   // Fetch all requested tasks
   const inPlaceholders = taskIds.map(() => "?").join(", ");
@@ -1257,7 +1304,7 @@ export async function batchAssignDeliveryTasks(
     SELECT * FROM delivery_tasks WHERE id IN (${inPlaceholders})
   `, taskIds);
 
-  notifyStopsAssigned(taskIds, staff.id);
+  if (!staff.selfFulfilment) notifyStopsAssigned(taskIds, staff.id);
   return {
     assignedCount: updatedRows.length,
     assignedStaffId: staff.id,
@@ -1275,7 +1322,9 @@ export async function dispatchDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
   clientIp?: string,
-  asyncDb?: AsyncDb
+  asyncDb?: AsyncDb,
+  /** detail: false skips reloading the task: the result has the new status (and assignee); other fields are as before. */
+  opts: { detail?: boolean } = {}
 ): Promise<DeliveryTask> {
   requirePermission(actor, "delivery.update", { ip: clientIp, action: "delivery.task_dispatched" });
 
@@ -1352,6 +1401,7 @@ export async function dispatchDeliveryTask(
     }, tx);
   });
 
+  if (opts.detail === false) return { ...currentTask, status: "OUT_FOR_DELIVERY" };
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }
@@ -1851,7 +1901,21 @@ async function completeLinedDelivery(
   if (!nothingDelivered && opsSchema && !recipientName) {
     throw new Error("Enter the name of the person who received the delivery.");
   }
-  const paymentMethod = collected > 0 ? normalizePaymentMethod(input?.paymentMethod || "CASH") : null;
+  // The payment chosen at the door (migration 0021): Cash, UPI, or Pay Later (nothing collected).
+  // A balance left for a customer who is not approved for Pay Later is still recorded (the food was
+  // handed over, and an offline delivery can sync after the approval changed) and is flagged for a
+  // Manager on the order. It is never treated as paid.
+  const choice = input?.paymentChoice === "CASH" || input?.paymentChoice === "UPI" || input?.paymentChoice === "PAY_LATER" ? input.paymentChoice : null;
+  if (isOrder && choice === "PAY_LATER" && collected > 0) {
+    throw new Error("Pay Later collects nothing at the door. Choose Cash or UPI to record money received.");
+  }
+  if (isOrder && collected > 0 && choice && input?.paymentMethod && normalizePaymentMethod(input.paymentMethod) !== choice) {
+    throw new Error("The payment method does not match the payment chosen.");
+  }
+  const paymentMethod = collected > 0 ? normalizePaymentMethod(choice && choice !== "PAY_LATER" ? choice : input?.paymentMethod || "CASH") : null;
+  const storedChoice = choice ?? (paymentMethod === "CASH" || paymentMethod === "UPI" ? paymentMethod : null);
+  const recordPayment = isOrder && !nothingDelivered && (await hasPayLaterSchema(db));
+  let payLaterReview: string | null = null;
   const collectionKey = collected > 0 ? input?.idempotencyKey?.trim() || `dcol_${crypto.randomUUID()}` : null;
   // The money is held by the employee the delivery is assigned to (the one at the door), else by
   // whoever records it. Ownership is stored on the collection, never inferred later.
@@ -1934,6 +1998,35 @@ async function completeLinedDelivery(
     if (source.orderId && !nothingDelivered) {
       await tx.execute("UPDATE orders SET status = 'COMPLETED', updated_at = ? WHERE id = ? AND status = 'CONFIRMED'", [now, source.orderId]);
     }
+    if (recordPayment && source.orderId) {
+      const remainder = amountDue - collected;
+      let detail: string | null = null;
+      if (remainder > 0) {
+        const account = await tx.queryOne<{ customer_id: string | null; pay_later_enabled: number | null }>(
+          "SELECT o.customer_id, c.pay_later_enabled FROM orders o LEFT JOIN tiffin_customers c ON c.id = o.customer_id WHERE o.id = ?",
+          [source.orderId]
+        );
+        if (!account?.customer_id || Number(account.pay_later_enabled) !== 1) {
+          payLaterReview = "PAY_LATER_NOT_APPROVED";
+          detail = JSON.stringify({
+            remainder,
+            amountDue,
+            collected,
+            choice: storedChoice,
+            approvedAtSync: false,
+            customerLinked: Boolean(account?.customer_id),
+            approvedOnDeviceWhenChosen: typeof input?.payLaterAllowedAtSelection === "boolean" ? input.payLaterAllowedAtSelection : null,
+            viaOfflineSync: Boolean(input?.viaOfflineSync),
+            recordedBy: actor.id,
+            recordedAt: now,
+          });
+        }
+      }
+      await tx.execute(
+        "UPDATE orders SET payment_choice = ?, payment_review = ?, payment_review_detail = ?, payment_reviewed_by = NULL, payment_reviewed_at = NULL, updated_at = ? WHERE id = ?",
+        [storedChoice, payLaterReview, detail, now, source.orderId]
+      );
+    }
 
     await tx.execute(
       `INSERT INTO delivery_task_events (id, task_id, event_type, from_status, to_status, actor_id, actor_name, notes, created_at)
@@ -1981,6 +2074,9 @@ async function completeLinedDelivery(
           paymentMethod,
           balanceDue: amountDue - collected,
           recipientName,
+          paymentChoice: recordPayment ? storedChoice : undefined,
+          payLaterReview: payLaterReview ?? undefined,
+          viaOfflineSync: input?.viaOfflineSync ? true : undefined,
         },
         ipAddress: clientIp,
       },
@@ -2158,19 +2254,12 @@ export async function retryDeliveryTask(
   let targetStaffId = currentTask.assignedTo;
   let targetStaffName = currentTask.assignedToName;
 
+  let selfFulfilment = false;
   if (input?.reassignToStaffId) {
-    const staff = await db.queryOne<any>(`
-      SELECT id, full_name as fullName, role, is_active as isActive
-      FROM staff_users
-      WHERE id = ?
-    `, [input.reassignToStaffId.trim()]);
-
-    if (!staff || !Boolean(staff.isActive) || staff.role !== "DELIVERY_PERSON") {
-      throw new Error(`Staff member '${input.reassignToStaffId}' is not an active delivery person.`);
-    }
-
+    const staff = await resolveAssignee(db, actor, input.reassignToStaffId.trim());
     targetStaffId = staff.id;
     targetStaffName = staff.fullName;
+    selfFulfilment = staff.selfFulfilment;
   }
 
   const now = new Date().toISOString();
@@ -2237,7 +2326,7 @@ export async function retryDeliveryTask(
     }, tx);
   });
 
-  if (targetStaffId) notifyStopsAssigned([taskId], targetStaffId);
+  if (targetStaffId && !selfFulfilment && targetStaffId !== actor.id) notifyStopsAssigned([taskId], targetStaffId);
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }
@@ -2457,34 +2546,61 @@ export async function listActiveDeliveryStaff(
   }));
 }
 
+export interface DefaultDeliveryStaffResolution {
+  staff: { id: string; fullName: string; username: string } | null;
+  /** How the person was chosen; "UNAVAILABLE" when the partner set in Settings is switched off. */
+  source: "SETTING" | "ENV" | "OLDEST_ACTIVE" | "UNAVAILABLE" | "NONE";
+  /** The partner chosen in Settings when it can no longer take deliveries. */
+  configured?: { id: string; fullName: string | null } | null;
+}
+
 /**
  * Resolves the default delivery person for auto-assigned orders.
  *
- * 1. ERP_DEFAULT_DELIVERY_USERNAME, when set and pointing at an active DELIVERY_PERSON.
- * 2. Otherwise the longest-serving active DELIVERY_PERSON (the single-driver setup).
+ * 1. The delivery partner chosen in Settings. If that account is switched off (or no longer a
+ *    delivery account), nobody is chosen: orders wait unassigned and the Owner/Manager get an
+ *    alert, rather than the work silently going to someone else.
+ * 2. Without a Settings choice: ERP_DEFAULT_DELIVERY_USERNAME, when set and pointing at an active
+ *    DELIVERY_PERSON.
+ * 3. Otherwise the longest-serving active DELIVERY_PERSON (the single-driver setup).
  * Never matches on personal names and never returns a non-delivery role.
  */
-export async function getDefaultDeliveryStaff(
-  asyncDb?: AsyncDb
-): Promise<{ id: string; fullName: string; username: string } | null> {
+export async function resolveDefaultDeliveryStaff(asyncDb?: AsyncDb): Promise<DefaultDeliveryStaffResolution> {
   const db = asyncDb || getAsyncDb();
+  const configuredId = (await getSettings(db)).delivery.defaultDriverId;
+  if (configuredId) {
+    const row = await db.queryOne<{ id: string; fullName: string; username: string; role: string; isActive: number | boolean }>(`
+      SELECT id, full_name as "fullName", username, role, is_active as "isActive"
+      FROM staff_users WHERE id = ?
+    `, [configuredId]);
+    if (row && row.role === "DELIVERY_PERSON" && Number(row.isActive)) {
+      return { staff: { id: row.id, fullName: row.fullName, username: row.username }, source: "SETTING" };
+    }
+    return { staff: null, source: "UNAVAILABLE", configured: { id: configuredId, fullName: row?.fullName ?? null } };
+  }
   const configured = process.env.ERP_DEFAULT_DELIVERY_USERNAME?.trim().toLowerCase();
   if (configured) {
     const row = await db.queryOne<{ id: string; fullName: string; username: string }>(`
-      SELECT id, full_name as fullName, username
+      SELECT id, full_name as "fullName", username
       FROM staff_users
       WHERE role = 'DELIVERY_PERSON' AND is_active = 1 AND lower(username) = ?
     `, [configured]);
-    if (row) return row;
+    if (row) return { staff: row, source: "ENV" };
   }
   const row = await db.queryOne<{ id: string; fullName: string; username: string }>(`
-    SELECT id, full_name as fullName, username
+    SELECT id, full_name as "fullName", username
     FROM staff_users
     WHERE role = 'DELIVERY_PERSON' AND is_active = 1
     ORDER BY created_at ASC, id ASC
     LIMIT 1
   `);
-  return row || null;
+  return row ? { staff: row, source: "OLDEST_ACTIVE" } : { staff: null, source: "NONE" };
+}
+
+export async function getDefaultDeliveryStaff(
+  asyncDb?: AsyncDb
+): Promise<{ id: string; fullName: string; username: string } | null> {
+  return (await resolveDefaultDeliveryStaff(asyncDb)).staff;
 }
 
 /** @deprecated Use getDefaultDeliveryStaff. Kept for existing callers. */
@@ -2517,6 +2633,13 @@ export async function recordDeliveryCollection(
 
   const idempotencyKey = input.idempotencyKey?.trim() || null;
   if (idempotencyKey && currentTask.collectionIdempotencyKey === idempotencyKey) {
+    const prior = await db.queryOne<{ amount: number | string; payment_method: string }>(
+      "SELECT amount, payment_method FROM delivery_collections WHERE idempotency_key = ?",
+      [idempotencyKey]
+    );
+    if (prior && (Number(prior.amount) !== Number(input.collectedAmount) || prior.payment_method !== normalizePaymentMethod(input.paymentMethod))) {
+      throw new Error("This payment reference was already used for a different amount or method. Close the form and record the payment again.");
+    }
     return (await getDeliveryTaskById(actor, taskId, db))!.task;
   }
   if (currentTask.status === "CANCELLED") {
@@ -2637,11 +2760,26 @@ async function collectOrderBalance(
        FROM delivery_tasks WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`,
       [currentTask.id]
     );
-    if (idempotencyKey && locked?.collection_idempotency_key === idempotencyKey) return;
-    if (idempotencyKey && (await tx.queryOne("SELECT id FROM delivery_collections WHERE idempotency_key = ?", [idempotencyKey]))) return;
+    // Replays of one collection (double click, network retry, offline resend) carry the same key:
+    // they return without a second record. A key reused for a different payment is refused.
+    if (idempotencyKey) {
+      const prior = await tx.queryOne<{ delivery_task_id: string; amount: number | string; payment_method: string }>(
+        "SELECT delivery_task_id, amount, payment_method FROM delivery_collections WHERE idempotency_key = ?",
+        [idempotencyKey]
+      );
+      if (prior) {
+        if (prior.delivery_task_id !== currentTask.id || Number(prior.amount) !== amount || prior.payment_method !== paymentMethod) {
+          throw new Error("This payment reference was already used for a different amount or method. Close the form and record the payment again.");
+        }
+        return;
+      }
+      if (locked?.collection_idempotency_key === idempotencyKey) return;
+    }
     // A payment after an earlier handover is simply a new collection in the receiver's custody.
+    // Collections whose cashbook entry was reversed no longer count towards what was paid.
+    const active = (await hasDeliveryOpsSchema(tx)) ? ` AND ${activeCollectionSql("dc")}` : "";
     const recorded = await tx.queryOne<{ total: number | null }>(
-      "SELECT SUM(amount) AS total FROM delivery_collections WHERE delivery_task_id = ?",
+      `SELECT SUM(dc.amount) AS total FROM delivery_collections dc WHERE dc.delivery_task_id = ?${active}`,
       [currentTask.id]
     );
     const already = Number(recorded?.total ?? locked?.collected_amount ?? 0);
@@ -2780,6 +2918,64 @@ async function recordCustodyCollection(
   );
 }
 
+/**
+ * A cashbook reversal of a delivery collection's own entry (UPI paid to the PG account), applied to
+ * the delivery inside the reversal's transaction. The collection row stays (history); because its
+ * entry is now REVERSED it no longer counts (activeCollectionSql), so the order's balance due comes
+ * back. The task's copied total, status and method are recomputed from the collections that still
+ * count, and the delivery timeline records the reversal. Cash collections have no entry of their
+ * own, and a handover entry covers several collections, so neither reaches this function (the
+ * reversal refuses handover entries before it starts). Returns null when the entry is not a
+ * single delivery collection.
+ */
+export async function applyCollectionEntryReversal(
+  tx: AsyncDb,
+  entryId: string,
+  actor: AuthenticatedUser,
+  reason: string,
+  now: string
+): Promise<{ deliveryTaskId: string; orderId: string | null; amount: number; collectedNow: number } | null> {
+  if (!(await hasDeliveryOpsSchema(tx))) return null;
+  const collection = await tx.queryOne<{ id: string; delivery_task_id: string; order_id: string | null; amount: number | string; payment_method: string }>(
+    "SELECT id, delivery_task_id, order_id, amount, payment_method FROM delivery_collections WHERE transaction_id = ?",
+    [entryId]
+  );
+  if (!collection) return null;
+  const task = await tx.queryOne<{ status: string; collection_status: string }>(
+    `SELECT status, collection_status FROM delivery_tasks WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`,
+    [collection.delivery_task_id]
+  );
+  if (!task) return null;
+  const remaining = await tx.query<{ amount: number | string; payment_method: string }>(
+    `SELECT dc.amount, dc.payment_method FROM delivery_collections dc
+     WHERE dc.delivery_task_id = ? AND ${activeCollectionSql("dc")}
+     ORDER BY dc.collected_at ASC`,
+    [collection.delivery_task_id]
+  );
+  const collectedNow = remaining.reduce((sum, r) => sum + Number(r.amount), 0);
+  const nextStatus = collectedNow === 0 && task.collection_status === "COLLECTED" ? "NONE" : task.collection_status;
+  await tx.execute(
+    `UPDATE delivery_tasks SET collected_amount = ?, collection_status = ?, collected_payment_method = ?, updated_at = ? WHERE id = ?`,
+    [collectedNow, nextStatus, remaining[0]?.payment_method ?? null, now, collection.delivery_task_id]
+  );
+  const amount = Number(collection.amount);
+  await tx.execute(
+    `INSERT INTO delivery_task_events (id, task_id, event_type, from_status, to_status, actor_id, actor_name, notes, created_at)
+     VALUES (?, ?, 'UPDATED', ?, ?, ?, ?, ?, ?)`,
+    [
+      `devt_${crypto.randomUUID()}`,
+      collection.delivery_task_id,
+      task.status,
+      task.status,
+      actor.id,
+      actor.fullName,
+      `Payment ₹${amount} via ${collection.payment_method} reversed in the cashbook: ${reason}. Collected now ₹${collectedNow}.`,
+      now,
+    ]
+  );
+  return { deliveryTaskId: collection.delivery_task_id, orderId: collection.order_id, amount, collectedNow };
+}
+
 const CUSTODY_ROW_SQL_TEMPLATE = `
   SELECT
     u.id AS staff_id, u.full_name AS staff_name, u.role AS role,
@@ -2799,7 +2995,7 @@ const CUSTODY_ROW_SQL_TEMPLATE = `
   LEFT JOIN (
     SELECT dc.collected_by,
       SUM(CASE WHEN dc.payment_method = 'CASH' THEN dc.amount ELSE 0 END) AS cash_collected,
-      SUM(CASE WHEN dc.payment_method <> 'CASH' THEN dc.amount ELSE 0 END) AS upi_collected,
+      SUM(CASE WHEN dc.payment_method <> 'CASH' /*ACTIVE*/ THEN dc.amount ELSE 0 END) AS upi_collected,
       SUM(CASE WHEN dc.payment_method = 'CASH' AND dc.handover_id IS NULL THEN dc.amount ELSE 0 END) AS cash_undeclared,
       SUM(CASE WHEN dc.payment_method <> 'CASH' AND dc.handover_id IS NULL /*DIRECT*/ THEN dc.amount ELSE 0 END) AS upi_undeclared,
       SUM(CASE WHEN dc.payment_method = 'CASH' AND hh.status = 'DECLARED' THEN dc.amount ELSE 0 END) AS cash_awaiting,
@@ -2822,7 +3018,8 @@ const CUSTODY_ROW_SQL_TEMPLATE = `
 
 /** Staff custody per employee; with migration 0014, UPI booked directly to the PG account is excluded. */
 async function custodyRowSql(db: AsyncDb): Promise<string> {
-  return CUSTODY_ROW_SQL_TEMPLATE.replace("/*DIRECT*/", (await hasDeliveryOpsSchema(db)) ? "AND dc.transaction_id IS NULL" : "");
+  const ops = await hasDeliveryOpsSchema(db);
+  return CUSTODY_ROW_SQL_TEMPLATE.replace("/*DIRECT*/", ops ? "AND dc.transaction_id IS NULL" : "").replace("/*ACTIVE*/", ops ? `AND ${activeCollectionSql("dc")}` : "");
 }
 
 function mapCustodyRow(r: any): StaffCustodyRow {
@@ -3480,6 +3677,11 @@ export async function syncDeliveryActions(
             itemsReconciliation: Array.isArray(item.payload?.itemsReconciliation)
               ? item.payload.itemsReconciliation
               : undefined,
+            // The payment chosen at the door and the approval the phone showed then travel with the
+            // queued completion; the server decides with the approval as it is now (flag, not reject).
+            paymentChoice: item.payload?.paymentChoice,
+            payLaterAllowedAtSelection: typeof item.payload?.payLaterAllowedAtSelection === "boolean" ? item.payload.payLaterAllowedAtSelection : undefined,
+            viaOfflineSync: true,
           },
           clientIp,
           db

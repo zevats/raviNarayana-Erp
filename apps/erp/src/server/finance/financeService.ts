@@ -1,5 +1,7 @@
 import crypto from "crypto";
+import { businessToday, businessMonthStart } from "@/lib/businessDate";
 import { getAsyncDb, AsyncDb } from "../database/db";
+import { getOutstandingRent } from "./financialDefinitions";
 import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
@@ -1027,12 +1029,8 @@ export async function getCashbookSummary(
   const division = options?.division || "COMBINED";
 
   // Default to current calendar month if dates not provided
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  const defaultStart = `${year}-${month}-01`;
-  const defaultEnd = `${year}-${month}-${day}`;
+  const defaultStart = businessMonthStart();
+  const defaultEnd = businessToday();
 
   const startDate = options?.startDate && DATE_REGEX.test(options.startDate) ? options.startDate : defaultStart;
   const endDate = options?.endDate && DATE_REGEX.test(options.endDate) ? options.endDate : defaultEnd;
@@ -1041,10 +1039,10 @@ export async function getCashbookSummary(
   const [periodRows, crossPeriodReversals, globalOutstandingRow] = await Promise.all([
     db.queryOne<any>(`
       SELECT
-        COALESCE(SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' AND COALESCE(t.category, '') != 'DEPOSIT_APPLICATION' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as rentCollected,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'RENT_PAYMENT' AND COALESCE(t.category, '') NOT IN ('DEPOSIT_APPLICATION', 'TIFFIN') AND t.customer_id IS NULL AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as rentCollected,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'SECURITY_DEPOSIT' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as depositsCollected,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'DEPOSIT_REFUND' AND t.status = 'POSTED' THEN t.amount ELSE 0 END), 0) as depositRefunds,
-        COALESCE(SUM(CASE WHEN (t.transaction_type = 'TIFFIN_PAYMENT' OR (t.transaction_type = 'RENT_PAYMENT' AND (t.customer_id IS NOT NULL OR t.category = 'TIFFIN' OR t.description LIKE '%tiffin%'))) AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinCollected,
+        COALESCE(SUM(CASE WHEN (t.transaction_type = 'TIFFIN_PAYMENT' OR (t.transaction_type = 'RENT_PAYMENT' AND (t.customer_id IS NOT NULL OR t.category = 'TIFFIN'))) AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinCollected,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as expensesPaid,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as allExpensesPaid,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as pgExpensesPaid,
@@ -1057,9 +1055,9 @@ export async function getCashbookSummary(
     `, [endDate, endDate, endDate, endDate, endDate, endDate, endDate, endDate, startDate, endDate]),
     db.queryOne<any>(`
       SELECT
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' AND COALESCE(orig.category, '') != 'DEPOSIT_APPLICATION' THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'RENT_PAYMENT' AND COALESCE(orig.category, '') NOT IN ('DEPOSIT_APPLICATION', 'TIFFIN') AND orig.customer_id IS NULL THEN rev.amount ELSE 0 END), 0) as priorRentRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'TIFFIN_PAYMENT' OR (orig.transaction_type = 'RENT_PAYMENT' AND orig.customer_id IS NOT NULL) THEN rev.amount ELSE 0 END), 0) as priorTiffinRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'TIFFIN_PAYMENT' OR (orig.transaction_type = 'RENT_PAYMENT' AND (orig.customer_id IS NOT NULL OR orig.category = 'TIFFIN')) THEN rev.amount ELSE 0 END), 0) as priorTiffinRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorPgExpenseRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorTiffinExpenseRefunds
@@ -1070,13 +1068,7 @@ export async function getCashbookSummary(
         AND rev.transaction_date >= ? AND rev.transaction_date <= ?
         AND orig.transaction_date < ?
     `, [startDate, endDate, startDate]),
-    db.queryOne<any>(`
-      SELECT
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' THEN amount ELSE 0 END), 0) as allCharges,
-        COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' THEN amount ELSE 0 END), 0) as allPayments
-      FROM financial_transactions
-      WHERE status = 'POSTED' AND transaction_type IN ('RENT_CHARGE', 'RENT_PAYMENT')
-    `),
+    getOutstandingRent(db),
   ]);
 
   const rawRentCollected = Number(periodRows?.rentCollected || 0);
@@ -1109,9 +1101,7 @@ export async function getCashbookSummary(
     totalTiffinCollected = 0;
     totalExpensesPaid = Math.max(0, rawPgExpensesPaid - priorPgExpenseRefunds);
     totalRentBilledInPeriod = rawRentBilledInPeriod;
-    const allCharges = Number(globalOutstandingRow?.allCharges || 0);
-    const allPayments = Number(globalOutstandingRow?.allPayments || 0);
-    totalOutstandingRent = Math.max(0, allCharges - allPayments);
+    totalOutstandingRent = globalOutstandingRow.total;
   } else if (division === "TIFFIN") {
     totalRentCollected = 0;
     totalDepositsCollected = 0;
@@ -1126,13 +1116,30 @@ export async function getCashbookSummary(
     totalTiffinCollected = Math.max(0, rawTiffinCollected - priorTiffinRefunds);
     totalExpensesPaid = Math.max(0, rawAllExpensesPaid - priorAllExpenseRefunds);
     totalRentBilledInPeriod = rawRentBilledInPeriod;
-    const allCharges = Number(globalOutstandingRow?.allCharges || 0);
-    const allPayments = Number(globalOutstandingRow?.allPayments || 0);
-    totalOutstandingRent = Math.max(0, allCharges - allPayments);
+    totalOutstandingRent = globalOutstandingRow.total;
   }
 
   // Net Cash Movement = Money In (Rent + Deposits + Tiffin) - Money Out (Expenses)
   const netCashMovement = totalRentCollected + totalDepositsCollected + totalTiffinCollected - totalExpensesPaid;
+
+  // Owner decision D9 (option C): receipts and refunds of earlier receipts are shown separately and
+  // the net may be negative, so months add up to longer ranges and match the daily closings. The
+  // floored figures above stay as they were for existing callers; the Cashbook shows these.
+  const pgSide = division !== "TIFFIN";
+  const tiffinSide = division !== "PG";
+  const breakdown = {
+    rentReceipts: pgSide ? rawRentCollected : 0,
+    rentRefunds: pgSide ? priorRentRefunds : 0,
+    tiffinReceipts: tiffinSide ? rawTiffinCollected : 0,
+    tiffinRefunds: tiffinSide ? priorTiffinRefunds : 0,
+    expensesPaid: division === "PG" ? rawPgExpensesPaid : division === "TIFFIN" ? rawTiffinExpensesPaid : rawAllExpensesPaid,
+    expenseRefunds: division === "PG" ? priorPgExpenseRefunds : division === "TIFFIN" ? priorTiffinExpenseRefunds : priorAllExpenseRefunds,
+  };
+  const netCashMovementExact =
+    breakdown.rentReceipts - breakdown.rentRefunds +
+    totalDepositsCollected +
+    breakdown.tiffinReceipts - breakdown.tiffinRefunds -
+    (breakdown.expensesPaid - breakdown.expenseRefunds);
 
   return {
     startDate,
@@ -1146,6 +1153,8 @@ export async function getCashbookSummary(
     totalOutstandingRent,
     totalRentBilledInPeriod,
     transactionCount,
+    breakdown,
+    netCashMovementExact,
   };
 }
 
@@ -1205,9 +1214,28 @@ export async function reverseTransaction(
     }
   }
 
+  // A delivery staff handover is booked as one entry for several collections (cash, or UPI before
+  // migration 0014). Reversing it here would take the money out of the cashbook while staff custody
+  // and every order in it still say it was received, so it is refused; the handover is corrected
+  // where it was accepted. A single UPI collection's own entry is reversed below together with
+  // its delivery.
+  if (current.transactionType === "TIFFIN_PAYMENT" && current.category === "TIFFIN_DELIVERY_COLLECTION") {
+    const handover = await db.queryOne<{ id: string }>(
+      "SELECT id FROM driver_cash_handovers WHERE transaction_id = ? OR upi_transaction_id = ? LIMIT 1",
+      [transactionId, transactionId]
+    );
+    if (handover) {
+      throw new Error(
+        "This entry is a delivery staff handover covering several collections. It cannot be reversed from the cashbook, because staff custody and the orders it covers would still show the money as received."
+      );
+    }
+  }
+
   const reversalId = `txn_${crypto.randomUUID()}`;
   const now = new Date().toISOString();
   const today = getBusinessDateString(new Date());
+  let allocationsKept = 0;
+  let deliveryCollection: { deliveryTaskId: string; orderId: string | null; amount: number; collectedNow: number } | null = null;
   const reversalDivision =
     current.transactionType === "TIFFIN_PAYMENT" ||
     current.transactionType === "TIFFIN_CHARGE" ||
@@ -1242,19 +1270,23 @@ export async function reverseTransaction(
       throw new Error(`Transaction '${transactionId}' is already reversed.`);
     }
 
-    // If reversing a RENT_PAYMENT or TIFFIN_PAYMENT, deallocate any linked invoice payments
+    // Reversing a RENT_PAYMENT or TIFFIN_PAYMENT gives its allocated amounts back to the invoices.
+    // The allocation rows are kept as history: an allocation counts only while its payment is
+    // POSTED, so they stop counting the moment the status flip above commits. Each invoice row is
+    // locked before it is read (payment first, then invoice: the order allocations use).
     if (current.transactionType === "RENT_PAYMENT" || current.transactionType === "TIFFIN_PAYMENT") {
       const allocations = await tx.query<{ id: string; invoiceId: string; amount: number }>(`
         SELECT id, invoice_id as "invoiceId", amount
         FROM invoice_payment_allocations
         WHERE payment_transaction_id = ?
+        ORDER BY invoice_id
       `, [transactionId]);
 
       for (const alloc of allocations) {
         const inv = await tx.queryOne<{ id: string; amountPaid: number; balanceDue: number }>(`
           SELECT id, amount_paid as "amountPaid", balance_due as "balanceDue"
           FROM invoices
-          WHERE id = ?
+          WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}
         `, [alloc.invoiceId]);
 
         if (inv) {
@@ -1267,9 +1299,14 @@ export async function reverseTransaction(
             WHERE id = ?
           `, [newPaid, newDue, newStatus, now, inv.id]);
         }
-
-        await tx.execute("DELETE FROM invoice_payment_allocations WHERE id = ?", [alloc.id]);
+        allocationsKept++;
       }
+    }
+
+    // A delivery collection's own entry (UPI paid to the PG account): the order's balance comes back.
+    if (current.transactionType === "TIFFIN_PAYMENT" && current.category === "TIFFIN_DELIVERY_COLLECTION") {
+      const { applyCollectionEntryReversal } = await import("../delivery/deliveryService");
+      deliveryCollection = await applyCollectionEntryReversal(tx, transactionId, actor, cleanReason, now);
     }
 
 
@@ -1315,6 +1352,8 @@ export async function reverseTransaction(
         originalType: current.transactionType,
         amount: current.amount,
         reason: cleanReason,
+        allocationsKept,
+        deliveryCollection,
       },
       ipAddress: clientIp,
     }, tx);

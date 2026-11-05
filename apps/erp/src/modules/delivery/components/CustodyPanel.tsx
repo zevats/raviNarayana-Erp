@@ -6,11 +6,14 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import { DriverCashHandover, StaffCustodyRow, StaffCustodyCollection } from "@/types";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { Badge } from "@/components/ui/kit";
+import { LoadError, StateMessage } from "@/components/ui/states";
+import { formatDateTime } from "@/lib/format";
 
 const LIVE_MS = 20000;
 const inr = (n: number) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 const when = (iso?: string | null) =>
-  iso ? new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+  iso ? formatDateTime(iso, "en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 
 type Overview = { staff: StaffCustodyRow[]; totals: Omit<StaffCustodyRow, "staffId" | "staffName" | "role" | "status"> };
 type Detail = { custody: StaffCustodyRow; collections: StaffCustodyCollection[]; handovers: DriverCashHandover[] };
@@ -126,7 +129,7 @@ export function MyCustody({ staffId }: { staffId: string }) {
     <section className="p-4 bg-white rounded-3xl border border-[#E6E1DA] space-y-3" aria-label="My custody">
       <div className="flex items-center justify-between gap-2">
         <h2 className="font-serif text-base font-bold text-[#1A2E20] flex items-center gap-2">
-          <IndianRupee className="w-4 h-4 text-[#B58A57]" /> My custody
+          My custody
         </h2>
         {c && <StatusChip status={c.status} />}
       </div>
@@ -400,97 +403,94 @@ function StaffOverview() {
   const myRow = rows.find((r) => r.staffId === me?.id);
   const iHoldMoney = Boolean(myRow && (myRow.cashPending > 0 || myRow.upiPending > 0 || myRow.pendingHandovers > 0));
 
+  // Oldest declaration per employee: the row's Verify opens it (the verify dialog shows amounts).
+  const pendingBy = new Map<string, DriverCashHandover[]>();
+  for (const h of pending) pendingBy.set(h.driverId, [...(pendingBy.get(h.driverId) ?? []), h]);
+
   return (
-    <section className="p-4 bg-white rounded-3xl border border-[#E6E1DA] space-y-3" aria-label="Staff custody">
-      <h2 className="font-serif text-base font-bold text-[#1A2E20] flex items-center gap-2">
-        <IndianRupee className="w-4 h-4 text-[#B58A57]" /> Staff custody
-      </h2>
-      {message && (
-        <p role="status" className="text-xs bg-emerald-50 text-emerald-900 rounded-xl p-2">
-          {message}
-        </p>
-      )}
-      {pending.length > 0 && (
-        <div className="space-y-1.5">
-          <h3 className="text-xs font-bold text-amber-900">Awaiting verification ({pending.length})</h3>
-          {pending.map((h) => (
-            <div key={h.id} className="flex items-center justify-between gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-2xl text-xs">
-              <span>
-                <strong className="text-sm text-[#1A2E20]">{h.driverName}</strong>
-                <span className="block font-mono text-[#5D7656]">
-                  Cash {inr(h.declaredCash)} · UPI {inr(h.declaredUpi || 0)} · {when(h.createdAt)}
-                </span>
-                {h.notes && /^Handing over ₹/.test(h.notes) && <span className="block font-semibold text-amber-900">{h.notes}</span>}
-              </span>
-              <button type="button" onClick={() => setVerify(h)} className="h-10 px-4 rounded-xl bg-amber-800 text-white font-bold shrink-0">
-                Verify
-              </button>
-            </div>
-          ))}
+    <section className="rn-card" aria-label="Staff custody">
+      <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="rn-t-section">Staff custody</h2>
+          <p className="rn-t-meta mt-0.5">Cash each person collected, handed over, and still holds.</p>
         </div>
-      )}
-      {q.error && !q.data && <p className="text-xs text-red-700">{q.error.message}</p>}
-      {/* One row per employee; the totals row is only the sum of the rows. */}
-      <div className="overflow-x-auto -mx-1">
-        <table className="w-full text-xs min-w-[640px]">
+        {pending.length > 0 && <Badge tone="warn">{pending.length} to verify</Badge>}
+      </div>
+      {message && <p role="status" className="rn-notice rn-notice-good mx-5 sm:mx-6 mb-3">{message}</p>}
+      {q.error && !q.data ? (
+        <LoadError message={q.error.message} onRetry={() => q.refetch()} title="Custody could not be loaded" />
+      ) : q.isLoading && !q.data ? (
+        <BikeLoader label="Loading custody" className="py-10" />
+      ) : rows.length === 0 ? (
+        <StateMessage title="No cash with staff" compact>Cash collected on deliveries appears here until it is handed over.</StateMessage>
+      ) : (
+        <table className="rn-table">
           <thead>
-            <tr className="text-left text-[#8E9F89] border-b border-[#E6E1DA]">
-              <th className="py-1.5 px-1">Employee</th>
-              <th className="px-1 text-right">Cash collected</th>
-              <th className="px-1 text-right">UPI collected</th>
-              <th className="px-1 text-right">Cash handed over</th>
-              <th className="px-1 text-right">UPI reconciled</th>
-              <th className="px-1 text-right">Cash pending</th>
-              <th className="px-1 text-right">UPI pending</th>
-              <th className="px-1 text-right">Short</th>
-              <th className="px-1">Status</th>
+            <tr>
+              <th>Employee</th>
+              <th className="text-right">Cash collected</th>
+              <th className="text-right">Cash handed over</th>
+              <th className="text-right">Cash pending</th>
+              <th>Status</th>
+              <th className="text-right"><span className="sr-only">Action</span></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.staffId} className="border-b border-[#E6E1DA]/60 hover:bg-[#FAF8F5] cursor-pointer" onClick={() => setDetail(r.staffId)}>
-                <td className="py-2 px-1 font-medium text-[#1A2E20]">
-                  <span className="inline-flex items-center gap-1">
-                    {r.staffName} <ChevronRight className="w-3 h-3 text-[#8E9F89]" />
-                  </span>
-                </td>
-                <td className="px-1 text-right font-mono">{inr(r.cashCollected)}</td>
-                <td className="px-1 text-right font-mono">{inr(r.upiCollected)}</td>
-                <td className="px-1 text-right font-mono">{inr(r.cashHandedOver)}</td>
-                <td className="px-1 text-right font-mono">{inr(r.upiReconciled)}</td>
-                <td className="px-1 text-right font-mono font-bold">{inr(r.cashPending)}</td>
-                <td className="px-1 text-right font-mono font-bold">{inr(r.upiPending)}</td>
-                <td className={`px-1 text-right font-mono ${r.cashShort + r.upiShort !== 0 ? "text-red-800 font-bold" : ""}`}>{inr(r.cashShort + r.upiShort)}</td>
-                <td className="px-1">
-                  <StatusChip status={r.status} />
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={9} className="py-3 text-center text-[#8E9F89]">
-                  No staff custody yet.
-                </td>
-              </tr>
-            )}
+            {rows.map((r) => {
+              const waiting = pendingBy.get(r.staffId) ?? [];
+              const short = r.cashShort;
+              return (
+                <tr key={r.staffId}>
+                  <td>
+                    <span className="flex items-center gap-3">
+                      <span className="grid place-items-center w-9 h-9 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent)] text-[13px] font-semibold shrink-0" aria-hidden>
+                        {r.staffName.trim().charAt(0).toUpperCase()}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-medium text-[var(--rn-ink)]">{r.staffName}</span>
+                        <span className="block rn-t-meta">{ROLE_NAME[r.role] || r.role}</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td className="num">{inr(r.cashCollected)}</td>
+                  <td className="num">{inr(r.cashHandedOver)}</td>
+                  <td className={`num text-[15px] font-semibold ${r.cashPending > 0 ? "text-[var(--rn-ink)]" : "text-[var(--rn-ink-3)]"}`}>{inr(r.cashPending)}</td>
+                  <td>
+                    {short > 0 ? (
+                      <Badge tone="bad">Short {inr(short)}</Badge>
+                    ) : (
+                      <Badge tone={r.status === "AWAITING_ACCEPTANCE" ? "warn" : r.status === "DISCREPANCY" ? "bad" : r.status === "CLEAR" ? "good" : "neutral"}>{STATUS_LABEL[r.status] || r.status}</Badge>
+                    )}
+                  </td>
+                  <td className="text-right">
+                    {waiting.length > 0 ? (
+                      <button type="button" className="rn-btn rn-btn-sm rn-btn-primary" onClick={() => setVerify(waiting[0])} aria-label={`Verify ${r.staffName}'s handover`}>
+                        Verify{waiting.length > 1 ? ` (${waiting.length})` : ""}
+                      </button>
+                    ) : (
+                      <button type="button" className="rn-btn rn-btn-sm" onClick={() => setDetail(r.staffId)} aria-label={`Custody details for ${r.staffName}`}>
+                        Details
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
-          {t && rows.length > 0 && (
+          {t && rows.length > 1 && (
             <tfoot>
-              <tr className="font-bold text-[#1A2E20]">
-                <td className="py-2 px-1">All staff (sum)</td>
-                <td className="px-1 text-right font-mono">{inr(t.cashCollected)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.upiCollected)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.cashHandedOver)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.upiReconciled)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.cashPending)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.upiPending)}</td>
-                <td className="px-1 text-right font-mono">{inr(t.cashShort + t.upiShort)}</td>
-                <td className="px-1" />
+              <tr className="font-semibold">
+                <td>All staff</td>
+                <td className="num">{inr(t.cashCollected)}</td>
+                <td className="num">{inr(t.cashHandedOver)}</td>
+                <td className="num">{inr(t.cashPending)}</td>
+                <td />
+                <td />
               </tr>
             </tfoot>
           )}
         </table>
-      </div>
+      )}
       {verify && (
         <VerifyHandover
           handover={verify}
@@ -502,10 +502,18 @@ function StaffOverview() {
       )}
       {detail && <StaffDetail staffId={detail} onClose={() => setDetail(null)} />}
       {/* A manager/owner who collected money declares it like anyone else (verified by someone else). */}
-      {iHoldMoney && me && <MyCustody staffId={me.id} />}
+      {iHoldMoney && me && <div className="px-5 sm:px-6 pb-5"><MyCustody staffId={me.id} /></div>}
     </section>
   );
 }
+
+const STATUS_LABEL: Record<string, string> = {
+  CLEAR: "Clear",
+  HOLDING: "Holding cash",
+  AWAITING_ACCEPTANCE: "Awaiting verification",
+  DISCREPANCY: "Discrepancy",
+};
+const ROLE_NAME: Record<string, string> = { DELIVERY_PERSON: "Delivery", OPERATIONS_MANAGER: "Manager", SUPER_ADMIN: "Owner" };
 
 /** Custody section of the Delivery page: own ledger for staff, staff-wise oversight for Manager/Owner. */
 export function CustodyPanel() {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, AlertCircle, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Invoice, InvoicePaymentAllocation } from "@/types";
 import { formatINR } from "../../utils/formatUtils";
@@ -37,10 +37,13 @@ export function AllocatePaymentModal({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Ignores a second activation while a save is being sent (state-based disabling only applies after a render).
+  const inFlight = useRef(false);
 
   useEffect(() => {
     if (isOpen && invoice) {
       setError(null);
+      inFlight.current = false;
       setSubmitting(false);
       setNotes("");
       loadUnallocatedPayments(invoice.residentId, invoice.customerId);
@@ -108,6 +111,10 @@ export function AllocatePaymentModal({
       return;
     }
 
+    if (inFlight.current) return;
+
+    inFlight.current = true;
+
     setSubmitting(true);
     try {
       const res = await fetch(`/api/finance/invoices/${invoice.id}/allocate`, {
@@ -132,6 +139,7 @@ export function AllocatePaymentModal({
     } catch (err: any) {
       setError(err.message || "Failed to allocate payment.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

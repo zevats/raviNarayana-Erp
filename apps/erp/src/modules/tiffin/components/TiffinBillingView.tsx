@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { StatStrip } from "@/components/ui/kit";
+import { RefreshButton } from "@/components/ui/states";
 import {
   Receipt,
   Search,
@@ -31,6 +33,7 @@ import { GenerateTiffinInvoicesModal } from "./modals/GenerateTiffinInvoicesModa
 import { RecordTiffinPaymentModal } from "./modals/RecordTiffinPaymentModal";
 import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal";
 import { PrintableInvoiceModal } from "@/modules/finance/components/modals/PrintableInvoiceModal";
+import { formatNumberIN } from "@/lib/format";
 
 export function TiffinBillingView() {
   // Current Period YYYY-MM
@@ -190,13 +193,10 @@ export function TiffinBillingView() {
       )}
 
       {/* Period Bar & Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white border border-[#8E9F89]/25 p-3.5 rounded-2xl shadow-2xs">
+      <div className="rn-card px-4 py-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
         {/* Month Navigator */}
-        <div className="flex items-center gap-2">
-          <div className="p-1.5 bg-[#1A2E20]/5 rounded-lg text-[#1A2E20]">
-            <Calendar className="w-4 h-4 text-[#B58A57]" />
-          </div>
-          <span className="text-xs font-semibold text-gray-500">Billing Period:</span>
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <span className="rn-t-label">Billing period</span>
           <div className="flex items-center bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl p-0.5">
             <button
               onClick={handlePrevMonth}
@@ -219,24 +219,14 @@ export function TiffinBillingView() {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          <button
-            onClick={handleCurrentMonth}
-            className="px-2 py-1 text-[11px] font-semibold text-gray-600 hover:text-[#1A2E20] bg-[#FAF8F5] hover:bg-gray-100 rounded-lg border border-gray-200 transition-colors"
-          >
-            Current Month
+          <button type="button" onClick={handleCurrentMonth} className="rn-btn rn-btn-sm">
+            This month
           </button>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={fetchPreview}
-            disabled={loading}
-            title="Refresh Preview"
-            className="p-2 text-gray-600 hover:text-[#1A2E20] hover:bg-[#FAF8F5] rounded-xl border border-gray-200 transition-colors"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <RefreshButton onRefresh={fetchPreview} busy={loading} label="Refresh billing preview" />
 
           <button
             onClick={() => {
@@ -260,64 +250,26 @@ export function TiffinBillingView() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white border border-[#8E9F89]/25 rounded-2xl p-4 shadow-2xs">
-          <div className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">
-            Commercial Customers
-          </div>
-          <div className="text-xl font-bold text-[#1A2E20] mt-1 font-serif">
-            {preview?.totalEligibleCustomers || 0}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-0.5">
-            Eligible subscriptions
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#8E9F89]/25 rounded-2xl p-4 shadow-2xs">
-          <div className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">
-            Verified Deliveries
-          </div>
-          <div className="text-xl font-bold text-emerald-700 mt-1 font-serif">
-            {preview?.totalBillableDeliveredMeals || 0}
-          </div>
-          <div className="text-[11px] text-emerald-600 mt-0.5">
-            Confirmed completed tasks
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#8E9F89]/25 rounded-2xl p-4 shadow-2xs">
-          <div className="text-[10px] uppercase font-bold text-[#B58A57] tracking-wider">
-            Total Revenue Expected
-          </div>
-          <div className="text-xl font-bold text-[#B58A57] mt-1 font-serif">
-            ₹{(preview?.totalProjectedAmount || 0).toLocaleString("en-IN")}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-0.5">
-            Period gross charges
-          </div>
-        </div>
-
-        <div className="bg-white border border-[#8E9F89]/25 rounded-2xl p-4 shadow-2xs">
-          <div className="text-[10px] uppercase font-bold text-blue-700 tracking-wider">
-            Invoicing Status
-          </div>
-          <div className="text-xl font-bold text-blue-800 mt-1 font-serif">
-            {preview?.alreadyBilledInvoicesCount || 0} <span className="text-xs font-normal text-gray-400">/ {preview?.totalEligibleCustomers || 0}</span>
-          </div>
-          <div className="text-[11px] text-blue-600 mt-0.5">
-            {(preview?.totalEligibleCustomers || 0) - (preview?.alreadyBilledInvoicesCount || 0)} unbilled
-          </div>
-        </div>
-      </div>
+      <StatStrip
+        items={[
+          { label: "Customers", value: preview?.totalEligibleCustomers || 0, note: "with a subscription" },
+          { label: "Meals delivered", value: preview?.totalBillableDeliveredMeals || 0, note: "billable" },
+          { label: "To bill", value: `₹${formatNumberIN(preview?.totalProjectedAmount || 0)}`, note: "this period" },
+          {
+            label: "Invoiced",
+            value: `${preview?.alreadyBilledInvoicesCount || 0} / ${preview?.totalEligibleCustomers || 0}`,
+            note: `${(preview?.totalEligibleCustomers || 0) - (preview?.alreadyBilledInvoicesCount || 0)} not yet`,
+          },
+        ]}
+      />
 
       {/* Customer Deliveries Table Card */}
-      <div className="bg-white border border-[#8E9F89]/25 rounded-2xl overflow-hidden shadow-2xs">
+      <div className="rn-card">
         {/* Table Filters Bar */}
         <div className="p-3.5 border-b border-[#8E9F89]/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-1">
             <div className="relative flex-1 max-w-sm">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+              <Search className="pointer-events-none w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 placeholder="Search customer, phone, invoice..."
@@ -391,7 +343,7 @@ export function TiffinBillingView() {
                       <td className="py-3 px-3">
                         <div className="font-medium text-[#1A2E20]">{cust.productName}</div>
                         <div className="text-[10px] text-gray-500">
-                          ₹{cust.unitPrice.toLocaleString("en-IN")}{cust.billingUnit === "PER_MEAL" ? "/meal" : "/mo"} • {cust.mealTypes}
+                          ₹{formatNumberIN(cust.unitPrice)}{cust.billingUnit === "PER_MEAL" ? "/meal" : "/mo"} • {cust.mealTypes}
                         </div>
                       </td>
 
@@ -412,7 +364,7 @@ export function TiffinBillingView() {
                       {/* Amount */}
                       <td className="py-3 px-3 text-right">
                         <div className="font-bold text-[#1A2E20] font-serif text-sm">
-                          ₹{cust.totalAmount.toLocaleString("en-IN")}
+                          ₹{formatNumberIN(cust.totalAmount)}
                         </div>
                         {cust.warnings.length > 0 && (
                           <div className="text-[10px] text-amber-700 mt-0.5" title={cust.warnings.join("; ")}>

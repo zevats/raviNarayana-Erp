@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Invoice } from "@/types";
 import { formatINR } from "../../utils/formatUtils";
+import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 interface PrintableInvoiceModalProps {
   isOpen: boolean;
@@ -31,6 +32,16 @@ export function PrintableInvoiceModal({
   onIssueInvoice,
 }: PrintableInvoiceModalProps) {
   const [issuing, setIssuing] = useState(false);
+  // Contact line for the printed copy (Settings → Business details); the invoice record is unchanged.
+  const contact = useErpQuery<{ phone: string; email: string } | null>(
+    isOpen ? "/api/settings/business" : null,
+    async () => {
+      const res = await fetch("/api/settings/business", { cache: "no-store" });
+      if (!res.ok) return null;
+      return (await res.json()).business ?? null;
+    },
+    { ttl: 60000, tags: ["settings"] }
+  );
 
   if (!isOpen || !invoice) return null;
 
@@ -146,6 +157,11 @@ export function PrintableInvoiceModal({
               <p className="text-[11px] text-[#5A6C5E] mt-1 max-w-sm">
                 {invoice.companyAddress}
               </p>
+              {(contact.data?.phone || contact.data?.email) && (
+                <p className="text-[11px] text-[#5A6C5E] mt-0.5">
+                  {[contact.data?.phone, contact.data?.email].filter(Boolean).join(" · ")}
+                </p>
+              )}
               <div className="text-[11px] text-[#5A6C5E] mt-1 flex flex-wrap gap-x-4">
                 {invoice.companyGstin ? (
                   <span>
@@ -363,13 +379,16 @@ export function PrintableInvoiceModal({
                         via {alloc.paymentMethod || "CASH"}
                         {alloc.referenceNumber ? ` (Ref: ${alloc.referenceNumber})` : ""}
                       </span>
+                      {alloc.paymentReversed && (
+                        <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-[#9A3423]">Payment reversed</span>
+                      )}
                       {alloc.notes && (
                         <div className="text-[11px] text-[#5A6C5E] italic">
                           {alloc.notes}
                         </div>
                       )}
                     </div>
-                    <div className="font-bold text-green-700">
+                    <div className={alloc.paymentReversed ? "font-bold text-[#8E9F89] line-through" : "font-bold text-green-700"}>
                       ₹{formatINR(alloc.amount)}
                     </div>
                   </div>

@@ -24,7 +24,7 @@ export async function POST(
     const task = await assignDeliveryTask(
       user,
       params.id,
-      { assignedToStaffId: body.assignedToStaffId },
+      { assignedToStaffId: body.assignedToStaffId, reason: typeof body.reason === "string" ? body.reason : undefined },
       clientIp
     );
 

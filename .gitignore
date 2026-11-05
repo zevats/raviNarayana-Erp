@@ -44,3 +44,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Local test file with real credentials: never commit
+scratch/test-full-auth-flow.js

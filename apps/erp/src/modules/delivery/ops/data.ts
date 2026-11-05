@@ -80,6 +80,8 @@ export function useTaskDetail(taskId: string | null) {
 export interface StaffOption {
   id: string;
   fullName: string;
+  /** The default delivery partner: new orders go to them unless changed for one order. */
+  isDefault?: boolean;
 }
 
 export function useDeliveryStaff(enabled: boolean) {
@@ -89,7 +91,8 @@ export function useDeliveryStaff(enabled: boolean) {
     async () => {
       const data = await getJson<any>("/api/delivery/staff");
       const list = Array.isArray(data) ? data : data.staff || data.deliveryStaff || [];
-      return list.map((s: any) => ({ id: s.id, fullName: s.fullName || s.full_name }));
+      const defaultId = Array.isArray(data) ? null : data.defaultStaffId ?? null;
+      return list.map((s: any) => ({ id: s.id, fullName: s.fullName || s.full_name, isDefault: s.id === defaultId }));
     },
     { ttl: 60000, tags: ["staff"] }
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, AlertCircle, ArrowRight } from "lucide-react";
 import { ResidentListItem, PaymentMethod, FinancialTransaction } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
@@ -34,8 +34,13 @@ export function PaymentModal({
   const [submitting, setSubmitting] = useState(false);
 
   // Sync initialResidentId when modal opens
+  // One idempotency key per entry: a double click or a retry after a lost response is recognised
+  // by the server as the same payment, never recorded twice. A new key is issued each time the form opens.
+  const entryKey = useRef<string>("");
+  const inFlight = useRef(false);
   useEffect(() => {
     if (isOpen) {
+      entryKey.current = `pay_${crypto.randomUUID()}`;
       setError(null);
       setTransactionDate(toLocalDateString());
       if (initialResidentId) {
@@ -94,9 +99,11 @@ export function PaymentModal({
       return;
     }
 
+    if (inFlight.current) return; // a second click while this one is being sent
+    inFlight.current = true;
     setSubmitting(true);
     try {
-      const idempotencyKey = `pay_${crypto.randomUUID()}`;
+      const idempotencyKey = entryKey.current || `pay_${crypto.randomUUID()}`;
       const res = await fetch("/api/finance/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,6 +132,7 @@ export function PaymentModal({
     } catch (err: any) {
       setError(err.message || "An error occurred while saving payment.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };

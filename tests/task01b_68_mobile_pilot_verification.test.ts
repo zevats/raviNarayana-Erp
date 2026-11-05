@@ -177,24 +177,27 @@ async function runTask68Tests() {
   assert(fs.existsSync(shellPath), "apps/erp/src/components/layout/ErpShell.tsx exists");
   const shellContent = fs.readFileSync(shellPath, "utf-8");
 
-  assert(shellContent.includes('user.role === "OPERATIONS_MANAGER"'), "ErpShell supports OPERATIONS_MANAGER role navigation");
+  // Manager navigation moved to components/layout/shell/ in the 2026-11 redesign.
+  const navContent = fs.readFileSync(path.join(path.dirname(shellPath), "shell", "nav.ts"), "utf-8");
+  const mobileNavContent = fs.readFileSync(path.join(path.dirname(shellPath), "shell", "MobileNav.tsx"), "utf-8");
+  assert(navContent.includes('"OPERATIONS_MANAGER"'), "Navigation supports OPERATIONS_MANAGER role");
   // ACCOUNTANT was retired by Task 01B.69 (three canonical roles); see ISSUE-013.
-  assert(shellContent.includes('user.role === "SUPER_ADMIN"'), "ErpShell supports SUPER_ADMIN role navigation");
-  assert(shellContent.includes('user.role === "SUPER_ADMIN"'), "ErpShell supports SUPER_ADMIN role navigation");
+  assert(navContent.includes('"SUPER_ADMIN"'), "Navigation supports SUPER_ADMIN role");
   assert(shellContent.includes('user.role === "DELIVERY_PERSON"'), "ErpShell supports DELIVERY_PERSON role navigation");
-  assert(shellContent.includes("mobileBarItems"), "ErpShell computes role-aware mobileBarItems for bottom navigation");
-  assert(shellContent.includes("pb-safe"), "ErpShell mobile bottom bar uses pb-safe for mobile gesture insets");
+  assert(navContent.includes("export function visibleGroups(role: StaffRole)"), "Navigation is filtered by role");
+  assert(mobileNavContent.includes("env(safe-area-inset-bottom)"), "Mobile bottom bar respects mobile gesture insets");
 
   const rootPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "page.tsx");
   const rootContent = fs.readFileSync(rootPagePath, "utf-8");
   assert(rootContent.includes('user.role === "DELIVERY_PERSON"') && rootContent.includes('redirect("/delivery")'), "Root page redirects delivery drivers directly to /delivery");
 
   const dashPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "dashboard", "page.tsx");
-  const dashContent = fs.readFileSync(dashPagePath, "utf-8");
-  assert(dashContent.includes("Owner & Executive Workflows"), "Dashboard renders executive workflows on mobile");
-  assert(dashContent.includes("Operations Workflows"), "Dashboard renders operations workflows on mobile");
-  assert(dashContent.includes("Accountant Workflows"), "Dashboard renders accountant workflows on mobile");
-  assert(dashContent.includes("activeDivision") && dashContent.includes("division=COMBINED"), "Dashboard maintains 3-way business division filter");
+  // The page loads the data; DashboardView.tsx renders it (2026-11 redesign).
+  const dashContent = fs.readFileSync(dashPagePath, "utf-8") + fs.readFileSync(path.join(path.dirname(dashPagePath), "DashboardView.tsx"), "utf-8");
+  assert(dashContent.includes('hasPermission(user?.role, "finance.read")'), "Dashboard gates money figures by role");
+  assert(dashContent.includes('lg:hidden') && dashContent.includes("StatTile"), "Dashboard renders its own mobile greeting and tiles");
+  assert(!dashContent.includes("ACCOUNTANT"), "Dashboard has no branch for the retired ACCOUNTANT role");
+  assert(dashContent.includes("activeDivision") && dashContent.includes('(["COMBINED", "PG", "TIFFIN"] as const)'), "Dashboard maintains 3-way business division filter");
 
   // ============================================================================
   // TEST SUITE 5: Responsive Financial Card Layouts (Overflow Prevention)
@@ -342,7 +345,13 @@ async function runTask68Tests() {
   // Check Android SDK presence
   const androidSdkPath = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT || path.resolve(process.env.LOCALAPPDATA || "", "Android", "Sdk");
   const androidSdkExists = fs.existsSync(androidSdkPath);
-  assert(!androidSdkExists, "Android SDK verified absent on host (truthful reporting: APK build currently blocked by missing SDK)");
+  // Truthful reporting of the host: with the SDK installed the Android project must be present to build
+  // the APK; without it the APK build is blocked (as it was when this suite was written).
+  if (androidSdkExists) {
+    assert(fs.existsSync(path.resolve(__dirname, "..", "..", "mobile", "android", "build.gradle")) || fs.existsSync(path.resolve(process.cwd(), "mobile", "android", "build.gradle")), "Android SDK present on host and the Capacitor Android project exists (APK build possible)");
+  } else {
+    assert(!androidSdkExists, "Android SDK verified absent on host (truthful reporting: APK build currently blocked by missing SDK)");
+  }
 
   // Verify PWA installation via secure context / LAN flag instructions documented
   assert(fs.existsSync(startScriptPath), "LAN startup instructions provide Chrome insecure-origin flag and USB port-forwarding alternatives");
