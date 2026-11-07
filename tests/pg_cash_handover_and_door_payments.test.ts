@@ -9,7 +9,7 @@
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../apps/erp/src/server/database/db";
 import { closePg } from "../apps/erp/src/server/database/client";
-import { createTiffinCustomer, createTiffinProduct } from "../apps/erp/src/server/tiffin/tiffinService";
+import { createTiffinCustomer, createTiffinProduct, listTiffinCustomers } from "../apps/erp/src/server/tiffin/tiffinService";
 import { createUnifiedOrder } from "../apps/erp/src/server/orders/orderService";
 import {
   completeDeliveryTask,
@@ -20,7 +20,7 @@ import {
   getDeliveryTaskById,
   writeOffCashShortfall,
 } from "../apps/erp/src/server/delivery/deliveryService";
-import { getReceivableAccount, getAccountStatement } from "../apps/erp/src/server/finance/receivablesService";
+import { getReceivableAccount, getAccountStatement, listReceivables, receiveAccountPayment } from "../apps/erp/src/server/finance/receivablesService";
 import { AuthenticatedUser } from "../apps/erp/src/types";
 import { useVerifyDatabase, migrateVerifyDatabase, createAsserter, insertStaff, uniqueBusinessDate } from "./helpers/pgVerifyTarget";
 
@@ -182,6 +182,66 @@ async function main() {
   const s5 = await scenario(0, 300, 100);
   await recordDeliveryCollection(dd, s5.now.taskId, { collectedAmount: 200, paymentMethod: "CASH", idempotencyKey: `chl_${rnd()}` }, IP, db);
   assert((await getReceivableAccount(owner, `C:${s5.cust.id}`, db)).totals.total === 0, "Part payment then another: settled");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 9. Advances and extra payments: one account from the door to the records ---");
+  // Every view of a customer must agree: the delivery sheet, the stop record, the customer list,
+  // Receivables (lines and total), the statement, and what the office may still collect.
+  const views = async (cust: any, lastTaskId?: string) => {
+    const acc = await getReceivableAccount(owner, `C:${cust.id}`, db);
+    const st = await getAccountStatement(owner, `C:${cust.id}`, {}, db);
+    const list = (await listTiffinCustomers(manager, { search: cust.phone }, db)).customers.find((x: any) => x.id === cust.id) as any;
+    const rl = (await listReceivables(owner, { q: cust.phone }, db)).accounts.find((a: any) => a.accountKey === `C:${cust.id}`) ?? null;
+    const task = lastTaskId ? ((await getDeliveryTaskById(manager, lastTaskId, db))!.task as any) : null;
+    const orderLines = acc.lines.filter((l: any) => l.kind === "ORDER");
+    const advance = acc.lines.filter((l: any) => l.kind === "ADVANCE").reduce((s: number, l: any) => s - l.outstanding, 0);
+    return { acc, total: acc.totals.total, statement: st.closing, list: list?.balance, listTotal: rl ? rl.total : 0, task, orderLines, advance };
+  };
+  for (const method of ["CASH", "UPI"]) {
+    // Monday: ₹300 order, customer pays ₹400 (₹100 advance).
+    const cust = await customer();
+    const mon = await order(cust, dd, 3);
+    await deliver(mon, dd, 400, method);
+    let v = await views(cust, mon.taskId);
+    assert(v.total === -100 && v.statement === -100 && v.list?.due === -100 && v.listTotal === -100 && v.advance === 100 && v.orderLines.length === 0 && v.task.balanceDue === 0,
+      `${method}: ₹400 for a ₹300 order: ₹100 credit everywhere (account ₹${v.total}, statement ₹${v.statement}, customer list ₹${v.list?.due}, Receivables ₹${v.listTotal})`);
+    // Tuesday: ₹300 order; the sheet asks for ₹200 (credit ₹100 used); customer pays ₹200.
+    const tue = await order(cust, dd, 3);
+    const sheet = (await getDeliveryTaskById(dd, tue.taskId, db))!.task as any;
+    assert(sheet.customerBalance?.previous === -100 && sheet.customerBalance?.earlierOrders === 0, `${method}: Tuesday's sheet shows ₹100 customer credit (previous ₹${sheet.customerBalance?.previous})`);
+    await deliver(tue, dd, 200, method);
+    v = await views(cust, tue.taskId);
+    assert(v.total === 0 && v.statement === 0 && v.list?.due === 0 && v.list?.unpaidOrders === 0 && v.orderLines.length === 0 && v.advance === 0 && v.task.balanceDue === 0 && v.task.creditApplied === 100,
+      `${method}: ₹200 paid + ₹100 credit: settled everywhere, no unpaid order and no left-over credit (stop: still due ₹${v.task.balanceDue}, from credit ₹${v.task.creditApplied})`);
+    assert(/Nothing is outstanding/.test((await refused(() => recordDeliveryCollection(manager, tue.taskId, { collectedAmount: 100, paymentMethod: "CASH", idempotencyKey: `chx_${rnd()}` }, IP, db))) || ""),
+      `${method}: the office cannot collect again for an order the credit already paid`);
+    // Wednesday: ₹300 order, Pay Later. Thursday: ₹100 order, customer pays ₹600 (₹300 + ₹100 + ₹200 advance).
+    const wed = await order(cust, dd, 3);
+    await deliver(wed, dd, 0, method);
+    v = await views(cust, wed.taskId);
+    assert(v.total === 300 && v.list?.due === 300 && v.list?.unpaidOrders === 1 && v.orderLines.length === 1 && v.orderLines[0].outstanding === 300 && v.task.balanceDue === 300,
+      `${method}: Pay Later ₹300: owed ₹${v.total} on one order everywhere`);
+    const thu = await order(cust, dd, 1);
+    await deliver(thu, dd, 600, method);
+    v = await views(cust, thu.taskId);
+    assert(v.total === -200 && v.statement === -200 && v.list?.due === -200 && v.listTotal === -200 && v.advance === 200 && v.orderLines.length === 0,
+      `${method}: ₹600 for ₹100 + ₹300 earlier: Wednesday paid, ₹200 credit everywhere (account ₹${v.total}, statement ₹${v.statement})`);
+    // Friday: ₹300 order, Pay Later: ₹200 credit used, ₹100 owed; the office collects ₹100 and it is settled.
+    const fri = await order(cust, dd, 3);
+    await deliver(fri, dd, 0, method);
+    v = await views(cust, fri.taskId);
+    assert(v.total === 100 && v.orderLines.length === 1 && v.orderLines[0].outstanding === 100 && v.orderLines[0].paid === 200 && v.task.balanceDue === 100 && v.task.creditApplied === 200 && v.list?.due === 100,
+      `${method}: Pay Later ₹300 with ₹200 credit: ₹100 owed on that order everywhere (line ₹${v.orderLines[0]?.outstanding}, stop ₹${v.task.balanceDue})`);
+    assert(/Only ₹100 is outstanding/.test((await refused(() => receiveAccountPayment(owner, { accountKey: `C:${cust.id}`, paymentMethod: "CASH" as any, amountReceived: 300, idempotencyKey: `chr_${rnd()}`, items: [{ source: "DELIVERY", refId: fri.orderId, amount: 300 }] }, IP, db))) || ""),
+      `${method}: the office cannot take ₹300 for an order that owes ₹100`);
+    await receiveAccountPayment(owner, { accountKey: `C:${cust.id}`, paymentMethod: "UPI" as any, amountReceived: 100, idempotencyKey: `chr_${rnd()}`, items: [{ source: "DELIVERY", refId: fri.orderId, amount: 100 }] }, IP, db);
+    v = await views(cust, fri.taskId);
+    assert(v.total === 0 && v.statement === 0 && v.list?.due === 0 && v.orderLines.length === 0 && v.advance === 0 && v.task.balanceDue === 0,
+      `${method}: office payment of ₹100: settled everywhere`);
+    // Total paid = total delivered: ₹400 + ₹200 + ₹0 + ₹600 + ₹0 + ₹100 office = ₹1,300 for ₹1,300 of food.
+    const paid = await num(db, "SELECT COALESCE(SUM(dc.amount), 0) AS n FROM delivery_collections dc JOIN orders o ON o.id = dc.order_id WHERE o.customer_id = ?", [cust.id]);
+    assert(paid === 1300, `${method}: every rupee is on the customer's records once (₹${paid} paid for ₹1,300 delivered)`);
+  }
 
   // Duplicate completions with the same key: one set of records.
   const cust6 = await customer();

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission, AuthorizationError } from "../authorization/authorize";
 import { hasPermission } from "../authorization/permissions";
+import { loadOrderLedgers, applyOldestFirst } from "./orderLedger";
 import { recordAuditEventAsync } from "../audit/audit";
 import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateString } from "../finance/financeService";
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
@@ -471,25 +472,22 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
 type CustomerBalance = { previous: number; earlierOrders: number; bills: number; credit: number };
 
 /**
- * Balances of the customers behind these orders, from before each order: delivered orders still
- * owed (collections that still count; a reversed UPI does not), open tiffin bills, minus advances and
- * unallocated tiffin payments. Three grouped queries for the whole list.
+ * Balances of the customers behind these orders, from before each order (orderLedger: every payment
+ * for the customer's delivered orders is one pool applied oldest first, so credit and earlier dues
+ * never both show), plus open tiffin bills and unallocated tiffin payments. Also returns what each
+ * delivered order itself still owes on that rule (an order covered by the customer's credit owes 0).
  */
-async function loadCustomerBalances(db: AsyncDb, orderCustomer: Map<string, string>): Promise<Map<string, CustomerBalance>> {
-  const out = new Map<string, CustomerBalance>();
+async function loadCustomerBalances(
+  db: AsyncDb,
+  orderCustomer: Map<string, string>
+): Promise<{ before: Map<string, CustomerBalance>; orderOpen: Map<string, number> }> {
+  const before = new Map<string, CustomerBalance>();
+  const orderOpen = new Map<string, number>();
   const customers = Array.from(new Set(orderCustomer.values()));
-  if (customers.length === 0) return out;
+  if (customers.length === 0) return { before, orderOpen };
   const marks = customers.map(() => "?").join(", ");
-  const active = (await hasDeliveryOpsSchema(db)) ? `AND ${activeCollectionSql("dc")}` : "";
-  const [orders, bills, credits] = await Promise.all([
-    db.query<{ id: string; customer_id: string; open: number | string }>(
-      `SELECT o.id, o.customer_id, COALESCE(d.due, 0) - COALESCE(cl.collected, 0) AS open
-       FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
-       LEFT JOIN (SELECT order_id, SUM(COALESCE(delivered_quantity, quantity) * unit_price) AS due FROM order_items GROUP BY order_id) d ON d.order_id = o.id
-       LEFT JOIN (SELECT dc.delivery_task_id, SUM(dc.amount) AS collected FROM delivery_collections dc WHERE 1 = 1 ${active} GROUP BY dc.delivery_task_id) cl ON cl.delivery_task_id = o.delivery_task_id
-       WHERE o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND o.customer_id IN (${marks})`,
-      customers
-    ),
+  const [ledgers, bills, credits] = await Promise.all([
+    loadOrderLedgers(db, customers),
     db.query<{ customer_id: string; due: number | string }>(
       `SELECT customer_id, SUM(balance_due) AS due FROM invoices
        WHERE invoice_category = 'TIFFIN' AND status IN ('ISSUED', 'PARTIALLY_PAID') AND balance_due > 0 AND customer_id IN (${marks})
@@ -507,20 +505,16 @@ async function loadCustomerBalances(db: AsyncDb, orderCustomer: Map<string, stri
   ]);
   const billBy = new Map(bills.map((b) => [b.customer_id, Number(b.due)]));
   const creditBy = new Map(credits.map((c) => [c.customer_id, Number(c.credit)]));
+  for (const l of ledgers.values()) for (const o of l.orders) orderOpen.set(o.id, o.open);
   for (const [orderId, customerId] of orderCustomer) {
-    let earlierOrders = 0;
-    let advances = 0;
-    for (const o of orders) {
-      if (o.customer_id !== customerId || o.id === orderId) continue;
-      const open = Number(o.open);
-      if (open > 0) earlierOrders += open;
-      else advances -= open;
-    }
+    const all = ledgers.get(customerId)?.orders ?? [];
+    const others = all.some((o) => o.id === orderId) ? applyOldestFirst(all.filter((o) => o.id !== orderId)) : ledgers.get(customerId);
+    const earlierOrders = others?.owed ?? 0;
     const bills = billBy.get(customerId) ?? 0;
-    const credit = advances + (creditBy.get(customerId) ?? 0);
-    out.set(orderId, { previous: earlierOrders + bills - credit, earlierOrders, bills, credit });
+    const credit = (others?.advance ?? 0) + (creditBy.get(customerId) ?? 0);
+    before.set(orderId, { previous: earlierOrders + bills - credit, earlierOrders, bills, credit });
   }
-  return out;
+  return { before, orderOpen };
 }
 
 /** Amount due for an order: delivered quantities once recorded, otherwise the full order. */
@@ -574,9 +568,17 @@ async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<Deli
     const h = task.orderId ? hints.get(`ord:${task.orderId}`) : null;
     if (task.orderId && h?.customerId) orderCustomer.set(task.orderId, h.customerId);
   }
-  const balances = await loadCustomerBalances(db, orderCustomer);
+  const { before: balances, orderOpen } = await loadCustomerBalances(db, orderCustomer);
   for (const task of tasks) {
     if (task.orderId) task.customerBalance = balances.get(task.orderId) ?? null;
+    // A delivered order of a customer owes what the customer's pool of payments has not covered
+    // (oldest order first): credit from an earlier advance pays it even if nothing was collected here.
+    if (task.orderId && orderOpen.has(task.orderId) && task.expectedAmount !== null && task.expectedAmount !== undefined) {
+      const open = orderOpen.get(task.orderId) as number;
+      const here = Math.max(0, task.expectedAmount - (task.collectedAmount || 0));
+      task.balanceDue = open;
+      task.creditApplied = Math.max(0, here - open);
+    }
     const h = (task.subscriptionId && hints.get(`sub:${task.subscriptionId}`)) || (task.orderId && hints.get(`ord:${task.orderId}`)) || null;
     task.landmark = h?.landmark ?? null;
     task.deliveryInstructions = h?.instructions ?? null;
@@ -2898,7 +2900,22 @@ async function collectOrderBalance(
       [currentTask.id]
     );
     const already = Number(recorded?.total ?? locked?.collected_amount ?? 0);
-    if (already + amount > amountDue) {
+    // A customer's orders are one account: what this order still owes after the customer's earlier
+    // payments and advances (oldest first), the figure Receivables shows for it.
+    const owner = order.orderId ? await tx.queryOne<{ customer_id: string | null }>("SELECT customer_id FROM orders WHERE id = ?", [order.orderId]) : null;
+    if (owner?.customer_id) {
+      await acquireLedgerKeyLock(tx, `customer-dues:${owner.customer_id}`);
+      const ledger = (await loadOrderLedgers(tx, [owner.customer_id])).get(owner.customer_id);
+      const line = ledger?.orders.find((o) => o.id === order.orderId);
+      const open = line ? line.open : Math.max(0, amountDue - already);
+      if (amount > open) {
+        throw new Error(
+          open === 0
+            ? "Nothing is outstanding on this order: the customer's earlier payments or advance already cover it."
+            : `Only ₹${open} is outstanding on this order (₹${amountDue} due; the rest is covered by payments and the customer's credit).`
+        );
+      }
+    } else if (already + amount > amountDue) {
       throw new Error(`Only ₹${Math.max(0, amountDue - already)} is outstanding on this order (₹${amountDue} due, ₹${already} collected).`);
     }
     const total = already + amount;
@@ -3039,20 +3056,13 @@ async function recordCustodyCollection(
 }
 
 /**
- * Earlier delivered orders of a customer that still have a balance (oldest first), using the same
- * rule as Receivables: delivered value minus collections that still count (a reversed UPI does not).
+ * Earlier delivered orders of a customer that still owe something (oldest first), on the same rule
+ * as Receivables (orderLedger: the customer's payments applied oldest first, so an order already
+ * covered by an advance is not paid twice).
  */
 async function customerOpenOrders(tx: AsyncDb, customerId: string, excludeOrderId: string | null): Promise<Array<{ id: string; delivery_task_id: string; open: number }>> {
-  const rows = await tx.query<any>(
-    `SELECT o.id, o.delivery_task_id,
-            (SELECT COALESCE(SUM(COALESCE(oi.delivered_quantity, oi.quantity) * oi.unit_price), 0) FROM order_items oi WHERE oi.order_id = o.id)
-          - (SELECT COALESCE(SUM(dc.amount), 0) FROM delivery_collections dc WHERE dc.delivery_task_id = o.delivery_task_id AND ${activeCollectionSql("dc")}) AS open
-     FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
-     WHERE o.customer_id = ? AND o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND o.id <> ?
-     ORDER BY o.service_date, o.created_at, o.id`,
-    [customerId, excludeOrderId || ""]
-  );
-  return rows.map((r) => ({ id: r.id, delivery_task_id: r.delivery_task_id, open: Number(r.open) })).filter((r) => r.open > 0);
+  const ledger = (await loadOrderLedgers(tx, [customerId], { excludeOrderId })).get(customerId);
+  return (ledger?.orders ?? []).filter((o) => o.open > 0).map((o) => ({ id: o.id, delivery_task_id: o.deliveryTaskId, open: o.open }));
 }
 
 /**

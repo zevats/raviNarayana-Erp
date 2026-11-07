@@ -183,35 +183,51 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
         ${customerFilter.replace("i.customer_id", "t.customer_id")}
     ),
     od AS (
-      SELECT o.id, o.customer_id, o.service_date, o.meal_type,
+      SELECT o.id, o.customer_id, o.service_date, o.meal_type, o.created_at,
+             CASE WHEN o.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
+             COALESCE(o.customer_id, o.id) AS account_id,
              ${pay ? "o.payment_choice, CASE WHEN o.payment_reviewed_at IS NULL THEN o.payment_review END AS review" : "NULL AS payment_choice, NULL AS review"},
              ${orderMoney}
       FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
       ${orderJoins}
       WHERE o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' ${orderFilter}
     ),
+    od_f AS (
+      -- The delivered orders of a customer are one account (orderLedger): each order keeps what was
+      -- paid for it; money paid beyond an order (advance, extra at the door) is credit that pays the
+      -- orders still owing, oldest first. What is left is the advance.
+      SELECT od.*,
+             LEAST(od.due, od.collected) AS own_paid,
+             od.due - LEAST(od.due, od.collected) AS short,
+             SUM(GREATEST(0, od.collected - od.due)) OVER (PARTITION BY od.account_kind, od.account_id) AS surplus,
+             SUM(od.due - LEAST(od.due, od.collected)) OVER (PARTITION BY od.account_kind, od.account_id) AS total_short,
+             SUM(od.due - LEAST(od.due, od.collected)) OVER (PARTITION BY od.account_kind, od.account_id ORDER BY od.service_date, od.created_at, od.id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_short
+      FROM od
+    ),
+    od_p AS (
+      SELECT od_f.*, od_f.own_paid + LEAST(od_f.short, GREATEST(0, od_f.surplus - (od_f.cum_short - od_f.short))) AS fifo_paid FROM od_f
+    ),
     dl AS (
-      SELECT 'DELIVERY' AS source, CASE WHEN od.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
-             COALESCE(od.customer_id, od.id) AS account_id,
+      SELECT 'DELIVERY' AS source, od.account_kind, od.account_id,
              'ORDER' AS kind, od.id AS ref_id,
              INITCAP(LOWER(od.meal_type)) || ' · ' || to_char(CAST(od.service_date AS date), 'DD Mon YYYY') AS reference,
              'Delivered order' AS description,
-             od.service_date AS date, NULL AS due_date, od.due AS amount, od.collected AS paid, od.due - od.collected AS outstanding,
+             od.service_date AS date, NULL AS due_date, od.due AS amount, od.fifo_paid AS paid, od.due - od.fifo_paid AS outstanding,
              od.payment_choice, od.review,
              '/delivery?tab=board&date=' || od.service_date || '&meal=' || od.meal_type AS link
-      FROM od WHERE od.due > od.collected
+      FROM od_p od WHERE od.due > od.fifo_paid
     ),
     dl_credit AS (
-      -- Paid beyond the value of the order at the door (migration 0022: an advance): customer credit.
-      SELECT 'DELIVERY' AS source, CASE WHEN od.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
-             COALESCE(od.customer_id, od.id) AS account_id,
-             'ADVANCE' AS kind, od.id AS ref_id,
+      -- Paid beyond every delivered order of the account: one credit line, used by the next orders.
+      SELECT 'DELIVERY' AS source, od.account_kind, od.account_id,
+             'ADVANCE' AS kind, MAX(od.id) AS ref_id,
              'Advance paid' AS reference,
-             'Paid in advance at a delivery (' || to_char(CAST(od.service_date AS date), 'DD Mon YYYY') || ')' AS description,
-             od.service_date AS date, NULL AS due_date, od.due AS amount, od.collected AS paid, od.due - od.collected AS outstanding,
-             od.payment_choice, od.review,
-             '/delivery?tab=board&date=' || od.service_date || '&meal=' || od.meal_type AS link
-      FROM od WHERE od.collected > od.due
+             'Paid ahead at delivery; it pays the next orders' AS description,
+             MAX(od.service_date) AS date, NULL AS due_date, MAX(od.surplus) - MAX(od.total_short) AS amount, 0 AS paid,
+             -(MAX(od.surplus) - MAX(od.total_short)) AS outstanding,
+             NULL AS payment_choice, NULL AS review,
+             '/finance?tab=receivables' AS link
+      FROM od_f od GROUP BY od.account_kind, od.account_id HAVING MAX(od.surplus) > MAX(od.total_short)
     ),
     lines AS (
       SELECT * FROM pg UNION ALL SELECT * FROM tf UNION ALL SELECT * FROM tf_credit UNION ALL SELECT * FROM dl UNION ALL SELECT * FROM dl_credit
@@ -596,9 +612,18 @@ async function statementEvents(db: AsyncDb, accountKey: string): Promise<Omit<St
       const revOf = new Map(revs.map((v) => [v.reversal_of_id, v]));
       for (const c of cols) {
         const o = orderOf.get(c.delivery_task_id);
+        // What the money paid (migration 0022): this order, an earlier order (taken at a later stop),
+        // or an advance. Either way it is one payment into the customer's account.
+        const kindOf = c.allocation === "ADVANCE" ? "Advance paid" : c.allocation === "PREVIOUS_DUES" ? "Earlier dues paid" : "Order payment";
+        const descOf =
+          c.allocation === "ADVANCE"
+            ? "Paid ahead at a delivery; it pays the next orders"
+            : c.allocation === "PREVIOUS_DUES"
+              ? "Paid at a later delivery for this order"
+              : "Payment for delivered order";
         ev({
-          date: istDate(c.collected_at), at: c.collected_at, source: "DELIVERY", type: "Order payment",
-          description: `Payment for delivered order`, reference: o ? label(o) : null, payment: n(c.amount),
+          date: istDate(c.collected_at), at: c.collected_at, source: "DELIVERY", type: kindOf,
+          description: descOf, reference: o ? label(o) : null, payment: n(c.amount),
           method: c.payment_method, reversedLater: c.entry_status === "REVERSED",
         });
         if (c.entry_status === "REVERSED") {

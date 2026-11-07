@@ -177,14 +177,18 @@ export function DeliveryForm({
   const payLaterKnown = typeof task.payLaterAllowed === "boolean";
   const payLaterAllowed = task.payLaterAllowed === true;
   const payLater = method === "PAY_LATER";
-  const collected = payLater ? 0 : collectedText === null ? amountDue : collectedText.trim() === "" ? 0 : Number(collectedText);
   // The customer's balance from before this order (Receivables rule). More than this order can be
   // collected: the extra settles earlier orders, then becomes an advance (the server allocates).
+  // Credit from an earlier advance pays this order first, so only the rest is asked for.
   const prev = task.customerBalance ?? null;
   const previous = prev?.previous ?? 0;
   const totalDue = Math.max(0, amountDue + previous);
+  const creditAvail = previous < 0 ? -previous : 0;
+  const suggested = creditAvail > 0 ? totalDue : amountDue;
+  const collected = payLater ? 0 : collectedText === null ? suggested : collectedText.trim() === "" ? 0 : Number(collectedText);
   const collectedOk = Number.isInteger(collected) && collected >= 0 && collected <= 9999999;
-  const balance = Math.max(0, amountDue - (collectedOk ? collected : 0));
+  const fromCredit = Math.min(creditAvail, Math.max(0, amountDue - (collectedOk ? collected : 0)));
+  const balance = Math.max(0, amountDue - (collectedOk ? collected : 0) - fromCredit);
   const toOrder = Math.min(collectedOk ? collected : 0, amountDue);
   const extra = Math.max(0, (collectedOk ? collected : 0) - amountDue);
   const toEarlier = Math.min(extra, prev ? prev.earlierOrders : 0);
@@ -429,16 +433,23 @@ export function DeliveryForm({
               </div>
               {payLater ? (
                 <p className="text-[13px] text-[#3E4E42]">
-                  Nothing collected now. {rupees(amountDue)} goes on the customer&apos;s account.
+                  Nothing collected now.
+                  {fromCredit > 0 ? ` ${rupees(fromCredit)} is paid from the customer's credit.` : ""}
+                  {balance > 0 ? ` ${rupees(balance)} goes on the customer's account.` : ""}
                   {!payLaterAllowed && <span className="block mt-1 text-[#8F6710] font-semibold">Not yet approved for Pay Later: the office will review this order.</span>}
                 </p>
               ) : (
                 <>
-                  <input type="number" inputMode="numeric" min={0} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`w-full h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
+                  <input type="number" inputMode="numeric" min={0} step={1} value={collectedText ?? String(suggested)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`w-full h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
                   {prev && previous > 0 && collectedOk && collected < totalDue && (
                     <button type="button" className="text-[13px] font-semibold text-[#C9501C] underline underline-offset-2" onClick={() => setCollectedText(String(totalDue))}>
                       Collect the total due {rupees(totalDue)}
                     </button>
+                  )}
+                  {fromCredit > 0 && collectedOk && (
+                    <p className="text-[13px] text-[#2F6B24]" aria-label="Credit used">
+                      {rupees(fromCredit)} is paid from the customer&apos;s credit.
+                    </p>
                   )}
                   {balance > 0 && collectedOk && (
                     <p className={`text-[13px] ${needsReview ? "text-[#8F6710] font-semibold" : "text-[#3E4E42]"}`}>
@@ -456,7 +467,7 @@ export function DeliveryForm({
             </>
           ) : (
             <div className="grid grid-cols-[1fr_auto] gap-2">
-              <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
+              <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(suggested)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
               <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-white" role="radiogroup" aria-label="Paid by">
                 {(["CASH", "UPI"] as const).map((m) => (
                   <button key={m} type="button" role="radio" aria-checked={method === m} onClick={() => setMethod(m)} className={`rn-press h-10 px-4 rounded-full text-sm font-semibold ${method === m ? "bg-[#C9501C] text-white" : "text-[#3E4E42]"}`}>

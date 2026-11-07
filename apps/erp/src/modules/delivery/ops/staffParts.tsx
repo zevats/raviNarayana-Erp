@@ -28,7 +28,8 @@ export function ledgerText(t: DeliveryTask): string {
   if (t.paymentMode === "NONE") return "Room delivery for a resident. Nothing to collect.";
   const due = t.expectedAmount ?? 0;
   const got = t.collectedAmount ?? 0;
-  return `${rupees(due)} to pay · ${rupees(got)} collected${(t.balanceDue || 0) > 0 ? ` · ${rupees(t.balanceDue)} still due` : " · fully paid"}.`;
+  const credit = t.creditApplied ?? 0;
+  return `${rupees(due)} to pay · ${rupees(got)} collected${credit > 0 ? ` · ${rupees(credit)} from credit` : ""}${(t.balanceDue || 0) > 0 ? ` · ${rupees(t.balanceDue)} still due` : " · fully paid"}.`;
 }
 
 /** A recorded stop in detail (History panel, and the My Stops panel for a completed stop). */
@@ -125,6 +126,12 @@ function PaymentCard({ task }: { task: DeliveryTask }) {
           <dt className="text-[#5A6C5E]">Collected{method ? ` · ${method}` : ""}</dt>
           <dd className="font-bold tabular-nums">{rupees(got)}</dd>
         </div>
+        {(task.creditApplied ?? 0) > 0 && (
+          <div className="flex items-center justify-between">
+            <dt className="text-[#5A6C5E]">From customer credit</dt>
+            <dd className="font-bold tabular-nums text-[#2F6B24]">{rupees(task.creditApplied)}</dd>
+          </div>
+        )}
       </dl>
       <div className={`px-4 py-3 flex items-center justify-between ${left > 0 ? "bg-[#FBE3DD] text-[#9A3423]" : "bg-[#DDF1D6] text-[#2F6B24]"}`}>
         <span className="text-[13px] font-bold">{left > 0 ? "Still due" : "Status"}</span>

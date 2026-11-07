@@ -946,8 +946,14 @@ export interface DeliveryTask {
   orderTotal?: number | null;
   /** Amount due: delivered quantities × saved prices once completed, otherwise the order value. */
   expectedAmount?: number | null;
-  /** expectedAmount − collectedAmount (never negative). */
+  /**
+   * Still owed on this order. For a customer's delivered order: after the customer's pool of
+   * payments is applied oldest first (an earlier advance can cover it); otherwise expectedAmount −
+   * collectedAmount (never negative).
+   */
   balanceDue?: number | null;
+  /** Part of this order paid from the customer's credit (an earlier advance), not at this stop. */
+  creditApplied?: number | null;
   /** Migration 0021, doorstep orders: the customer may pay later (a yes/no only; no balances). */
   payLaterAllowed?: boolean;
   /** Migration 0021: what was chosen at the door (null before delivery or for older orders). */
