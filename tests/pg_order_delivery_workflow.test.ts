@@ -119,7 +119,8 @@ async function main() {
   await rejects("Delivered + undelivered ≠ ordered rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: 1, undeliveredQuantity: 0 }, full1[1]] }, IP, db), /add up/);
   await rejects("Shortfall without reason rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: 1, undeliveredQuantity: 1 }, full1[1]] }, IP, db), /reason is required/);
   await rejects("Unknown line rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ orderItemId: "oi_fake", deliveredQuantity: 1 }, full1[1]] }, IP, db), /do not match/);
-  await rejects("Collected above due rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: full1, collectedAmount: 201, paymentMethod: "CASH" }, IP, db), /cannot be more than the amount due/);
+  // Collecting more than this order is allowed since migration 0022 (earlier dues, then an advance):
+  // covered with every allocation case in pg_cash_handover_and_door_payments.
   await rejects("Negative collection rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: full1, collectedAmount: -5 }, IP, db), /0 or more/);
   await rejects("Another driver cannot complete it", () => completeDeliveryTask(otherDriver, o1.deliveryTaskId!, { lines: full1 }, IP, db), /not assigned/);
   assert((await getDeliveryTaskById(owner, o1.deliveryTaskId!, db))!.task.status !== "DELIVERED", "Rejected attempts changed nothing");
@@ -175,7 +176,7 @@ async function main() {
   const L4 = await linesOf(o4.deliveryTaskId!);
   const none = [{ orderItemId: L4[0].orderItemId, deliveredQuantity: 0, undeliveredQuantity: 2, disposition: "RETURNED" as const }];
   await rejects("Nothing delivered without reason rejected", () => completeDeliveryTask(suresh, o4.deliveryTaskId!, { lines: none }, IP, db), /reason is required/);
-  await rejects("Collection with nothing delivered rejected", () => completeDeliveryTask(suresh, o4.deliveryTaskId!, { lines: none, undeliveredReason: "Customer not available", collectedAmount: 10, paymentMethod: "CASH" }, IP, db), /cannot be more than the amount due/);
+  await rejects("Collection with nothing delivered rejected", () => completeDeliveryTask(suresh, o4.deliveryTaskId!, { lines: none, undeliveredReason: "Customer not available", collectedAmount: 10, paymentMethod: "CASH" }, IP, db), /Nothing was delivered, so no payment can be recorded/);
   const d4 = await completeDeliveryTask(suresh, o4.deliveryTaskId!, { lines: none, undeliveredReason: "Customer not available" }, IP, db);
   const lo4 = (await listUnifiedOrders(manager, { serviceDate: day }, db)).orders.find((o) => o.orderId === o4.orderId)!;
   assert(d4.status === "EXCEPTION" && d4.exceptionReason === "Customer not available" && d4.expectedAmount === 0 && lo4.deliveryOutcome === "NONE", "Recorded as not delivered with reason; nothing due");

@@ -25,6 +25,8 @@ const scanner = require(path.resolve(__dirname, "../../../scripts/scan-invoice-d
 const baseUrl = useVerifyDatabase();
 const { assert, state } = createAsserter();
 const MIGRATIONS = path.resolve(__dirname, "../../../apps/erp/src/server/database/drizzle");
+// Every migration in the journal (0020 and 0021 plus any added later) must apply.
+const ALL = JSON.parse(fs.readFileSync(path.join(MIGRATIONS, "meta", "_journal.json"), "utf8")).entries.length as number;
 const created: string[] = [];
 
 function urlFor(db: string): string {
@@ -75,7 +77,7 @@ async function main() {
   const fresh = `rn_erp_verify_mig_fresh_${tag}_test`;
   await createDb(fresh);
   const applied = await quiet(() => migrate.runMigrations(urlFor(fresh)));
-  assert(applied.length === 22, `All 22 migrations apply to a fresh database (${applied.length})`);
+  assert(applied.length === ALL, `All ${ALL} migrations apply to a fresh database (${applied.length})`);
   const f = postgres(urlFor(fresh), { max: 1 });
   try {
     const cols = await f`SELECT table_name, column_name FROM information_schema.columns
@@ -140,7 +142,7 @@ async function main() {
     await u`UPDATE invoices SET status = 'CANCELLED', cancelled_at = ${now}, cancellation_reason = 'Duplicate of INV_A (migration rehearsal)' WHERE id = 'inv_b'`;
     const before = await u`SELECT id, total_amount, balance_due, status, billing_period FROM invoices ORDER BY id`;
     const done = await quiet(() => migrate.runMigrations(urlFor(up)));
-    assert(done.length === 22, `After the duplicate is resolved, 0020 and 0021 apply (${done.length} migrations)`);
+    assert(done.length === ALL, `After the duplicate is resolved, 0020 and 0021 (and later migrations) apply (${done.length} of ${ALL})`);
     const rows = await u`SELECT id, total_amount, balance_due, status, billing_period, billing_month FROM invoices ORDER BY id`;
     const same = before.length === rows.length && before.every((b: any, i: number) =>
       b.id === rows[i].id && Number(b.total_amount) === Number(rows[i].total_amount) && Number(b.balance_due) === Number(rows[i].balance_due) && b.status === rows[i].status && b.billing_period === rows[i].billing_period);
@@ -184,7 +186,7 @@ async function main() {
     const cust = await u`SELECT pay_later_enabled FROM tiffin_customers WHERE id = 'cust_m'`;
     assert(Number(cust[0].pay_later_enabled) === 0, "Existing customers start with Pay Later off");
     const rerun = await quiet(() => migrate.runMigrations(urlFor(up)));
-    assert(rerun.length === 22, "Running the migrations again changes nothing (already applied)");
+    assert(rerun.length === ALL, "Running the migrations again changes nothing (already applied)");
   } finally {
     await u.end();
   }

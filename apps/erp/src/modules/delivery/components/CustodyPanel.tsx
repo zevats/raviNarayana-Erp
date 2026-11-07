@@ -56,6 +56,12 @@ function HandoverHistory({ handovers }: { handovers: DriverCashHandover[] }) {
               </span>
               <StatusChip status={h.status} />
             </div>
+            {(h.shortfallCash ?? 0) > 0 && (
+              <p className="text-red-800">
+                Handed over {inr(h.declaredCash)} of {inr(h.recordedCash ?? h.declaredCash)} recorded: {inr(h.shortfallCash ?? 0)} short{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
+              </p>
+            )}
+            {(h.writtenOffCash ?? 0) > 0 && <p className="text-[#5A6C5E]">Written off by the Owner: {inr(h.writtenOffCash ?? 0)}{h.writeOffReason ? ` — ${h.writeOffReason}` : ""}</p>}
             <div className="font-mono text-[#5D7656]">
               Cash {inr(h.declaredCash)} · UPI {inr(h.declaredUpi || 0)}
               {h.status !== "DECLARED" && (
@@ -297,9 +303,21 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
             {handover.notes}
           </p>
         )}
+        {(handover.shortfallCash ?? 0) !== 0 && (
+          <div className="text-sm rounded-xl p-3 bg-amber-50 border border-amber-200 text-amber-900 space-y-0.5" aria-label="Cash reconciliation">
+            <p className="flex justify-between gap-3"><span>Recorded collections</span><span className="font-semibold tabular-nums">{inr(handover.recordedCash ?? handover.declaredCash)}</span></p>
+            <p className="flex justify-between gap-3"><span>Handed over now</span><span className="font-semibold tabular-nums">{inr(handover.declaredCash)}</span></p>
+            {(handover.shortfallCash ?? 0) > 0 ? (
+              <p className="flex justify-between gap-3 font-bold"><span>Short (stays owed by the employee)</span><span className="tabular-nums">{inr(handover.shortfallCash ?? 0)}</span></p>
+            ) : (
+              <p className="flex justify-between gap-3 font-bold"><span>Paying back an earlier shortage</span><span className="tabular-nums">{inr(-(handover.shortfallCash ?? 0))}</span></p>
+            )}
+            {handover.shortfallReason && <p className="pt-1">Reason: {handover.shortfallReason}</p>}
+          </div>
+        )}
         <div className={`grid gap-3 ${declaredUpi > 0 ? "grid-cols-2" : "grid-cols-1"}`}>
           <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA] space-y-1">
-            <span className="block text-[11px] text-[#8E9F89]">Cash declared</span>
+            <span className="block text-[11px] text-[#8E9F89]">Cash handed over</span>
             <span className="block text-base font-bold">{inr(handover.declaredCash)}</span>
             <label htmlFor="cash-counted" className="block text-[11px] text-[#1A2E20] pt-1">
               Cash counted
@@ -395,6 +413,7 @@ function StaffOverview() {
   );
   const [verify, setVerify] = useState<DriverCashHandover | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
+  const [writeOff, setWriteOff] = useState<StaffCustodyRow | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const rows = q.data?.staff ?? [];
   const t = q.data?.totals;
@@ -457,7 +476,14 @@ function StaffOverview() {
                   <td className={`num text-[15px] font-semibold ${r.cashPending > 0 ? "text-[var(--rn-ink)]" : "text-[var(--rn-ink-3)]"}`}>{inr(r.cashPending)}</td>
                   <td>
                     {short > 0 ? (
-                      <Badge tone="bad">Short {inr(short)}</Badge>
+                      <span className="inline-flex items-center gap-2 flex-wrap">
+                        <Badge tone="bad">Short {inr(short)}</Badge>
+                        {me?.role === "SUPER_ADMIN" && (
+                          <button type="button" className="rn-btn rn-btn-sm" onClick={() => setWriteOff(r)} aria-label={`Write off ${r.staffName}'s shortage`}>
+                            Write off
+                          </button>
+                        )}
+                      </span>
                     ) : (
                       <Badge tone={r.status === "AWAITING_ACCEPTANCE" ? "warn" : r.status === "DISCREPANCY" ? "bad" : r.status === "CLEAR" ? "good" : "neutral"}>{STATUS_LABEL[r.status] || r.status}</Badge>
                     )}
@@ -501,9 +527,80 @@ function StaffOverview() {
         />
       )}
       {detail && <StaffDetail staffId={detail} onClose={() => setDetail(null)} />}
+      {writeOff && (
+        <WriteOffShortage
+          row={writeOff}
+          onClose={(msg) => {
+            setWriteOff(null);
+            if (msg) setMessage(msg);
+          }}
+        />
+      )}
       {/* A manager/owner who collected money declares it like anyone else (verified by someone else). */}
       {iHoldMoney && me && <div className="px-5 sm:px-6 pb-5"><MyCustody staffId={me.id} /></div>}
     </section>
+  );
+}
+
+/** Owner only: write off part of an employee's unresolved cash shortage, with a reason (audited). */
+function WriteOffShortage({ row, onClose }: { row: StaffCustodyRow; onClose: (msg?: string) => void }) {
+  const [amount, setAmount] = useState(String(row.cashShort));
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const inFlight = useRef(false);
+  const n = Math.round(Number(amount));
+  const ok = Number.isInteger(n) && n > 0 && n <= row.cashShort && reason.trim().length >= 5;
+  const submit = async () => {
+    if (!ok || inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/delivery/custody/${encodeURIComponent(row.staffId)}/write-off`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: n, reason: reason.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not write off the shortage.");
+      invalidateErpCache(["custody", "handover"]);
+      onClose(`${inr(n)} of ${row.staffName}'s shortage written off.`);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/30 sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label={`Write off ${row.staffName}'s shortage`} className="rn-dialog bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[11px] text-[#8E9F89]">Write off a cash shortage</p>
+            <p className="text-lg font-bold text-[#1A2E20]">{row.staffName}</p>
+          </div>
+          <button type="button" onClick={() => onClose()} aria-label="Close" className="p-2 rounded-full hover:bg-[#FAF8F5]"><X className="w-5 h-5" /></button>
+        </div>
+        <p className="text-sm text-[#3E4E42]">
+          Unresolved shortage <strong>{inr(row.cashShort)}</strong>. A write-off records no money; it stops the amount being owed by the employee and is kept in the audit log.
+        </p>
+        {error && <p role="alert" className="text-sm bg-red-50 border border-red-200 text-red-800 rounded-xl p-2">{error}</p>}
+        <label className="block text-sm font-semibold text-[#1A2E20]">
+          Amount to write off
+          <input type="text" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#E6E1DA] text-base font-bold" />
+        </label>
+        <label className="block text-sm font-semibold text-[#1A2E20]">
+          Reason (at least 5 characters)
+          <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Cash lost, confirmed with the driver" className="mt-1 w-full h-11 px-3 rounded-xl border border-[#E6E1DA] text-sm" />
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className="rn-btn" onClick={() => onClose()}>Cancel</button>
+          <button type="button" className="rn-btn rn-btn-primary" disabled={!ok || busy} onClick={submit}>{busy ? "Saving…" : `Write off ${Number.isInteger(n) && n > 0 ? inr(n) : ""}`}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

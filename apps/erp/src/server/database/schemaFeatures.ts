@@ -33,3 +33,9 @@ export const hasInvoiceIdempotencySchema = (db: AsyncDb) => hasColumn(db, "invoi
 
 /** Migration 0021 (Pay Later eligibility and the payment choice on orders) is installed. */
 export const hasPayLaterSchema = (db: AsyncDb) => hasColumn(db, "orders", "payment_review");
+
+/**
+ * Migration 0022 is installed: handover shortfalls (recorded vs physically handed over cash, Owner
+ * write-off) and door payments allocated to the order, earlier orders or an advance.
+ */
+export const hasCashShortfallSchema = (db: AsyncDb) => hasColumn(db, "driver_cash_handovers", "recorded_cash");

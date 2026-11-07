@@ -106,7 +106,7 @@ async function main() {
   assert(a?.cashPending === 260 && m?.cashPending === 40, `Driver gets the ₹60 collected at the door, Manager the ₹40 received later (A ₹${a?.cashPending}, Manager ₹${m?.cashPending})`);
 
   console.log("\n--- 6–7, 16. A declares; B unchanged; duplicates and concurrency ---");
-  await rejects("Stated cash different from the records is rejected", () => createCashHandoverDeclaration(A, { shiftDate: day, declaredCash: 999 }, IP, db), /total is ₹260; you entered ₹999\. Add a reason/);
+  await rejects("Stated cash different from the records is rejected", () => createCashHandoverDeclaration(A, { shiftDate: day, declaredCash: 999 }, IP, db), /at most ₹260/);
   const decl = await Promise.allSettled([1, 2].map(() => createCashHandoverDeclaration(A, { shiftDate: day, notes: "End of shift" }, IP, db)));
   const ok = decl.filter((r) => r.status === "fulfilled").map((r: any) => r.value);
   assert(ok.length === 1, `Two simultaneous declarations → exactly one accepted (${ok.length})`);
@@ -185,11 +185,13 @@ async function main() {
   console.log("\n--- 21. Handing over a different amount needs a reason; records stay exact ---");
   const C = await insertStaff(db, "DELIVERY_PERSON", "Driver Chitra");
   await deliverFor(C, 2, 200, "CASH");
-  await rejects("Different amount without a reason is refused", () => createCashHandoverDeclaration(C, { shiftDate: day, declaredCash: 150 }, IP, db), /Add a reason/);
+  await rejects("Different amount without a reason is refused", () => createCashHandoverDeclaration(C, { shiftDate: day, declaredCash: 150 }, IP, db), /Explain the ₹50 difference/);
   const hC = await createCashHandoverDeclaration(C, { shiftDate: day, declaredCash: 150, notes: "Gave ₹50 change to a customer" }, IP, db);
-  assert(hC.declaredCash === 200 && /Handing over ₹150 of ₹200 recorded\. Reason: Gave ₹50 change/.test(hC.notes || ""), `Recorded ₹200 stays the declared figure; the manager sees "₹150 of ₹200" and the reason (${hC.notes})`);
+  assert(hC.declaredCash === 150 && hC.recordedCash === 200 && hC.shortfallCash === 50 && hC.shortfallReason === "Gave ₹50 change to a customer",
+    `Handed over ₹${hC.declaredCash} of ₹${hC.recordedCash} recorded; the ₹${hC.shortfallCash} shortfall and its reason are kept separately`);
   const cRow = await rowOf(owner, C.id);
-  assert(cRow?.cashUndeclared === 0 && cRow?.cashAwaitingAcceptance === 200, "All of C's recorded cash awaits the manager's count (nothing disappears)");
+  assert(cRow?.cashUndeclared === 0 && cRow?.cashAwaitingAcceptance === 150 && cRow?.cashShort === 50 && cRow?.cashOwed === 50,
+    `Only the ₹150 handed over awaits the manager; the ₹50 stays owed by C (nothing disappears): awaiting ₹${cRow?.cashAwaitingAcceptance}, short ₹${cRow?.cashShort}`);
 
   console.log(`\nCUSTODY LEDGER RESULTS: ${state.passed} PASSED, ${state.failed} FAILED`);
   await closePg();

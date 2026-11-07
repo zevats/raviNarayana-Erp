@@ -172,7 +172,13 @@ async function main() {
   await deliver(noFull, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 300 });
   assert((await db.queryOne<any>("SELECT payment_review FROM orders WHERE id = ?", [noFull.orderId])).payment_review === null, "Not approved, paid in full: no flag");
   const over = await placeOrder(no);
-  assert((await refused(() => deliver(over, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 301 }))) !== null, "Collecting more than due is refused (no silent credit)");
+  // Since migration 0022 an amount above the order is accepted and allocated in the open: the order
+  // first, then earlier dues, then an advance. Nothing is kept as hidden credit.
+  await deliver(over, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 301, idempotencyKey: `p2over_${rnd()}` });
+  const overRows = await db.query<any>("SELECT allocation, amount FROM delivery_collections WHERE collected_at_task_id = ? ORDER BY allocation", [over.taskId]);
+  const overSplit = overRows.map((r: any) => `${r.allocation}:${r.amount}`).join(",");
+  assert(overRows.reduce((s: number, r: any) => s + Number(r.amount), 0) === 301 && overRows.some((r: any) => r.allocation === "ORDER" && Number(r.amount) === 300) && overRows.every((r: any) => ["ORDER", "PREVIOUS_DUES", "ADVANCE"].includes(r.allocation)),
+    `Collecting ₹301 for a ₹300 order: ₹300 to the order, ₹1 to earlier dues or an advance, every rupee recorded (${overSplit})`);
   const mine = await placeOrder(no, 1, driver);
   assert(/not assigned/i.test((await refused(() => deliver(mine, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 100 }, driver2))) || ""),
     "A driver cannot complete another driver's stop");

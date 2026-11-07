@@ -1,5 +1,6 @@
 "use client";
 
+import { UpiQr } from "./UpiQr";
 import React, { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, X, Check, CheckCircle2, CircleCheck, Flag, Phone, Home, CircleSlash } from "lucide-react";
 import type { DeliveryDisposition, DeliveryLine, DeliveryTask } from "@/types";
@@ -177,10 +178,20 @@ export function DeliveryForm({
   const payLaterAllowed = task.payLaterAllowed === true;
   const payLater = method === "PAY_LATER";
   const collected = payLater ? 0 : collectedText === null ? amountDue : collectedText.trim() === "" ? 0 : Number(collectedText);
-  const collectedOk = Number.isInteger(collected) && collected >= 0 && collected <= amountDue;
+  // The customer's balance from before this order (Receivables rule). More than this order can be
+  // collected: the extra settles earlier orders, then becomes an advance (the server allocates).
+  const prev = task.customerBalance ?? null;
+  const previous = prev?.previous ?? 0;
+  const totalDue = Math.max(0, amountDue + previous);
+  const collectedOk = Number.isInteger(collected) && collected >= 0 && collected <= 9999999;
   const balance = Math.max(0, amountDue - (collectedOk ? collected : 0));
-  // A balance left at the door is credit: only for customers approved for Pay Later (decision D3).
-  const balanceBlocked = doorstep && payLaterKnown && !payLaterAllowed && balance > 0;
+  const toOrder = Math.min(collectedOk ? collected : 0, amountDue);
+  const extra = Math.max(0, (collectedOk ? collected : 0) - amountDue);
+  const toEarlier = Math.min(extra, prev ? prev.earlierOrders : 0);
+  const advance = extra - toEarlier;
+  // Pay Later is offered for every customer. Without the office's approval the balance is still
+  // recorded and the order is flagged for a Manager to review (the server records both).
+  const needsReview = doorstep && payLaterKnown && !payLaterAllowed && balance > 0;
   const setLine = (id: string, patch: Partial<LineState>) => setState((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   const setAll = (all: boolean) => setState((prev) => Object.fromEntries(lines.map((l) => [l.lineId, { ...(prev[l.lineId] || { reason: "", disposition: null }), delivered: all ? l.quantity : 0 }])));
 
@@ -197,8 +208,7 @@ export function DeliveryForm({
       return setError("Choose why it was not delivered.");
     }
     if (!nothing && !recipient) return setError("Enter the name of the person who received it.");
-    if (doorstep && !nothing && !collectedOk) return setError(`Amount collected must be a whole number from ₹0 to ${rupees(amountDue)}.`);
-    if (!nothing && balanceBlocked) return setError(`This customer can't pay later. Collect the full ${rupees(amountDue)}, or call the office.`);
+    if (doorstep && !nothing && !collectedOk) return setError("Amount collected must be a whole number of rupees, 0 or more.");
 
     const payload: Record<string, any> =
       lines.length > 0
@@ -367,6 +377,21 @@ export function DeliveryForm({
 
       {doorstep && !nothing ? (
         <section aria-label="Payment" className={`${K.soft} p-4 space-y-3`}>
+          {prev && previous !== 0 && (
+            <div className="rounded-xl bg-white border border-[#ECE6DB] px-3 py-2.5 space-y-1" aria-label="Customer balance">
+              <div className="flex justify-between gap-3 text-[13.5px]">
+                <span className="text-[#3E4E42]">{previous > 0 ? "Previous balance" : "Customer credit"}</span>
+                <span className={`font-bold tabular-nums ${previous > 0 ? "text-[#B4440F]" : "text-[#2F6B24]"}`}>{rupees(Math.abs(previous))}</span>
+              </div>
+              <p className="text-[11.5px] text-[#6E7F70] leading-snug">
+                {[prev.earlierOrders > 0 && `earlier orders ${rupees(prev.earlierOrders)}`, prev.bills > 0 && `tiffin bills ${rupees(prev.bills)}`, prev.credit > 0 && `paid ahead ${rupees(prev.credit)}`].filter(Boolean).join(" · ")}
+              </p>
+              <div className="flex justify-between gap-3 text-[13.5px] pt-1 border-t border-[#F1ECE3]">
+                <span className="text-[#3E4E42]">This order {rupees(amountDue)} · <span className="font-semibold">Total due</span></span>
+                <span className="font-extrabold tabular-nums text-[#1F2320]">{rupees(totalDue)}</span>
+              </div>
+            </div>
+          )}
           {/* Amounts shrink to fit their column so a large order never runs into the next figure. */}
           <div className="grid grid-cols-3 gap-2">
             <div className="min-w-0">
@@ -386,33 +411,46 @@ export function DeliveryForm({
             <>
               <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Payment">
                 {(["CASH", "UPI", "PAY_LATER"] as const).map((m) => {
-                  const off = m === "PAY_LATER" && !payLaterAllowed;
+                  const review = m === "PAY_LATER" && !payLaterAllowed;
                   return (
                     <button
                       key={m}
                       type="button"
                       role="radio"
                       aria-checked={method === m}
-                      disabled={off}
                       onClick={() => setMethod(m)}
-                      className={`rn-press min-h-12 px-2 rounded-xl text-[14px] font-semibold leading-tight ${method === m ? "bg-[#C9501C] text-white" : off ? "bg-white/60 text-[#9AA59C] border border-dashed border-[#E2DBCE]" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}
+                      className={`rn-press min-h-12 px-2 rounded-xl text-[14px] font-semibold leading-tight ${method === m ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}
                     >
                       {m === "CASH" ? "Cash" : m === "UPI" ? "UPI" : "Pay Later"}
-                      {off && <span className="block text-[10px] font-medium">Not approved</span>}
+                      {review && <span className={`block text-[10px] font-medium ${method === m ? "text-white/85" : "text-[#8F6710]"}`}>Office review</span>}
                     </button>
                   );
                 })}
               </div>
               {payLater ? (
-                <p className="text-[13px] text-[#3E4E42]">Nothing collected now. {rupees(amountDue)} goes on the customer&apos;s account.</p>
+                <p className="text-[13px] text-[#3E4E42]">
+                  Nothing collected now. {rupees(amountDue)} goes on the customer&apos;s account.
+                  {!payLaterAllowed && <span className="block mt-1 text-[#8F6710] font-semibold">Not yet approved for Pay Later: the office will review this order.</span>}
+                </p>
               ) : (
                 <>
-                  <input type="number" inputMode="numeric" min={0} max={amountDue} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`w-full h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk && !balanceBlocked ? "border-transparent" : "border-[#9A3423]"}`} />
+                  <input type="number" inputMode="numeric" min={0} step={1} value={collectedText ?? String(amountDue)} onChange={(e) => setCollectedText(e.target.value)} aria-label="Amount collected (₹)" className={`w-full h-12 px-3 rounded-lg bg-white text-lg font-bold border ${collectedOk ? "border-transparent" : "border-[#9A3423]"}`} />
+                  {prev && previous > 0 && collectedOk && collected < totalDue && (
+                    <button type="button" className="text-[13px] font-semibold text-[#C9501C] underline underline-offset-2" onClick={() => setCollectedText(String(totalDue))}>
+                      Collect the total due {rupees(totalDue)}
+                    </button>
+                  )}
                   {balance > 0 && collectedOk && (
-                    <p className={`text-[13px] ${balanceBlocked ? "text-[#9A3423] font-semibold" : "text-[#3E4E42]"}`}>
-                      {balanceBlocked ? `Not approved for Pay Later: collect the full ${rupees(amountDue)}.` : `${rupees(balance)} goes on the customer's account.`}
+                    <p className={`text-[13px] ${needsReview ? "text-[#8F6710] font-semibold" : "text-[#3E4E42]"}`}>
+                      {rupees(balance)} goes on the customer&apos;s account{needsReview ? " (not yet approved for Pay Later: the office will review)" : ""}.
                     </p>
                   )}
+                  {extra > 0 && collectedOk && (
+                    <p className="text-[13px] text-[#2F6B24]" aria-label="Allocation">
+                      {rupees(toOrder)} for this order{toEarlier > 0 ? ` · ${rupees(toEarlier)} for earlier orders` : ""}{advance > 0 ? ` · ${rupees(advance)} kept as advance` : ""}.
+                    </p>
+                  )}
+                  {method === "UPI" && collectedOk && <UpiQr amount={collected} note={task.customerName ? `Order ${task.customerName}` : undefined} />}
                 </>
               )}
             </>

@@ -954,6 +954,12 @@ export interface DeliveryTask {
   paymentChoice?: PaymentChoice | null;
   /** Migration 0021: a balance was left without Pay Later approval and awaits a Manager's review. */
   paymentReview?: string | null;
+  /**
+   * The customer's balance from BEFORE this order (same rule as Finance -> Receivables, this order
+   * excluded): earlier delivered orders still owed, open tiffin bills, less advances and unallocated
+   * payments. Only these totals reach the delivery app.
+   */
+  customerBalance?: { previous: number; earlierOrders: number; bills: number; credit: number } | null;
   /** Every item line (order lines or task items); empty for legacy deliveries without lines. */
   lines?: DeliveryLine[];
   paymentMode?: DeliveryPaymentMode;
@@ -1039,6 +1045,17 @@ export interface DriverCashHandover {
   id: string;
   driverId: string;
   driverName?: string | null;
+  /** Cash the system had recorded for the collections in this declaration (migration 0022). */
+  recordedCash?: number;
+  /** recordedCash - declaredCash: cash recorded but not handed over (negative = an earlier shortfall paid back). */
+  shortfallCash?: number;
+  /** The employee's explanation when handing over less than recorded. */
+  shortfallReason?: string | null;
+  /** Shortfall the Owner wrote off on this handover, with who, when and why. */
+  writtenOffCash?: number;
+  writtenOffBy?: string | null;
+  writtenOffAt?: string | null;
+  writeOffReason?: string | null;
   shiftDate: string; // YYYY-MM-DD
   declaredCash: number;
   acceptedCash: number;
@@ -1109,8 +1126,15 @@ export interface StaffCustodyRow {
   /** Still held by the employee = undeclared + awaiting acceptance. */
   cashPending: number;
   upiPending: number;
-  /** Declared but not received in settled handovers (positive = short). */
+  /**
+   * Unresolved cash shortage: recorded in handovers but neither handed over (awaiting verification),
+   * counted as received, nor written off by the Owner (positive = the employee still owes it).
+   */
   cashShort: number;
+  /** Cash the employee still has to hand over: undeclared collections + unresolved shortage. */
+  cashOwed?: number;
+  /** Shortage written off by the Owner (all time). */
+  cashWrittenOff?: number;
   upiShort: number;
   pendingHandovers: number;
   discrepancies: number;

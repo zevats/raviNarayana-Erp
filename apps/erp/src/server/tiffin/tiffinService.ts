@@ -821,6 +821,47 @@ export async function updateTiffinProduct(
  * Activates or deactivates a catalog item.
  * Deactivation prevents new orders while preserving historical references.
  */
+/**
+ * Deletes a menu item that was never used (Owner / Manager). An item used by any order line,
+ * subscription or recipe is refused: deactivating it hides it from new orders and keeps the history
+ * of what was sold intact.
+ */
+export async function deleteTiffinProduct(actor: AuthenticatedUser, id: string, clientIp?: string, asyncDb?: AsyncDb): Promise<{ deleted: true }> {
+  requirePermission(actor, "tiffin.manage", { ip: clientIp, action: "tiffin.product_deleted" });
+  const db = asyncDb ?? getAsyncDb();
+  await db.transaction(async (tx) => {
+    const product = await tx.queryOne<{ id: string; code: string; name: string }>(
+      `SELECT id, code, name FROM tiffin_products WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`,
+      [id]
+    );
+    if (!product) throw new Error("Menu item not found.");
+    const used = await tx.queryOne<{ orders: number | string; subs: number | string; recipes: number | string }>(
+      `SELECT (SELECT COUNT(*) FROM order_items WHERE product_id = ?) AS orders,
+              (SELECT COUNT(*) FROM tiffin_subscriptions WHERE product_id = ?) AS subs,
+              ${tx.isPostgres ? "(CASE WHEN to_regclass('public.kitchen_recipes') IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM kitchen_recipes WHERE product_id = ?) END)" : "0"} AS recipes`,
+      tx.isPostgres ? [id, id, id] : [id, id]
+    );
+    const orders = Number(used?.orders || 0);
+    const subs = Number(used?.subs || 0);
+    const recipes = Number(used?.recipes || 0);
+    if (orders + subs + recipes > 0) {
+      const parts = [orders && `${orders} order line${orders === 1 ? "" : "s"}`, subs && `${subs} subscription${subs === 1 ? "" : "s"}`, recipes && `${recipes} recipe${recipes === 1 ? "" : "s"}`].filter(Boolean).join(", ");
+      throw new Error(`"${product.name}" is used by ${parts}, so it can't be deleted. Deactivate it instead: it disappears from new orders and the history stays intact.`);
+    }
+    await tx.execute("DELETE FROM tiffin_products WHERE id = ?", [id]);
+    await recordAuditEventAsync({
+      actorId: actor.id,
+      actorUsername: actor.username,
+      action: "tiffin.product_deleted",
+      targetType: "tiffin_product",
+      targetId: id,
+      metadata: { code: product.code, name: product.name },
+      ipAddress: clientIp,
+    }, tx);
+  });
+  return { deleted: true };
+}
+
 export async function setTiffinProductStatus(
   actor: AuthenticatedUser,
   id: string,

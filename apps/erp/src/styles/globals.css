@@ -198,3 +198,9 @@ html:has(.fixed.inset-0.z-50), html:has(.fixed.inset-0.z-50) body { overflow: hi
 .rn-main[data-nav-pending] > :not([data-nav-skeleton]) {
   display: none !important;
 }
+
+/* Open sheets and dialogs sit above the on-screen keyboard where the browser only covers the page
+   (--rn-kb is set by KeepFieldInView; 0 when the page itself resizes or no keyboard is open). */
+@media (max-width: 767.98px) {
+  .rn-sheet, .rn-dialog { margin-bottom: var(--rn-kb, 0px); max-height: calc(94dvh - var(--rn-kb, 0px)) !important; }
+}

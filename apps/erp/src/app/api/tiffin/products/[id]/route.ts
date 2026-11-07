@@ -8,6 +8,7 @@ import {
 import {
   getTiffinProductById,
   updateTiffinProduct,
+  deleteTiffinProduct,
 } from "@/server/tiffin/tiffinService";
 import { getClientIp } from "@/server/authentication/ip";
 
@@ -40,6 +41,22 @@ export async function GET(
       { error: error.message || "Failed to load product." },
       { status: 400 }
     );
+  }
+}
+
+/** Deletes a menu item that was never used (Owner / Manager); a used item must be deactivated. */
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const user = await resolveUserFromRequest(request);
+    if (!user) return unauthorizedResponse();
+    const result = await deleteTiffinProduct(user, params.id, getClientIp(request));
+    return NextResponse.json({ success: true, ...result });
+  } catch (error: any) {
+    const authError = handleAuthorizationError(error);
+    if (authError) return authError;
+    const dbError = databaseErrorResponse("/api/tiffin/products/[id]", error);
+    if (dbError) return dbError;
+    return NextResponse.json({ error: error.message || "Failed to delete the menu item." }, { status: 400 });
   }
 }
 

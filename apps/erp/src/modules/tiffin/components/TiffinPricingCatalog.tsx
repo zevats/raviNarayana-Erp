@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Edit,
   Power,
+  Trash2,
   ChevronLeft,
   ChevronRight,
   X,
@@ -46,6 +47,9 @@ export function TiffinPricingCatalog() {
   const [isSeeding, setIsSeeding] = useState(false);
   // Adding the default menu is an Owner action, previewed first (server: system.manage).
   const canSeed = useHasPermission("system.manage");
+  const canManageMenu = useHasPermission("tiffin.manage");
+  const [deleteTarget, setDeleteTarget] = useState<TiffinProduct | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Feedback notifications
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
@@ -136,6 +140,25 @@ export function TiffinPricingCatalog() {
     invalidateErpCache(["tiffin_products"]);
     refetch();
     showFeedback("success", message);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/tiffin/products/${deleteTarget.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not delete the menu item.");
+      invalidateErpCache(["tiffin_products"]);
+      refetch();
+      showFeedback("success", `"${deleteTarget.name}" was deleted from the menu.`);
+      setDeleteTarget(null);
+    } catch (err: any) {
+      showFeedback("error", err.message || "Could not delete the menu item.");
+      setDeleteTarget(null);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleConfirmStatusToggle = async () => {
@@ -542,6 +565,16 @@ export function TiffinPricingCatalog() {
                           >
                             <Power className="w-4 h-4" />
                           </button>
+                          {canManageMenu && (
+                            <button
+                              onClick={() => setDeleteTarget(product)}
+                              className="p-1.5 text-[#9A3423] hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete menu item"
+                              aria-label={`Delete ${product.name}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -589,6 +622,20 @@ export function TiffinPricingCatalog() {
 </div>
 
       {/* Status Toggle Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/30 sm:p-4">
+          <div role="dialog" aria-modal="true" aria-label={`Delete ${deleteTarget.name}`} className="rn-dialog bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3">
+            <p className="text-lg font-bold text-[#1A2E20]">Delete &ldquo;{deleteTarget.name}&rdquo;?</p>
+            <p className="text-sm text-[#3E4E42]">
+              It is removed from the menu for good. Items already used in orders or subscriptions can&apos;t be deleted: deactivate them instead so past records keep their item.
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" className="rn-btn" onClick={() => setDeleteTarget(null)} disabled={isDeleting}>Cancel</button>
+              <button type="button" className="rn-btn rn-btn-primary" onClick={handleConfirmDelete} disabled={isDeleting}>{isDeleting ? "Deleting…" : "Delete"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {statusTarget && (
         <div
           role="dialog"

@@ -39,7 +39,7 @@ export type AgeingBucket = "0_7" | "8_30" | "31_60" | "61_PLUS";
 export interface ReceivableLine {
   source: ReceivableSource;
   accountKey: string;
-  kind: "CHARGE" | "INVOICE" | "ORDER" | "UNALLOCATED";
+  kind: "CHARGE" | "INVOICE" | "ORDER" | "UNALLOCATED" | "ADVANCE";
   refId: string;
   reference: string;
   description: string;
@@ -201,8 +201,20 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
              '/delivery?tab=board&date=' || od.service_date || '&meal=' || od.meal_type AS link
       FROM od WHERE od.due > od.collected
     ),
+    dl_credit AS (
+      -- Paid beyond the value of the order at the door (migration 0022: an advance): customer credit.
+      SELECT 'DELIVERY' AS source, CASE WHEN od.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
+             COALESCE(od.customer_id, od.id) AS account_id,
+             'ADVANCE' AS kind, od.id AS ref_id,
+             'Advance paid' AS reference,
+             'Paid in advance at a delivery (' || to_char(CAST(od.service_date AS date), 'DD Mon YYYY') || ')' AS description,
+             od.service_date AS date, NULL AS due_date, od.due AS amount, od.collected AS paid, od.due - od.collected AS outstanding,
+             od.payment_choice, od.review,
+             '/delivery?tab=board&date=' || od.service_date || '&meal=' || od.meal_type AS link
+      FROM od WHERE od.collected > od.due
+    ),
     lines AS (
-      SELECT * FROM pg UNION ALL SELECT * FROM tf UNION ALL SELECT * FROM tf_credit UNION ALL SELECT * FROM dl
+      SELECT * FROM pg UNION ALL SELECT * FROM tf UNION ALL SELECT * FROM tf_credit UNION ALL SELECT * FROM dl UNION ALL SELECT * FROM dl_credit
     )
     SELECT l.*, l.account_kind || ':' || l.account_id AS account_key,
            ${age("l.date")} AS age_days,

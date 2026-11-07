@@ -7,6 +7,7 @@ import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateStr
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
 import { hasPayLaterSchema } from "../database/schemaFeatures";
 import { notifyStopsAssigned } from "../notifications/pushService";
+import { hasCashShortfallSchema } from "../database/schemaFeatures";
 import { getSettings } from "../settings/settingsService";
 import {
   AuthenticatedUser,
@@ -419,6 +420,7 @@ async function loadCollectedTotals(db: AsyncDb, taskIds: string[]): Promise<Map<
 type CustomerHint = {
   landmark: string | null;
   instructions: string | null;
+  customerId?: string | null;
   payLaterAllowed?: boolean;
   paymentChoice?: "CASH" | "UPI" | "PAY_LATER" | null;
   paymentReview?: string | null;
@@ -442,7 +444,7 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
     // delivery app, never a balance), and what was chosen at the door.
     const pay = await hasPayLaterSchema(db);
     const rows = await db.query<any>(
-      `SELECT o.id, c.landmark, c.delivery_instructions AS instructions${pay ? ", c.pay_later_enabled, o.payment_choice, o.payment_review, o.payment_reviewed_at" : ""}
+      `SELECT o.id, o.customer_id, c.landmark, c.delivery_instructions AS instructions${pay ? ", c.pay_later_enabled, o.payment_choice, o.payment_review, o.payment_reviewed_at" : ""}
        FROM orders o LEFT JOIN tiffin_customers c ON c.id = o.customer_id
        WHERE o.id IN (${orderIds.map(() => "?").join(", ")})`,
       orderIds
@@ -451,6 +453,7 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
       hints.set(`ord:${r.id}`, {
         landmark: r.landmark || null,
         instructions: r.instructions || null,
+        customerId: r.customer_id || null,
         ...(pay
           ? {
               payLaterAllowed: Number(r.pay_later_enabled) === 1,
@@ -462,6 +465,61 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
     }
   }
   return hints;
+}
+
+type CustomerBalance = { previous: number; earlierOrders: number; bills: number; credit: number };
+
+/**
+ * Balances of the customers behind these orders, from before each order: delivered orders still
+ * owed (collections that still count; a reversed UPI does not), open tiffin bills, minus advances and
+ * unallocated tiffin payments. Three grouped queries for the whole list.
+ */
+async function loadCustomerBalances(db: AsyncDb, orderCustomer: Map<string, string>): Promise<Map<string, CustomerBalance>> {
+  const out = new Map<string, CustomerBalance>();
+  const customers = Array.from(new Set(orderCustomer.values()));
+  if (customers.length === 0) return out;
+  const marks = customers.map(() => "?").join(", ");
+  const active = (await hasDeliveryOpsSchema(db)) ? `AND ${activeCollectionSql("dc")}` : "";
+  const [orders, bills, credits] = await Promise.all([
+    db.query<{ id: string; customer_id: string; open: number | string }>(
+      `SELECT o.id, o.customer_id, COALESCE(d.due, 0) - COALESCE(cl.collected, 0) AS open
+       FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
+       LEFT JOIN (SELECT order_id, SUM(COALESCE(delivered_quantity, quantity) * unit_price) AS due FROM order_items GROUP BY order_id) d ON d.order_id = o.id
+       LEFT JOIN (SELECT dc.delivery_task_id, SUM(dc.amount) AS collected FROM delivery_collections dc WHERE 1 = 1 ${active} GROUP BY dc.delivery_task_id) cl ON cl.delivery_task_id = o.delivery_task_id
+       WHERE o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND o.customer_id IN (${marks})`,
+      customers
+    ),
+    db.query<{ customer_id: string; due: number | string }>(
+      `SELECT customer_id, SUM(balance_due) AS due FROM invoices
+       WHERE invoice_category = 'TIFFIN' AND status IN ('ISSUED', 'PARTIALLY_PAID') AND balance_due > 0 AND customer_id IN (${marks})
+       GROUP BY customer_id`,
+      customers
+    ),
+    db.query<{ customer_id: string; credit: number | string }>(
+      `SELECT t.customer_id, SUM(t.amount - COALESCE(a.allocated, 0)) AS credit
+       FROM financial_transactions t
+       LEFT JOIN (SELECT payment_transaction_id, SUM(amount) AS allocated FROM invoice_payment_allocations GROUP BY payment_transaction_id) a ON a.payment_transaction_id = t.id
+       WHERE t.transaction_type = 'TIFFIN_PAYMENT' AND t.status = 'POSTED' AND t.amount > COALESCE(a.allocated, 0) AND t.customer_id IN (${marks})
+       GROUP BY t.customer_id`,
+      customers
+    ),
+  ]);
+  const billBy = new Map(bills.map((b) => [b.customer_id, Number(b.due)]));
+  const creditBy = new Map(credits.map((c) => [c.customer_id, Number(c.credit)]));
+  for (const [orderId, customerId] of orderCustomer) {
+    let earlierOrders = 0;
+    let advances = 0;
+    for (const o of orders) {
+      if (o.customer_id !== customerId || o.id === orderId) continue;
+      const open = Number(o.open);
+      if (open > 0) earlierOrders += open;
+      else advances -= open;
+    }
+    const bills = billBy.get(customerId) ?? 0;
+    const credit = advances + (creditBy.get(customerId) ?? 0);
+    out.set(orderId, { previous: earlierOrders + bills - credit, earlierOrders, bills, credit });
+  }
+  return out;
 }
 
 /** Amount due for an order: delivered quantities once recorded, otherwise the full order. */
@@ -511,7 +569,14 @@ async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<Deli
     }
   }
   const hints = await loadCustomerHints(db, tasks);
+  const orderCustomer = new Map<string, string>();
   for (const task of tasks) {
+    const h = task.orderId ? hints.get(`ord:${task.orderId}`) : null;
+    if (task.orderId && h?.customerId) orderCustomer.set(task.orderId, h.customerId);
+  }
+  const balances = await loadCustomerBalances(db, orderCustomer);
+  for (const task of tasks) {
+    if (task.orderId) task.customerBalance = balances.get(task.orderId) ?? null;
     const h = (task.subscriptionId && hints.get(`sub:${task.subscriptionId}`)) || (task.orderId && hints.get(`ord:${task.orderId}`)) || null;
     task.landmark = h?.landmark ?? null;
     task.deliveryInstructions = h?.instructions ?? null;
@@ -545,6 +610,13 @@ function mapRowToDriverCashHandover(row: any): DriverCashHandover {
     driverName: row.driver_name || null,
     shiftDate: row.shift_date,
     declaredCash: Number(row.declared_cash || 0),
+    recordedCash: Number(row.recorded_cash ?? row.declared_cash ?? 0),
+    shortfallCash: Number(row.recorded_cash ?? row.declared_cash ?? 0) - Number(row.declared_cash || 0),
+    shortfallReason: row.shortfall_reason || null,
+    writtenOffCash: Number(row.written_off_cash || 0),
+    writtenOffBy: row.written_off_by || null,
+    writtenOffAt: row.written_off_at || null,
+    writeOffReason: row.write_off_reason || null,
     acceptedCash: Number(row.accepted_cash || 0),
     variance: Number(row.variance || 0),
     varianceReason: row.variance_reason || null,
@@ -1893,10 +1965,19 @@ async function completeLinedDelivery(
         : "This meal is not charged at the door; nothing can be collected."
     );
   }
-  if (collected > amountDue) {
+  // With migration 0022 a customer may pay more than this order at the door: the extra settles their
+  // earlier orders (oldest first) and anything beyond that is kept as an advance (customer credit).
+  // Each part is its own collection record; the whole amount is held by the employee at the door.
+  const doorAllocation = isOrder && Boolean(source.orderId) && (await hasCashShortfallSchema(db));
+  if (collected > amountDue && !doorAllocation) {
     throw new Error(`Amount collected (₹${collected}) cannot be more than the amount due for the delivered items (₹${amountDue}).`);
   }
+  const orderPart = Math.min(collected, amountDue);
+  const extraPart = collected - orderPart;
   const nothingDelivered = totalDelivered === 0;
+  if (nothingDelivered && collected > 0) {
+    throw new Error("Nothing was delivered, so no payment can be recorded at the door. Record a payment for earlier orders from the office.");
+  }
   const recipientName = input?.recipientName?.trim() || null;
   if (!nothingDelivered && opsSchema && !recipientName) {
     throw new Error("Enter the name of the person who received the delivery.");
@@ -1970,12 +2051,51 @@ async function completeLinedDelivery(
         deliveryTaskId: currentTask.id,
         orderId: source.orderId,
         collectedBy: custodian,
-        amount: collected,
+        amount: orderPart,
         paymentMethod,
         collectedAt: now,
         idempotencyKey: collectionKey,
         serviceDate: currentTask.serviceDate,
+        allocation: "ORDER",
       });
+      if (extraPart > 0) {
+        let left = extraPart;
+        const owner = await tx.queryOne<{ customer_id: string | null }>("SELECT customer_id FROM orders WHERE id = ?", [source.orderId]);
+        if (owner?.customer_id) {
+          // One door payment at a time per customer, so two stops cannot both settle the same old order.
+          await acquireLedgerKeyLock(tx, `customer-dues:${owner.customer_id}`);
+          for (const prev of await customerOpenOrders(tx, owner.customer_id, source.orderId)) {
+            if (left <= 0) break;
+            const take = Math.min(left, prev.open);
+            await recordCustodyCollection(tx, {
+              deliveryTaskId: prev.delivery_task_id,
+              orderId: prev.id,
+              collectedBy: custodian,
+              amount: take,
+              paymentMethod,
+              collectedAt: now,
+              idempotencyKey: `${collectionKey}:prev:${prev.id}`,
+              serviceDate: currentTask.serviceDate,
+              allocation: "PREVIOUS_DUES",
+              collectedAtTaskId: currentTask.id,
+            });
+            left -= take;
+          }
+        }
+        if (left > 0) {
+          await recordCustodyCollection(tx, {
+            deliveryTaskId: currentTask.id,
+            orderId: source.orderId,
+            collectedBy: custodian,
+            amount: left,
+            paymentMethod,
+            collectedAt: now,
+            idempotencyKey: `${collectionKey}:advance`,
+            serviceDate: currentTask.serviceDate,
+            allocation: "ADVANCE",
+          });
+        }
+      }
     }
 
     for (const o of outcomes) {
@@ -1999,7 +2119,7 @@ async function completeLinedDelivery(
       await tx.execute("UPDATE orders SET status = 'COMPLETED', updated_at = ? WHERE id = ? AND status = 'CONFIRMED'", [now, source.orderId]);
     }
     if (recordPayment && source.orderId) {
-      const remainder = amountDue - collected;
+      const remainder = amountDue - orderPart;
       let detail: string | null = null;
       if (remainder > 0) {
         const account = await tx.queryOne<{ customer_id: string | null; pay_later_enabled: number | null }>(
@@ -2042,7 +2162,7 @@ async function completeLinedDelivery(
         nothingDelivered
           ? `Not delivered: ${outcomeText}.`
           : `${hasShortfall ? "Partly delivered" : "Delivered"} ${outcomeText}.` +
-            (isOrder ? ` Due ₹${amountDue}, collected ₹${collected}${paymentMethod ? ` via ${paymentMethod}` : ""}, balance ₹${amountDue - collected}.` : "") +
+            (isOrder ? ` Due ₹${amountDue}, collected ₹${collected}${paymentMethod ? ` via ${paymentMethod}` : ""}, balance ₹${amountDue - orderPart}${extraPart > 0 ? `; ₹${extraPart} more taken for earlier dues or as an advance` : ""}.` : "") +
             (recipientName ? ` Received by ${recipientName}.` : ""),
         now,
       ]
@@ -2072,7 +2192,8 @@ async function completeLinedDelivery(
           amountDue,
           collectedAmount: collected,
           paymentMethod,
-          balanceDue: amountDue - collected,
+          balanceDue: amountDue - orderPart,
+          extraCollected: extraPart,
           recipientName,
           paymentChoice: recordPayment ? storedChoice : undefined,
           payLaterReview: payLaterReview ?? undefined,
@@ -2863,10 +2984,14 @@ async function recordCustodyCollection(
     notes?: string | null;
     /** Service date of the delivery; kept on the payment (the cashbook uses the handover date). */
     serviceDate?: string | null;
+    /** Migration 0022: what the money paid (this order, an earlier order, an advance) and the stop where it was taken. */
+    allocation?: "ORDER" | "PREVIOUS_DUES" | "ADVANCE";
+    collectedAtTaskId?: string | null;
   }
 ): Promise<void> {
   if (!(input.amount > 0)) return;
   const opsSchema = await hasDeliveryOpsSchema(tx);
+  const allocSchema = await hasCashShortfallSchema(tx);
   const withServiceDate = Boolean(input.serviceDate) && opsSchema;
   const collectionId = `dcol_${crypto.randomUUID()}`;
   // Owner decision (round 13): UPI is paid straight into the PG account. It is booked in the
@@ -2899,8 +3024,8 @@ async function recordCustodyCollection(
     );
   }
   await tx.execute(
-    `INSERT INTO delivery_collections (id, delivery_task_id, order_id, collected_by, amount, payment_method, collected_at, handover_id, idempotency_key, source, notes, created_at${withServiceDate ? ", service_date" : ""}${opsSchema ? ", transaction_id" : ""})
-     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'APP', ?, ?${withServiceDate ? ", ?" : ""}${opsSchema ? ", ?" : ""})`,
+    `INSERT INTO delivery_collections (id, delivery_task_id, order_id, collected_by, amount, payment_method, collected_at, handover_id, idempotency_key, source, notes, created_at${withServiceDate ? ", service_date" : ""}${opsSchema ? ", transaction_id" : ""}${allocSchema ? ", allocation, collected_at_task_id" : ""})
+     VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, 'APP', ?, ?${withServiceDate ? ", ?" : ""}${opsSchema ? ", ?" : ""}${allocSchema ? ", ?, ?" : ""})`,
     [
       collectionId,
       input.deliveryTaskId,
@@ -2914,8 +3039,26 @@ async function recordCustodyCollection(
       input.collectedAt,
       ...(withServiceDate ? [input.serviceDate] : []),
       ...(opsSchema ? [directTxId] : []),
+      ...(allocSchema ? [input.allocation || "ORDER", input.collectedAtTaskId || input.deliveryTaskId] : []),
     ]
   );
+}
+
+/**
+ * Earlier delivered orders of a customer that still have a balance (oldest first), using the same
+ * rule as Receivables: delivered value minus collections that still count (a reversed UPI does not).
+ */
+async function customerOpenOrders(tx: AsyncDb, customerId: string, excludeOrderId: string | null): Promise<Array<{ id: string; delivery_task_id: string; open: number }>> {
+  const rows = await tx.query<any>(
+    `SELECT o.id, o.delivery_task_id,
+            (SELECT COALESCE(SUM(COALESCE(oi.delivered_quantity, oi.quantity) * oi.unit_price), 0) FROM order_items oi WHERE oi.order_id = o.id)
+          - (SELECT COALESCE(SUM(dc.amount), 0) FROM delivery_collections dc WHERE dc.delivery_task_id = o.delivery_task_id AND ${activeCollectionSql("dc")}) AS open
+     FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
+     WHERE o.customer_id = ? AND o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND o.id <> ?
+     ORDER BY o.service_date, o.created_at, o.id`,
+    [customerId, excludeOrderId || ""]
+  );
+  return rows.map((r) => ({ id: r.id, delivery_task_id: r.delivery_task_id, open: Number(r.open) })).filter((r) => r.open > 0);
 }
 
 /**
@@ -2986,6 +3129,9 @@ const CUSTODY_ROW_SQL_TEMPLATE = `
     COALESCE(c.cash_awaiting, 0) AS cash_awaiting,
     COALESCE(c.upi_awaiting, 0) AS upi_awaiting,
     COALESCE(h.cash_accepted, 0) AS cash_accepted,
+    COALESCE(h.cash_recorded_all, 0) AS cash_recorded_all,
+    COALESCE(h.cash_declared_pending, 0) AS cash_declared_pending,
+    COALESCE(h.cash_written_off, 0) AS cash_written_off,
     COALESCE(h.upi_accepted, 0) AS upi_accepted,
     COALESCE(h.cash_declared_settled, 0) AS cash_declared_settled,
     COALESCE(h.upi_declared_settled, 0) AS upi_declared_settled,
@@ -3007,6 +3153,9 @@ const CUSTODY_ROW_SQL_TEMPLATE = `
   LEFT JOIN (
     SELECT driver_id,
       SUM(CASE WHEN status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN accepted_cash ELSE 0 END) AS cash_accepted,
+      SUM(/*RECORDED*/) AS cash_recorded_all,
+      SUM(CASE WHEN status = 'DECLARED' THEN declared_cash ELSE 0 END) AS cash_declared_pending,
+      SUM(/*WRITTEN_OFF*/) AS cash_written_off,
       SUM(CASE WHEN status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN accepted_upi ELSE 0 END) AS upi_accepted,
       SUM(CASE WHEN status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN declared_cash ELSE 0 END) AS cash_declared_settled,
       SUM(CASE WHEN status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN declared_upi ELSE 0 END) AS upi_declared_settled,
@@ -3019,14 +3168,24 @@ const CUSTODY_ROW_SQL_TEMPLATE = `
 /** Staff custody per employee; with migration 0014, UPI booked directly to the PG account is excluded. */
 async function custodyRowSql(db: AsyncDb): Promise<string> {
   const ops = await hasDeliveryOpsSchema(db);
-  return CUSTODY_ROW_SQL_TEMPLATE.replace("/*DIRECT*/", ops ? "AND dc.transaction_id IS NULL" : "").replace("/*ACTIVE*/", ops ? `AND ${activeCollectionSql("dc")}` : "");
+  // Before migration 0022 a declaration's recorded cash equals its declared cash and nothing is
+  // written off, so the same formulas give the earlier figures.
+  const shortfall = await hasCashShortfallSchema(db);
+  return CUSTODY_ROW_SQL_TEMPLATE.replace("/*DIRECT*/", ops ? "AND dc.transaction_id IS NULL" : "")
+    .replace("/*ACTIVE*/", ops ? `AND ${activeCollectionSql("dc")}` : "")
+    .replace("/*RECORDED*/", shortfall ? "recorded_cash" : "declared_cash")
+    .replace("/*WRITTEN_OFF*/", shortfall ? "written_off_cash" : "0");
 }
 
 function mapCustodyRow(r: any): StaffCustodyRow {
   const n = (v: any) => Number(v || 0);
-  const cashPending = n(r.cash_undeclared) + n(r.cash_awaiting);
+  // Cash awaiting verification is what was physically handed over (declared), not the collections
+  // the declaration covers; what was recorded but neither handed over, received nor written off is an
+  // unresolved shortage the employee still owes.
+  const cashAwaiting = n(r.cash_declared_pending);
+  const cashPending = n(r.cash_undeclared) + cashAwaiting;
   const upiPending = n(r.upi_undeclared) + n(r.upi_awaiting);
-  const cashShort = n(r.cash_declared_settled) - n(r.cash_accepted);
+  const cashShort = n(r.cash_recorded_all) - cashAwaiting - n(r.cash_accepted) - n(r.cash_written_off);
   const upiShort = n(r.upi_declared_settled) - n(r.upi_accepted);
   const discrepancies = n(r.discrepancy_count);
   const pendingHandovers = n(r.pending_count);
@@ -3038,17 +3197,19 @@ function mapCustodyRow(r: any): StaffCustodyRow {
     upiCollected: n(r.upi_collected),
     cashUndeclared: n(r.cash_undeclared),
     upiUndeclared: n(r.upi_undeclared),
-    cashAwaitingAcceptance: n(r.cash_awaiting),
+    cashAwaitingAcceptance: cashAwaiting,
     upiAwaitingAcceptance: n(r.upi_awaiting),
     cashHandedOver: n(r.cash_accepted),
     upiReconciled: n(r.upi_accepted),
     cashPending,
     upiPending,
     cashShort,
+    cashOwed: n(r.cash_undeclared) + Math.max(0, cashShort),
+    cashWrittenOff: n(r.cash_written_off),
     upiShort,
     pendingHandovers,
     discrepancies,
-    status: discrepancies > 0 && (cashShort !== 0 || upiShort !== 0)
+    status: cashShort !== 0 || (discrepancies > 0 && upiShort !== 0)
       ? "DISCREPANCY"
       : pendingHandovers > 0
         ? "AWAITING_ACCEPTANCE"
@@ -3186,6 +3347,69 @@ export async function createCashHandoverDeclaration(
       `SELECT id, amount, payment_method FROM delivery_collections WHERE collected_by = ? AND handover_id IS NULL${(await hasDeliveryOpsSchema(tx)) ? " AND transaction_id IS NULL" : ""}`,
       [employee.id]
     );
+    const shortfallSchema = await hasCashShortfallSchema(tx);
+    if (shortfallSchema) {
+      // Migration 0022: the declaration records what was physically handed over (declared_cash) next
+      // to what the system recorded for these collections (recorded_cash). A shortfall needs the
+      // employee's reason and stays owed by them (custody) until handed over later or written off by
+      // the Owner; handing over more than recorded pays back an earlier shortfall, never more.
+      const recordedCash = eligible.filter((c) => c.payment_method === "CASH").reduce((s, c) => s + Number(c.amount), 0);
+      const recordedUpi = eligible.filter((c) => c.payment_method !== "CASH").reduce((s, c) => s + Number(c.amount), 0);
+      const owedBefore = await tx.queryOne<{ short: number | string }>(
+        `SELECT COALESCE(SUM(recorded_cash - accepted_cash - written_off_cash), 0) AS short
+         FROM driver_cash_handovers WHERE driver_id = ? AND status <> 'DECLARED'`,
+        [employee.id]
+      );
+      const earlierShort = Math.max(0, Number(owedBefore?.short || 0));
+      const handed = statedCash === null ? recordedCash : Math.round(statedCash);
+      if (eligible.length === 0 && earlierShort === 0) throw new Error("There is no cash to hand over.");
+      if (handed > recordedCash + earlierShort) {
+        throw new Error(`You can hand over at most ₹${recordedCash + earlierShort} (₹${recordedCash} collected${earlierShort ? ` + ₹${earlierShort} still owed from earlier` : ""}).`);
+      }
+      if (eligible.length === 0 && recordedUpi === 0 && handed === 0) throw new Error("Enter the cash you are handing over.");
+      const shortfall = recordedCash - handed;
+      const shortfallReason = shortfall > 0 ? notes : null;
+      if (shortfall > 0 && (!shortfallReason || shortfallReason.length < 5)) {
+        throw new Error(`Recorded cash is ₹${recordedCash}; you are handing over ₹${handed}. Explain the ₹${shortfall} difference (at least 5 characters).`);
+      }
+      await tx.execute(
+        `INSERT INTO driver_cash_handovers (
+           id, driver_id, shift_date, declared_cash, recorded_cash, shortfall_reason, accepted_cash, variance, variance_reason, status,
+           declared_upi, accepted_upi, declared_by, notes, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, NULL, 'DECLARED', ?, 0, ?, ?, ?, ?)`,
+        [handoverId, employee.id, shiftDate, handed, recordedCash, shortfallReason, recordedUpi, actor.id, shortfall > 0 ? null : notes, now, now]
+      );
+      if (eligible.length > 0) {
+        const linkedNow = await tx.execute(
+          `UPDATE delivery_collections SET handover_id = ?
+           WHERE id IN (${eligible.map(() => "?").join(", ")}) AND handover_id IS NULL`,
+          [handoverId, ...eligible.map((c) => c.id)]
+        );
+        if (linkedNow.changes !== eligible.length) throw new Error("Collections changed while declaring. Please try again.");
+      }
+      await recordAuditEventAsync({
+        actorId: actor.id,
+        actorUsername: actor.username,
+        action: "delivery.cash_handover_declared",
+        targetType: "driver_cash_handover",
+        targetId: handoverId,
+        metadata: {
+          driverId: employee.id,
+          driverName: employee.fullName,
+          declaredBy: actor.id,
+          shiftDate,
+          recordedCash,
+          handedOverCash: handed,
+          shortfall,
+          shortfallReason,
+          earlierShortBefore: earlierShort,
+          declaredUpi: recordedUpi,
+          collectionIds: eligible.map((c) => c.id),
+        },
+        ipAddress: clientIp,
+      }, tx);
+      return;
+    }
     if (eligible.length === 0) {
       throw new Error("There is no cash to hand over.");
     }
@@ -3394,6 +3618,8 @@ export async function acceptCashHandover(
         driverId: handoverRow.driver_id,
         shiftDate: handoverRow.shift_date,
         declaredCash,
+        recordedCash: Number(handoverRow.recorded_cash ?? declaredCash),
+        shortfall: Number(handoverRow.recorded_cash ?? declaredCash) - declaredCash,
         acceptedCash,
         declaredUpi,
         acceptedUpi,
@@ -3416,6 +3642,60 @@ export async function acceptCashHandover(
  * Custody summary for one employee (kept for existing callers). cashInCustody is everything the
  * employee still holds across all dates; totals for collected/accepted are for the given date.
  */
+/**
+ * Owner-only: write off part or all of an employee's unresolved cash shortage (migration 0022), e.g.
+ * cash genuinely lost. No money enters the books; the amount, reason, Owner and time are kept on the
+ * employee's latest settled handover and in the audit log, and the shortage stops being owed.
+ */
+export async function writeOffCashShortfall(
+  actor: AuthenticatedUser,
+  staffId: string,
+  input: { amount: number; reason: string },
+  clientIp?: string,
+  asyncDb?: AsyncDb
+): Promise<StaffCustodyRow> {
+  if (actor.role !== "SUPER_ADMIN") {
+    throw new AuthorizationError(403, "Only the Owner can write off a cash shortage.");
+  }
+  const db = asyncDb || getAsyncDb();
+  if (!(await hasCashShortfallSchema(db))) {
+    throw Object.assign(new Error("Writing off a shortage becomes available after database migration 0022."), { statusCode: 409 });
+  }
+  const amount = Number(input.amount);
+  const reason = String(input.reason || "").trim();
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Enter a whole number of rupees greater than 0.");
+  if (reason.length < 5) throw new Error("Give the reason for the write-off (at least 5 characters).");
+  const now = new Date().toISOString();
+  await db.transaction(async (tx) => {
+    await acquireLedgerKeyLock(tx, `custody:${staffId}`);
+    const row = mapCustodyRow(await tx.queryOne<any>(`${await custodyRowSql(tx)} WHERE u.id = ?`, [staffId]));
+    if (!(row.cashShort > 0)) throw new Error("This employee has no unresolved cash shortage.");
+    if (amount > row.cashShort) throw new Error(`The unresolved shortage is ₹${row.cashShort}; you can write off at most that.`);
+    const target = await tx.queryOne<{ id: string }>(
+      `SELECT id FROM driver_cash_handovers WHERE driver_id = ? AND status <> 'DECLARED' ORDER BY created_at DESC LIMIT 1${tx.isPostgres ? " FOR UPDATE" : ""}`,
+      [staffId]
+    );
+    if (!target) throw new Error("A shortage can be written off once its handover has been verified.");
+    await tx.execute(
+      `UPDATE driver_cash_handovers
+       SET written_off_cash = written_off_cash + ?, written_off_by = ?, written_off_at = ?,
+           write_off_reason = CASE WHEN write_off_reason IS NULL THEN ? ELSE write_off_reason || ' | ' || ? END, updated_at = ?
+       WHERE id = ?`,
+      [amount, actor.id, now, `₹${amount}: ${reason}`, `₹${amount}: ${reason}`, now, target.id]
+    );
+    await recordAuditEventAsync({
+      actorId: actor.id,
+      actorUsername: actor.username,
+      action: "delivery.cash_shortfall_written_off",
+      targetType: "driver_cash_handover",
+      targetId: target.id,
+      metadata: { staffId, amount, reason, shortageBefore: row.cashShort, shortageAfter: row.cashShort - amount },
+      ipAddress: clientIp,
+    }, tx);
+  });
+  return mapCustodyRow(await db.queryOne<any>(`${await custodyRowSql(db)} WHERE u.id = ?`, [staffId]));
+}
+
 export async function getDriverCustodySummary(
   actor: AuthenticatedUser,
   driverId: string,

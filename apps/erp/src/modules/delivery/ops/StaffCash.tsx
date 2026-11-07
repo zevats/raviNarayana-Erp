@@ -42,14 +42,21 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const isCash = (x: StaffCustodyCollection) => x.paymentMethod === "CASH";
   const withYou = collections.filter((x) => isCash(x) && !x.handoverId);
   const waitingRows = collections.filter((x) => isCash(x) && x.handoverStatus === "DECLARED");
-  const cashWithYou = c.cashUndeclared;
+  // Cash the employee still has to hand over: collections not yet declared plus any shortage left
+  // from earlier handovers (handed over less than recorded, or the manager counted less).
+  const recordedNew = c.cashUndeclared;
+  const owedEarlier = Math.max(0, c.cashShort);
+  const cashWithYou = c.cashOwed ?? recordedNew + owedEarlier;
   const upiToday = collections.filter((x) => !isCash(x) && bizDate(x.collectedAt) === today).reduce((s, x) => s + x.amount, 0);
   const pastHandovers = handovers.filter((h) => h.status !== "DECLARED");
 
   const amount = Math.round(Number(amountText));
   const amountOk = amountText.trim() !== "" && Number.isFinite(amount) && amount >= 0;
-  const differs = amountOk && amount !== Math.round(cashWithYou);
-  const canSend = amountOk && (!differs || note.trim().length > 0);
+  // Less than the newly recorded cash needs a reason (it becomes a shortage the manager sees);
+  // more than that pays back an earlier shortage, up to what is owed.
+  const differs = amountOk && amount < Math.round(recordedNew);
+  const tooMuch = amountOk && amount > Math.round(cashWithYou);
+  const canSend = amountOk && !tooMuch && (amount > 0 || recordedNew > 0) && (!differs || note.trim().length >= 5);
   const startHandover = () => {
     setAmountText(String(Math.round(cashWithYou)));
     setNote("");
@@ -63,23 +70,15 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
     setMsg(null);
     try {
       const data = await postJsonRequest<{ handover: DriverCashHandover }>("/api/delivery/handover/declare", { declaredCash: amount, notes: note.trim() || undefined });
-      // Show the result at once: the cash moves to "waiting for approval" before the refresh lands.
       const h = data.handover;
-      const cur0 = q.data;
-      if (cur0)
-        await q.mutate(
-          (cur = cur0) => ({
-            ...cur,
-            custody: { ...cur.custody, cashUndeclared: 0 },
-            handovers: [h, ...cur.handovers.filter((x) => x.id !== h.id)],
-            collections: cur.collections.map((x) => (x.paymentMethod === "CASH" && !x.handoverId ? { ...x, handoverId: h.id, handoverStatus: "DECLARED" } : x)),
-          }),
-          false
-        );
-      setMsg({ tone: "ok", text: `${rupees(amount)} sent to the manager for approval.` });
+      // The server's figures (handed over, shortage, still owed) replace the screen's: no guessing.
+      // Drop the cached custody first, so the refresh comes from the server (not the pre-handover copy).
+      invalidateErpCache(["custody", "handover"]);
+      await q.refetch();
+      const short = (h.recordedCash ?? h.declaredCash) - h.declaredCash;
+      setMsg({ tone: "ok", text: `${rupees(h.declaredCash)} sent to the manager for approval.${short > 0 ? ` ${rupees(short)} short is still recorded against you.` : ""}` });
       setConfirming(false);
       setNote("");
-      invalidateErpCache(["custody", "handover"]);
     } catch (e: any) {
       setMsg({ tone: "error", text: e.message });
     } finally {
@@ -102,7 +101,11 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
           <div>
             <p className="text-[14px] font-semibold text-[#5A6C5E]">Cash with you</p>
             <p className="mt-1 text-[40px] leading-none font-extrabold tracking-[-0.02em] text-[#1F2320]">{rupees(cashWithYou)}</p>
-            <p className="mt-2 text-[13px] text-[#5A6C5E]">{cashWithYou > 0 ? `From ${plural(withYou.length, "delivery", "deliveries")}` : "No cash with you right now."}</p>
+            <p className="mt-2 text-[13px] text-[#5A6C5E]">
+              {cashWithYou > 0
+                ? [recordedNew > 0 && `${rupees(recordedNew)} from ${plural(withYou.length, "delivery", "deliveries")}`, owedEarlier > 0 && `${rupees(owedEarlier)} short from earlier handovers`].filter(Boolean).join(" · ")
+                : "No cash with you right now."}
+            </p>
           </div>
           <CashIcon size={56} className="shrink-0" />
         </div>
@@ -112,6 +115,9 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
             <Hourglass className="w-5 h-5 text-[#8F6710] shrink-0" />
             <p className="text-[14px] text-[#5C430B]">
               <span className="font-bold">{rupees(waiting.declaredCash)}</span> given to the manager · <span className="font-semibold">Waiting for manager approval</span>
+              {(waiting.shortfallCash ?? 0) > 0 && (
+                <span className="block text-[12.5px] mt-0.5">{rupees(waiting.shortfallCash ?? 0)} less than recorded{waiting.shortfallReason ? ` — ${waiting.shortfallReason}` : ""}</span>
+              )}
             </p>
           </div>
         )}
@@ -135,15 +141,16 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
                 </label>
                 {differs && (
                   <p className="text-[13px] font-semibold text-[#9A3423]">
-                    Recorded cash is {rupees(cashWithYou)}. {amount < cashWithYou ? `${rupees(cashWithYou - amount)} less` : `${rupees(amount - cashWithYou)} more`}: add a reason.
+                    Recorded cash is {rupees(recordedNew)}. {rupees(recordedNew - amount)} less: add a reason. It stays recorded against you until handed over.
                   </p>
                 )}
+                {tooMuch && <p className="text-[13px] font-semibold text-[#9A3423]">You owe {rupees(cashWithYou)} in total; you can't hand over more.</p>}
                 <input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder={differs ? "Reason (needed)" : "Note for the manager (optional)"}
+                  placeholder={differs ? "Reason for the shortfall (needed)" : "Note for the manager (optional)"}
                   aria-label={differs ? "Reason" : "Note for the manager"}
-                  className={`${K.soft} w-full h-12 px-4 text-[14px] outline-none ${differs && !note.trim() ? "ring-2 ring-[#9A3423]/40" : ""}`}
+                  className={`${K.soft} w-full h-12 px-4 text-[14px] outline-none ${differs && note.trim().length < 5 ? "ring-2 ring-[#9A3423]/40" : ""}`}
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setConfirming(false)} className={`${K.greyBtn} h-12`}>
@@ -209,7 +216,8 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
         ) : (
           <ul className={`${K.card} divide-y divide-[#ECE6DB]`}>
             {pastHandovers.slice(0, 20).map((h) => {
-              const short = h.declaredCash - h.acceptedCash;
+              const handedShort = (h.recordedCash ?? h.declaredCash) - h.declaredCash;
+              const countShort = h.declaredCash - h.acceptedCash;
               return (
                 <li key={h.id} className="px-4 py-3.5 flex items-start gap-3">
                   {h.status === "ACCEPTED" ? <CheckCircle2 className="w-5 h-5 text-[#2F6B24] shrink-0 mt-0.5" /> : <AlertTriangle className="w-5 h-5 text-[#9A3423] shrink-0 mt-0.5" />}
@@ -219,12 +227,18 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
                       {h.acceptedAt ? when(h.acceptedAt, today) : shortDay(h.shiftDate)}
                       {h.acceptedByName ? ` · Approved by ${h.acceptedByName}` : ""}
                     </p>
-                    {h.status === "DISCREPANCY_FLAGGED" && (
+                    {handedShort > 0 && (
                       <p className="text-[12px] text-[#9A3423]">
-                        {short > 0 ? `${rupees(short)} less than given` : `${rupees(-short)} more than given`}
+                        Gave {rupees(h.declaredCash)} of {rupees(h.recordedCash ?? h.declaredCash)} recorded{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
+                      </p>
+                    )}
+                    {countShort !== 0 && (
+                      <p className="text-[12px] text-[#9A3423]">
+                        Manager counted {countShort > 0 ? `${rupees(countShort)} less` : `${rupees(-countShort)} more`} than given
                         {h.varianceReason ? ` — ${h.varianceReason}` : ""}
                       </p>
                     )}
+                    {(h.writtenOffCash ?? 0) > 0 && <p className="text-[12px] text-[#5A6C5E]">{rupees(h.writtenOffCash ?? 0)} written off by the Owner{h.writeOffReason ? ` — ${h.writeOffReason}` : ""}</p>}
                   </div>
                   <Pill tone={h.status === "ACCEPTED" ? "success" : "danger"}>{h.status === "ACCEPTED" ? "Approved" : "Approved · difference"}</Pill>
                 </li>

@@ -19,7 +19,7 @@ type Bucket = "ALL" | "0_7" | "8_30" | "31_60" | "61_PLUS";
 export interface ReceivableLine {
   source: "PG" | "TIFFIN" | "DELIVERY";
   accountKey: string;
-  kind: "CHARGE" | "INVOICE" | "ORDER" | "UNALLOCATED";
+  kind: "CHARGE" | "INVOICE" | "ORDER" | "UNALLOCATED" | "ADVANCE";
   refId: string;
   reference: string;
   description: string;
@@ -520,12 +520,12 @@ function BalanceRow({ line: l, canReview, onReviewed }: { line: ReceivableLine; 
       <div className="flex items-start justify-between gap-3 min-w-0">
         <div className="min-w-0">
           <p className="text-[13.5px] font-semibold text-[var(--rn-ink)] truncate" title={l.reference}>
-            {l.source === "PG" ? "Rent" : l.source === "TIFFIN" ? (l.kind === "UNALLOCATED" ? "Unallocated payment" : `Invoice ${l.reference}`) : `Order · ${l.reference}`}
+            {l.source === "PG" ? "Rent" : l.source === "TIFFIN" ? (l.kind === "UNALLOCATED" ? "Unallocated payment" : `Invoice ${l.reference}`) : l.kind === "ADVANCE" ? `Advance paid · ${l.date}` : `Order · ${l.reference}`}
           </p>
           <p className="rn-t-meta truncate" title={l.description}>
             {l.date}
             {l.dueDate ? ` · due ${l.dueDate}` : ""}
-            {l.kind !== "UNALLOCATED" ? ` · ${l.ageDays} day${l.ageDays === 1 ? "" : "s"}` : ""}
+            {l.kind !== "UNALLOCATED" && l.kind !== "ADVANCE" ? ` · ${l.ageDays} day${l.ageDays === 1 ? "" : "s"}` : ""}
             {l.paymentChoice ? ` · ${CHOICE_LABEL[l.paymentChoice] ?? l.paymentChoice}` : ""}
             {l.source === "PG" && l.reference !== "Rent charge" ? ` · ${l.reference}` : ""}
           </p>

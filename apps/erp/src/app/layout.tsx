@@ -4,6 +4,7 @@ import "@/styles/globals.css";
 import "@/styles/glass.css";
 import "@/styles/kit.css";
 import { PwaRegistrar } from "@/components/pwa/PwaRegistrar";
+import { KeepFieldInView } from "@/components/pwa/KeepFieldInView";
 import { NativeBridge } from "@/components/native/NativeBridge";
 
 // Brand sans (Plus Jakarta Sans, @ravinarayan/brand). Only defines --font-rn-display; the manager
@@ -16,6 +17,8 @@ export const viewport: Viewport = {
   maximumScale: 5,
   themeColor: "#1A2E20",
   viewportFit: "cover",
+  // The on-screen keyboard shrinks the page (Chrome / Android) instead of covering the open form.
+  interactiveWidget: "resizes-content",
 };
 
 export const metadata: Metadata = {
@@ -55,6 +58,7 @@ export default function RootLayout({
     <html lang="en" className={`h-full ${display.variable}`}>
       <body className="min-h-full bg-[#FAF8F5] text-[#1A2E20] font-sans antialiased selection:bg-[#B58A57]/25 selection:text-[#1A2E20]">
         <PwaRegistrar />
+        <KeepFieldInView />
         <NativeBridge />
         {children}
       </body>

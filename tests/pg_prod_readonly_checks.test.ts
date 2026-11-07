@@ -100,7 +100,7 @@ async function main() {
   console.log("\n--- 2. A database that is already past 0015 ---");
   const r2 = run(urlFor(at21));
   r2.gates.forEach((g) => console.log(`  ${g}`));
-  assert(r2.code === 0 && r2.gates.some((g) => /^GATE Q1 migration level: BLOCK - newest record 1792989600000 .*0016-0021 objects absent: NO/.test(g)), "Q1 BLOCK when the database is already past 0015 (newest record 0021)");
+  assert(r2.code === 0 && r2.gates.some((g) => /^GATE Q1 migration level: BLOCK - newest record \d+ .*0016-0021 objects absent: NO/.test(g)), "Q1 BLOCK when the database is already past 0015 (newest record after 0015)");
 
   console.log("\n--- 2b. Production's state: 0015 schema, one older record missing ---");
   // Neon history applied some early migrations by hand, without a record. Drizzle reads only the

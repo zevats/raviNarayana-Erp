@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Search, ClipboardList, RefreshCw, Eye, PencilLine, AlertTriangle, Download } from "lucide-react";
+import { Search, ClipboardList, RefreshCw, AlertTriangle, Download } from "lucide-react";
 import type { AuthenticatedUser, DeliveryTask, MealType } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
@@ -57,9 +57,8 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   const today = businessToday();
   const isOwner = user.role === "SUPER_ADMIN";
   const canManage = user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER";
-  // The Owner sees delivery records read-only unless they explicitly switch to making changes.
-  const [ownerEditing, setOwnerEditing] = useState(false);
-  const readOnly = !canManage || (isOwner && !ownerEditing);
+  // Owner and Manager act directly; the server enforces every permission.
+  const readOnly = !canManage;
   const [tab, setTab] = useState<Tab>(isOwner ? "history" : "board");
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
@@ -211,12 +210,6 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           <>
             <MealSwitch value={meal} onChange={setMeal} />
             <DateStepper value={date} today={today} onChange={setDate} />
-            {isOwner && (
-              <button type="button" onClick={() => setOwnerEditing((v) => !v)} aria-pressed={ownerEditing} className={`rn-btn ${ownerEditing ? "rn-btn-primary" : ""}`} title="The Owner view is read-only until you switch to making changes">
-                {ownerEditing ? <PencilLine /> : <Eye />}
-                {ownerEditing ? "Making changes" : "View only"}
-              </button>
-            )}
           </>
         }
       />
