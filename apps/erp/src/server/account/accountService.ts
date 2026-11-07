@@ -1,3 +1,4 @@
+import { invalidateSessionCache } from "../authentication/sessionCache";
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { AuthenticatedUser, MyAccount } from "@/types";
@@ -395,6 +396,7 @@ export async function confirmPasswordChange(
       `DELETE FROM sessions WHERE staff_id = ?${currentTokenHash ? " AND token_hash <> ?" : ""}`,
       currentTokenHash ? [user.id, currentTokenHash] : [user.id]
     );
+    invalidateSessionCache();
     signedOut = others.changes || 0;
     await recordAuditEventAsync(
       { actorId: user.id, actorUsername: user.username, action: "account.password_changed", targetType: "staff_user", targetId: user.id, metadata: { otherDevicesSignedOut: signedOut, emailVerified: true }, ipAddress: client.ip },
@@ -446,6 +448,7 @@ export async function signOutOtherDevices(user: AuthenticatedUser, client: Accou
   let signedOut = 0;
   await db.transaction(async (tx) => {
     const res = await tx.execute("DELETE FROM sessions WHERE staff_id = ? AND token_hash <> ?", [user.id, currentTokenHash]);
+    invalidateSessionCache();
     signedOut = res.changes || 0;
     await recordAuditEventAsync(
       { actorId: user.id, actorUsername: user.username, action: "account.devices_signed_out", targetType: "staff_user", targetId: user.id, metadata: { signedOut }, ipAddress: client.ip },

@@ -161,13 +161,15 @@ async function main() {
   const noLater = await placeOrder(no);
   await deliver(noLater, { paymentChoice: "PAY_LATER", payLaterAllowedAtSelection: false });
   const nl = await orderOutstanding(`C:${no.id}`, noLater.orderId);
-  const nlDetail = JSON.parse((await db.queryOne<any>("SELECT payment_review_detail FROM orders WHERE id = ?", [noLater.orderId])).payment_review_detail);
-  assert(nl.outstanding === 300 && nl.review === "PAY_LATER_NOT_APPROVED" && nlDetail.viaOfflineSync === false && nlDetail.approvedAtSync === false,
-    "Not approved but sent anyway: the delivery is kept, ₹300 unpaid, flagged for review (not rejected)");
+  // Pay Later is open to every customer (owner decision 2026-11-07): no approval, no review flag.
+  assert(nl.outstanding === 300 && nl.review === null, `Pay Later for a customer never approved: delivered, ₹${nl.outstanding} on the account, no review flag`);
   const noPart = await placeOrder(no);
   await deliver(noPart, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 100 });
   const np = await orderOutstanding(`C:${no.id}`, noPart.orderId);
-  assert(np.outstanding === 200 && np.review === "PAY_LATER_NOT_APPROVED", "Not approved, part payment: ₹200 left is flagged (a remainder needs approval)");
+  assert(np.outstanding === 200 && np.review === null, "Part payment by a customer never approved: ₹200 left on the account, no flag");
+  // Deliveries flagged before Pay Later was opened to everyone still exist: mark one so the review
+  // filter below stays covered.
+  await db.execute("UPDATE orders SET payment_review = 'PAY_LATER_NOT_APPROVED', payment_reviewed_at = NULL WHERE id = ?", [noLater.orderId]);
   const noFull = await placeOrder(no);
   await deliver(noFull, { paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 300 });
   assert((await db.queryOne<any>("SELECT payment_review FROM orders WHERE id = ?", [noFull.orderId])).payment_review === null, "Not approved, paid in full: no flag");
@@ -204,12 +206,14 @@ async function main() {
   const delivered = await num(db, "SELECT COUNT(*)::int AS n FROM delivery_task_events WHERE task_id = ? AND event_type = 'DELIVERED'", [wo.taskId]);
   assert(syncs.ok.length === 2 && statuses.every((s: string) => s === "SYNCED" || s === "IDEMPOTENT_IGNORED") && delivered === 1,
     `Two simultaneous syncs of one offline completion: applied once (${statuses.join(", ")}; ${delivered} delivery event)`);
-  assert(woRow.payment_choice === "PAY_LATER" && woRow.payment_review === "PAY_LATER_NOT_APPROVED" && woDetail.approvedOnDeviceWhenChosen === true && woDetail.viaOfflineSync === true && woDetail.approvedAtSync === false,
-    "Accepted and flagged: choice kept as Pay Later, approval on the phone (yes) and at sync (no) both recorded");
+  assert(woRow.payment_choice === "PAY_LATER" && woRow.payment_review === null && Object.keys(woDetail).length === 0,
+    "Offline Pay Later synced after the approval was withdrawn: accepted, choice kept, no review flag");
   assert((await orderOutstanding(`C:${w.id}`, wo.orderId)).outstanding === 300, "The order stays outstanding (not erased, not paid)");
+  // An older flagged delivery (from before Pay Later was opened to everyone): reviews still work.
+  await db.execute("UPDATE orders SET payment_review = 'PAY_LATER_NOT_APPROVED', payment_reviewed_at = NULL WHERE id = ?", [wo.orderId]);
   invalidateNotificationCache();
   const feed = (await getNotifications(manager, { limit: 200 } as any)).notifications;
-  assert(feed.some((n: any) => n.id === `notif_pay_review_${wo.orderId}`), "Managers are notified of the order to review");
+  assert(feed.some((n: any) => n.id === `notif_pay_review_${wo.orderId}`), "Managers are notified of an older flagged order to review");
   const cashOff = await placeOrder(w);
   const cashAction = { ...action, id: `act_${rnd()}`, taskId: cashOff.taskId, idempotencyKey: `off_${rnd()}`, payload: { recipientName: "Customer", lines: cashOff.lines, paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 300, payLaterAllowedAtSelection: false } };
   await Promise.allSettled([syncDeliveryActions(driver, [cashAction], IP, db), syncDeliveryActions(driver, [cashAction], IP, db), syncDeliveryActions(driver, [cashAction], IP, db)]);

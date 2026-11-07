@@ -430,15 +430,15 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
   const hints = new Map<string, CustomerHint>();
   const subIds = Array.from(new Set(tasks.map((t) => t.subscriptionId).filter(Boolean))) as string[];
   const orderIds = Array.from(new Set(tasks.map((t) => t.orderId).filter(Boolean))) as string[];
-  if (subIds.length > 0) {
-    const rows = await db.query<any>(
-      `SELECT s.id, c.landmark, COALESCE(s.delivery_instructions, c.delivery_instructions) AS instructions
-       FROM tiffin_subscriptions s JOIN tiffin_customers c ON c.id = s.customer_id
-       WHERE s.id IN (${subIds.map(() => "?").join(", ")})`,
-      subIds
-    );
-    for (const r of rows) hints.set(`sub:${r.id}`, { landmark: r.landmark || null, instructions: r.instructions || null });
-  }
+  // The subscription lookup runs alongside the order lookup below.
+  const subRowsP = subIds.length > 0
+    ? db.query<any>(
+        `SELECT s.id, c.landmark, COALESCE(s.delivery_instructions, c.delivery_instructions) AS instructions
+         FROM tiffin_subscriptions s JOIN tiffin_customers c ON c.id = s.customer_id
+         WHERE s.id IN (${subIds.map(() => "?").join(", ")})`,
+        subIds
+      )
+    : Promise.resolve([] as any[]);
   if (orderIds.length > 0) {
     // With migration 0021: whether the customer may pay later (only this yes/no reaches the
     // delivery app, never a balance), and what was chosen at the door.
@@ -456,7 +456,7 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
         customerId: r.customer_id || null,
         ...(pay
           ? {
-              payLaterAllowed: Number(r.pay_later_enabled) === 1,
+              payLaterAllowed: true,
               paymentChoice: r.payment_choice || null,
               paymentReview: r.payment_review && !r.payment_reviewed_at ? r.payment_review : null,
             }
@@ -464,6 +464,7 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
       });
     }
   }
+  for (const r of await subRowsP) hints.set(`sub:${r.id}`, { landmark: r.landmark || null, instructions: r.instructions || null });
   return hints;
 }
 
@@ -531,9 +532,8 @@ function expectedAmountFor(task: DeliveryTask, lines: DeliveryOrderLine[]): numb
 /** Adds the structured order, its value, the amount due and the balance to each task. */
 async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<DeliveryTask[]> {
   const ids = tasks.map((t) => t.id);
-  const orders = await loadTaskOrders(db, ids);
-  const items = await loadTaskItems(db, ids);
-  const collected = await loadCollectedTotals(db, ids);
+  // Independent reads run side by side (one database round trip instead of three).
+  const [orders, items, collected] = await Promise.all([loadTaskOrders(db, ids), loadTaskItems(db, ids), loadCollectedTotals(db, ids)]);
   for (const task of tasks) {
     // Money collected comes from the collection records; the task's copied total is a fallback
     // only for databases without the custody ledger.
@@ -1088,12 +1088,14 @@ export async function createExternalDeliveryTask(
       now, now
     ]);
 
-    await tx.execute(`
+    // The event and the audit entry are independent: both go to the database together.
+    const eventWrite = tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
       ) VALUES (?, ?, 'CREATED', NULL, 'PENDING', ?, ?, ?, ?)
     `, [eventId, taskId, actor.id, actor.fullName, notes, now]);
+    eventWrite.catch(() => {}); // awaited below; never left unhandled if the audit write fails first
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -1111,6 +1113,7 @@ export async function createExternalDeliveryTask(
       },
       ipAddress: clientIp,
     }, tx);
+    await eventWrite;
   });
 
   const createdRow = await db.queryOne(`SELECT * FROM delivery_tasks WHERE id = ?`, [taskId]);
@@ -1194,7 +1197,8 @@ export async function assignDeliveryTask(
       throw new Error("This delivery was completed or cancelled meanwhile. Reload the list.");
     }
 
-    await tx.execute(`
+    // The event and the audit entry are independent: both go to the database together.
+    const eventWrite = tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
@@ -1214,6 +1218,7 @@ export async function assignDeliveryTask(
         (reason ? `. Reason: ${reason}` : ""),
       now,
     ]);
+    eventWrite.catch(() => {}); // awaited below; never left unhandled if the audit write fails first
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -1233,6 +1238,7 @@ export async function assignDeliveryTask(
       },
       ipAddress: clientIp,
     }, tx);
+    await eventWrite;
   });
 
   // The phone alert is for delivery staff; someone taking a delivery themselves needs none.
@@ -1444,7 +1450,8 @@ export async function dispatchDeliveryTask(
       WHERE id = ?
     `, [now, actor.id, now, taskId]);
 
-    await tx.execute(`
+    // The event and the audit entry are independent: both go to the database together.
+    const eventWrite = tx.execute(`
       INSERT INTO delivery_task_events (
         id, task_id, event_type, from_status, to_status,
         actor_id, actor_name, notes, created_at
@@ -1457,6 +1464,7 @@ export async function dispatchDeliveryTask(
       "Tiffin dispatched from kitchen and out for delivery",
       now,
     ]);
+    eventWrite.catch(() => {}); // awaited below; never left unhandled if the audit write fails first
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -1471,6 +1479,7 @@ export async function dispatchDeliveryTask(
       },
       ipAddress: clientIp,
     }, tx);
+    await eventWrite;
   });
 
   if (opts.detail === false) return { ...currentTask, status: "OUT_FOR_DELIVERY" };
@@ -2098,57 +2107,40 @@ async function completeLinedDelivery(
       }
     }
 
+    // These writes do not depend on each other: they go to the database together (one round trip)
+    // inside the same transaction, which still commits or rolls back as a whole.
+    const writes: Promise<unknown>[] = [];
     for (const o of outcomes) {
       if (o.line.source === "ORDER") {
-        await tx.execute(
+        writes.push(tx.execute(
           opsSchema
             ? "UPDATE order_items SET delivered_quantity = ?, undelivered_reason = ?, undelivered_disposition = ? WHERE id = ?"
             : "UPDATE order_items SET delivered_quantity = ?, undelivered_reason = ? WHERE id = ?",
           opsSchema ? [o.delivered, o.reason, o.disposition, o.line.lineId] : [o.delivered, o.reason, o.line.lineId]
-        );
+        ));
       } else {
-        await tx.execute(
+        writes.push(tx.execute(
           "UPDATE delivery_task_items SET delivered_quantity = ?, undelivered_reason = ?, undelivered_disposition = ?, updated_at = ? WHERE id = ?",
           [o.delivered, o.reason, o.disposition, now, o.line.lineId]
-        );
+        ));
       }
     }
     // The order is complete once something was delivered; a failed delivery stays open (it can be
     // retried or cancelled), so the order and its delivery never contradict each other.
     if (source.orderId && !nothingDelivered) {
-      await tx.execute("UPDATE orders SET status = 'COMPLETED', updated_at = ? WHERE id = ? AND status = 'CONFIRMED'", [now, source.orderId]);
+      writes.push(tx.execute("UPDATE orders SET status = 'COMPLETED', updated_at = ? WHERE id = ? AND status = 'CONFIRMED'", [now, source.orderId]));
     }
     if (recordPayment && source.orderId) {
-      const remainder = amountDue - orderPart;
-      let detail: string | null = null;
-      if (remainder > 0) {
-        const account = await tx.queryOne<{ customer_id: string | null; pay_later_enabled: number | null }>(
-          "SELECT o.customer_id, c.pay_later_enabled FROM orders o LEFT JOIN tiffin_customers c ON c.id = o.customer_id WHERE o.id = ?",
-          [source.orderId]
-        );
-        if (!account?.customer_id || Number(account.pay_later_enabled) !== 1) {
-          payLaterReview = "PAY_LATER_NOT_APPROVED";
-          detail = JSON.stringify({
-            remainder,
-            amountDue,
-            collected,
-            choice: storedChoice,
-            approvedAtSync: false,
-            customerLinked: Boolean(account?.customer_id),
-            approvedOnDeviceWhenChosen: typeof input?.payLaterAllowedAtSelection === "boolean" ? input.payLaterAllowedAtSelection : null,
-            viaOfflineSync: Boolean(input?.viaOfflineSync),
-            recordedBy: actor.id,
-            recordedAt: now,
-          });
-        }
-      }
-      await tx.execute(
+      // Pay Later is open to every customer (owner decision, 2026-11-07): a balance left at the door
+      // simply stays on the customer's account (Finance -> Receivables); no approval, no review flag.
+      const detail: string | null = null;
+      writes.push(tx.execute(
         "UPDATE orders SET payment_choice = ?, payment_review = ?, payment_review_detail = ?, payment_reviewed_by = NULL, payment_reviewed_at = NULL, updated_at = ? WHERE id = ?",
         [storedChoice, payLaterReview, detail, now, source.orderId]
-      );
+      ));
     }
 
-    await tx.execute(
+    writes.push(tx.execute(
       `INSERT INTO delivery_task_events (id, task_id, event_type, from_status, to_status, actor_id, actor_name, notes, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -2166,7 +2158,8 @@ async function completeLinedDelivery(
             (recipientName ? ` Received by ${recipientName}.` : ""),
         now,
       ]
-    );
+    ));
+    await Promise.all(writes);
 
     await recordAuditEventAsync(
       {
@@ -2546,14 +2539,15 @@ export async function getDeliveryTaskById(
   if (actor.role === "DELIVERY_PERSON" && task.assignedTo !== actor.id) {
     throw new AuthorizationError(403, "You do not have permission to view this delivery task.");
   }
-  await attachOrderData(db, [task]);
-
-  const eventRows = await db.query<any>(`
+  const [, eventRows] = await Promise.all([
+    attachOrderData(db, [task]),
+    db.query<any>(`
     SELECT *
     FROM delivery_task_events
     WHERE task_id = ?
     ORDER BY created_at ASC
-  `, [taskId]);
+  `, [taskId]),
+  ]);
 
   return {
     task,

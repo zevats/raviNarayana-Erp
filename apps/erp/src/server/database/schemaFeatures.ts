@@ -39,3 +39,6 @@ export const hasPayLaterSchema = (db: AsyncDb) => hasColumn(db, "orders", "payme
  * write-off) and door payments allocated to the order, earlier orders or an advance.
  */
 export const hasCashShortfallSchema = (db: AsyncDb) => hasColumn(db, "driver_cash_handovers", "recorded_cash");
+
+/** Migration 0023 is installed: readable tiffin customer codes (TC-0001). */
+export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "customer_code");

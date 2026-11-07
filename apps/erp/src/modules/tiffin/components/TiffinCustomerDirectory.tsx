@@ -22,6 +22,7 @@ import {
   Compass,
 } from "lucide-react";
 import { TiffinCustomer, CustomerType, CustomerStatus, DietaryPreference } from "@/types";
+import { formatINR } from "@/modules/finance/utils/formatUtils";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { CustomerModal } from "./modals/CustomerModal";
 import { CustomerDetailModal } from "./modals/CustomerDetailModal";
@@ -29,6 +30,15 @@ import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal"
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 
 const ITEMS_PER_PAGE = 10;
+
+const TYPE_LABEL: Record<string, string> = { INDIVIDUAL: "Individual", CORPORATE: "Corporate", RESIDENTIAL_PG: "PG resident" };
+const initialsOf = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p.charAt(0).toUpperCase())
+    .join("") || "?";
 
 export function TiffinCustomerDirectory() {
   // State for search and filters
@@ -105,7 +115,8 @@ export function TiffinCustomerDirectory() {
         const matchesPhone = cust.phone.includes(q) || (cust.alternatePhone && cust.alternatePhone.includes(q));
         const matchesAddress = cust.deliveryAddress.toLowerCase().includes(q);
         const matchesLandmark = cust.landmark ? cust.landmark.toLowerCase().includes(q) : false;
-        if (!matchesName && !matchesPhone && !matchesAddress && !matchesLandmark) {
+        const matchesCode = (cust.customerCode || "").toLowerCase().includes(q);
+        if (!matchesName && !matchesPhone && !matchesAddress && !matchesLandmark && !matchesCode) {
           return false;
         }
       }
@@ -411,125 +422,98 @@ export function TiffinCustomerDirectory() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full table-fixed text-left border-collapse">
+              <colgroup>
+                <col className="w-[30%]" />
+                <col className="w-[17%]" />
+                <col className="w-[27%]" />
+                <col className="w-[13%]" />
+                <col className="w-[13%]" />
+              </colgroup>
               <thead>
-                <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] font-bold uppercase tracking-wider text-gray-600">
-                  <th className="py-3 px-4">Customer</th>
-                  <th className="py-3 px-4">Contact</th>
-                  <th className="py-3 px-4">Delivery Address</th>
-                  <th className="py-3 px-4">Diet</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
+                <tr className="border-b border-[#8E9F89]/20 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7A8A7C]">
+                  <th className="py-3 pl-5 pr-3 font-semibold">Customer</th>
+                  <th className="py-3 px-3 font-semibold">Contact</th>
+                  <th className="py-3 px-3 font-semibold">Delivery address</th>
+                  <th className="py-3 px-3 font-semibold text-right">Due</th>
+                  <th className="py-3 pl-3 pr-5 font-semibold text-right">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#8E9F89]/15 text-sm">
+              <tbody className="divide-y divide-[#8E9F89]/12 text-sm">
                 {paginatedCustomers.map((customer) => {
                   const isActive = customer.status === "ACTIVE";
+                  const due = customer.balance?.due;
                   return (
                     <tr
                       key={customer.id}
-                      className="hover:bg-[#FAF8F5]/60 transition-colors group cursor-pointer"
+                      className="hover:bg-[#FAF8F5] transition-colors cursor-pointer"
                       onClick={() => handleViewDetail(customer)}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleViewDetail(customer);
+                        }
+                      }}
+                      aria-label={`Open ${customer.fullName}`}
                     >
-                      {/* Name & Type */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-9 h-9 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center text-[#1A2E20] font-bold text-xs shrink-0">
-                            {customer.fullName.charAt(0).toUpperCase()}
+                      <td className="py-3.5 pl-5 pr-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-[#F3EADD] text-[#8A6436] flex items-center justify-center font-semibold text-sm shrink-0">
+                            {initialsOf(customer.fullName)}
                           </div>
-                          <div>
-                            <div className="font-semibold text-[#1A2E20] group-hover:text-[#B58A57] transition-colors">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-[#1A2E20] truncate" title={customer.fullName}>
                               {customer.fullName}
                             </div>
-                            <div className="mt-0.5">{renderTypeBadge(customer.customerType)}</div>
+                            <div className="text-[12px] text-[#7A8A7C] truncate">
+                              {customer.customerCode ? <span className="font-medium text-[#5A6C5E] tabular-nums">{customer.customerCode}</span> : null}
+                              {customer.customerCode ? " · " : ""}
+                              {TYPE_LABEL[customer.customerType] || customer.customerType}
+                            </div>
                           </div>
                         </div>
                       </td>
-
-                      {/* Phone */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-800 font-mono">
-                          <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          <span>{customer.phone}</span>
+                      <td className="py-3.5 px-3">
+                        <div className="text-[13.5px] text-[#1A2E20] tabular-nums truncate">{customer.phone}</div>
+                        {customer.alternatePhone && <div className="text-[12px] text-[#7A8A7C] tabular-nums truncate">Alt {customer.alternatePhone}</div>}
+                      </td>
+                      <td className="py-3.5 px-3">
+                        <div className="text-[13.5px] text-[#1A2E20] truncate" title={customer.deliveryAddress}>
+                          {customer.deliveryAddress}
                         </div>
-                        {customer.alternatePhone && (
-                          <div className="text-[11px] text-gray-400 font-mono mt-0.5 ml-5">
-                            Alt: {customer.alternatePhone}
-                          </div>
+                        {customer.landmark && <div className="text-[12px] text-[#7A8A7C] truncate" title={customer.landmark}>Near {customer.landmark}</div>}
+                      </td>
+                      <td className="py-3.5 px-3 text-right">
+                        {due === undefined || due === null ? (
+                          <span className="text-[#9AA59C]">—</span>
+                        ) : due > 0 ? (
+                          <>
+                            <div className="font-semibold tabular-nums text-[#B4440F]">{formatINR(due)}</div>
+                            {(customer.balance?.unpaidOrders ?? 0) > 0 && (
+                              <div className="text-[11.5px] text-[#7A8A7C]">
+                                {customer.balance!.unpaidOrders} order{customer.balance!.unpaidOrders === 1 ? "" : "s"}
+                              </div>
+                            )}
+                          </>
+                        ) : due < 0 ? (
+                          <>
+                            <div className="font-semibold tabular-nums text-[#2F6B24]">{formatINR(-due)}</div>
+                            <div className="text-[11.5px] text-[#7A8A7C]">paid ahead</div>
+                          </>
+                        ) : (
+                          <span className="text-[13px] text-[#7A8A7C]">Settled</span>
                         )}
                       </td>
-
-                      {/* Address */}
-                      <td className="py-3.5 px-4 max-w-xs">
-                        <div className="flex items-start gap-1.5 text-xs text-gray-700">
-                          <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0 mt-0.5" />
-                          <div className="truncate">
-                            <span className="truncate block" title={customer.deliveryAddress}>
-                              {customer.deliveryAddress}
-                            </span>
-                            {customer.landmark && (
-                              <span className="text-[11px] text-gray-400 truncate block">
-                                Landmark: {customer.landmark}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Diet */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">{renderDietBadge(customer.dietaryPreference)}</td>
-
-                      {/* Status */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td className="py-3.5 pl-3 pr-5 text-right">
                         <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            isActive
-                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                              : "bg-gray-100 text-gray-600 border border-gray-200"
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold whitespace-nowrap ${
+                            isActive ? "bg-[#E4F2E0] text-[#2F6B24]" : "bg-[#EEECE8] text-[#6E6A63]"
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-600" : "bg-gray-400"}`} />
+                          <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-[#3C8A2E]" : "bg-[#A5A097]"}`} />
                           {isActive ? "Active" : "Inactive"}
                         </span>
-                      </td>
-
-                      {/* Actions */}
-                      <td
-                        className="py-3.5 px-4 text-right whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleViewDetail(customer)}
-                            className="p-1.5 text-gray-500 hover:text-[#1A2E20] hover:bg-gray-100 rounded-lg transition-colors"
-                            title="View customer profile"
-                            aria-label={`View ${customer.fullName} profile`}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => handleOpenEdit(customer)}
-                            className="p-1.5 text-gray-500 hover:text-[#1A2E20] hover:bg-gray-100 rounded-lg transition-colors"
-                            title="Edit customer details"
-                            aria-label={`Edit ${customer.fullName}`}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-
-                          <button
-                            onClick={() => setStatusTarget(customer)}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              isActive
-                                ? "text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                : "text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                            }`}
-                            title={isActive ? "Deactivate Customer" : "Reactivate Customer"}
-                            aria-label={isActive ? `Deactivate ${customer.fullName}` : `Activate ${customer.fullName}`}
-                          >
-                            <Power className="w-4 h-4" />
-                          </button>
-                        </div>
                       </td>
                     </tr>
                   );

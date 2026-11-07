@@ -1391,6 +1391,17 @@ export type CustomerStatus = "ACTIVE" | "INACTIVE";
 
 export interface TiffinCustomer {
   id: string;
+  /** Readable code (TC-0001), migration 0023; null before it. */
+  customerCode?: string | null;
+  /** Current balance (Receivables rule); included in customer lists. */
+  balance?: {
+    due: number;
+    orders: number;
+    bills: number;
+    credit: number;
+    unpaidOrders: number;
+    oldestUnpaid: string | null;
+  } | null;
   fullName: string;
   phone: string;
   alternatePhone: string | null;

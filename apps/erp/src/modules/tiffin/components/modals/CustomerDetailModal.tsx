@@ -1,19 +1,20 @@
 "use client";
 
-import React from "react";
-import { X, User, Phone, MapPin, Compass, Edit, Calendar, Wallet } from "lucide-react";
+import React, { useEffect } from "react";
+import { X, Phone, MapPin, Navigation, Pencil, Wallet, Power, CalendarDays, StickyNote, UtensilsCrossed } from "lucide-react";
 import { TiffinCustomer, TiffinSubscription } from "@/types";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
-import { PayLaterPanel } from "../PayLaterPanel";
+import { formatINR } from "@/modules/finance/utils/formatUtils";
 
-const SUB_STATUS_STYLE: Record<string, string> = {
-  ACTIVE: "bg-green-100 text-green-800",
-  PAUSED: "bg-amber-100 text-amber-800",
-  CANCELLED: "bg-gray-200 text-gray-700",
-  COMPLETED: "bg-blue-100 text-blue-800",
+const SUB_STATUS: Record<string, [string, string]> = {
+  ACTIVE: ["Active", "bg-[#E4F2E0] text-[#2F6B24]"],
+  PAUSED: ["Paused", "bg-[#FBF1DE] text-[#8F6710]"],
+  CANCELLED: ["Cancelled", "bg-[#EEECE8] text-[#6E6A63]"],
+  COMPLETED: ["Completed", "bg-[#E6EEF6] text-[#2D5277]"],
 };
 const MEALS_LABEL: Record<string, string> = { LUNCH: "Lunch", DINNER: "Dinner", BOTH: "Lunch & dinner", BREAKFAST: "Breakfast" };
+const TYPE_LABEL: Record<string, string> = { INDIVIDUAL: "Individual", CORPORATE: "Corporate", RESIDENTIAL_PG: "PG resident" };
+const DIET_LABEL: Record<string, string> = { VEG: "Veg", NON_VEG: "Non-veg", EGG: "Eggetarian", JAIN: "Jain", VEGAN: "Vegan" };
 
 interface CustomerDetailModalProps {
   isOpen: boolean;
@@ -25,14 +26,33 @@ interface CustomerDetailModalProps {
   onViewAccount?: (customer: TiffinCustomer) => void;
 }
 
-export function CustomerDetailModal({
-  isOpen,
-  onClose,
-  customer,
-  onEdit,
-  onToggleStatus,
-  onViewAccount,
-}: CustomerDetailModalProps) {
+const initialsOf = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p.charAt(0).toUpperCase())
+    .join("") || "?";
+
+const dayLabel = (iso: string) => {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+};
+
+function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-2xl bg-white border border-[#ECE6DB] p-4">
+      <h3 className="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-[0.1em] text-[#8E9F89] mb-3">
+        <span className="text-[#B58A57]">{icon}</span>
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/** Everything about one tiffin customer: balance, contact, delivery details, subscriptions and actions. */
+export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggleStatus, onViewAccount }: CustomerDetailModalProps) {
   const subsKey = isOpen && customer ? `/api/tiffin/subscriptions?customerId=${encodeURIComponent(customer.id)}` : null;
   const subsQ = useErpQuery<{ subscriptions: TiffinSubscription[] }>(
     subsKey,
@@ -44,223 +64,220 @@ export function CustomerDetailModal({
     },
     { ttl: 15000, tags: ["tiffin_subscriptions", "subscriptions"] }
   );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !customer) return null;
   const subscriptions = subsQ.data?.subscriptions ?? [];
-
   const isActive = customer.status === "ACTIVE";
+  const b = customer.balance ?? null;
+  const due = b?.due ?? 0;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="customer-detail-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto"
-    >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-lg w-full my-6 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#1A2E20]/45 backdrop-blur-[2px] sm:p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="customer-detail-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{ backgroundColor: "#FAF8F5" }}
+        className="rn-rise relative w-full sm:max-w-xl max-h-[94dvh] flex flex-col overflow-hidden rounded-t-[28px] sm:rounded-[28px] shadow-[0_24px_60px_-20px_rgba(26,46,32,0.45)]"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-[#1A2E20]/10 flex items-center justify-center text-[#1A2E20] shrink-0">
-              <User className="w-5 h-5 text-[#B58A57]" />
-            </div>
+        <header className="relative px-5 sm:px-6 pt-5 pb-4 bg-[#1A2E20] text-white">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-4 top-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+          >
+            <X className="w-[18px] h-[18px]" />
+          </button>
+          <div className="flex items-center gap-3.5 pr-10">
+            <div className="w-14 h-14 rounded-full bg-[#B58A57] text-[#1A2E20] flex items-center justify-center text-lg font-bold shrink-0">{initialsOf(customer.fullName)}</div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 id="customer-detail-title" className="text-base font-bold text-[#1A2E20] truncate">
-                  {customer.fullName}
-                </h2>
+              <h2 id="customer-detail-title" style={{ color: "#FFFFFF" }} className="text-[20px] leading-tight font-bold truncate">
+                {customer.fullName}
+              </h2>
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/70">
+                {customer.customerCode && <span className="font-semibold text-[#E4C9A4] tabular-nums">{customer.customerCode}</span>}
+                <span>{TYPE_LABEL[customer.customerType] || customer.customerType}</span>
+                <span aria-hidden>·</span>
+                <span>{DIET_LABEL[customer.dietaryPreference] || customer.dietaryPreference}</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                    isActive ? "bg-green-100 text-green-800" : "bg-gray-200 text-gray-700"
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${
+                    isActive ? "bg-[#3C8A2E]/25 text-[#BFE5B5]" : "bg-white/10 text-white/70"
                   }`}
                 >
-                  {customer.status}
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-[#7BD06A]" : "bg-white/50"}`} />
+                  {isActive ? "Active" : "Inactive"}
                 </span>
               </div>
-              <p className="text-[11px] text-[#5A6C5E] mt-0.5 font-mono">
-                ID: {customer.id}
-              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        </header>
 
-        {/* Details Sheet */}
-        <div className="p-4 sm:p-6 space-y-4 text-xs overflow-y-auto max-h-[75vh]">
-          {/* Customer Metadata Card */}
-          <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
-            <div className="flex justify-between items-center text-[11px] border-b border-[#8E9F89]/15 pb-2">
-              <span className="text-[#5A6C5E]">Customer Type:</span>
-              <span className="font-semibold text-[#1A2E20] px-2 py-0.5 bg-[#FAF8F5] rounded border border-[#8E9F89]/20">
-                {customer.customerType}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-[11px] border-b border-[#8E9F89]/15 pb-2">
-              <span className="text-[#5A6C5E]">Dietary Preference:</span>
-              <span className="font-semibold text-emerald-800 px-2 py-0.5 bg-emerald-50 rounded border border-emerald-200">
-                {customer.dietaryPreference}
-              </span>
-            </div>
-            <div className="flex justify-between items-center text-[11px]">
-              <span className="text-[#5A6C5E]">Customer Since:</span>
-              <span className="font-mono text-[#1A2E20]">
-                {customer.createdAt.slice(0, 10)}
-              </span>
-            </div>
-          </div>
-
-          {/* Pay Later approval (Owner / Manager) */}
-          <PayLaterPanel customerId={customer.id} />
-
-          {/* Contact Information */}
-          <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
-              Contact Details
-            </div>
-            <div className="flex items-center gap-2 text-xs text-[#1A2E20]">
-              <Phone className="w-3.5 h-3.5 text-[#B58A57] shrink-0" />
-              <span className="font-semibold">{customer.phone}</span>
-              <span className="text-[10px] text-[#5A6C5E]">(Primary)</span>
-            </div>
-            {customer.alternatePhone && (
-              <div className="flex items-center gap-2 text-xs text-[#5A6C5E]">
-                <Phone className="w-3.5 h-3.5 text-[#8E9F89] shrink-0" />
-                <span>{customer.alternatePhone}</span>
-                <span className="text-[10px] text-[#8E9F89]">(Alternate)</span>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-3">
+          {/* Balance */}
+          <section className="rounded-2xl bg-white border border-[#ECE6DB] p-4" aria-label="Balance">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-[#8E9F89]">{due < 0 ? "Paid ahead" : "Balance due"}</p>
+                <p className={`mt-1 text-[30px] leading-none font-extrabold tabular-nums ${due > 0 ? "text-[#B4440F]" : due < 0 ? "text-[#2F6B24]" : "text-[#1A2E20]"}`}>
+                  {b ? formatINR(Math.abs(due)) : "—"}
+                </p>
               </div>
+              {onViewAccount && (
+                <button
+                  type="button"
+                  onClick={() => onViewAccount(customer)}
+                  className="inline-flex items-center gap-1.5 h-10 px-4 rounded-full bg-[#F3EADD] text-[#6E4E28] text-[13px] font-semibold hover:bg-[#EBDDC8] transition-colors"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Invoices &amp; payments
+                </button>
+              )}
+            </div>
+            {b && (
+              <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  ["Delivered orders", formatINR(b.orders)],
+                  ["Tiffin bills", formatINR(b.bills)],
+                  ["Paid ahead", formatINR(b.credit)],
+                  ["Unpaid since", b.oldestUnpaid ? dayLabel(b.oldestUnpaid) : "—"],
+                ].map(([k, v]) => (
+                  <div key={k} className="rounded-xl bg-[#FAF8F5] px-3 py-2.5 min-w-0">
+                    <dt className="text-[11px] text-[#7A8A7C]">{k}</dt>
+                    <dd className="text-[14px] font-semibold text-[#1A2E20] tabular-nums truncate">{v}</dd>
+                  </div>
+                ))}
+              </dl>
             )}
-          </div>
+            {b && b.unpaidOrders > 0 && (
+              <p className="mt-3 text-[12.5px] text-[#5A6C5E]">
+                {b.unpaidOrders} delivered order{b.unpaidOrders === 1 ? "" : "s"} not fully paid. Pay Later is open to every customer.
+              </p>
+            )}
+          </section>
 
-          {/* Delivery Location */}
-          <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
-              Delivery &amp; Service Address
-            </div>
-            <div className="flex items-start gap-2 text-xs text-[#1A2E20]">
-              <MapPin className="w-3.5 h-3.5 text-[#B58A57] shrink-0 mt-0.5" />
-              <span className="leading-relaxed">{customer.deliveryAddress}</span>
-            </div>
-            {customer.landmark && (
-              <div className="flex items-start gap-2 text-xs text-[#5A6C5E] pt-1 border-t border-[#8E9F89]/15">
-                <Compass className="w-3.5 h-3.5 text-[#8E9F89] shrink-0 mt-0.5" />
-                <span><strong>Landmark:</strong> {customer.landmark}</span>
+          {/* Contact */}
+          <Section icon={<Phone className="w-3.5 h-3.5" />} title="Contact">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[15px] font-semibold text-[#1A2E20] tabular-nums">{customer.phone}</p>
+                {customer.alternatePhone && <p className="text-[13px] text-[#5A6C5E] tabular-nums">Alternate {customer.alternatePhone}</p>}
               </div>
+              <a
+                href={`tel:${customer.phone}`}
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full border border-[#E2DBCE] text-[13px] font-semibold text-[#1A2E20] hover:bg-[#FAF8F5] shrink-0"
+              >
+                <Phone className="w-3.5 h-3.5 text-[#B58A57]" />
+                Call
+              </a>
+            </div>
+          </Section>
+
+          {/* Delivery */}
+          <Section icon={<MapPin className="w-3.5 h-3.5" />} title="Delivery">
+            <p className="text-[14px] text-[#1A2E20] leading-relaxed">{customer.deliveryAddress}</p>
+            {customer.landmark && (
+              <p className="mt-1.5 flex items-start gap-1.5 text-[13px] text-[#5A6C5E]">
+                <Navigation className="w-3.5 h-3.5 text-[#8E9F89] mt-0.5 shrink-0" />
+                Near {customer.landmark}
+              </p>
             )}
             {customer.deliveryInstructions && (
-              <div className="p-2.5 bg-[#FAF8F5] rounded-lg border border-[#8E9F89]/20 text-[11px] text-[#5A6C5E]">
-                <strong>Delivery Instructions:</strong> {customer.deliveryInstructions}
-              </div>
+              <p className="mt-3 rounded-xl bg-[#FAF8F5] px-3 py-2.5 text-[13px] text-[#3E4E42]">{customer.deliveryInstructions}</p>
             )}
-          </div>
+          </Section>
 
           {/* Subscriptions */}
-          <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
-              Subscriptions
-            </div>
+          <Section icon={<UtensilsCrossed className="w-3.5 h-3.5" />} title="Subscriptions">
             {subsQ.isLoading && !subsQ.data ? (
-              <BikeLoader inline label="Loading subscriptions" />
+              <div className="space-y-2" aria-busy="true">
+                <div className="h-12 rounded-xl bg-[#F4F0E8] animate-pulse" />
+              </div>
             ) : subsQ.error && !subsQ.data ? (
-              <p className="text-xs text-rose-700">Couldn&apos;t load subscriptions. {subsQ.error.message}</p>
+              <p className="text-[13px] text-[#9A3423]">Couldn&apos;t load subscriptions. {subsQ.error.message}</p>
             ) : subscriptions.length === 0 ? (
-              <p className="text-xs text-[#5A6C5E]">No subscriptions yet.</p>
+              <p className="text-[13px] text-[#7A8A7C]">No subscriptions.</p>
             ) : (
-              <ul className="divide-y divide-[#8E9F89]/15">
-                {subscriptions.map((sub) => (
-                  <li key={sub.id} className="py-2 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-[#1A2E20] truncate">{sub.productName || "Meal plan"}</div>
-                      <div className="text-[11px] text-[#5A6C5E] flex items-center gap-1 mt-0.5">
-                        <Calendar className="w-3 h-3 text-[#8E9F89]" />
-                        <span>
-                          {MEALS_LABEL[sub.mealTypes] || sub.mealTypes} · {sub.quantityPerMeal} per meal · from {sub.startDate}
-                          {sub.endDate ? ` to ${sub.endDate}` : ""}
-                        </span>
+              <ul className="divide-y divide-[#F1ECE3]">
+                {subscriptions.map((sub) => {
+                  const [label, cls] = SUB_STATUS[sub.status] || [sub.status, "bg-[#EEECE8] text-[#6E6A63]"];
+                  return (
+                    <li key={sub.id} className="py-2.5 first:pt-0 last:pb-0 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[14px] font-semibold text-[#1A2E20] truncate">{sub.productName || "Meal plan"}</p>
+                        <p className="mt-0.5 flex items-center gap-1.5 text-[12.5px] text-[#5A6C5E]">
+                          <CalendarDays className="w-3.5 h-3.5 text-[#8E9F89] shrink-0" />
+                          <span className="truncate">
+                            {MEALS_LABEL[sub.mealTypes] || sub.mealTypes} · {sub.quantityPerMeal} per meal · from {dayLabel(sub.startDate)}
+                            {sub.endDate ? ` to ${dayLabel(sub.endDate)}` : ""}
+                          </span>
+                        </p>
                       </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${SUB_STATUS_STYLE[sub.status] || "bg-gray-100 text-gray-700"}`}>
-                        {sub.status}
-                      </span>
-                      <div className="text-[11px] font-semibold text-[#1A2E20] mt-1 tabular-nums">₹{sub.price.toLocaleString("en-IN")}</div>
-                    </div>
-                  </li>
-                ))}
+                      <div className="text-right shrink-0">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${cls}`}>{label}</span>
+                        <p className="mt-1 text-[13px] font-semibold text-[#1A2E20] tabular-nums">{formatINR(sub.price)}</p>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
             )}
-          </div>
+          </Section>
 
-          {/* Internal Notes */}
           {customer.notes && (
-            <div className="p-3 bg-white border border-[#8E9F89]/25 rounded-xl space-y-1">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E9F89]">
-                Internal Notes
-              </div>
-              <p className="text-xs text-[#5A6C5E] leading-relaxed">
-                {customer.notes}
-              </p>
-            </div>
+            <Section icon={<StickyNote className="w-3.5 h-3.5" />} title="Notes">
+              <p className="text-[13.5px] text-[#3E4E42] leading-relaxed whitespace-pre-line">{customer.notes}</p>
+            </Section>
           )}
 
-          {/* Audit trail */}
-          <div className="text-[11px] text-[#8E9F89] space-y-0.5 pt-1">
-            {customer.createdByName && <div>Created by: {customer.createdByName}</div>}
-            {customer.updatedByName && <div>Last updated by: {customer.updatedByName}</div>}
-          </div>
+          <p className="px-1 text-[12px] text-[#8E9F89]">
+            Customer since {dayLabel(customer.createdAt)}
+            {customer.createdByName ? ` · added by ${customer.createdByName}` : ""}
+            {customer.updatedByName ? ` · last edited by ${customer.updatedByName}` : ""}
+          </p>
         </div>
 
-        {/* Modal Actions */}
-        <div className="flex items-center justify-between p-4 bg-white border-t border-[#8E9F89]/20">
-          {onToggleStatus ? (
+        {/* Actions */}
+        <footer className="px-4 sm:px-6 py-3.5 bg-white border-t border-[#ECE6DB] flex items-center gap-2">
+          {onToggleStatus && (
             <button
+              type="button"
               onClick={() => {
                 onClose();
                 onToggleStatus(customer);
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                isActive
-                  ? "border border-red-200 text-red-700 hover:bg-red-50"
-                  : "border border-green-200 text-green-700 hover:bg-green-50"
+              className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-full text-[13.5px] font-semibold transition-colors ${
+                isActive ? "text-[#9A3423] hover:bg-[#FBE9E4]" : "text-[#2F6B24] hover:bg-[#E4F2E0]"
               }`}
             >
-              {isActive ? "Deactivate Customer" : "Reactivate Customer"}
+              <Power className="w-4 h-4" />
+              {isActive ? "Deactivate" : "Reactivate"}
             </button>
-          ) : <div />}
-
-          <div className="flex items-center gap-2">
-            {onViewAccount && (
-              <button
-                onClick={() => onViewAccount(customer)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#8E9F89]/30 text-[#1A2E20] hover:bg-[#FAF8F5] rounded-xl text-xs font-semibold transition-colors"
-              >
-                <Wallet className="w-3.5 h-3.5 text-[#B58A57]" />
-                Invoices &amp; payments
-              </button>
-            )}
-            {onEdit && (
-              <button
-                onClick={() => {
-                  onClose();
-                  onEdit(customer);
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1A2E20] text-white rounded-xl text-xs font-semibold hover:bg-[#263B2D] transition-colors"
-              >
-                <Edit className="w-3.5 h-3.5 text-[#B58A57]" />
-                Edit Profile
-              </button>
-            )}
+          )}
+          <div className="flex-1" />
+          {onEdit && (
             <button
-              onClick={onClose}
-              className="px-3.5 py-1.5 border border-[#8E9F89]/30 text-[#5A6C5E] hover:bg-[#FAF8F5] rounded-xl text-xs font-medium transition-colors"
+              type="button"
+              onClick={() => {
+                onClose();
+                onEdit(customer);
+              }}
+              className="inline-flex items-center gap-1.5 h-11 px-5 rounded-full bg-[#1A2E20] text-white text-[13.5px] font-semibold hover:bg-[#263B2D] transition-colors"
             >
-              Close
+              <Pencil className="w-4 h-4 text-[#E4C9A4]" />
+              Edit details
             </button>
-          </div>
-        </div>
+          )}
+        </footer>
       </div>
     </div>
   );

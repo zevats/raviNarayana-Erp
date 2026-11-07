@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
+import { hasCustomerCodeSchema } from "../database/schemaFeatures";
+import { loadCustomerBalancesById } from "./customerBalance";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
@@ -68,6 +70,7 @@ export function normalizePhoneNumber(rawPhone: string): string {
 function mapRowToCustomer(row: any): TiffinCustomer {
   return {
     id: row.id,
+    customerCode: row.customer_code || null,
     fullName: row.full_name,
     phone: row.phone,
     alternatePhone: row.alternate_phone || null,
@@ -149,26 +152,26 @@ export async function listTiffinCustomers(
 
   if (options.search && options.search.trim().length > 0) {
     const term = `%${options.search.trim().toLowerCase()}%`;
+    const withCode = await hasCustomerCodeSchema(db);
     conditions.push(
-      "(lower(c.full_name) LIKE ? OR c.phone LIKE ? OR lower(c.delivery_address) LIKE ? OR lower(COALESCE(c.landmark, '')) LIKE ?)"
+      `(lower(c.full_name) LIKE ? OR c.phone LIKE ? OR lower(c.delivery_address) LIKE ? OR lower(COALESCE(c.landmark, '')) LIKE ?${withCode ? " OR lower(COALESCE(c.customer_code, '')) LIKE ?" : ""})`
     );
-    params.push(term, term, term, term);
+    params.push(term, term, term, term, ...(withCode ? [term] : []));
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  const countRow = await db.queryOne<{ count: number | string }>(`
-    SELECT COUNT(*) as count
-    FROM tiffin_customers c
-    ${whereClause}
-  `, params);
-
-  const total = Number(countRow?.count || 0);
-
   const limit = Math.min(Math.max(1, options.limit ?? 50), 200);
   const offset = Math.max(0, options.offset ?? 0);
 
-  const rows = await db.query<any>(`
+  // The count and the page are independent: one round trip for both.
+  const [countRow, rows] = await Promise.all([
+    db.queryOne<{ count: number | string }>(`
+    SELECT COUNT(*) as count
+    FROM tiffin_customers c
+    ${whereClause}
+  `, params),
+    db.query<any>(`
     SELECT
       c.*,
       u1.full_name as created_by_name,
@@ -179,9 +182,13 @@ export async function listTiffinCustomers(
     ${whereClause}
     ORDER BY c.created_at DESC
     LIMIT ? OFFSET ?
-  `, [...params, limit, offset]);
+  `, [...params, limit, offset]),
+  ]);
+  const total = Number(countRow?.count || 0);
 
   const customers = rows.map(mapRowToCustomer);
+  const balances = await loadCustomerBalancesById(db, customers.map((c) => c.id));
+  for (const c of customers) c.balance = balances.get(c.id) ?? null;
 
   return { customers, total };
 }
@@ -331,6 +338,17 @@ export async function createTiffinCustomer(
       now,
       now,
     ]);
+    if (tx.isPostgres && (await hasCustomerCodeSchema(tx))) {
+      // Next readable code (TC-0001 ...), one customer at a time.
+      await tx.execute("SELECT pg_advisory_xact_lock(4203, hashtext('tiffin-customer-code'))");
+      await tx.execute(
+        `UPDATE tiffin_customers SET customer_code = (
+           SELECT 'TC-' || lpad((COALESCE(MAX(CAST(substring(customer_code FROM 4) AS integer)), 0) + 1)::text, 4, '0')
+           FROM tiffin_customers WHERE customer_code ~ '^TC-[0-9]+$'
+         ) WHERE id = ?`,
+        [id]
+      );
+    }
 
     await recordAuditEventAsync({
       actorId: actor.id,

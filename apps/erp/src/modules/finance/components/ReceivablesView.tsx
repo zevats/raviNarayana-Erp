@@ -9,7 +9,6 @@ import { formatMoney } from "@/lib/format";
 import { Segmented, Badge, SearchField } from "@/components/ui/kit";
 import { Dialog } from "@/components/ui/Dialog";
 import { LoadError, NoMatches, EmptyData } from "@/components/ui/states";
-import { PayLaterPanel } from "@/modules/tiffin/components/PayLaterPanel";
 import { ReceivePaymentDialog } from "./ReceivePaymentDialog";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 
@@ -457,7 +456,6 @@ function AccountSheet({ accountKey, onClose }: { accountKey: string | null; onCl
 
           {tab === "balances" ? (
             <>
-              {a.account.kind === "CUSTOMER" && <PayLaterPanel customerId={a.account.id} compact />}
               {a.lines.length === 0 ? (
                 <EmptyData title="Nothing outstanding" />
               ) : (

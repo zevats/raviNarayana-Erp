@@ -1,3 +1,4 @@
+import { getCachedSession, cacheSession, invalidateSessionCache } from "./sessionCache";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { getAsyncDb, AsyncDb } from "../database/db";
@@ -335,10 +336,12 @@ export async function createSession(
             )
           );
           await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
+          invalidateSessionCache();
         }
       } catch {
         // Fallback if session_preemptions is not yet migrated in test runner
         await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
+        invalidateSessionCache();
       }
     }
 
@@ -392,6 +395,8 @@ export async function validateSessionDetailed(
   const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
   const now = new Date().toISOString();
+  const cached = getCachedSession(tokenHash);
+  if (cached) return { user: cached };
 
   const row = await db.queryOne<AuthenticatedUser & { isActive: number; expiresAt: string }>(
     `SELECT
@@ -425,15 +430,15 @@ export async function validateSessionDetailed(
   // Periodic throttled cleanup of expired records (non-blocking)
   performDatabaseCleanupAsync(db).catch(() => {});
 
-  return {
-    user: {
-      id: row.id,
-      username: row.username,
-      email: row.email,
-      fullName: row.fullName,
-      role: row.role as any,
-    },
+  const user: AuthenticatedUser = {
+    id: row.id,
+    username: row.username,
+    email: row.email,
+    fullName: row.fullName,
+    role: row.role as any,
   };
+  cacheSession(tokenHash, user, row.expiresAt);
+  return { user };
 }
 
 /**
@@ -447,6 +452,7 @@ export async function destroySession(sessionToken: string, asyncDb?: AsyncDb): P
     db.execute("DELETE FROM session_preemptions WHERE token_hash = ?", [tokenHash]).catch(() => {}),
     db.execute("DELETE FROM sessions WHERE token_hash = ?", [tokenHash]),
   ]);
+  invalidateSessionCache();
 }
 
 /**
@@ -459,6 +465,7 @@ export async function revokeAllUserSessions(staffId: string, asyncDb?: AsyncDb):
     db.execute("DELETE FROM session_preemptions WHERE staff_id = ?", [staffId]).catch(() => {}),
     db.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]),
   ]);
+  invalidateSessionCache();
 }
 
 // -----------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { invalidateSessionCache } from "../authentication/sessionCache";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { getAsyncDb, AsyncDb } from "../database/db";
@@ -298,6 +299,7 @@ export async function updateStaffRole(
     await tx.execute(`
       UPDATE staff_users SET role = ?, updated_at = ? WHERE id = ?
     `, [newRole, now, targetUserId]);
+    invalidateSessionCache();
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -362,6 +364,7 @@ export async function setStaffActiveStatus(
     await tx.execute(`
       UPDATE staff_users SET is_active = ?, updated_at = ? WHERE id = ?
     `, [isActive ? 1 : 0, now, targetUserId]);
+    invalidateSessionCache();
 
     // If deactivating, immediately revoke and invalidate all active sessions
     if (!isActive) {
@@ -427,6 +430,7 @@ export async function resetStaffPassword(
 
     // Invalidate all active sessions for that staff member upon password reset
     await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [targetUserId]);
+    invalidateSessionCache();
 
     await recordAuditEventAsync({
       actorId: actor.id,
