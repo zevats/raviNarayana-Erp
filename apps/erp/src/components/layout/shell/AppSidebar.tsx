@@ -165,13 +165,15 @@ export function AppSidebar({
           />
         )}
         {groups.map((g, gi) => (
-          <div key={g.label}>
-            {/* Group slot: 28px in both states (label expanded, hairline collapsed) */}
-            <div className={`h-7 flex items-end ${gi === 0 ? "" : "mt-2"} ${collapsed ? "justify-center pb-3" : "px-3 pb-1.5"}`} aria-hidden={collapsed}>
+          <div key={g.label} className={gi === 0 ? "" : "mt-4 pt-3 border-t border-white/[0.07]"}>
+            {/* Group slot: 28px in both states (label expanded, hairline collapsed). Groups are set
+                apart by space and a hairline, and the label is small, quiet capitals that do not
+                look like a link. */}
+            <div className={`h-7 flex items-end ${collapsed ? "justify-center pb-3" : "px-3.5 pb-2"}`} aria-hidden={collapsed}>
               {collapsed ? (
                 <span className="block h-px w-6 bg-white/12" />
               ) : (
-                <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-white/40 rn-label-fade">{g.label}</span>
+                <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-white/45 rn-label-fade select-none">{g.label}</span>
               )}
             </div>
             <ul className="space-y-0.5">

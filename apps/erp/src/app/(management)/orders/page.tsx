@@ -187,11 +187,8 @@ export default function OrdersPage() {
           {isLoading ? (
             <BikeLoader label="Loading orders" className="py-12" />
           ) : filteredOrders.length === 0 ? (
-            <EmptyState
-              title="No orders for this date"
-              action={<button type="button" onClick={() => setIsNewOrderModalOpen(true)} className="rn-btn rn-btn-primary"><Plus /> New order</button>}
-            >
-              Nothing matches these filters.
+            <EmptyState title="No orders for this date">
+              Nothing matches these filters. Use New order at the top to add one.
             </EmptyState>
           ) : (
             <div className="rn-rows">
