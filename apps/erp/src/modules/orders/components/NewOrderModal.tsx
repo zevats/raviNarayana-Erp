@@ -46,7 +46,9 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
   size?: "md" | "lg";
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid gap-1.5 p-1.5 rounded-[18px] bg-[var(--rn-accent-tint)] border border-[var(--rn-line)]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    // Neutral track; the chosen option is white with a 2px accent edge, accent text and a check, so
+    // the selection reads at a glance (also in bright light) while the others stay quiet.
+    <div role="radiogroup" aria-label={label} className="grid gap-1.5 p-1.5 rounded-[18px] bg-[#EFEAE4] border border-[#E2DBD2]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => {
         const on = o.v === value;
         return (
@@ -56,12 +58,17 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
             role="radio"
             aria-checked={on}
             onClick={() => onChange(o.v)}
-            className={`min-w-0 rounded-xl text-left transition-colors ${size === "lg" ? "px-3.5 py-3" : "px-3 py-2.5 text-center"} ${
-              on ? "bg-white shadow-[0_0_0_2px_var(--rn-accent)]" : "hover:bg-white/70"
+            className={`relative min-w-0 rounded-xl text-left transition-[background-color,box-shadow] ${size === "lg" ? "px-3.5 py-3 pr-9" : "px-3 py-2.5 text-center"} ${
+              on ? "bg-white shadow-[0_0_0_2px_var(--rn-accent),0_6px_14px_-8px_rgba(60,30,10,0.45)]" : "hover:bg-white/60"
             }`}
           >
-            <span className={`block text-[14px] font-semibold ${on ? INK : INK2}`}>{o.label}</span>
-            {o.hint && <span className={`block text-[12.5px] mt-0.5 ${INK2}`}>{o.hint}</span>}
+            <span className={`block text-[14px] font-bold ${on ? "text-[var(--rn-accent)]" : "text-[#4A403A]"}`}>{o.label}</span>
+            {o.hint && <span className={`block text-[12.5px] mt-0.5 ${on ? INK2 : "text-[#5F554E]"}`}>{o.hint}</span>}
+            {on && size === "lg" && (
+              <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-[var(--rn-accent)] text-white flex items-center justify-center" aria-hidden>
+                <Check className="w-3 h-3" strokeWidth={3} />
+              </span>
+            )}
           </button>
         );
       })}
@@ -110,6 +117,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
   // recognised by the server as the same order. A new key is issued only after a success.
   const [draftKey, setDraftKey] = useState(() => `ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   const [reuseNotice, setReuseNotice] = useState<string | null>(null);
+  // After Reuse: what was copied (shown at the top of the items step) and which items to point at.
+  const [reused, setReused] = useState<{ ids: string[]; text: string } | null>(null);
+  const [flashIds, setFlashIds] = useState<string[]>([]);
+  const scrollToReused = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Each opening starts a clean draft at step 1: no customer, phone, address, items or notes carried
@@ -130,6 +141,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
     setNotes("");
     setErrorMessage(null);
     setReuseNotice(null);
+    setReused(null);
+    setFlashIds([]);
   }, [isOpen]);
 
   // Escape closes the form (unless an order is being saved).
@@ -142,10 +155,28 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, isSubmitting, onClose]);
 
-  // A new step starts at its top.
+  // A new step starts at its top; after Reuse the items step scrolls to the first copied item.
   useEffect(() => {
-    bodyRef.current?.scrollTo({ top: 0 });
-  }, [step]);
+    const body = bodyRef.current;
+    if (!body) return;
+    if (step === 2 && scrollToReused.current && reused?.ids.length) {
+      scrollToReused.current = false;
+      requestAnimationFrame(() => {
+        const el = body.querySelector<HTMLElement>(`[data-pid="${reused.ids[0]}"]`);
+        if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+        else body.scrollTo({ top: 0 });
+      });
+      return;
+    }
+    body.scrollTo({ top: 0 });
+  }, [step, reused]);
+
+  // The copied items are highlighted for a moment so the eye finds them.
+  useEffect(() => {
+    if (flashIds.length === 0) return;
+    const t = setTimeout(() => setFlashIds([]), 2600);
+    return () => clearTimeout(t);
+  }, [flashIds]);
 
   // Menu and the first customers come from the shared cache: fetched once while the Orders page
   // is open (before the dialog is first used), reused on every opening, refreshed after changes.
@@ -269,6 +300,18 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
     }
     setReuseNotice(missing.length ? `Not on today's menu, left out: ${missing.join(", ")}.` : null);
     setCart(newCart);
+    const ids = Object.keys(newCart);
+    const when = (() => {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(pastOrder.orderDate || ""));
+      if (!m) return "the last order";
+      const dt = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+      return `the order of ${dt.toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" })}`;
+    })();
+    const list = Object.values(newCart).map((c) => `${c.quantity}× ${c.product.name}`).join(", ");
+    setReused(ids.length ? { ids, text: `Copied from ${when}: ${list}. Change the quantities below if needed.` } : null);
+    setFlashIds(ids);
+    setMenuSearch("");
+    scrollToReused.current = ids.length > 0;
     if (pastOrder.mealType) setMealType(pastOrder.mealType);
     if (pastOrder.deliveryAddress && selectedCustomer) {
       setNewCustomerAddress(pastOrder.deliveryAddress);
@@ -792,6 +835,20 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
                   {cartItems.length} item{cartItems.length === 1 ? "" : "s"} · {totalQuantity} portion{totalQuantity === 1 ? "" : "s"}
                 </span>
               </div>
+              {reused && (
+                // Stays at the top while the list scrolls, so the confirmation is seen next to the items.
+                <div role="status" aria-live="polite" className="sticky -top-5 z-10 -mx-1 px-1 pt-1 pb-1 bg-[#FBF8F4]">
+                  <div className="flex items-start gap-2.5 rounded-xl border border-[#A3D396] bg-[#E6F4E1] px-3.5 py-2.5 text-[13.5px] text-[#1D4E16]">
+                    <Check className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <strong className="font-bold">Order reused.</strong> {reused.text}
+                    </span>
+                    <button type="button" onClick={() => setReused(null)} aria-label="Dismiss" className="-my-1 -mr-1.5 w-8 h-8 rounded-full flex items-center justify-center hover:bg-white/60 shrink-0">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
               {reuseNotice && <p role="status" className="text-[13px] text-[#6B4A06] bg-[#FFF6E5] border border-[#F0CF8E] rounded-xl px-3 py-2">{reuseNotice}</p>}
               <div className="relative">
                 <Search className="pointer-events-none w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--rn-ink-3)]" />
@@ -815,9 +872,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
                   return (
                     <li
                       key={p.id}
-                      className={`rounded-[18px] border bg-white p-3 pl-4 flex items-center gap-3 transition-shadow ${
-                        qty > 0 ? "border-transparent shadow-[0_0_0_2px_var(--rn-accent)]" : "border-[var(--rn-line)]"
-                      }`}
+                      data-pid={p.id}
+                      className={`rounded-[18px] border p-3 pl-4 flex items-center gap-3 transition-[box-shadow,background-color] duration-700 scroll-mt-16 ${
+                        flashIds.includes(p.id) ? "bg-[#FFF1DF]" : "bg-white"
+                      } ${qty > 0 ? "border-transparent shadow-[0_0_0_2px_var(--rn-accent)]" : "border-[var(--rn-line)]"}`}
                     >
                       <button
                         type="button"
