@@ -5,6 +5,37 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, X, Check, CheckCircle2, CircleCheck, Flag, Phone, Home, CircleSlash } from "lucide-react";
 import type { DeliveryDisposition, DeliveryLine, DeliveryTask } from "@/types";
 import { enqueueDeliveryAction } from "../offlineQueue";
+import { invalidateErpCache } from "@/lib/cache/erpDataCache";
+
+/**
+ * Sends a recorded delivery after the sheet has already closed (the screen updates at once). A lost
+ * connection keeps it on the phone (offline queue, sent automatically); a refusal from the server is
+ * announced with "erp:delivery-save-failed" so the screen can say why and show the stop again.
+ */
+function sendDeliveryInBackground(taskId: string, customer: string, payload: Record<string, any>, key: string, currentUserId?: string) {
+  const queue = () => {
+    try {
+      enqueueDeliveryAction("COMPLETE_DELIVERY", taskId, payload, currentUserId, key);
+      window.dispatchEvent(new CustomEvent("erp:delivery-queued", { detail: { taskId } }));
+    } catch (e: any) {
+      window.dispatchEvent(new CustomEvent("erp:delivery-save-failed", { detail: { taskId, text: `${customer}: ${e?.message || "could not be saved"}` } }));
+    }
+  };
+  fetch(`/api/delivery/tasks/${taskId}/deliver`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, idempotencyKey: key }) })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        window.dispatchEvent(new CustomEvent("erp:delivery-saved", { detail: { taskId, task: data.task } }));
+        invalidateErpCache(["delivery", "orders", "custody", "handover", "dashboard"]);
+        return;
+      }
+      // A server error that may pass on a later try is kept and resent; a refusal is reported.
+      if (res.status >= 500) return queue();
+      window.dispatchEvent(new CustomEvent("erp:delivery-save-failed", { detail: { taskId, text: `${customer} was not saved: ${data.error || "the server refused it"}. The stop is back in your list.` } }));
+      invalidateErpCache(["delivery"]);
+    })
+    .catch(() => queue());
+}
 import { DISPOSITION_LABEL } from "@/lib/delivery/outcome";
 import { rupees, displayName, placeLine } from "./ui";
 import { K, Pill, firstName } from "./staffKit";
@@ -241,6 +272,24 @@ export function DeliveryForm({
       payload.payLaterAllowedAtSelection = payLaterAllowed;
     }
 
+    // Instant: the stop is shown as done now and the sheet closes; the save goes on in the background
+    // (same key: the server records it once, also if it is resent from the offline queue).
+    const savedText = nothing ? `${customer}: recorded as not delivered` : shortLines.length > 0 ? `${customer}: partly delivered` : `${customer}: delivered`;
+    if (typeof navigator === "undefined" || navigator.onLine !== false) {
+      const optimistic: DeliveryTask = {
+        ...task,
+        status: nothing ? "EXCEPTION" : "DELIVERED",
+        deliveredAt: nothing ? task.deliveredAt : new Date().toISOString(),
+        collectedAmount: (task.collectedAmount || 0) + (typeof payload.collectedAmount === "number" ? payload.collectedAmount : 0),
+        collectedPaymentMethod: payload.paymentMethod ?? task.collectedPaymentMethod,
+        recipientName: nothing ? task.recipientName : recipient,
+      } as DeliveryTask;
+      sendDeliveryInBackground(task.id, customer, payload, key, currentUserId);
+      onSaved(savedText, optimistic);
+      onClose?.();
+      return;
+    }
+
     setBusy(true);
     const queue = () => {
       try {
@@ -382,19 +431,29 @@ export function DeliveryForm({
       {doorstep && !nothing ? (
         <section aria-label="Payment" className={`${K.soft} p-4 space-y-3`}>
           {prev && previous !== 0 && (
-            <div className="rounded-xl bg-white border border-[#ECE6DB] px-3 py-2.5 space-y-1" aria-label="Customer balance">
-              <div className="flex justify-between gap-3 text-[13.5px]">
-                <span className="text-[#3E4E42]">{previous > 0 ? "Previous balance" : "Customer credit"}</span>
-                <span className={`font-bold tabular-nums ${previous > 0 ? "text-[#B4440F]" : "text-[#2F6B24]"}`}>{rupees(Math.abs(previous))}</span>
+            // A small statement: this order, what was owed (or paid ahead) before it, and the total.
+            <dl className="rounded-xl bg-white border border-[#ECE6DB] overflow-hidden text-[14px]" aria-label="Customer balance">
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5">
+                <dt className="text-[#3E4E42]">This order</dt>
+                <dd className="font-bold tabular-nums text-[#1F2320]">{rupees(amountDue)}</dd>
               </div>
-              <p className="text-[11.5px] text-[#6E7F70] leading-snug">
-                {[prev.earlierOrders > 0 && `earlier orders ${rupees(prev.earlierOrders)}`, prev.bills > 0 && `tiffin bills ${rupees(prev.bills)}`, prev.credit > 0 && `paid ahead ${rupees(prev.credit)}`].filter(Boolean).join(" · ")}
-              </p>
-              <div className="flex justify-between gap-3 text-[13.5px] pt-1 border-t border-[#F1ECE3]">
-                <span className="text-[#3E4E42]">This order {rupees(amountDue)} · <span className="font-semibold">Total due</span></span>
-                <span className="font-extrabold tabular-nums text-[#1F2320]">{rupees(totalDue)}</span>
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-2.5 border-t border-[#F1ECE3]">
+                <dt className="min-w-0 text-[#3E4E42]">
+                  {previous > 0 ? "Earlier due" : "Customer credit"}
+                  <span className="block text-[11.5px] text-[#6E7F70] leading-snug">
+                    {[prev.earlierOrders > 0 && `earlier orders ${rupees(prev.earlierOrders)}`, prev.bills > 0 && `tiffin bills ${rupees(prev.bills)}`, prev.credit > 0 && `paid ahead ${rupees(prev.credit)}`].filter(Boolean).join(" · ")}
+                  </span>
+                </dt>
+                <dd className={`font-bold tabular-nums ${previous > 0 ? "text-[#B4440F]" : "text-[#2F6B24]"}`}>
+                  {previous > 0 ? "+ " : "− "}
+                  {rupees(Math.abs(previous))}
+                </dd>
               </div>
-            </div>
+              <div className="flex items-baseline justify-between gap-3 px-3.5 py-3 border-t-2 border-[#E5DCCD] bg-[#FBF6EE]">
+                <dt className="font-bold text-[#1F2320]">Total due</dt>
+                <dd className="text-[17px] font-extrabold tabular-nums text-[#1F2320]">{rupees(totalDue)}</dd>
+              </div>
+            </dl>
           )}
           {/* Amounts shrink to fit their column so a large order never runs into the next figure. */}
           <div className="grid grid-cols-3 gap-2">

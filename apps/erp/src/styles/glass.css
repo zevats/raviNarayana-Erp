@@ -223,12 +223,13 @@
 }
 
 /* Inputs */
-.rn-main :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+.rn-main :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea, .rn-app-select) {
   border-color: rgba(26, 46, 32, 0.14);
   background-color: rgba(255, 255, 255, 0.86);
   transition: border-color var(--rn-fast) linear, box-shadow var(--rn-fast) linear, background-color var(--rn-fast) linear;
 }
-.rn-main :is(input, select, textarea):focus {
+.rn-main :is(input, select, textarea, .rn-app-select):focus,
+.rn-main .rn-app-select[aria-expanded="true"] {
   border-color: var(--rn-accent-mid) !important;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--rn-accent-mid) 18%, transparent);
   outline: none;
@@ -247,7 +248,7 @@
 }
 .rn-main :is(button, a).bg-\[\#1A2E20\]:active, .rn-main :is(button, a).bg-forest-deepest:active { transform: scale(0.98); }
 /* Secondary bordered buttons become soft pills */
-.rn-main button:is(.rounded-xl, .rounded-lg).border:not(.bg-\[\#1A2E20\]):not(.bg-forest-deepest) { border-radius: 9999px; }
+.rn-main button:is(.rounded-xl, .rounded-lg).border:not(.bg-\[\#1A2E20\]):not(.bg-forest-deepest):not(.rn-app-select) { border-radius: 9999px; }
 
 /* Tables */
 .rn-main table { border-collapse: separate; border-spacing: 0; }

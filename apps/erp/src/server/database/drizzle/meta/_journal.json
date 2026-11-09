@@ -169,6 +169,13 @@
       "when": 1793162400000,
       "tag": "0023_customer_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793248800000,
+      "tag": "0024_dine_in_pay_later",
+      "breakpoints": true
     }
   ]
 }

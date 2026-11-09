@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
   Search,
@@ -370,7 +371,7 @@ export function TiffinPricingCatalog() {
           <span className="font-medium text-gray-500">Filter by:</span>
 
           {/* Category filter */}
-          <select
+          <AppSelect
             value={categoryFilter}
             onChange={(e) => {
               setCategoryFilter(e.target.value);
@@ -385,10 +386,10 @@ export function TiffinPricingCatalog() {
             <option value="SPECIAL">Special / Diet Meals</option>
             <option value="EXTRA">Extras & Add-ons</option>
             <option value="BEVERAGE">Beverages</option>
-          </select>
+          </AppSelect>
 
           {/* Status filter */}
-          <select
+          <AppSelect
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -400,7 +401,7 @@ export function TiffinPricingCatalog() {
             <option value="ALL">All Statuses</option>
             <option value="ACTIVE">Active</option>
             <option value="INACTIVE">Inactive</option>
-          </select>
+          </AppSelect>
 
           {(categoryFilter !== "ALL" || statusFilter !== "ALL" || searchQuery) && (
             <button

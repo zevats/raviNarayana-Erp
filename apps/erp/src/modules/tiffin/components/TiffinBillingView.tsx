@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import { StatStrip } from "@/components/ui/kit";
 import { RefreshButton } from "@/components/ui/states";
@@ -279,7 +280,7 @@ export function TiffinBillingView() {
               />
             </div>
 
-            <select
+            <AppSelect
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as any)}
               className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -288,7 +289,7 @@ export function TiffinBillingView() {
               <option value="UNBILLED">Ready to Bill ({preview?.customers.filter((c) => !c.alreadyBilled && c.totalAmount > 0).length || 0})</option>
               <option value="INVOICED">Already Invoiced ({preview?.customers.filter((c) => c.alreadyBilled).length || 0})</option>
               <option value="ZERO_MEALS">Zero Deliveries ({preview?.customers.filter((c) => !c.alreadyBilled && c.totalAmount === 0).length || 0})</option>
-            </select>
+            </AppSelect>
           </div>
 
           <div className="text-xs text-gray-500 text-right">

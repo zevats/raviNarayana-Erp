@@ -2314,8 +2314,10 @@ export type DayOverrideAction = "SKIP" | "EXTRA" | "CLEAR";
 
 export interface SubscriptionDayRow {
   subscriptionId: string;
+  customerId?: string;
   customerName: string;
   customerPhone: string | null;
+  customerAddress?: string | null;
   productName: string;
   subscriptionStatus: string;
   quantityPerMeal: number;

@@ -84,6 +84,14 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
     if (task) setFocusId(task);
   }, []);
   const [notice, setNotice] = useState<{ tone: "ok" | "error" | "warn"; text: string } | null>(null);
+  useEffect(() => {
+    const failed = (e: Event) => {
+      setNotice({ tone: "error", text: (e as CustomEvent).detail?.text || "A delivery could not be saved." } as any);
+      invalidateErpCache(["delivery", "orders"]);
+    };
+    window.addEventListener("erp:delivery-save-failed", failed);
+    return () => window.removeEventListener("erp:delivery-save-failed", failed);
+  }, []);
   const [preparing, setPreparing] = useState(false);
 
   const tasksQ = useDeliveryTasks(date, meal);

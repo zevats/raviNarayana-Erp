@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Truck, Utensils, Search, Plus, Minus, Check, AlertCircle, RotateCcw, User, MapPin, ChevronLeft, ArrowRight } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType } from "@/types";
-import { businessToday } from "@/lib/businessDate";
+import { businessToday, businessMeal } from "@/lib/businessDate";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 interface NewOrderModalProps {
@@ -11,7 +11,51 @@ interface NewOrderModalProps {
   onClose: () => void;
   /** Called after the server confirmed the order, with the message to show; the dialog then closes. */
   onOrderCreated: (message: string) => void;
+  /**
+   * When given, Confirm closes the form at once and hands the save to the page, which shows the
+   * order as "Saving…" and retries with the same key (the server records it once).
+   */
+  onSubmitInBackground?: (job: PendingOrderJob) => void;
   defaultDate?: string;
+  /** Opens with this customer already chosen (e.g. taking an order for a subscriber). */
+  presetCustomer?: TiffinCustomer | null;
+}
+
+export interface PendingOrderJob {
+  key: string;
+  customerName: string;
+  orderType: BusinessOrderType;
+  mealType: MealType;
+  serviceDate: string;
+  total: number;
+  itemsText: string;
+  /** Sends the order; resolves with the confirmation to show, rejects with a readable error. */
+  run: () => Promise<string>;
+}
+
+/** The meal being taken now (lunch until 4 pm India time, dinner after): businessMeal. */
+const mealForNow = (): MealType => businessMeal();
+
+// Last order per customer, kept while the page is open: fetched when the pointer rests on a
+// customer (or the row is focused), so choosing the customer shows it at once.
+const lastOrderCache = new Map<string, { at: number; history: any[] }>();
+const lastOrderInflight = new Map<string, Promise<any[]>>();
+function loadLastOrder(c: { id: string; phone: string }): Promise<any[]> {
+  const hit = lastOrderCache.get(c.id);
+  if (hit && Date.now() - hit.at < 120_000) return Promise.resolve(hit.history);
+  const running = lastOrderInflight.get(c.id);
+  if (running) return running;
+  const p = fetch(`/api/orders/history?customerId=${encodeURIComponent(c.id)}&phone=${encodeURIComponent(c.phone)}`)
+    .then((res) => (res.ok ? res.json() : { history: [] }))
+    .then((data) => {
+      const history = Array.isArray(data.history) ? data.history : [];
+      lastOrderCache.set(c.id, { at: Date.now(), history });
+      return history;
+    })
+    .catch(() => [] as any[])
+    .finally(() => lastOrderInflight.delete(c.id));
+  lastOrderInflight.set(c.id, p);
+  return p;
 }
 
 type Step = 1 | 2 | 3;
@@ -76,7 +120,7 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
   );
 }
 
-export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: NewOrderModalProps) {
+export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackground, defaultDate, presetCustomer }: NewOrderModalProps) {
   const [step, setStep] = useState<Step>(1);
   const bodyRef = useRef<HTMLDivElement>(null);
 
@@ -107,8 +151,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
 
   // Operational Metadata
   const [serviceDate, setServiceDate] = useState(defaultDate || businessToday());
-  const [mealType, setMealType] = useState<MealType>("LUNCH");
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI">("CASH");
+  const [mealType, setMealType] = useState<MealType>(mealForNow);
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI" | "PAY_LATER">("CASH");
   const [notes, setNotes] = useState("");
 
   // State guards
@@ -129,6 +173,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
   useEffect(() => {
     if (!isOpen) return;
     setStep(1);
+    setMealType(mealForNow());
     setCustomerSearch("");
     setSelectedCustomer(null);
     setNewCustomerName("");
@@ -143,6 +188,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
     setReuseNotice(null);
     setReused(null);
     setFlashIds([]);
+    if (presetCustomer) {
+      setOrderType("DELIVERY");
+      setCustomerMode("EXISTING");
+      setSelectedCustomer(presetCustomer);
+      setNewCustomerAddress(presetCustomer.deliveryAddress || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Escape closes the form (unless an order is being saved).
@@ -266,18 +318,20 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
       setOrderHistory([]);
       return;
     }
-    setIsLoadingHistory(true);
-    fetch(`/api/orders/history?customerId=${selectedCustomer.id}&phone=${encodeURIComponent(selectedCustomer.phone)}`)
-      .then((res) => (res.ok ? res.json() : { history: [] }))
-      .then((data) => {
-        setOrderHistory(data.history || []);
-      })
-      .catch(() => {
-        setOrderHistory([]);
+    const cached = lastOrderCache.get(selectedCustomer.id);
+    if (cached) setOrderHistory(cached.history);
+    let live = true;
+    setIsLoadingHistory(!cached);
+    loadLastOrder(selectedCustomer)
+      .then((history) => {
+        if (live) setOrderHistory(history);
       })
       .finally(() => {
-        setIsLoadingHistory(false);
+        if (live) setIsLoadingHistory(false);
       });
+    return () => {
+      live = false;
+    };
   }, [selectedCustomer]);
 
   // Copies a previous order into a new draft (the old order is never changed). Items are matched to
@@ -367,7 +421,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
 
   /** What is wrong with the customer step, or null when it is complete. */
   const customerProblem = (): string | null => {
-    if (orderType !== "DELIVERY") return null;
+    if (orderType !== "DELIVERY") {
+      // Pay Later at the counter: the guest must be identifiable to be asked for the money later.
+      if (paymentMethod !== "PAY_LATER") return null;
+      if (newCustomerName.trim().length < 2) return "For Pay Later, enter the guest name.";
+      if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
+      return null;
+    }
     if (customerMode === "EXISTING") {
       return selectedCustomer ? null : "Choose the delivery customer, or switch to New customer.";
     }
@@ -439,50 +499,72 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
       customerPhone = newCustomerPhone.trim() || "";
     }
 
-    setIsSubmitting(true);
-
-    try {
-      const itemsPayload = cartItems.map((it) => ({
-        productId: it.product.id,
-        productName: it.product.name,
-        quantity: it.quantity,
-        unitPrice: it.product.price,
-      }));
-
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderType,
-          customerId,
-          customerName,
-          customerPhone,
-          deliveryAddress: orderType === "DELIVERY" ? deliveryAddress : undefined,
-          serviceDate,
-          mealType,
-          items: itemsPayload,
-          paymentMethod: orderType === "DINE_IN" ? paymentMethod : undefined,
-          paymentStatus: orderType === "DINE_IN" ? "PAID" : "PENDING",
-          notes: notes.trim() || undefined,
-          idempotencyKey: draftKey,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to confirm order.");
-
-      const confirmed =
-        orderType === "DELIVERY"
-          ? data.order?.assignedToName
-            ? `Delivery order confirmed! Assigned to ${data.order.assignedToName} for delivery.`
-            : "Delivery order confirmed, but no active delivery staff account exists. Create or reactivate one in Staff Administration."
-          : `Dine-in counter order confirmed (₹${totalAmount} collected via ${paymentMethod}).`;
-
-      // Trigger cross-view instant refresh
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("erp:order_created"));
+    const itemsPayload = cartItems.map((it) => ({
+      productId: it.product.id,
+      productName: it.product.name,
+      quantity: it.quantity,
+      unitPrice: it.product.price,
+    }));
+    const key = draftKey;
+    const body = JSON.stringify({
+      orderType,
+      customerId,
+      customerName,
+      customerPhone,
+      deliveryAddress: orderType === "DELIVERY" ? deliveryAddress : undefined,
+      serviceDate,
+      mealType,
+      items: itemsPayload,
+      paymentMethod: orderType === "DINE_IN" ? paymentMethod : undefined,
+      payLater: orderType === "DINE_IN" && paymentMethod === "PAY_LATER" ? true : undefined,
+      paymentStatus: orderType === "DINE_IN" && paymentMethod !== "PAY_LATER" ? "PAID" : "PENDING",
+      notes: notes.trim() || undefined,
+      idempotencyKey: key,
+    });
+    const amount = totalAmount;
+    const method = paymentMethod;
+    const type = orderType;
+    // Sending is safe to repeat: the key makes the server record the order once.
+    const run = async (): Promise<string> => {
+      let res: Response;
+      try {
+        res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      } catch {
+        throw new Error("No connection. The order was not sent yet; try again.");
       }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to confirm order.");
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("erp:order_created"));
+      if (customerId) lastOrderCache.delete(customerId);
+      return type === "DELIVERY"
+        ? data.order?.assignedToName
+          ? `Delivery order confirmed! Assigned to ${data.order.assignedToName} for delivery.`
+          : "Delivery order confirmed, but no active delivery staff account exists. Create or reactivate one in Staff Administration."
+        : method === "PAY_LATER"
+          ? `Dine-in order saved on Pay Later: ₹${amount} is on ${customerName}'s account.`
+          : `Dine-in counter order confirmed (₹${amount} collected via ${method}).`;
+    };
 
+    if (onSubmitInBackground) {
+      // Instant: the form closes now; the page shows the order as saving and confirms it.
+      onSubmitInBackground({
+        key,
+        customerName: customerName || "Walk-in guest",
+        orderType,
+        mealType,
+        serviceDate,
+        total: amount,
+        itemsText: cartItems.map((it) => `${it.quantity}× ${it.product.name}`).join(", "),
+        run,
+      });
+      setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+      onClose();
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const confirmed = await run();
       // Close as soon as the server confirmed; the page shows the confirmation. (A delayed close
       // left the button active with a new draft key, so a second click created a second order.)
       setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
@@ -642,6 +724,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
                             <li key={c.id}>
                               <button
                                 type="button"
+                                onPointerEnter={() => void loadLastOrder(c)}
+                                onPointerDown={() => void loadLastOrder(c)}
+                                onFocus={() => void loadLastOrder(c)}
                                 onClick={() => {
                                   setSelectedCustomer(c);
                                   setNewCustomerAddress(c.deliveryAddress || "");
@@ -810,7 +895,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
               ) : (
                 <section className="space-y-3">
                   <h3 className={`text-[15px] font-bold ${INK}`}>
-                    Guest <span className={`font-normal text-[13.5px] ${INK2}`}>(optional)</span>
+                    Guest <span className={`font-normal text-[13.5px] ${INK2}`}>(needed for Pay Later)</span>
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -942,16 +1027,30 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
                 </div>
                 {orderType === "DINE_IN" && (
                   <div>
-                    <span className={LABEL}>Paid at the counter by</span>
+                    <span className={LABEL}>Payment</span>
                     <Segmented
                       label="Payment"
                       value={paymentMethod}
-                      onChange={setPaymentMethod}
+                      onChange={(v) => {
+                        setPaymentMethod(v);
+                        setErrorMessage(null);
+                      }}
                       options={[
                         { v: "CASH", label: "Cash" },
                         { v: "UPI", label: "UPI" },
+                        { v: "PAY_LATER", label: "Pay later" },
                       ]}
                     />
+                    {paymentMethod === "PAY_LATER" && (
+                      <p className={`mt-2 text-[13px] ${INK2}`}>
+                        Nothing is collected now: {rupees(totalAmount)} goes on {newCustomerName.trim() || "the guest"}&apos;s account (Finance → Receivables).
+                        {(newCustomerName.trim().length < 2 || newCustomerPhone.replace(/\D/g, "").length < 7) && (
+                          <button type="button" onClick={() => goTo(1)} className="ml-1 font-semibold text-[var(--rn-accent)] underline underline-offset-2">
+                            Add the guest name and phone
+                          </button>
+                        )}
+                      </p>
+                    )}
                   </div>
                 )}
                 <div>
@@ -1000,7 +1099,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
               <p className={`text-[13px] ${INK2}`}>
                 {orderType === "DELIVERY"
                   ? "The order goes to the delivery staff automatically; payment is taken at the door."
-                  : `Recorded as paid at the counter by ${paymentMethod === "UPI" ? "UPI" : "cash"}.`}
+                  : paymentMethod === "PAY_LATER"
+                    ? "Not paid now: the amount stays on the guest's account until it is paid."
+                    : `Recorded as paid at the counter by ${paymentMethod === "UPI" ? "UPI" : "cash"}.`}
               </p>
             </>
           )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, FileText, Plus, Trash2, AlertCircle, Info } from "lucide-react";
 import { ResidentListItem, Invoice, InvoiceType } from "@/types";
@@ -303,7 +304,7 @@ export function CreateInvoiceModal({
               <label htmlFor="inv-resident" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Resident <span className="text-red-500">*</span>
               </label>
-              <select
+              <AppSelect
                 id="inv-resident"
                 value={residentId}
                 onChange={(e) => handleResidentChange(e.target.value)}
@@ -316,7 +317,7 @@ export function CreateInvoiceModal({
                     {r.fullName} ({r.currentRoomNumber ? `Room ${r.currentRoomNumber}` : "No Room"})
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             <div>
@@ -449,7 +450,7 @@ export function CreateInvoiceModal({
                     <div className="flex items-center justify-between text-[11px] text-[#5A6C5E] pt-1 border-t border-[#8E9F89]/10">
                       <div className="flex items-center gap-2">
                         <span>GST Tax Rate:</span>
-                        <select
+                        <AppSelect
                           value={item.taxRate}
                           onChange={(e) => updateItem(idx, "taxRate", Number(e.target.value))}
                           className="px-2 py-1 bg-white border border-[#8E9F89]/40 rounded text-xs text-[#1A2E20]"
@@ -458,7 +459,7 @@ export function CreateInvoiceModal({
                           <option value="5">5% (Tiffin / Food)</option>
                           <option value="12">12% (Accommodation)</option>
                           <option value="18">18% (Standard Services)</option>
-                        </select>
+                        </AppSelect>
                       </div>
                       <div>
                         Tax: ₹{formatINR(Math.round((item.quantity * item.unitPrice * (item.taxRate || 0)) / 100))}

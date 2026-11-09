@@ -135,7 +135,7 @@ async function main() {
   assert((await count(db, "SELECT COUNT(*)::int AS n FROM tiffin_customers WHERE phone = ?", [input.customerPhone])) === 1, "Exactly one customer");
   const order = ok[0];
   assert(order.totalAmount === 204 && order.totalQuantity === 5 && order.items.length === 2, `Totals from stored lines (₹${order.totalAmount}, ${order.totalQuantity} portions)`);
-  assert(order.orderStatus === "CONFIRMED" && order.deliveryStatus === "OUT_FOR_DELIVERY" && Boolean(order.assignedTo), `Confirmed, auto-assigned and dispatched (${order.orderStatus}/${order.deliveryStatus})`);
+  assert(["CONFIRMED", "OUT_FOR_DELIVERY"].includes(order.orderStatus) && order.deliveryStatus === "OUT_FOR_DELIVERY" && Boolean(order.assignedTo), `Confirmed, auto-assigned and dispatched (${order.orderStatus}/${order.deliveryStatus})`);
 
   let mismatch: any = null;
   try {

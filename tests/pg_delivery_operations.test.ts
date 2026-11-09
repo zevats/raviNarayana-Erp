@@ -197,17 +197,19 @@ async function main() {
   assert(bySub(day2, S1)?.lines?.[0].quantity === 3, "S1 has 3 boxes on DAY2 (2 + 1 extra)");
   assert(day2run.skipped === 2, `Preparation reports 2 skipped (got ${day2run.skipped})`);
   assert(bySub(day2, S1)?.assignedTo === A.id && bySub(day2, S4)?.assignedTo === A.id, "Usual delivery person carried over: S1 and S4 go to Asha automatically");
-  await rejects("After 07:30 a skip needs a reason", () => setSubscriptionDayOverride(manager, { subscriptionId: S4, serviceDate: DAY2, mealType: "LUNCH", action: "SKIP" }, IP, db, at(DAY2, "07:45")), /cutoff.*reason/i);
+  // No time cutoff within the day: a skip later on the same day needs no reason and is no override.
   await setSubscriptionDayOverride(manager, { subscriptionId: S4, serviceDate: DAY2, mealType: "LUNCH", action: "SKIP", reason: "Customer phoned late" }, IP, db, at(DAY2, "07:45"));
   const s4Day2 = (await getDeliveryTaskById(manager, bySub(day2, S4)!.id, db))!;
-  assert(s4Day2.task.status === "CANCELLED" && s4Day2.task.cutoffOverride === true && /Customer phoned late/.test(s4Day2.task.cancelReason || ""), "Late skip cancels the listed delivery as a recorded cutoff override");
+  assert(s4Day2.task.status === "CANCELLED" && !s4Day2.task.cutoffOverride && /Customer phoned late/.test(s4Day2.task.cancelReason || ""), "A skip later the same day cancels the listed delivery (no cutoff, no override)");
+  const nextDay = new Date(Date.parse(`${DAY2}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  await rejects("A day that has passed cannot be changed", () => setSubscriptionDayOverride(manager, { subscriptionId: S1, serviceDate: DAY2, mealType: "LUNCH", action: "SKIP" }, IP, db, at(nextDay, "09:00")), /past days|reason/i);
   assert(s4Day2.events.some((e) => e.eventType === "CANCELLED"), "Cancellation is in the delivery's timeline");
   await setSubscriptionDayOverride(manager, { subscriptionId: S1, serviceDate: DAY2, mealType: "LUNCH", action: "CLEAR", reason: "Extra no longer needed" }, IP, db, at(DAY2, "07:50"));
   const s1Day2 = (await getDeliveryTaskById(manager, bySub(day2, S1)!.id, db))!;
   assert(s1Day2.task.lines?.[0].quantity === 2 && s1Day2.events.some((e) => e.eventType === "UPDATED"), "Clearing the extra puts the listed quantity back to 2 (UPDATED event)");
   const subsDay = await listSubscriptionDay(manager, DAY2, "LUNCH", db, at(DAY2, "08:30"));
   const row2 = subsDay.rows.find((r) => r.subscriptionId === S2)!;
-  assert(row2.override?.action === "SKIP" && row2.effectiveQuantity === 0 && subsDay.pastCutoff, "Subscriptions screen shows S2 skipped and the meal past its cutoff");
+  assert(row2.override?.action === "SKIP" && row2.effectiveQuantity === 0 && !subsDay.pastCutoff, "Subscriptions screen shows S2 skipped; the meal is still open the same day (no time cutoff)");
   assert(subsDay.rows.find((r) => r.subscriptionId === S3)?.eligible === false, "Subscriptions screen shows the paused subscription as not delivering");
   const resDay = await listResidentMealDelivery(manager, DAY2, "LUNCH", db);
   assert(resDay.rows.find((r) => r.residentId === R1)?.today === "SKIPPED" && resDay.rows.find((r) => r.residentId === R2)?.today === "AT_PG", "Residents screen: R1 skipped today, R2 eats at the PG");
@@ -268,9 +270,8 @@ async function main() {
   await rejects("Retrying a delivery that is not failed is refused", () => retryDeliveryTask(manager, o2Task.id, {}, IP, db), /EXCEPTION/);
   await rejects("Cancelling a delivery with money collected is refused", () => cancelDeliveryTask(manager, o1Task.id, { reason: "Wrong order" }, IP, db), /delivered|collected/i);
   await rejects("Cancel needs a reason", () => cancelDeliveryTask(manager, o2Task.id, { reason: "" }, IP, db), /reason/i);
-  await rejects("After the lunch cutoff a cancel needs the override", () => cancelDeliveryTask(manager, o2Task.id, { reason: "Customer cancelled" }, IP, db, at(DAY1, "11:00")), /cutoff.*override/i);
-  const cancelled = await cancelDeliveryTask(manager, o2Task.id, { reason: "Customer cancelled", overrideCutoff: true }, IP, db, at(DAY1, "11:00"));
-  assert(cancelled.status === "CANCELLED" && cancelled.cutoffOverride === true && (await orderStatus(o2OrderId)) === "CANCELLED", "Cancelled after cutoff with override; its order is CANCELLED too");
+  const cancelled = await cancelDeliveryTask(manager, o2Task.id, { reason: "Customer cancelled" }, IP, db, at(DAY1, "11:00"));
+  assert(cancelled.status === "CANCELLED" && !cancelled.cutoffOverride && (await orderStatus(o2OrderId)) === "CANCELLED", "Cancelled at 11:00 the same day without an override (no time cutoff); its order is CANCELLED too");
   await rejects("A cancelled delivery cannot be recorded", () => completeDeliveryTask(B, o2Task.id, { lines: [] }, IP, db), /cancelled/i);
   const resolved = await resolveDeliveryProblem(manager, s1.id, { note: "Customer confirmed one box only" }, IP, db);
   assert(Boolean(resolved.resolvedAt) && resolved.status === "DELIVERED" && deliveryOutcome(resolved) === "PARTIAL", "Partial delivery resolved with a note; status and outcome unchanged");
@@ -286,7 +287,7 @@ async function main() {
   assert(sum.items.byDisposition.RETURNED === 1 && sum.items.byDisposition.WITH_STAFF === 2, "Undelivered by disposition: 1 returned, 2 with staff");
   assert(sum.money.due === 100 && sum.money.collected === 100 && sum.money.outstanding === 0, "Doorstep money: ₹100 due, ₹100 collected, nothing outstanding");
   const close = await getDeliveryCloseout(owner, DAY1, "LUNCH", db);
-  assert(close.summary.total === sum.total && close.shortfalls.length === 3 && close.cancelled.length === 1 && close.cancelled[0].cutoffOverride, "Owner close-out: same totals, 3 shortfall lines, cancellation with override");
+  assert(close.summary.total === sum.total && close.shortfalls.length === 3 && close.cancelled.length === 1 && !close.cancelled[0].cutoffOverride, "Owner close-out: same totals, 3 shortfall lines, the cancellation (no override needed)");
   const thaliRow = close.items.find((i) => i.productName === "Ops Thali")!;
   assert(thaliRow.ordered === 6 && thaliRow.delivered === 2 && thaliRow.returned === 1 && thaliRow.withStaff === 2, `Item reconciliation for Ops Thali (cancelled excluded): ordered 6, delivered 2, returned 1, with staff 2 (got ${JSON.stringify(thaliRow)})`);
   const aCol = close.collections.find((c) => c.staffId === A.id);

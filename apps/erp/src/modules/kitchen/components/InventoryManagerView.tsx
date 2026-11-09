@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Package,
@@ -350,7 +351,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
             />
           </div>
 
-          <select
+          <AppSelect
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="bg-[#1A2E20] border border-[#8E9F89]/30 rounded-lg px-3 py-1.5 text-xs text-[#FAF8F5] focus:outline-none focus:border-[#B58A57]"
@@ -364,7 +365,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
             <option value="OILS">Oils</option>
             <option value="PACKAGING">Packaging</option>
             <option value="OTHER">Other</option>
-          </select>
+          </AppSelect>
 
           <button
             onClick={loadData}
@@ -589,7 +590,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">Category</label>
-                  <select
+                  <AppSelect
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value as RawMaterialCategory)}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -602,13 +603,13 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                     <option value="OILS">Oils</option>
                     <option value="PACKAGING">Packaging</option>
                     <option value="OTHER">Other</option>
-                  </select>
+                  </AppSelect>
                 </div>
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">
                     Canonical Base Unit
                   </label>
-                  <select
+                  <AppSelect
                     value={formBaseUnit}
                     onChange={(e) => setFormBaseUnit(e.target.value as RawMaterialBaseUnit)}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -616,7 +617,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                     <option value="G">Gram (G - Mass)</option>
                     <option value="ML">Milliliter (ML - Volume)</option>
                     <option value="PCS">Piece (PCS - Count)</option>
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -708,7 +709,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                 </div>
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">Unit</label>
-                  <select
+                  <AppSelect
                     value={actionUnit}
                     onChange={(e) => setActionUnit(e.target.value)}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -726,7 +727,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                       </>
                     )}
                     {selectedMaterial.baseUnit === "PCS" && <option value="PCS">Pieces (PCS)</option>}
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
               <div>
@@ -827,7 +828,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                 </div>
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">Unit</label>
-                  <select
+                  <AppSelect
                     value={actionUnit}
                     onChange={(e) => setActionUnit(e.target.value)}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -845,7 +846,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                       </>
                     )}
                     {selectedMaterial.baseUnit === "PCS" && <option value="PCS">Pieces (PCS)</option>}
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
               <div>
@@ -911,7 +912,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                 </div>
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">Unit</label>
-                  <select
+                  <AppSelect
                     value={actionUnit}
                     onChange={(e) => setActionUnit(e.target.value)}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -929,7 +930,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
                       </>
                     )}
                     {selectedMaterial.baseUnit === "PCS" && <option value="PCS">Pieces (PCS)</option>}
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
               <div>

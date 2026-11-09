@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
   Search,
@@ -322,7 +323,7 @@ export function TiffinCustomerDirectory() {
           <span className="font-medium text-gray-500">Filter by:</span>
 
           {/* Type filter */}
-          <select
+          <AppSelect
             value={typeFilter}
             onChange={(e) => {
               setTypeFilter(e.target.value);
@@ -335,10 +336,10 @@ export function TiffinCustomerDirectory() {
             <option value="INDIVIDUAL">Individual</option>
             <option value="CORPORATE">Corporate</option>
             <option value="RESIDENTIAL_PG">PG Resident</option>
-          </select>
+          </AppSelect>
 
           {/* Diet filter */}
-          <select
+          <AppSelect
             value={dietFilter}
             onChange={(e) => {
               setDietFilter(e.target.value);
@@ -351,10 +352,10 @@ export function TiffinCustomerDirectory() {
             <option value="VEG">Veg</option>
             <option value="NON_VEG">Non-Veg</option>
             <option value="JAIN">Jain</option>
-          </select>
+          </AppSelect>
 
           {/* Status filter */}
-          <select
+          <AppSelect
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -366,7 +367,7 @@ export function TiffinCustomerDirectory() {
             <option value="ALL">All Statuses</option>
             <option value="ACTIVE">Active</option>
             <option value="INACTIVE">Inactive</option>
-          </select>
+          </AppSelect>
 
           {(typeFilter !== "ALL" || statusFilter !== "ALL" || dietFilter !== "ALL" || searchQuery) && (
             <button

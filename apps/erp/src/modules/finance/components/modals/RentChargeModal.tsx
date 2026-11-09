@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, Receipt, AlertCircle } from "lucide-react";
 import { ResidentListItem, FinancialTransaction } from "@/types";
@@ -146,7 +147,7 @@ export function RentChargeModal({
             <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
               Select Resident *
             </label>
-            <select
+            <AppSelect
               required
               value={residentId}
               onChange={(e) => setResidentId(e.target.value)}
@@ -158,7 +159,7 @@ export function RentChargeModal({
                   {r.fullName} ({r.phone}) {r.currentRoomNumber ? `• Room ${r.currentRoomNumber}` : ""}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           {/* Amount & Billing Period */}

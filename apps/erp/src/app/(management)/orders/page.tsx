@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback, useMemo, useDeferredValue } from "react";
 import {
   ShoppingBag,
@@ -20,7 +21,7 @@ import {
   BookOpen,
   Users,
 } from "lucide-react";
-import { UnifiedOrder } from "@/types";
+import { UnifiedOrder, TiffinCustomer } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import Link from "next/link";
@@ -31,6 +32,7 @@ import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 import { RefreshButton } from "@/components/ui/states";
 import { formatDateTime } from "@/lib/format";
+import type { PendingOrderJob } from "@/modules/orders/components/NewOrderModal";
 
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModal");
@@ -55,9 +57,38 @@ export default function OrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+  // Subscriptions → Take order: the order form opens with that subscriber chosen.
+  const [presetCustomer, setPresetCustomer] = useState<TiffinCustomer | null>(null);
   // Change / cancel one delivery order (only while it has not gone out and nothing was collected).
   const [editing, setEditing] = useState<{ order: UnifiedOrder; mode: "edit" | "cancel" } | null>(null);
   const [orderNotice, setOrderNotice] = useState<string | null>(null);
+  // Orders confirmed in the form and still being saved (the form closes at once). A failed save
+  // stays here with its reason and a Retry that sends the same order again (same key: recorded once).
+  const [pending, setPending] = useState<Array<PendingOrderJob & { status: "saving" | "failed"; error?: string }>>([]);
+  const runPending = useCallback((job: PendingOrderJob) => {
+    setPending((list) => [{ ...job, status: "saving" as const }, ...list.filter((j) => j.key !== job.key)]);
+    job
+      .run()
+      .then((message) => {
+        setPending((list) => list.filter((j) => j.key !== job.key));
+        setOrderNotice(message);
+        invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"]);
+      })
+      .catch((e: any) => {
+        setPending((list) => list.map((j) => (j.key === job.key ? { ...j, status: "failed" as const, error: e?.message || "Could not save the order." } : j)));
+        setOrderNotice(`Order for ${job.customerName} was not saved: ${e?.message || "try again"}. Open Today to retry.`);
+      });
+  }, []);
+  // Leaving the page while an order is still being sent would lose it: ask first.
+  useEffect(() => {
+    if (!pending.some((j) => j.status === "saving")) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [pending]);
   // Each confirmation stays 5 s; a newer one restarts the timer instead of being cut short.
   useEffect(() => {
     if (!orderNotice) return;
@@ -129,6 +160,13 @@ export default function OrdersPage() {
   const [shown, setShown] = useState(PAGE);
   useEffect(() => setShown(PAGE), [serviceDate, orderTypeFilter, statusFilter, deferredSearch]);
   const visibleOrders = filteredOrders.length > shown ? filteredOrders.slice(0, shown) : filteredOrders;
+  // Each order of the day gets a short number in the order it was taken (#1 is the first), so it
+  // can be told apart and called out ("order 12") at a glance.
+  const orderNo = useMemo(() => {
+    const m = new Map<string, number>();
+    [...orders].sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt))).forEach((o, i) => m.set(o.id, i + 1));
+    return m;
+  }, [orders]);
 
   return (
     <div className="space-y-5 min-w-0">
@@ -169,19 +207,52 @@ export default function OrdersPage() {
             <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone or address" className="flex-1 basis-[240px]" />
             <div className="flex items-center gap-2 flex-wrap">
               <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Service date" className="rn-input" />
-              <select value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value as any)} aria-label="Order type" className="rn-input">
+              <AppSelect value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value as any)} aria-label="Order type" className="rn-input">
                 <option value="ALL">All orders</option>
                 <option value="DELIVERY">Delivery</option>
                 <option value="DINE_IN">Dine in</option>
-              </select>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className="rn-input">
+              </AppSelect>
+              <AppSelect value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Status" className="rn-input">
                 <option value="ALL">All statuses</option>
                 <option value="ACTIVE">In progress</option>
                 <option value="COMPLETED">Completed</option>
-              </select>
+              </AppSelect>
               <RefreshButton onRefresh={refreshOrders} busy={isRefreshing} label="Refresh orders" />
             </div>
           </div>
+
+          {pending.length > 0 && (
+            <ul className="border-b border-[var(--rn-line)] divide-y divide-[var(--rn-line)]" aria-label="Orders being saved">
+              {pending.map((j) => (
+                <li key={j.key} className={`px-4 sm:px-5 py-3.5 flex flex-wrap items-center gap-3 ${j.status === "failed" ? "bg-[#FDECEA]" : "bg-[var(--rn-accent-tint)]"}`}>
+                  {j.status === "saving" ? (
+                    <span className="w-5 h-5 rounded-full border-2 border-[var(--rn-accent)] border-t-transparent animate-spin shrink-0" aria-hidden />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-[#A3261A] shrink-0" aria-hidden />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] font-semibold text-[var(--rn-ink)] truncate">
+                      {j.customerName} · ₹{j.total.toLocaleString("en-IN")}
+                      <span className="ml-2 text-[12.5px] font-medium text-[var(--rn-ink-2)]">{j.orderType === "DELIVERY" ? "Delivery" : "Dine in"} · {j.mealType.charAt(0) + j.mealType.slice(1).toLowerCase()}</span>
+                    </p>
+                    <p className={`text-[12.5px] truncate ${j.status === "failed" ? "text-[#8A1F12] font-medium" : "text-[var(--rn-ink-2)]"}`}>
+                      {j.status === "saving" ? `Saving… ${j.itemsText}` : `Not saved: ${j.error}`}
+                    </p>
+                  </div>
+                  {j.status === "failed" && (
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => runPending(j)} className="h-9 px-4 rounded-full bg-[var(--rn-accent)] text-white text-[13px] font-semibold">
+                        Retry
+                      </button>
+                      <button type="button" onClick={() => setPending((list) => list.filter((x) => x.key !== j.key))} className="h-9 px-3 rounded-full text-[13px] font-semibold text-[var(--rn-ink-2)] hover:bg-white/60">
+                        Dismiss
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
 
           {/* ORDER CARDS LIST */}
           {isLoading ? (
@@ -191,14 +262,34 @@ export default function OrdersPage() {
               Nothing matches these filters. Use New order at the top to add one.
             </EmptyState>
           ) : (
-            <div className="rn-rows">
+            <div className="rn-order-cards p-3 sm:p-4 space-y-3">
               {visibleOrders.map((order) => {
                 const isDelivery = order.orderType === "DELIVERY";
                 return (
                   <div
                     key={order.id}
-                    className="p-4 sm:p-5 space-y-3"
+                    data-order-id={order.id}
+                    className="relative overflow-hidden rounded-[20px] bg-white border border-[var(--rn-line)] shadow-[0_1px_2px_rgba(40,20,10,0.06),0_10px_24px_-18px_rgba(40,20,10,0.35)] p-4 pl-5 sm:p-5 sm:pl-6 space-y-3"
                   >
+                    {/* Status colour down the left edge: each order reads as its own card. */}
+                    <span
+                      aria-hidden
+                      className="absolute left-0 top-0 bottom-0 w-1.5"
+                      style={{
+                        background:
+                          order.orderStatus === "CANCELLED"
+                            ? "#B9B2A8"
+                            : order.orderStatus === "EXCEPTION"
+                            ? "#C93A22"
+                            : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL"
+                            ? "#D99A1E"
+                            : order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
+                            ? "#3C8A2E"
+                            : order.orderStatus === "OUT_FOR_DELIVERY"
+                            ? "#4D56C9"
+                            : "#3F78C9",
+                      }}
+                    />
                     {/* Top Row: Customer, Type Badge & Status */}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
@@ -210,7 +301,10 @@ export default function OrdersPage() {
                         </div>
 
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[12px] font-extrabold tabular-nums px-2 py-0.5 rounded-md bg-[var(--rn-ink)] text-white">
+                              #{orderNo.get(order.id) ?? "–"}
+                            </span>
                             <span
                               className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded uppercase ${
                                 isDelivery
@@ -228,7 +322,7 @@ export default function OrdersPage() {
                             </span>
                           </div>
 
-                          <h3 className="font-serif text-base text-[#1A2E20] font-semibold mt-0.5">
+                          <h3 className="text-[17px] leading-snug text-[var(--rn-ink)] font-bold mt-1">
                             {order.customerName}
                           </h3>
 
@@ -266,7 +360,7 @@ export default function OrdersPage() {
                           )}
                           {order.orderStatus === "COMPLETED" && (
                             <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]">
-                              <CheckCircle2 className="w-3 h-3" /> Paid &amp; Complete
+                              <CheckCircle2 className="w-3 h-3" /> {order.paymentStatus === "PAID" ? <>Paid &amp; Complete</> : "Served"}
                             </span>
                           )}
                           {order.orderStatus === "EXCEPTION" && (
@@ -387,7 +481,13 @@ export default function OrdersPage() {
       {/* Subscriptions: today's status, skip / extra for this meal, residents' room delivery */}
       {activeSection === "SUBSCRIPTIONS" && (
         <div className="rn-card p-4 sm:p-6">
-          <SubscriptionsToday canChange={currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "OPERATIONS_MANAGER"} />
+          <SubscriptionsToday
+            canChange={currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "OPERATIONS_MANAGER"}
+            onTakeOrder={(customer) => {
+              setPresetCustomer(customer);
+              setIsNewOrderModalOpen(true);
+            }}
+          />
         </div>
       )}
 
@@ -416,11 +516,16 @@ export default function OrdersPage() {
       {/* Fast Order Entry Modal */}
       <NewOrderModal
         isOpen={isNewOrderModalOpen}
-        onClose={() => setIsNewOrderModalOpen(false)}
+        onClose={() => {
+          setIsNewOrderModalOpen(false);
+          setPresetCustomer(null);
+        }}
+        presetCustomer={presetCustomer}
         onOrderCreated={(message) => {
           setOrderNotice(message);
           invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"]);
         }}
+        onSubmitInBackground={runPending}
         defaultDate={serviceDate}
       />
     </div>

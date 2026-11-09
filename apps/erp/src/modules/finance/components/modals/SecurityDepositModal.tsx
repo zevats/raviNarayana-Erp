@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, Shield, Wallet, AlertCircle, Info } from "lucide-react";
 import { ResidentListItem, PaymentMethod, FinancialTransaction } from "@/types";
@@ -149,7 +150,7 @@ export function SecurityDepositModal({
             <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
               Select Resident *
             </label>
-            <select
+            <AppSelect
               required
               value={residentId}
               onChange={(e) => setResidentId(e.target.value)}
@@ -161,7 +162,7 @@ export function SecurityDepositModal({
                   {r.fullName} ({r.phone}) {r.currentRoomNumber ? `• Room ${r.currentRoomNumber}` : ""}
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           {/* Amount & Method */}
@@ -185,7 +186,7 @@ export function SecurityDepositModal({
               <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Payment Method *
               </label>
-              <select
+              <AppSelect
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
                 className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20] font-medium"
@@ -195,7 +196,7 @@ export function SecurityDepositModal({
                 <option value="BANK_TRANSFER">Bank IMPS / NEFT</option>
                 <option value="CHEQUE">Bank Cheque</option>
                 <option value="OTHER">POS Card / Other</option>
-              </select>
+              </AppSelect>
             </div>
           </div>
 

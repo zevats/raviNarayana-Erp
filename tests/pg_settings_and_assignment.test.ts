@@ -90,7 +90,8 @@ async function main() {
     await rejects("Cutoff after the list time is refused", () => updateSettingsSection(owner, "meals", { lunchPrepareAt: "08:00", lunchCutoffAt: "09:00", dinnerPrepareAt: "15:30", dinnerCutoffAt: "15:00" }, IP, db), /cutoff/i);
     await rejects("Bad time format is refused", () => updateSettingsSection(owner, "meals", { lunchPrepareAt: "8am", lunchCutoffAt: "07:30", dinnerPrepareAt: "15:30", dinnerCutoffAt: "15:00" }, IP, db), /HH:MM/);
     let st = await getManifestStatus(manager, day, "LUNCH", db, at(day, "07:45"));
-    assert(st.cutoffAt === "07:30" && st.pastCutoff === true, "Default lunch cutoff 07:30: 07:45 is past it");
+    // No time cutoff within the day (owner decision 2026-11-09): the saved time no longer locks the meal.
+    assert(st.cutoffAt === "07:30" && st.pastCutoff === false, "Default lunch time 07:30 is kept, but 07:45 the same day is not locked");
     await updateSettingsSection(owner, "meals", { lunchPrepareAt: "09:00", lunchCutoffAt: "08:30", dinnerPrepareAt: "16:00", dinnerCutoffAt: "15:30" }, IP, db);
     st = await getManifestStatus(manager, day, "LUNCH", db, at(day, "07:45"));
     assert(st.cutoffAt === "08:30" && st.prepareAt === "09:00" && st.pastCutoff === false, "Saved cutoff 08:30: 07:45 is now before it");

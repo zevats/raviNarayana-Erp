@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   BedDouble,
@@ -695,19 +696,19 @@ export default function RoomsPage() {
         <div className="p-4 sm:p-5 flex flex-wrap items-center gap-2.5 border-b border-[var(--rn-line)]">
           <SearchField value={search} onChange={setSearch} placeholder="Search room or resident" className="flex-1 basis-[240px]" />
           <div className="flex flex-wrap items-center gap-2">
-            <select value={selectedFloor} onChange={(e) => setSelectedFloor(e.target.value)} aria-label="Floor" className="rn-input">
+            <AppSelect value={selectedFloor} onChange={(e) => setSelectedFloor(e.target.value)} aria-label="Floor" className="rn-input">
               <option value="ALL">All floors</option>
               {floors.map((fl) => (
                 <option key={fl} value={fl}>
                   {formatFloorLabel(fl)}
                 </option>
               ))}
-            </select>
-            <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as any)} aria-label="Status" className="rn-input">
+            </AppSelect>
+            <AppSelect value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as any)} aria-label="Status" className="rn-input">
               <option value="ALL">All rooms</option>
               <option value="VACANT">Has free beds</option>
               <option value="OCCUPIED">Occupied</option>
-            </select>
+            </AppSelect>
             <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">
               {filteredRooms.length} room{filteredRooms.length !== 1 ? "s" : ""}
             </span>
@@ -1147,7 +1148,7 @@ export default function RoomsPage() {
                           No checked-out residents found. Please switch to the &ldquo;Register New Tenant&rdquo; tab.
                         </div>
                       ) : (
-                        <select
+                        <AppSelect
                           required
                           value={selectedExistingResidentId}
                           onChange={(e) => setSelectedExistingResidentId(e.target.value)}
@@ -1159,7 +1160,7 @@ export default function RoomsPage() {
                               {r.fullName} &bull; {r.phone}
                             </option>
                           ))}
-                        </select>
+                        </AppSelect>
                       )}
                     </div>
                   </div>
@@ -1229,7 +1230,7 @@ export default function RoomsPage() {
                   {(assigningRoom.beds?.length ?? 0) > 0 && (
                     <div>
                       <label htmlFor="assign-bed" className="block text-xs font-semibold text-[#1A2E20] mb-1">Bed</label>
-                      <select
+                      <AppSelect
                         id="assign-bed"
                         value={assignBedId}
                         onChange={(e) => setAssignBedId(e.target.value)}
@@ -1239,7 +1240,7 @@ export default function RoomsPage() {
                         {(assigningRoom.beds ?? []).filter((b) => b.status === "IN_SERVICE" && !b.occupant).map((b) => (
                           <option key={b.id} value={b.id}>{b.label}</option>
                         ))}
-                      </select>
+                      </AppSelect>
                     </div>
                   )}
                 </div>
@@ -1440,7 +1441,7 @@ export default function RoomsPage() {
                 <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                   Sharing / Room Type *
                 </label>
-                <select
+                <AppSelect
                   value={addFormData.type}
                   onChange={(e) =>
                     setAddFormData({
@@ -1454,7 +1455,7 @@ export default function RoomsPage() {
                   <option value="DOUBLE_SHARING">Double Sharing</option>
                   <option value="TRIPLE_SHARING">Triple Sharing</option>
                   <option value="EXECUTIVE_SUITE">Executive Suite</option>
-                </select>
+                </AppSelect>
               </div>
 
               <div>
@@ -1621,7 +1622,7 @@ export default function RoomsPage() {
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                     Room Type
                   </label>
-                  <select
+                  <AppSelect
                     value={editFormData.type}
                     onChange={(e) =>
                       setEditFormData({
@@ -1635,7 +1636,7 @@ export default function RoomsPage() {
                     <option value="DOUBLE_SHARING">Double Sharing</option>
                     <option value="TRIPLE_SHARING">Triple Sharing</option>
                     <option value="EXECUTIVE_SUITE">Executive Suite</option>
-                  </select>
+                  </AppSelect>
                 </div>
 
                 <div>

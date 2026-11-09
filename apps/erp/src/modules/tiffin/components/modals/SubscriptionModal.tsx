@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import {
   X,
@@ -263,7 +264,7 @@ export function SubscriptionModal({
             <label htmlFor="sub-customer" className="block text-xs font-semibold text-[#1A2E20] mb-1">
               Customer <span className="text-red-500">*</span>
             </label>
-            <select
+            <AppSelect
               id="sub-customer"
               value={customerId}
               onChange={(e) => handleCustomerChange(e.target.value)}
@@ -277,7 +278,7 @@ export function SubscriptionModal({
                   {c.fullName} ({c.phone}) — {c.customerType} [{c.dietaryPreference}]
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           {/* Product / Package Selection */}
@@ -285,7 +286,7 @@ export function SubscriptionModal({
             <label htmlFor="sub-product" className="block text-xs font-semibold text-[#1A2E20] mb-1">
               Meal Package / Catalog Product <span className="text-red-500">*</span>
             </label>
-            <select
+            <AppSelect
               id="sub-product"
               value={productId}
               onChange={(e) => handleProductChange(e.target.value)}
@@ -299,7 +300,7 @@ export function SubscriptionModal({
                   [{p.code}] {p.name} — {formatINR(p.price)} / {p.billingUnit.toLowerCase().replace("per_", "")} ({p.category})
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           {/* Service Dates */}
@@ -342,7 +343,7 @@ export function SubscriptionModal({
               <label htmlFor="sub-meal-types" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Meal Delivery
               </label>
-              <select
+              <AppSelect
                 id="sub-meal-types"
                 value={mealTypes}
                 onChange={(e) => setMealTypes(e.target.value as SubscriptionMealTypes)}
@@ -352,14 +353,14 @@ export function SubscriptionModal({
                 <option value="LUNCH">Lunch Only</option>
                 <option value="DINNER">Dinner Only</option>
                 <option value="BREAKFAST">Breakfast Only</option>
-              </select>
+              </AppSelect>
             </div>
 
             <div>
               <label htmlFor="sub-service-days" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Service Days
               </label>
-              <select
+              <AppSelect
                 id="sub-service-days"
                 value={serviceDays}
                 onChange={(e) => setServiceDays(e.target.value as SubscriptionServiceDays)}
@@ -368,7 +369,7 @@ export function SubscriptionModal({
                 <option value="ALL_DAYS">All 7 Days</option>
                 <option value="MON_SAT">Mon - Sat (6 Days)</option>
                 <option value="MON_FRI">Mon - Fri (5 Days)</option>
-              </select>
+              </AppSelect>
             </div>
 
             <div>

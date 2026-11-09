@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { formatMoney } from "@/lib/format";
@@ -205,9 +206,9 @@ export function ReceivePaymentDialog({
             </label>
             <label className="min-w-0">
               <span className="rn-t-label block mb-1">Paid by</span>
-              <select value={method} onChange={(e) => setMethod(e.target.value as Method)} className="rn-input w-full" aria-label="Payment method">
+              <AppSelect value={method} onChange={(e) => setMethod(e.target.value as Method)} className="rn-input w-full" aria-label="Payment method">
                 {METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
+              </AppSelect>
             </label>
             <label className="min-w-0">
               <span className="rn-t-label block mb-1">Date</span>

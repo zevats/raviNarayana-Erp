@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import {
   FileText,
@@ -344,7 +345,7 @@ export function ResidentKycSection({
                 <label className="block text-[11px] font-medium text-[#1A2E20] mb-1">
                   Document Category
                 </label>
-                <select
+                <AppSelect
                   value={uploadCategory}
                   onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
                   className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20"
@@ -352,7 +353,7 @@ export function ResidentKycSection({
                   <option value="RESIDENT_KYC">Resident Identity (Aadhaar / Voter ID / Passport)</option>
                   <option value="RESIDENT_ADDRESS_PROOF">Address Proof (Utility Bill / Agreement)</option>
                   <option value="OPERATIONAL_ATTACHMENT">Other Authorized Attachment</option>
-                </select>
+                </AppSelect>
               </div>
 
               <div>

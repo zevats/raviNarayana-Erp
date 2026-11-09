@@ -1,10 +1,11 @@
+import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission, AuthorizationError } from "../authorization/authorize";
 import { hasPermission } from "../authorization/permissions";
 import { RENT_SETTLEMENT_SQL } from "./financialDefinitions";
 import { hasDeliveryOpsSchema, activeCollectionSql } from "../delivery/deliveryRules";
-import { hasPayLaterSchema } from "../database/schemaFeatures";
-import { acquireLedgerKeyLock, getBusinessDateString, recordRentPayment } from "./financeService";
+import { hasPayLaterSchema, hasDineInPayLaterSchema } from "../database/schemaFeatures";
+import { acquireLedgerKeyLock, getBusinessDateString, recordRentPayment, assertClosingDateNotFinalized } from "./financeService";
 import { recordTiffinPayment } from "../tiffin/tiffinBillingService";
 import { recordDeliveryCollection } from "../delivery/deliveryService";
 import { recordAuditEventAsync } from "../audit/audit";
@@ -108,6 +109,7 @@ function requireReceivablesRead(actor: AuthenticatedUser) {
 async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promise<{ sql: string; params: any[] }> {
   const ops = await hasDeliveryOpsSchema(db);
   const pay = await hasPayLaterSchema(db);
+  const dine = await hasDineInPayLaterSchema(db);
   const activeDc = ops ? `AND ${activeCollectionSql("dc")}` : "";
   const age = (col: string) => `GREATEST(0, (DATE '${today}' - CAST(${col} AS date)))`;
   const params: any[] = [];
@@ -119,10 +121,10 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
     residentFilter = k === "R" ? "AND resident_id = ?" : "AND 1 = 0";
     customerFilter = k === "C" ? "AND i.customer_id = ?" : "AND 1 = 0";
     orderFilter = k === "C" ? "AND o.customer_id = ?" : k === "O" ? "AND o.id = ? AND o.customer_id IS NULL" : "AND 1 = 0";
-    // Parameters follow the text order: pg_ch, pg_st, tf, tf_credit, od.
+    // Parameters follow the text order: pg_ch, pg_st, tf, tf_credit, od, then dn (dine-in Pay Later).
     if (k === "R") params.push(id, id);
-    if (k === "C") params.push(id, id, id);
-    if (k === "O") params.push(id);
+    if (k === "C") params.push(id, id, id, ...(dine ? [id] : []));
+    if (k === "O") params.push(id, ...(dine ? [id] : []));
   }
   const orderMoney = accountKey
     ? `(SELECT COALESCE(SUM(COALESCE(oi.delivered_quantity, oi.quantity) * oi.unit_price), 0) FROM order_items oi WHERE oi.order_id = o.id) AS due,
@@ -229,8 +231,21 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
              '/finance?tab=receivables' AS link
       FROM od_f od GROUP BY od.account_kind, od.account_id HAVING MAX(od.surplus) > MAX(od.total_short)
     ),
+    ${dine ? `dn AS (
+      -- Dine-in orders taken on Pay Later (migration 0024): owed in full until they are paid.
+      SELECT 'DELIVERY' AS source, CASE WHEN o.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
+             COALESCE(o.customer_id, o.id) AS account_id,
+             'ORDER' AS kind, o.id AS ref_id,
+             'Dine in · ' || INITCAP(LOWER(o.meal_type)) || ' · ' || to_char(CAST(o.service_date AS date), 'DD Mon YYYY') AS reference,
+             'Dine-in order, Pay Later' AS description,
+             o.service_date AS date, NULL AS due_date, o.total_amount AS amount, 0 AS paid, o.total_amount AS outstanding,
+             o.payment_choice, NULL AS review,
+             '/orders?date=' || o.service_date AS link
+      FROM orders o
+      WHERE o.order_type = 'DINE_IN' AND o.status <> 'CANCELLED' AND o.financial_transaction_id IS NULL AND o.payment_choice = 'PAY_LATER' AND o.total_amount > 0 ${orderFilter}
+    ),` : ""}
     lines AS (
-      SELECT * FROM pg UNION ALL SELECT * FROM tf UNION ALL SELECT * FROM tf_credit UNION ALL SELECT * FROM dl UNION ALL SELECT * FROM dl_credit
+      SELECT * FROM pg UNION ALL SELECT * FROM tf UNION ALL SELECT * FROM tf_credit UNION ALL SELECT * FROM dl UNION ALL SELECT * FROM dl_credit${dine ? " UNION ALL SELECT * FROM dn" : ""}
     )
     SELECT l.*, l.account_kind || ':' || l.account_id AS account_key,
            ${age("l.date")} AS age_days,
@@ -573,6 +588,21 @@ async function statementEvents(db: AsyncDb, accountKey: string): Promise<Omit<St
     }
   }
 
+  if ((kind === "C" || kind === "O") && (await hasDineInPayLaterSchema(db))) {
+    const dine = await db.query<any>(
+      `SELECT o.id, o.service_date, o.meal_type, o.total_amount, o.created_at, f.amount AS paid, f.transaction_date AS paid_on, f.created_at AS paid_at, f.payment_method AS paid_method, f.status AS paid_status
+       FROM orders o LEFT JOIN financial_transactions f ON f.id = o.financial_transaction_id
+       WHERE o.order_type = 'DINE_IN' AND o.payment_choice = 'PAY_LATER' AND o.status <> 'CANCELLED' AND ${kind === "C" ? "o.customer_id = ?" : "o.id = ? AND o.customer_id IS NULL"}`,
+      [id]
+    );
+    for (const o of dine) {
+      const label = `Dine in · ${String(o.meal_type).charAt(0)}${String(o.meal_type).slice(1).toLowerCase()} · ${o.service_date}`;
+      ev({ date: o.service_date, at: o.created_at, source: "DELIVERY", type: "Dine-in order", description: "Dine-in order · Pay Later", reference: label, charge: n(o.total_amount) });
+      if (o.paid_status === "POSTED") {
+        ev({ date: o.paid_on, at: o.paid_at, source: "DELIVERY", type: "Order payment", description: "Payment for dine-in order", reference: label, payment: n(o.paid), method: o.paid_method });
+      }
+    }
+  }
   if (kind === "C" || kind === "O") {
     const ops = await hasDeliveryOpsSchema(db);
     const pay = await hasPayLaterSchema(db);
@@ -717,7 +747,7 @@ async function recordedUnderKey(tx: AsyncDb, key: string) {
     const m = /^([A-Z]+):([^:]+)$/.exec(k.slice(key.length + 1));
     if (m && sources.includes(m[1])) items.set(`${m[1]}:${m[2]}`, { amount: Number(row.amount), method: row.payment_method, date, reference });
   };
-  for (const r of ledger) add(r.idempotency_key, ["PG", "TIFFIN"], r, r.transaction_date, r.reference_number || null);
+  for (const r of ledger) add(r.idempotency_key, ["PG", "TIFFIN", "DELIVERY"], r, r.transaction_date, r.reference_number || null);
   for (const r of collections) add(r.idempotency_key, ["DELIVERY"], r, null, null);
   return items;
 }
@@ -800,6 +830,32 @@ export async function receiveAccountPayment(actor: AuthenticatedUser, input: Rec
           { asAccountPayment: true }
         );
         results.push({ source: "TIFFIN", refId: it.refId, amount, recordId: r.transaction.id });
+      } else if ((await tx.queryOne<{ n: number }>("SELECT 1 AS n FROM orders WHERE id = ? AND order_type = 'DINE_IN'", [it.refId])) !== null) {
+        const o = await tx.queryOne<any>("SELECT * FROM orders WHERE id = ? FOR UPDATE", [it.refId]);
+        const belongs = o && ((header.kind === "CUSTOMER" && o.customer_id === header.id) || (header.kind === "ORDER" && !o.customer_id && it.refId === header.id));
+        if (!o || !belongs) throw new Error("This order does not belong to the account.");
+        let txId: string | null = o.financial_transaction_id;
+        if (txId) {
+          const prior = await tx.queryOne<{ idempotency_key: string | null }>("SELECT idempotency_key FROM financial_transactions WHERE id = ?", [txId]);
+          if (prior?.idempotency_key !== itemKey) throw new Error("This dine-in order is already paid.");
+        } else {
+          if (amount !== Number(o.total_amount)) {
+            throw new Error(`A dine-in order is paid in full: ₹${Number(o.total_amount).toLocaleString("en-IN")}.`);
+          }
+          await assertClosingDateNotFinalized(tx, date, "TIFFIN");
+          txId = `ftx_${crypto.randomUUID()}`;
+          const nowIso = new Date().toISOString();
+          await tx.execute(
+            `INSERT INTO financial_transactions (
+               id, transaction_type, amount, transaction_date, payment_method, reference_number, resident_id, customer_id,
+               stay_id, category, description, billing_period, payee_vendor, idempotency_key, status, reversal_of_id,
+               created_by, created_at, updated_at
+             ) VALUES (?, 'TIFFIN_PAYMENT', ?, ?, ?, ?, NULL, NULL, NULL, 'TIFFIN_WALKIN_SALE', ?, NULL, NULL, ?, 'POSTED', NULL, ?, ?, ?)`,
+            [txId, amount, date, method, input.referenceNumber?.trim() || null, `Dine-in Pay Later paid: ${o.customer_name} (${o.service_date})`, itemKey, actor.id, nowIso, nowIso]
+          );
+          await tx.execute("UPDATE orders SET financial_transaction_id = ?, payment_method = ?, updated_at = ? WHERE id = ?", [txId, method, nowIso, it.refId]);
+        }
+        results.push({ source: "DELIVERY", refId: it.refId, amount, recordId: txId });
       } else {
         const o = await tx.queryOne<{ customer_id: string | null; delivery_task_id: string }>("SELECT customer_id, delivery_task_id FROM orders WHERE id = ? AND order_type = 'DELIVERY'", [it.refId]);
         const belongs = o && ((header.kind === "CUSTOMER" && o.customer_id === header.id) || (header.kind === "ORDER" && !o.customer_id && it.refId === header.id));

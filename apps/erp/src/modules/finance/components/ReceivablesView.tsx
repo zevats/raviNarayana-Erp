@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, ExternalLink, AlertTriangle } from "lucide-react";
@@ -199,20 +200,20 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
           <label className="min-w-0">
             <span className="rn-t-label block mb-1">Payment status</span>
-            <select value={status} onChange={(e) => setStatus(e.target.value as any)} className="rn-input w-full">
+            <AppSelect value={status} onChange={(e) => setStatus(e.target.value as any)} className="rn-input w-full">
               <option value="ALL">All</option>
               <option value="UNPAID">Unpaid</option>
               <option value="PARTIALLY_PAID">Partly paid</option>
-            </select>
+            </AppSelect>
           </label>
           <label className="min-w-0">
             <span className="rn-t-label block mb-1">Ageing</span>
-            <select value={bucket} onChange={(e) => setBucket(e.target.value as Bucket)} className="rn-input w-full">
+            <AppSelect value={bucket} onChange={(e) => setBucket(e.target.value as Bucket)} className="rn-input w-full">
               <option value="ALL">All ages</option>
               {(Object.keys(BUCKET_LABEL) as Array<Exclude<Bucket, "ALL">>).map((b) => (
                 <option key={b} value={b}>{BUCKET_LABEL[b]}</option>
               ))}
-            </select>
+            </AppSelect>
           </label>
           <label className="min-w-0">
             <span className="rn-t-label block mb-1">Outstanding since</span>

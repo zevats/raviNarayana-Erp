@@ -1,13 +1,16 @@
 "use client";
 
 import React, { useState } from "react";
-import { SkipForward, Plus, Undo2, Home, UtensilsCrossed } from "lucide-react";
-import type { MealType, SubscriptionDayRow, ResidentMealDeliveryRow } from "@/types";
+import dynamic from "next/dynamic";
+import { SkipForward, Plus, Undo2, Home, UtensilsCrossed, ShoppingBag, UserPlus, Users, X } from "lucide-react";
+import type { MealType, SubscriptionDayRow, ResidentMealDeliveryRow, TiffinCustomer, TiffinProduct } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
-import { useSubscriptionDay, useResidentDay, postJson } from "./data";
+import { useSubscriptionDay, useResidentDay, postJson, getJson } from "./data";
 import { MealSwitch, DateStepper, Notice, btn } from "./ui";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+
+const SubscriptionModal = dynamic(() => import("@/modules/tiffin/components/modals/SubscriptionModal").then((m) => m.SubscriptionModal), { ssr: false });
 
 const STATUS_LABEL: Record<string, string> = {
   PENDING: "On the list",
@@ -19,11 +22,12 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /**
- * Orders → Subscriptions: every active or paused subscription for the chosen day and meal, with
- * skip today / extra today, and residents' room delivery. Changes after the meal cutoff (lunch
- * 07:30, dinner 15:00) need a reason (Manager override); the server enforces the same rules.
+ * Orders → Subscriptions: every active or paused subscription for the chosen day and meal (the meal
+ * of the moment is chosen by the time of day), with skip today / extra today, Take order (an order
+ * for that subscriber), New subscription (for an existing customer or a new outside customer), and
+ * residents' room delivery. There is no time cutoff within the day; a past day needs a reason.
  */
-export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
+export function SubscriptionsToday({ canChange, onTakeOrder }: { canChange: boolean; onTakeOrder?: (customer: TiffinCustomer) => void }) {
   const today = businessToday();
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
@@ -34,6 +38,57 @@ export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
   const [reasonFor, setReasonFor] = useState<{ key: string; run: (reason: string) => Promise<void> } | null>(null);
   const [reason, setReason] = useState("");
   const listing = subs.data;
+  // New subscription: choose who (existing customer or a new outside customer), then the plan.
+  const [newSub, setNewSub] = useState<null | { step: "who" | "customer" | "plan"; customerId?: string }>(null);
+  const [lists, setLists] = useState<{ customers: TiffinCustomer[]; products: TiffinProduct[] } | null>(null);
+  const [nc, setNc] = useState({ name: "", phone: "", address: "" });
+  const [ncBusy, setNcBusy] = useState(false);
+  const [ncError, setNcError] = useState<string | null>(null);
+  const loadLists = async () => {
+    const [c, p] = await Promise.all([
+      getJson<{ customers: TiffinCustomer[] }>("/api/tiffin/customers?status=ACTIVE&limit=200"),
+      getJson<{ products: TiffinProduct[] }>("/api/tiffin/products?status=ACTIVE"),
+    ]);
+    const next = { customers: c.customers || [], products: p.products || [] };
+    setLists(next);
+    return next;
+  };
+  const openNew = () => {
+    setNewSub({ step: "who" });
+    setNc({ name: "", phone: "", address: "" });
+    setNcError(null);
+    void loadLists().catch((e) => setMsg({ tone: "error", text: e.message }));
+  };
+  const createCustomer = async () => {
+    if (nc.name.trim().length < 2 || nc.phone.trim().length < 7 || nc.address.trim().length < 5) {
+      setNcError("Enter the name, a phone number and the delivery address.");
+      return;
+    }
+    setNcBusy(true);
+    setNcError(null);
+    try {
+      const res = await fetch("/api/tiffin/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName: nc.name.trim(), phone: nc.phone.trim(), deliveryAddress: nc.address.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Could not add the customer.");
+      invalidateErpCache(["tiffin_customers", "customers"]);
+      const fresh = await loadLists();
+      if (!fresh.customers.some((c) => c.id === data.customer.id)) fresh.customers.unshift(data.customer);
+      setLists({ ...fresh });
+      setNewSub({ step: "plan", customerId: data.customer.id });
+    } catch (e: any) {
+      setNcError(e.message);
+    } finally {
+      setNcBusy(false);
+    }
+  };
+  const takeOrder = (r: SubscriptionDayRow) => {
+    if (!onTakeOrder || !r.customerId) return;
+    onTakeOrder({ id: r.customerId, fullName: r.customerName, phone: r.customerPhone || "", deliveryAddress: r.customerAddress || "", status: "ACTIVE" } as TiffinCustomer);
+  };
   const pastCutoff = Boolean(listing?.pastCutoff);
   const editable = canChange && Boolean(listing?.schemaReady) && date >= today;
 
@@ -92,25 +147,28 @@ export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="font-serif text-2xl text-text-primary">Subscriptions</h2>
-          <p className="text-xs text-text-muted">
-            {listing?.cutoffAt ? `Changes after ${listing.cutoffAt} need a reason.` : ""}
-          </p>
+          <h2 className="text-2xl font-bold text-[var(--rn-ink)]">Subscriptions</h2>
+          <p className="text-[12.5px] text-[var(--rn-ink-2)]">Monthly tiffin plans: residents and outside customers.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <MealSwitch value={meal} onChange={setMeal} />
           <DateStepper value={date} today={today} onChange={setDate} />
+          {canChange && (
+            <button type="button" onClick={openNew} className="rn-btn rn-btn-primary">
+              <Plus /> New subscription
+            </button>
+          )}
         </div>
       </div>
 
       {listing && !listing.schemaReady && (
         <Notice tone="warn">Skip today, extra today and room delivery need the latest database update, which is not installed yet.</Notice>
       )}
-      {pastCutoff && listing?.schemaReady && date >= today && <Notice tone="warn">This meal is past its cutoff: each change is recorded as a Manager override and needs a reason.</Notice>}
+
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
       {reasonFor && (
         <div className="rn-enter rounded-2xl border border-status-warning-border bg-status-warning-bg p-3 flex flex-wrap gap-2 items-center">
-          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for the change after the cutoff" className="flex-1 min-w-[220px] min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-white text-sm" />
+          <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for changing a past day" className="flex-1 min-w-[220px] min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-white text-sm" />
           <button type="button" disabled={reason.trim().length < 3 || Boolean(busy)} onClick={confirmReason} className={btn.primary}>Confirm override</button>
           <button type="button" onClick={() => setReasonFor(null)} className={btn.quiet}>Cancel</button>
         </div>
@@ -143,6 +201,11 @@ export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
                       {r.override?.afterCutoff ? " · override" : ""}
                     </span>
                     {r.task && <span className="text-xs text-text-secondary">{STATUS_LABEL[r.task.status] || r.task.status}{r.task.assignedToName ? ` · ${r.task.assignedToName}` : ""}</span>}
+                    {onTakeOrder && r.customerId && date >= today && (
+                      <button type="button" onClick={() => takeOrder(r)} className={btn.quiet} aria-label={`Take an order for ${r.customerName}`}>
+                        <ShoppingBag className="w-4 h-4" /> Take order
+                      </button>
+                    )}
                     {editable && r.eligible && !done && (
                       <>
                         {r.override ? (
@@ -225,6 +288,78 @@ export function SubscriptionsToday({ canChange }: { canChange: boolean }) {
           </ul>
         )}
       </section>
+
+      {newSub?.step === "who" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(24,16,10,0.42)]" onMouseDown={(e) => e.target === e.currentTarget && setNewSub(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="new-sub-title" className="w-full max-w-[460px] rounded-[26px] bg-white p-5 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="new-sub-title" className="text-[20px] font-bold text-[var(--rn-ink)]">New subscription for</h2>
+              <button type="button" onClick={() => setNewSub(null)} aria-label="Close" className="w-10 h-10 -mr-2 -mt-1 rounded-full flex items-center justify-center hover:bg-[var(--rn-accent-tint)]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <button type="button" disabled={!lists} onClick={() => setNewSub({ step: "plan" })} className="rounded-[18px] border border-[var(--rn-line)] p-4 text-left hover:border-[var(--rn-accent)] disabled:opacity-60">
+                <Users className="w-5 h-5 text-[var(--rn-accent)]" />
+                <span className="mt-2 block text-[15px] font-bold text-[var(--rn-ink)]">Existing customer</span>
+                <span className="block text-[12.5px] text-[var(--rn-ink-2)]">{lists ? "Choose from your customers" : "Loading customers…"}</span>
+              </button>
+              <button type="button" onClick={() => setNewSub({ step: "customer" })} className="rounded-[18px] border border-[var(--rn-line)] p-4 text-left hover:border-[var(--rn-accent)]">
+                <UserPlus className="w-5 h-5 text-[var(--rn-accent)]" />
+                <span className="mt-2 block text-[15px] font-bold text-[var(--rn-ink)]">New outside customer</span>
+                <span className="block text-[12.5px] text-[var(--rn-ink-2)]">Anyone can buy a plan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {newSub?.step === "customer" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[rgba(24,16,10,0.42)]" onMouseDown={(e) => e.target === e.currentTarget && setNewSub(null)}>
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-sub-cust-title"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void createCustomer();
+            }}
+            className="w-full max-w-[460px] rounded-[26px] bg-white p-5 shadow-2xl space-y-3"
+          >
+            <h2 id="new-sub-cust-title" className="text-[20px] font-bold text-[var(--rn-ink)]">New customer</h2>
+            {ncError && <p role="alert" className="rounded-xl bg-[#FDECEA] px-3 py-2 text-[13px] text-[#8A1F12]">{ncError}</p>}
+            {(
+              [
+                ["name", "Full name", "text", "Customer name"],
+                ["phone", "Phone number", "tel", "e.g. 9812345678"],
+                ["address", "Delivery address", "text", "Flat, building, landmark, area"],
+              ] as const
+            ).map(([k, label, type, ph]) => (
+              <label key={k} className="block">
+                <span className="block text-[13px] font-semibold text-[var(--rn-ink-2)] mb-1">{label}</span>
+                <input type={type} value={nc[k]} placeholder={ph} onChange={(e) => setNc((v) => ({ ...v, [k]: e.target.value }))} className="w-full h-11 px-3.5 rounded-xl border border-[var(--rn-line)] text-[14px]" />
+              </label>
+            ))}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setNewSub({ step: "who" })} className="h-11 px-4 rounded-full text-[14px] font-semibold text-[var(--rn-ink-2)] hover:bg-[var(--rn-accent-tint)]">Back</button>
+              <button type="submit" disabled={ncBusy} className="h-11 px-5 rounded-full bg-[var(--rn-accent)] text-white text-[14px] font-bold disabled:opacity-60">{ncBusy ? "Adding…" : "Continue to the plan"}</button>
+            </div>
+          </form>
+        </div>
+      )}
+      {newSub?.step === "plan" && lists && (
+        <SubscriptionModal
+          isOpen
+          onClose={() => setNewSub(null)}
+          customers={lists.customers}
+          products={lists.products}
+          preselectedCustomerId={newSub.customerId}
+          onSuccess={(_s, message) => {
+            setNewSub(null);
+            invalidateErpCache(["subscriptions", "tiffin_subscriptions", "delivery", "orders"]);
+            setMsg({ tone: "ok", text: message });
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useRef } from "react";
 import { X, FileText, CheckCircle2, AlertCircle, AlertTriangle, ShieldCheck, Calendar, Info } from "lucide-react";
 import { TiffinBillingPeriodPreview, GenerateTiffinInvoicesResult } from "@/types";
@@ -193,7 +194,7 @@ export function GenerateTiffinInvoicesModal({
               <label className="text-xs font-semibold text-[#1A2E20] block mb-1">
                 Payment Terms
               </label>
-              <select
+              <AppSelect
                 value={paymentTermsDays}
                 onChange={(e) => setPaymentTermsDays(Number(e.target.value))}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:ring-1 focus:ring-[#1A2E20]"
@@ -202,7 +203,7 @@ export function GenerateTiffinInvoicesModal({
                 <option value={15}>Net 15 Days (Standard)</option>
                 <option value={30}>Net 30 Days (Corporate)</option>
                 <option value={0}>Immediate / Due on Receipt</option>
-              </select>
+              </AppSelect>
             </div>
 
             <div>

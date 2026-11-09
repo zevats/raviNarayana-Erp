@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Utensils,
@@ -241,7 +242,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
         </div>
 
         <div className="flex items-center gap-3">
-          <select
+          <AppSelect
             value={selectedMealType}
             onChange={(e) => setSelectedMealType(e.target.value)}
             className="bg-[#1A2E20] border border-[#8E9F89]/30 rounded-lg px-3 py-1.5 text-xs text-[#FAF8F5] focus:outline-none focus:border-[#B58A57]"
@@ -250,7 +251,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
             <option value="BREAKFAST">Breakfast</option>
             <option value="LUNCH">Lunch</option>
             <option value="DINNER">Dinner</option>
-          </select>
+          </AppSelect>
 
           <button
             onClick={loadData}
@@ -424,7 +425,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                 </div>
                 <div>
                   <label className="block text-[#8E9F89] mb-1 uppercase tracking-wider font-mono">Meal Service</label>
-                  <select
+                  <AppSelect
                     value={formMealType}
                     onChange={(e) => setFormMealType(e.target.value as MealType | "")}
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
@@ -433,7 +434,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                     <option value="BREAKFAST">Breakfast</option>
                     <option value="LUNCH">Lunch</option>
                     <option value="DINNER">Dinner</option>
-                  </select>
+                  </AppSelect>
                 </div>
               </div>
 
@@ -485,7 +486,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                     return (
                       <div key={idx} className="flex items-center gap-2 bg-[#263B2D]/50 p-2 rounded border border-[#8E9F89]/20">
                         <div className="flex-1">
-                          <select
+                          <AppSelect
                             value={ing.materialId}
                             onChange={(e) => updateIngredientLine(idx, "materialId", e.target.value)}
                             className="w-full bg-[#1A2E20] border border-[#8E9F89]/30 rounded p-1.5 text-xs text-[#FAF8F5]"
@@ -495,7 +496,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                                 {m.name} ({m.code}) - {m.baseUnit}
                               </option>
                             ))}
-                          </select>
+                          </AppSelect>
                         </div>
                         <div className="w-24">
                           <input
@@ -510,7 +511,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                           />
                         </div>
                         <div className="w-20">
-                          <select
+                          <AppSelect
                             value={ing.unit}
                             onChange={(e) => updateIngredientLine(idx, "unit", e.target.value)}
                             className="w-full bg-[#1A2E20] border border-[#8E9F89]/30 rounded p-1.5 text-xs text-[#FAF8F5]"
@@ -529,7 +530,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                             )}
                             {selectedMat?.baseUnit === "PCS" && <option value="PCS">PCS</option>}
                             {!selectedMat && <option value="G">G</option>}
-                          </select>
+                          </AppSelect>
                         </div>
                         <div className="w-28">
                           <input

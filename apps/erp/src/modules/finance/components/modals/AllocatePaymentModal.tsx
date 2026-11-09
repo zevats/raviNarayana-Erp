@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, AlertCircle, CheckCircle2, AlertTriangle } from "lucide-react";
 import { Invoice, InvoicePaymentAllocation } from "@/types";
@@ -229,7 +230,7 @@ export function AllocatePaymentModal({
                 <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                   Select Unallocated Payment <span className="text-red-500">*</span>
                 </label>
-                <select
+                <AppSelect
                   value={selectedPaymentId}
                   onChange={(e) => handlePaymentSelect(e.target.value)}
                   required
@@ -240,7 +241,7 @@ export function AllocatePaymentModal({
                       {p.transactionDate} — ₹{formatINR(p.amount)} ({p.paymentMethod || "CASH"}) • Available: ₹{formatINR(p.unallocatedAmount)}
                     </option>
                   ))}
-                </select>
+                </AppSelect>
                 {selectedPayment && (
                   <div className="text-[11px] text-[#5A6C5E] mt-1">
                     Reference: {selectedPayment.referenceNumber || "None"} • Unallocated Remaining: ₹{formatINR(selectedPayment.unallocatedAmount)}

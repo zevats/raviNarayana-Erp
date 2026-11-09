@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, CheckCircle2, AlertCircle, ArrowRight, DollarSign } from "lucide-react";
 import { PaymentMethod, TiffinCustomerBalanceSummary } from "@/types";
@@ -183,7 +184,7 @@ export function RecordTiffinPaymentModal({
             <label className="text-xs font-semibold text-[#1A2E20] block mb-1">
               Select Customer
             </label>
-            <select
+            <AppSelect
               value={customerId}
               onChange={(e) => {
                 setCustomerId(e.target.value);
@@ -197,7 +198,7 @@ export function RecordTiffinPaymentModal({
                   {c.name} {c.companyName ? `(${c.companyName})` : ""} [{c.customerType}]
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           {/* Customer Balance Snapshot */}
@@ -258,7 +259,7 @@ export function RecordTiffinPaymentModal({
               <label className="text-xs font-semibold text-[#1A2E20] block mb-1">
                 Payment Method *
               </label>
-              <select
+              <AppSelect
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -267,7 +268,7 @@ export function RecordTiffinPaymentModal({
                 <option value="CASH">Cash Payment</option>
                 <option value="BANK_TRANSFER">Bank Transfer (NEFT/IMPS)</option>
                 <option value="CHEQUE">Cheque</option>
-              </select>
+              </AppSelect>
             </div>
 
             <div>
@@ -290,7 +291,7 @@ export function RecordTiffinPaymentModal({
               <label className="text-xs font-semibold text-[#1A2E20] block mb-1">
                 Allocate to Specific Invoice (Optional)
               </label>
-              <select
+              <AppSelect
                 value={invoiceId}
                 onChange={(e) => setInvoiceId(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -303,7 +304,7 @@ export function RecordTiffinPaymentModal({
                       {inv.invoiceNumber || "Draft"} - Period: {inv.billingPeriod} (Due: ₹{inv.balanceDue.toLocaleString("en-IN")})
                     </option>
                   ))}
-              </select>
+              </AppSelect>
             </div>
           )}
 

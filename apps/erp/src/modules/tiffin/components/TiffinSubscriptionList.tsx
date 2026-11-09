@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
   Search,
@@ -302,7 +303,7 @@ export function TiffinSubscriptionList() {
           </div>
 
           {/* Status filter */}
-          <select
+          <AppSelect
             value={statusFilter}
             onChange={(e) => {
               setStatusFilter(e.target.value);
@@ -315,10 +316,10 @@ export function TiffinSubscriptionList() {
             <option value="PAUSED">Paused</option>
             <option value="CANCELLED">Cancelled</option>
             <option value="EXPIRED">Expired</option>
-          </select>
+          </AppSelect>
 
           {/* Meal Types filter */}
-          <select
+          <AppSelect
             value={mealFilter}
             onChange={(e) => {
               setMealFilter(e.target.value);
@@ -331,10 +332,10 @@ export function TiffinSubscriptionList() {
             <option value="LUNCH">Lunch Only</option>
             <option value="DINNER">Dinner Only</option>
             <option value="BREAKFAST">Breakfast</option>
-          </select>
+          </AppSelect>
 
           {/* Service Days filter */}
-          <select
+          <AppSelect
             value={daysFilter}
             onChange={(e) => {
               setDaysFilter(e.target.value);
@@ -346,7 +347,7 @@ export function TiffinSubscriptionList() {
             <option value="ALL_DAYS">7 Days (Mon - Sun)</option>
             <option value="MON_SAT">6 Days (Mon - Sat)</option>
             <option value="MON_FRI">5 Days (Mon - Fri)</option>
-          </select>
+          </AppSelect>
 
           {(statusFilter !== "ALL" || mealFilter !== "ALL" || daysFilter !== "ALL" || searchQuery) && (
             <button

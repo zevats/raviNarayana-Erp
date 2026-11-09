@@ -1,5 +1,6 @@
 "use client";
 
+import { HandoverAlert } from "@/components/notifications/HandoverAlert";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { flushSync } from "react-dom";
@@ -367,6 +368,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
           <main ref={mainRef} className="rn-main min-w-0 pb-28 lg:pb-12" data-nav-pending={navPending ? "" : undefined}>
             {navPending && pendingHref && <NavSkeleton href={pendingHref} title={pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName)} />}
             <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
+            {(user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER") && <HandoverAlert />}
           </main>
         </div>
       </div>

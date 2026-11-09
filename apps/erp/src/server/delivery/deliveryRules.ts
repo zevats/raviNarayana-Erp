@@ -52,15 +52,12 @@ export function businessClock(now: Date = new Date()): { date: string; minutes: 
 }
 
 /**
- * Whether changes to this meal now need a Manager override: the service date is past, or it is
- * today and the meal's cutoff time has been reached. A meal without a cutoff locks at day end.
+ * Whether changes to this meal now need a Manager override: only when its day has passed. There is
+ * no time cutoff within the day (owner decision 2026-11-09): orders and subscription meals for today
+ * can be changed, skipped or cancelled until the day ends. `mealType` is kept for callers.
  */
-export function isPastCutoff(serviceDate: string, mealType: MealType, now: Date = new Date()): boolean {
-  const clock = businessClock(now);
-  if (serviceDate < clock.date) return true;
-  if (serviceDate > clock.date) return false;
-  const cutoff = activeSchedule[mealType]?.cutoffAt;
-  return cutoff ? clock.minutes >= toMinutes(cutoff) : false;
+export function isPastCutoff(serviceDate: string, _mealType: MealType, now: Date = new Date()): boolean {
+  return serviceDate < businessClock(now).date;
 }
 
 /** Whether the delivery list for this meal is due for automatic preparation (today, after its time). */

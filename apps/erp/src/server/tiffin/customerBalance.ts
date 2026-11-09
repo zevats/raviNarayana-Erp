@@ -1,5 +1,6 @@
 import { AsyncDb } from "../database/db";
 import { loadOrderLedgers } from "../delivery/orderLedger";
+import { hasDineInPayLaterSchema } from "../database/schemaFeatures";
 
 export interface CustomerBalance {
   /** What the customer owes now (negative = paid ahead). Same rule as Finance -> Receivables. */
@@ -26,7 +27,7 @@ export async function loadCustomerBalancesById(db: AsyncDb, customerIds: string[
   const marks = ids.map(() => "?").join(", ");
   // Delivered orders: one pool of payments applied oldest first (orderLedger), so an advance paid at
   // the door pays the next orders and an order covered by credit is not counted as unpaid.
-  const [ledgers, bills, credits] = await Promise.all([
+  const [ledgers, bills, credits, dine] = await Promise.all([
     loadOrderLedgers(db, ids),
     db.query<{ customer_id: string; due: number | string }>(
       `SELECT customer_id, SUM(balance_due) AS due FROM invoices
@@ -42,6 +43,17 @@ export async function loadCustomerBalancesById(db: AsyncDb, customerIds: string[
        GROUP BY t.customer_id`,
       ids
     ),
+    // Dine-in orders on Pay Later, not paid yet (migration 0024).
+    hasDineInPayLaterSchema(db).then((ok) =>
+      ok
+        ? db.query<{ customer_id: string; owed: number | string; n: number | string; oldest: string | null }>(
+            `SELECT customer_id, SUM(total_amount) AS owed, COUNT(*) AS n, MIN(service_date) AS oldest FROM orders
+             WHERE order_type = 'DINE_IN' AND payment_choice = 'PAY_LATER' AND financial_transaction_id IS NULL AND status <> 'CANCELLED' AND customer_id IN (${marks})
+             GROUP BY customer_id`,
+            ids
+          )
+        : []
+    ),
   ]);
   for (const id of ids) out.set(id, { due: 0, orders: 0, bills: 0, credit: 0, unpaidOrders: 0, oldestUnpaid: null });
   for (const [id, l] of ledgers) {
@@ -50,6 +62,12 @@ export async function loadCustomerBalancesById(db: AsyncDb, customerIds: string[
     b.credit += l.advance;
     b.unpaidOrders = l.unpaidOrders;
     b.oldestUnpaid = l.oldestUnpaid;
+  }
+  for (const r of dine) {
+    const b = out.get(r.customer_id)!;
+    b.orders += Number(r.owed);
+    b.unpaidOrders += Number(r.n);
+    if (r.oldest && (!b.oldestUnpaid || r.oldest < b.oldestUnpaid)) b.oldestUnpaid = r.oldest;
   }
   for (const r of bills) out.get(r.customer_id)!.bills = Number(r.due);
   for (const r of credits) out.get(r.customer_id)!.credit += Number(r.credit);

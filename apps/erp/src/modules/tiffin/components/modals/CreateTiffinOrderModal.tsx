@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import { X, ShoppingBag, Plus, User, Phone, MapPin, Calendar, Clock, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType } from "@/types";
@@ -204,7 +205,7 @@ export function CreateTiffinOrderModal({
                 <span>New / Walk-in Customer</span>
               </button>
 
-              <select
+              <AppSelect
                 value={selectedCustomerId === "NEW" ? "" : selectedCustomerId}
                 onChange={(e) => handleCustomerChange(e.target.value || "NEW")}
                 className={`w-full px-3 py-2 text-xs rounded-xl border bg-white focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/20 ${
@@ -217,7 +218,7 @@ export function CreateTiffinOrderModal({
                     {c.fullName} ({c.phone})
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             {/* Customer Inputs */}
@@ -301,7 +302,7 @@ export function CreateTiffinOrderModal({
               </label>
               <div className="relative">
                 <Clock className="w-3.5 h-3.5 absolute left-3 top-3 text-gray-400" />
-                <select
+                <AppSelect
                   value={mealType}
                   onChange={(e) => setMealType(e.target.value as MealType)}
                   className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/20 font-medium"
@@ -309,7 +310,7 @@ export function CreateTiffinOrderModal({
                   <option value="BREAKFAST">BREAKFAST</option>
                   <option value="LUNCH">LUNCH</option>
                   <option value="DINNER">DINNER</option>
-                </select>
+                </AppSelect>
               </div>
             </div>
           </div>
@@ -332,7 +333,7 @@ export function CreateTiffinOrderModal({
                 <label className="block text-[11px] font-medium text-gray-600 mb-1">
                   Select Product
                 </label>
-                <select
+                <AppSelect
                   value={selectedProductId}
                   onChange={(e) => setSelectedProductId(e.target.value)}
                   className="w-full px-3 py-2 text-xs rounded-xl border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/20 font-medium"
@@ -343,7 +344,7 @@ export function CreateTiffinOrderModal({
                       {p.name} — ₹{p.price} ({p.category})
                     </option>
                   ))}
-                </select>
+                </AppSelect>
               </div>
 
               <div>

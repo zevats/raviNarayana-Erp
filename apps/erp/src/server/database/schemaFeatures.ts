@@ -40,5 +40,18 @@ export const hasPayLaterSchema = (db: AsyncDb) => hasColumn(db, "orders", "payme
  */
 export const hasCashShortfallSchema = (db: AsyncDb) => hasColumn(db, "driver_cash_handovers", "recorded_cash");
 
+/** Migration 0024 is installed: a dine-in order may be Pay Later (no ledger entry until paid). */
+let dineInPayLater: boolean | null = null;
+let dineInCheckedAt = 0;
+export async function hasDineInPayLaterSchema(db: AsyncDb): Promise<boolean> {
+  if (dineInPayLater) return true;
+  if (!db.isPostgres) return false;
+  if (dineInPayLater === false && Date.now() - dineInCheckedAt < 60_000) return false;
+  const row = await db.queryOne<{ d: string | null }>("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = 'chk_orders_links' LIMIT 1");
+  dineInCheckedAt = Date.now();
+  dineInPayLater = Boolean(row?.d && row.d.includes("PAY_LATER"));
+  return dineInPayLater;
+}
+
 /** Migration 0023 is installed: readable tiffin customer codes (TC-0001). */
 export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "customer_code");

@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
@@ -207,14 +208,14 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
       <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-2.5">
         <SearchField value={search} onChange={setSearch} placeholder="Search name, username or email" className="flex-1 basis-[240px]" />
         <div className="flex flex-wrap items-center gap-2">
-          <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} aria-label="Role" className="rn-input">
+          <AppSelect value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)} aria-label="Role" className="rn-input">
             <option value="ALL">All roles</option>
             {Object.keys(ROLE_LABELS).map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r as StaffRole]}
               </option>
             ))}
-          </select>
+          </AppSelect>
           <Segmented
             size="sm"
             label="Status"

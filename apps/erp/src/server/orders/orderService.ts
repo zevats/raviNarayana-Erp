@@ -1,3 +1,4 @@
+import { hasDineInPayLaterSchema } from "../database/schemaFeatures";
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { AuthorizationError } from "../authorization/authorize";
@@ -218,7 +219,7 @@ async function insertOrderRows(
 }
 
 /** Builds UnifiedOrder views from orders rows (joined with delivery task / ledger state). */
-async function loadOrders(db: AsyncDb, where: string, params: any[]): Promise<UnifiedOrder[]> {
+async function loadOrders(db: AsyncDb, where: string, params: any[], limit?: number): Promise<UnifiedOrder[]> {
   const rows = await db.query<any>(
     `SELECT
        o.*,
@@ -233,7 +234,7 @@ async function loadOrders(db: AsyncDb, where: string, params: any[]): Promise<Un
      LEFT JOIN staff_users u ON u.id = t.assigned_to
      LEFT JOIN financial_transactions ft ON ft.id = o.financial_transaction_id
      WHERE ${where}
-     ORDER BY o.created_at DESC`,
+     ORDER BY o.created_at DESC${limit ? ` LIMIT ${Math.max(1, Math.floor(limit))}` : ""}`,
     params
   );
   if (rows.length === 0) return [];
@@ -304,7 +305,9 @@ async function loadOrders(db: AsyncDb, where: string, params: any[]): Promise<Un
             ? amountDue === 0 && outcomeRecorded
               ? "PAID"
               : "PENDING"
-            : "PAID";
+            : r.payment_choice === "PAY_LATER" && r.ledger_status !== "POSTED"
+              ? "PENDING"
+              : "PAID";
     return {
       id: isDelivery ? r.delivery_task_id : r.financial_transaction_id,
       orderId: r.id,
@@ -367,16 +370,20 @@ export async function createUnifiedOrder(
   }
 
   const db = asyncDb || getAsyncDb();
-  const normalizedItems = await resolveCatalogItems(db, items);
+  // The menu prices and the replay lookup do not depend on each other: one round trip for both.
+  const [normalizedItems, priorByKey] = await Promise.all([
+    resolveCatalogItems(db, items),
+    idempotencyKey ? loadOrders(db, "o.idempotency_key = ?", [idempotencyKey]) : Promise.resolve([] as UnifiedOrder[]),
+  ]);
   const totalQuantity = normalizedItems.reduce((acc, it) => acc + it.quantity, 0);
   const totalAmount = normalizedItems.reduce((acc, it) => acc + it.lineTotal, 0);
   const now = new Date().toISOString();
   const userNotes = input.notes?.trim() || null;
 
   // Replay: the same idempotency key returns the stored order; a different payload is rejected.
-  const replay = async (lookupDb: AsyncDb): Promise<UnifiedOrder | null> => {
+  const replay = async (lookupDb: AsyncDb | null): Promise<UnifiedOrder | null> => {
     if (!idempotencyKey) return null;
-    const existing = await loadOrders(lookupDb, "o.idempotency_key = ?", [idempotencyKey]);
+    const existing = lookupDb ? await loadOrders(lookupDb, "o.idempotency_key = ?", [idempotencyKey]) : priorByKey;
     if (existing.length === 0) return null;
     const prior = existing[0];
     if (prior.orderType !== orderType || prior.totalAmount !== totalAmount || prior.serviceDate !== serviceDate) {
@@ -386,7 +393,7 @@ export async function createUnifiedOrder(
     }
     return prior;
   };
-  const replayed = await replay(db);
+  const replayed = await replay(null);
   if (replayed) return replayed;
 
   const orderId = `ord_${crypto.randomUUID()}`;
@@ -438,15 +445,13 @@ export async function createUnifiedOrder(
           ) VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
         `, [customerId, customerName, customerPhone, deliveryAddress, actor.id, now, now]);
       } else {
-        const existingCustomer = await tx.queryOne<{ id: string }>(`
-          SELECT id FROM tiffin_customers WHERE id = ? LIMIT 1
-        `, [customerId]);
-        if (!existingCustomer) {
-          throw new Error(`Customer '${customerId}' not found.`);
-        }
-        await tx.execute(`
+        // One statement: the update tells whether the customer exists.
+        const updated = await tx.execute(`
           UPDATE tiffin_customers SET delivery_address = ?, updated_at = ? WHERE id = ?
         `, [deliveryAddress, now, customerId]);
+        if (updated.changes === 0) {
+          throw new Error(`Customer '${customerId}' not found.`);
+        }
       }
 
       const extTask = await createExternalDeliveryTask(
@@ -516,7 +521,15 @@ export async function createUnifiedOrder(
   // DINE IN ORDER FLOW
   const customerName = input.customerName?.trim() || "Walk-in Guest";
   const customerPhone = input.customerPhone?.trim() || null;
-  const paymentMethod: PaymentMethod = normalizePaymentMethod(input.paymentMethod || "CASH");
+  // Pay Later at the counter (migration 0024): no cashbook entry now; the order stays on the
+  // guest's account (Finance -> Receivables) until it is paid. The guest must be identifiable.
+  const payLater = (input as any).payLater === true || String(input.paymentMethod || "").toUpperCase() === "PAY_LATER";
+  if (payLater) {
+    if (!(await hasDineInPayLaterSchema(db))) throw new Error("Pay Later for dine-in needs the latest database update, which is not installed yet.");
+    if (!input.customerName?.trim() || input.customerName.trim().length < 2) throw new Error("Enter the guest name for a Pay Later order.");
+    if (!customerPhone || customerPhone.replace(/\D/g, "").length < 7) throw new Error("Enter the guest phone number for a Pay Later order.");
+  }
+  const paymentMethod: PaymentMethod = normalizePaymentMethod(payLater ? "CASH" : input.paymentMethod || "CASH");
   const txId = `ftx_${crypto.randomUUID()}`;
 
   const itemsSummary = normalizedItems.map((it) => `${it.quantity}x ${it.productName}`).join(", ");
@@ -533,19 +546,25 @@ export async function createUnifiedOrder(
       if (raced) return;
     }
 
-    await tx.execute(`
-      INSERT INTO financial_transactions (
-        id, transaction_type, amount, transaction_date, payment_method,
-        reference_number, resident_id, customer_id, stay_id, category, description,
-        billing_period, payee_vendor, idempotency_key, status,
-        reversal_of_id, created_by, created_at, updated_at
-      ) VALUES (
-        ?, 'TIFFIN_PAYMENT', ?, ?, ?,
-        NULL, NULL, NULL, NULL, 'TIFFIN_WALKIN_SALE', ?,
-        NULL, NULL, NULL, 'POSTED',
-        NULL, ?, ?, ?
-      )
-    `, [txId, totalAmount, serviceDate, paymentMethod, description, actor.id, now, now]);
+    if (!payLater) {
+      await tx.execute(`
+        INSERT INTO financial_transactions (
+          id, transaction_type, amount, transaction_date, payment_method,
+          reference_number, resident_id, customer_id, stay_id, category, description,
+          billing_period, payee_vendor, idempotency_key, status,
+          reversal_of_id, created_by, created_at, updated_at
+        ) VALUES (
+          ?, 'TIFFIN_PAYMENT', ?, ?, ?,
+          NULL, NULL, NULL, NULL, 'TIFFIN_WALKIN_SALE', ?,
+          NULL, NULL, NULL, 'POSTED',
+          NULL, ?, ?, ?
+        )
+      `, [txId, totalAmount, serviceDate, paymentMethod, description, actor.id, now, now]);
+    }
+    // A Pay Later guest who is already a customer (same phone) owes on that account.
+    const linked = payLater && customerPhone
+      ? await tx.queryOne<{ id: string }>("SELECT id FROM tiffin_customers WHERE phone = ? OR phone = ? LIMIT 1", [normalizePhoneNumber(customerPhone), customerPhone])
+      : null;
 
     await insertOrderRows(
       tx,
@@ -555,13 +574,13 @@ export async function createUnifiedOrder(
         status: "COMPLETED",
         serviceDate,
         mealType,
-        customerId: null,
+        customerId: linked?.id ?? null,
         customerName,
         customerPhone,
         deliveryAddress: null,
         deliveryTaskId: null,
-        financialTransactionId: txId,
-        paymentMethod,
+        financialTransactionId: payLater ? null : txId,
+        paymentMethod: payLater ? null : paymentMethod,
         notes: userNotes,
         idempotencyKey,
         source: "APP",
@@ -571,19 +590,24 @@ export async function createUnifiedOrder(
       normalizedItems
     );
 
+    if (payLater) {
+      await tx.execute("UPDATE orders SET payment_choice = 'PAY_LATER' WHERE id = ?", [orderId]);
+    }
+
     await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
-      action: "kitchen.walkin_sale_recorded",
-      targetType: "financial_transaction",
-      targetId: txId,
+      action: payLater ? "orders.dine_in_pay_later" : "kitchen.walkin_sale_recorded",
+      targetType: payLater ? "order" : "financial_transaction",
+      targetId: payLater ? orderId : txId,
       metadata: {
         category: "TIFFIN_WALKIN_SALE",
         orderId,
         amount: totalAmount,
-        paymentMethod,
+        paymentMethod: payLater ? "PAY_LATER" : paymentMethod,
         serviceDate,
         customerName,
+        customerPhone,
         itemsCount: normalizedItems.length,
       },
       ipAddress: clientIp,
@@ -795,7 +819,8 @@ export async function getCustomerOrderHistory(
   const stored = await loadOrders(
     db,
     "o.order_type = 'DELIVERY' AND o.status <> 'CANCELLED' AND (o.customer_phone = ? OR o.customer_phone = ?)",
-    [customerPhone, compactPhone]
+    [customerPhone, compactPhone],
+    1
   );
   // Only the most recent order is offered for repeat (owner decision, 2026-11-09).
   const history = stored.slice(0, 1).map((o) => ({

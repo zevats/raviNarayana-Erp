@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, UtensilsCrossed, AlertCircle } from "lucide-react";
 import { TiffinProduct, ProductCategory, BillingUnit } from "@/types";
@@ -201,7 +202,7 @@ export function ProductModal({
               <label htmlFor="prod-category" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Category
               </label>
-              <select
+              <AppSelect
                 id="prod-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as ProductCategory)}
@@ -212,13 +213,13 @@ export function ProductModal({
                 <option value="SPECIAL">Special / Friday Special</option>
                 <option value="EXTRA">Extra Portion / Add-on</option>
                 <option value="BEVERAGE">Beverage (Lassi, Chaas)</option>
-              </select>
+              </AppSelect>
             </div>
             <div>
               <label htmlFor="prod-unit" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Billing Unit
               </label>
-              <select
+              <AppSelect
                 id="prod-unit"
                 value={billingUnit}
                 onChange={(e) => setBillingUnit(e.target.value as BillingUnit)}
@@ -229,7 +230,7 @@ export function ProductModal({
                 <option value="PER_DAY">Per Day</option>
                 <option value="PER_PIECE">Per Piece</option>
                 <option value="PER_PORTION">Per Portion / Cup</option>
-              </select>
+              </AppSelect>
             </div>
           </div>
 

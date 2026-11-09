@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState } from "react";
 import { UserCheck, X, AlertTriangle } from "lucide-react";
 import { DeliveryTask } from "@/types";
@@ -120,7 +121,7 @@ export function BatchAssignModal({
             <label className="block text-xs font-serif text-[#1A2E20] mb-1">
               Select Delivery Person <span className="text-red-600">*</span>
             </label>
-            <select
+            <AppSelect
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
               required
@@ -132,7 +133,7 @@ export function BatchAssignModal({
                   {staff.fullName} (@{staff.username})
                 </option>
               ))}
-            </select>
+            </AppSelect>
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

@@ -82,15 +82,18 @@ async function main() {
   await rejects("A dine-in order (paid at the counter) cannot be changed", () => updateDeliveryOrder(manager, dine.orderId!, { notes: "x" }, IP, db), /dine-in/i);
   await rejects("A dine-in order cannot be cancelled", () => cancelOrder(manager, dine.orderId!, { reason: "Wrong table" }, IP, db), /dine-in/i);
 
-  console.log("\n--- 3. Cutoff ---");
+  console.log("\n--- 3. Cutoff: none within the day; a past day needs the override ---");
   const o2 = await order();
-  await rejects("After the lunch cutoff a change needs the override", () => updateDeliveryOrder(manager, o2.orderId!, { notes: "Extra spicy" }, IP, db, at(day, "09:00")), /cutoff/);
-  const late = await updateDeliveryOrder(manager, o2.orderId!, { notes: "Extra spicy", overrideCutoff: true, reason: "Owner agreed" }, IP, db, at(day, "09:00"));
-  assert(late.changed, "With the Manager override and a reason the change is saved");
+  const sameDay = await updateDeliveryOrder(manager, o2.orderId!, { notes: "Less salt" }, IP, db, at(day, "09:00"));
+  assert(sameDay.changed, "The same day, after the old lunch cutoff, a change needs no override");
+  const nextDay = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  await rejects("On a day that has passed a change needs the override", () => updateDeliveryOrder(manager, o2.orderId!, { notes: "Extra spicy" }, IP, db, at(nextDay, "09:00")), /cutoff|override/i);
+  const late = await updateDeliveryOrder(manager, o2.orderId!, { notes: "Extra spicy", overrideCutoff: true, reason: "Owner agreed" }, IP, db, at(nextDay, "09:00"));
+  assert(late.changed, "With the Manager override and a reason the change is saved"); 
 
   console.log("\n--- 4. Cancel ---");
   await rejects("Cancelling needs a reason", () => cancelOrder(manager, o2.orderId!, { reason: "" }, IP, db), /reason/i);
-  await rejects("After the cutoff cancelling needs the override", () => cancelOrder(manager, o2.orderId!, { reason: "Customer away" }, IP, db, at(day, "09:00")), /cutoff|override/i);
+  await rejects("On a day that has passed cancelling needs the override", () => cancelOrder(manager, o2.orderId!, { reason: "Customer away" }, IP, db, at(nextDay, "09:00")), /cutoff|override/i);
   await cancelOrder(manager, o2.orderId!, { reason: "Customer away" }, IP, db);
   const c = await db.queryOne<any>("SELECT o.status, o.cancel_reason, o.cancelled_by, t.status AS task_status FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id WHERE o.id = ?", [o2.orderId!]);
   assert(c.status === "CANCELLED" && c.task_status === "CANCELLED" && c.cancel_reason === "Customer away" && c.cancelled_by === manager.id, "Order and delivery cancelled; who and why are on the order");

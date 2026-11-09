@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { TiffinCustomer, CustomerType, DietaryPreference } from "@/types";
@@ -262,7 +263,7 @@ export function CustomerModal({
               <label htmlFor="cust-type" className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Customer Type
               </label>
-              <select
+              <AppSelect
                 id="cust-type"
                 value={customerType}
                 onChange={(e) => setCustomerType(e.target.value as CustomerType)}
@@ -271,7 +272,7 @@ export function CustomerModal({
                 <option value="INDIVIDUAL">Individual Client</option>
                 <option value="CORPORATE">Corporate / Factory Group</option>
                 <option value="RESIDENTIAL_PG">Residential PG Tenant</option>
-              </select>
+              </AppSelect>
             </div>
           </div>
 

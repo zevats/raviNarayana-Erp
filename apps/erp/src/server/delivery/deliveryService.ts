@@ -8,7 +8,7 @@ import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateStr
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
 import { hasPayLaterSchema } from "../database/schemaFeatures";
 import { notifyStopsAssigned } from "../notifications/pushService";
-import { hasCashShortfallSchema } from "../database/schemaFeatures";
+import { hasCashShortfallSchema, hasDineInPayLaterSchema } from "../database/schemaFeatures";
 import { getSettings } from "../settings/settingsService";
 import {
   AuthenticatedUser,
@@ -486,7 +486,7 @@ async function loadCustomerBalances(
   const customers = Array.from(new Set(orderCustomer.values()));
   if (customers.length === 0) return { before, orderOpen };
   const marks = customers.map(() => "?").join(", ");
-  const [ledgers, bills, credits] = await Promise.all([
+  const [ledgers, bills, credits, dine] = await Promise.all([
     loadOrderLedgers(db, customers),
     db.query<{ customer_id: string; due: number | string }>(
       `SELECT customer_id, SUM(balance_due) AS due FROM invoices
@@ -502,14 +502,26 @@ async function loadCustomerBalances(
        GROUP BY t.customer_id`,
       customers
     ),
+    // Dine-in orders on Pay Later, not paid yet (migration 0024): earlier dues too.
+    hasDineInPayLaterSchema(db).then((ok) =>
+      ok
+        ? db.query<{ customer_id: string; owed: number | string }>(
+            `SELECT customer_id, SUM(total_amount) AS owed FROM orders
+             WHERE order_type = 'DINE_IN' AND payment_choice = 'PAY_LATER' AND financial_transaction_id IS NULL AND status <> 'CANCELLED' AND customer_id IN (${marks})
+             GROUP BY customer_id`,
+            customers
+          )
+        : []
+    ),
   ]);
+  const dineBy = new Map(dine.map((r) => [r.customer_id, Number(r.owed)]));
   const billBy = new Map(bills.map((b) => [b.customer_id, Number(b.due)]));
   const creditBy = new Map(credits.map((c) => [c.customer_id, Number(c.credit)]));
   for (const l of ledgers.values()) for (const o of l.orders) orderOpen.set(o.id, o.open);
   for (const [orderId, customerId] of orderCustomer) {
     const all = ledgers.get(customerId)?.orders ?? [];
     const others = all.some((o) => o.id === orderId) ? applyOldestFirst(all.filter((o) => o.id !== orderId)) : ledgers.get(customerId);
-    const earlierOrders = others?.owed ?? 0;
+    const earlierOrders = (others?.owed ?? 0) + (dineBy.get(customerId) ?? 0);
     const bills = billBy.get(customerId) ?? 0;
     const credit = (others?.advance ?? 0) + (creditBy.get(customerId) ?? 0);
     before.set(orderId, { previous: earlierOrders + bills - credit, earlierOrders, bills, credit });

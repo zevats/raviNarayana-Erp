@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import { StatStrip } from "@/components/ui/kit";
 import {
@@ -308,7 +309,7 @@ export function ResidentStatementsView({
 
         <div className="flex items-center gap-2">
           <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
-          <select
+          <AppSelect
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
@@ -316,7 +317,7 @@ export function ResidentStatementsView({
             <option value="ALL">All Residents</option>
             <option value="ACTIVE">Currently In-House (Active)</option>
             <option value="CHECKED_OUT">Checked Out</option>
-          </select>
+          </AppSelect>
 
           <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
             {filteredResidents.length} of {residents.length}

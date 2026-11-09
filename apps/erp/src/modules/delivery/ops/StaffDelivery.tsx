@@ -164,6 +164,18 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
     else setRecordTask(t);
   });
 
+  // A delivery is shown as done the moment it is recorded and saved in the background. If the
+  // server refuses it, say why and reload the stops so it is back in the list.
+  useEffect(() => {
+    const failed = (e: Event) => {
+      const text = (e as CustomEvent).detail?.text || "A delivery could not be saved.";
+      setNotice({ tone: "error", text });
+      void tasksQ.refetch();
+    };
+    window.addEventListener("erp:delivery-save-failed", failed);
+    return () => window.removeEventListener("erp:delivery-save-failed", failed);
+  }, [tasksQ.refetch]);
+
   const saved = (text: string, done?: DeliveryTask) => {
     // Put the saved stop into the list straight away (it moves to completed and the next stop comes
     // up), then refresh everything affected in the background.

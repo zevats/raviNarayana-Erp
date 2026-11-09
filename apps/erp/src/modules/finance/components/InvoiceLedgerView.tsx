@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import {
@@ -332,7 +333,7 @@ export function InvoiceLedgerView({
           {/* Status Filter */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-[#5A6C5E] font-medium hidden md:inline">Status:</span>
-            <select
+            <AppSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -343,13 +344,13 @@ export function InvoiceLedgerView({
               <option value="PARTIALLY_PAID">Partially Paid</option>
               <option value="PAID">Paid</option>
               <option value="CANCELLED">Cancelled</option>
-            </select>
+            </AppSelect>
           </div>
 
           {/* Category Filter */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-[#5A6C5E] font-medium hidden md:inline">Source:</span>
-            <select
+            <AppSelect
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value as any)}
               className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -357,13 +358,13 @@ export function InvoiceLedgerView({
               <option value="ALL">All Sources (PG + Tiffin)</option>
               <option value="RESIDENT">PG Accommodation</option>
               <option value="TIFFIN">Commercial Tiffin</option>
-            </select>
+            </AppSelect>
           </div>
 
           {/* Type Filter */}
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] text-[#5A6C5E] font-medium hidden md:inline">Type:</span>
-            <select
+            <AppSelect
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
               className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
@@ -371,7 +372,7 @@ export function InvoiceLedgerView({
               <option value="ALL">All Bill Types</option>
               <option value="REGULAR_BILL">Regular Bill (Non-GST)</option>
               <option value="GST_TAX_INVOICE">GST Tax Invoice</option>
-            </select>
+            </AppSelect>
           </div>
 
           <button

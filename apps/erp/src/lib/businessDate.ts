@@ -19,7 +19,8 @@ export function addBusinessDays(date: string, days: number): string {
 /** The meal being served now: lunch until 17:00 IST, dinner from 17:00 (no gap between them). */
 export function businessMeal(now: Date = new Date()): "LUNCH" | "DINNER" {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: BUSINESS_TIME_ZONE, hour: "2-digit", hourCycle: "h23" }).format(now));
-  return hour >= 17 ? "DINNER" : "LUNCH";
+  // Lunch until 4 pm, dinner from 4 pm (the dinner list is prepared at 3:30 pm).
+  return hour >= 16 ? "DINNER" : "LUNCH";
 }
 
 /** First day (YYYY-MM-01) of the business month containing `now`. */

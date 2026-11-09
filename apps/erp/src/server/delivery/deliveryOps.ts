@@ -635,7 +635,7 @@ export async function listSubscriptionDay(
   const schemaReady = await hasDeliveryOpsSchema(db);
   const subs = await db.query<any>(
     `SELECT s.id, s.status, s.meal_types, s.service_days, s.quantity_per_meal, s.start_date, s.end_date,
-            s.pause_start_date, s.pause_resume_date, c.full_name, c.phone, c.status AS customer_status,
+            s.pause_start_date, s.pause_resume_date, s.customer_id, c.full_name, c.phone, c.delivery_address AS customer_address, c.status AS customer_status,
             p.name AS product_name, p.status AS product_status
      FROM tiffin_subscriptions s
      JOIN tiffin_customers c ON c.id = s.customer_id
@@ -679,8 +679,10 @@ export async function listSubscriptionDay(
     const t = tasks.get(s.id);
     return {
       subscriptionId: s.id,
+      customerId: s.customer_id,
       customerName: s.full_name,
       customerPhone: s.phone || null,
+      customerAddress: s.customer_address || null,
       productName: s.product_name,
       subscriptionStatus: s.status,
       quantityPerMeal: base,

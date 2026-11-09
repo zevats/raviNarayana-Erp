@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState } from "react";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import {
@@ -135,7 +136,7 @@ export function CreateStaffModal({
               <label className="block text-xs font-bold text-[#1A2E20] uppercase tracking-wider mb-1">
                 Role
               </label>
-              <select
+              <AppSelect
                 value={role}
                 onChange={(e) => setRole(e.target.value as StaffRole)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-[#D5CEBF] text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/30"
@@ -145,7 +146,7 @@ export function CreateStaffModal({
                     {ROLE_LABELS[r]} {r === "SUPER_ADMIN" && currentUser.role !== "SUPER_ADMIN" ? "(Admin Only)" : ""}
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
           </div>
 

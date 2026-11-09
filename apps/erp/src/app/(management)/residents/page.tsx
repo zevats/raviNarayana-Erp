@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
@@ -761,12 +762,12 @@ export default function ResidentsPage() {
         <div className="p-4 sm:p-5 flex flex-wrap items-center gap-2.5 border-b border-[var(--rn-line)]">
           <SearchField value={search} onChange={setSearch} placeholder="Search name, phone or room" className="flex-1 basis-[240px]" />
           <div className="flex items-center gap-3">
-            <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as any)} aria-label="Status" className="rn-input">
+            <AppSelect value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as any)} aria-label="Status" className="rn-input">
               <option value="ALL">All residents</option>
               <option value="ACTIVE">In house</option>
               <option value="CHECKED_OUT">Checked out</option>
               <option value="UNASSIGNED">Not assigned</option>
-            </select>
+            </AppSelect>
             <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length} of {residents.length}</span>
           </div>
         </div>
@@ -1414,7 +1415,7 @@ export default function ResidentsPage() {
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                     Select Resident *
                   </label>
-                  <select
+                  <AppSelect
                     required
                     value={checkInForm.residentId}
                     onChange={(e) =>
@@ -1430,7 +1431,7 @@ export default function ResidentsPage() {
                           {r.fullName} &bull; {r.phone}
                         </option>
                       ))}
-                  </select>
+                  </AppSelect>
                 </div>
 
                 {/* Select Available Room */}
@@ -1438,7 +1439,7 @@ export default function ResidentsPage() {
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                     Select Room (Vacant Capacity) *
                   </label>
-                  <select
+                  <AppSelect
                     required
                     value={checkInForm.roomId}
                     onChange={(e) => {
@@ -1458,7 +1459,7 @@ export default function ResidentsPage() {
                         Room {rm.roomNumber} ({formatFloorLabel(rm.floor)}) &bull; {rm.availableBeds} bed(s) vacant &bull; ₹{rm.baseRentMonthly}/mo
                       </option>
                     ))}
-                  </select>
+                  </AppSelect>
                   {availableRooms.length === 0 && (
                     <p className="text-[11px] text-rose-600 mt-1">
                       No rooms currently have available bed capacity.
@@ -1835,7 +1836,7 @@ export default function ResidentsPage() {
                             <label className="block text-[11px] font-semibold text-emerald-950 mb-1">
                               Refund Payment Method *
                             </label>
-                            <select
+                            <AppSelect
                               value={refundPaymentMethod}
                               onChange={(e) => setRefundPaymentMethod(e.target.value as PaymentMethod)}
                               className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
@@ -1845,7 +1846,7 @@ export default function ResidentsPage() {
                                   {PAYMENT_METHOD_LABELS[method]}
                                 </option>
                               ))}
-                            </select>
+                            </AppSelect>
                           </div>
                           <div>
                             <label className="block text-[11px] font-semibold text-emerald-950 mb-1">
@@ -1889,7 +1890,7 @@ export default function ResidentsPage() {
                               <label className="block text-[11px] font-semibold text-amber-950 mb-1">
                                 Payment Method *
                               </label>
-                              <select
+                              <AppSelect
                                 value={remainingPaymentMethod}
                                 onChange={(e) => setRemainingPaymentMethod(e.target.value as PaymentMethod)}
                                 className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-[#1A2E20] focus:outline-hidden"
@@ -1899,7 +1900,7 @@ export default function ResidentsPage() {
                                     {PAYMENT_METHOD_LABELS[method]}
                                   </option>
                                 ))}
-                              </select>
+                              </AppSelect>
                             </div>
                             <div>
                               <label className="block text-[11px] font-semibold text-amber-950 mb-1">
@@ -2183,7 +2184,7 @@ export default function ResidentsPage() {
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                     Destination Room *
                   </label>
-                  <select
+                  <AppSelect
                     required
                     value={transferForm.targetRoomId}
                     onChange={(e) => handleTargetRoomChange(e.target.value)}
@@ -2197,7 +2198,7 @@ export default function ResidentsPage() {
                           Room {rm.roomNumber} ({formatFloorLabel(rm.floor)}) &bull; {rm.type.replace(/_/g, " ")} &bull; {rm.availableBeds} bed(s) available &bull; ₹{formatNumberIN(rm.baseRentMonthly)}/mo
                         </option>
                       ))}
-                  </select>
+                  </AppSelect>
                   {rooms.filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber).length === 0 && (
                     <p className="text-[11px] text-amber-700 mt-1">
                       No other rooms currently have available beds.
@@ -2208,7 +2209,7 @@ export default function ResidentsPage() {
                 {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds?.length ?? 0) > 0 && (
                   <div>
                     <label htmlFor="transfer-bed" className="block text-xs font-semibold text-[#1A2E20] mb-1">Bed in the new room</label>
-                    <select
+                    <AppSelect
                       id="transfer-bed"
                       value={transferForm.bedId}
                       onChange={(e) => setTransferForm({ ...transferForm, bedId: e.target.value })}
@@ -2218,7 +2219,7 @@ export default function ResidentsPage() {
                       {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds ?? []).filter((b) => b.status === "IN_SERVICE" && !b.occupant).map((b) => (
                         <option key={b.id} value={b.id}>{b.label}</option>
                       ))}
-                    </select>
+                    </AppSelect>
                   </div>
                 )}
 

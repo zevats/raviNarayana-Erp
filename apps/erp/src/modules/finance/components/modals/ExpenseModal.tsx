@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, TrendingDown, AlertCircle } from "lucide-react";
 import { ExpenseCategory, PaymentMethod, FinancialTransaction } from "@/types";
@@ -159,7 +160,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
               <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Expense Category *
               </label>
-              <select
+              <AppSelect
                 value={category}
                 onChange={(e) => setCategory(e.target.value as ExpenseCategory)}
                 className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20] font-medium"
@@ -169,7 +170,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
                     {cat.label}
                   </option>
                 ))}
-              </select>
+              </AppSelect>
             </div>
 
             <div>
@@ -194,7 +195,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
               <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
                 Payment Method *
               </label>
-              <select
+              <AppSelect
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
                 className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20] font-medium"
@@ -204,7 +205,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
                 <option value="BANK_TRANSFER">Bank IMPS / NEFT</option>
                 <option value="CHEQUE">Bank Cheque</option>
                 <option value="OTHER">POS Card / Other</option>
-              </select>
+              </AppSelect>
             </div>
 
             <div>

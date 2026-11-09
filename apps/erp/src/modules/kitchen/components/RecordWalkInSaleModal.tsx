@@ -1,5 +1,6 @@
 "use client";
 
+import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import { X, DollarSign, Plus, Minus, User, Phone, AlertTriangle, CheckCircle2, ShoppingCart, CreditCard, Banknote } from "lucide-react";
 import { TiffinProduct, MealType, PaymentMethod } from "@/types";
@@ -198,7 +199,7 @@ export function RecordWalkInSaleModal({
             <label className="block text-xs font-bold text-[#1A2E20] uppercase tracking-wider mb-1">
               Select Item / Thali
             </label>
-            <select
+            <AppSelect
               value={selectedProductId}
               onChange={(e) => handleProductChange(e.target.value)}
               className="w-full px-3 py-2 text-xs rounded-xl border border-gray-200 bg-white font-medium focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/20"
@@ -209,7 +210,7 @@ export function RecordWalkInSaleModal({
                 </option>
               ))}
               <option value="">Custom Meal / Walk-in Plate</option>
-            </select>
+            </AppSelect>
           </div>
 
           {/* Quantity & Unit Price */}
