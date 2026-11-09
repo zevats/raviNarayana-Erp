@@ -168,7 +168,7 @@ export default function OrdersPage() {
           <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-2.5">
             <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone or address" className="flex-1 basis-[240px]" />
             <div className="flex items-center gap-2 flex-wrap">
-              <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Service date" className="rn-input px-3 text-[12.5px]" />
+              <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Service date" className="rn-input" />
               <select value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value as any)} aria-label="Order type" className="rn-input">
                 <option value="ALL">All orders</option>
                 <option value="DELIVERY">Delivery</option>
@@ -245,32 +245,32 @@ export default function OrdersPage() {
                       <div className="text-right space-y-1">
                         <div className="flex items-center justify-end gap-1.5">
                           {order.orderStatus === "CONFIRMED" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-blue-50 text-blue-800 border border-blue-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#DCE9FA] text-[#163F73] border-[#A9C6EE]">
                               <Clock className="w-3 h-3" /> Confirmed
                             </span>
                           )}
                           {order.orderStatus === "OUT_FOR_DELIVERY" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-indigo-50 text-indigo-800 border border-indigo-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#E0E3FA] text-[#272F7A] border-[#B4BBEE]">
                               <Truck className="w-3 h-3 animate-pulse" /> Out for Delivery
                             </span>
                           )}
                           {order.orderStatus === "DELIVERED" && order.deliveryOutcome !== "PARTIAL" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]">
                               <CheckCircle2 className="w-3 h-3" /> Delivered
                             </span>
                           )}
                           {order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-amber-50 text-amber-800 border border-amber-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]">
                               <AlertTriangle className="w-3 h-3" /> Partly delivered
                             </span>
                           )}
                           {order.orderStatus === "COMPLETED" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-emerald-50 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]">
                               <CheckCircle2 className="w-3 h-3" /> Paid &amp; Complete
                             </span>
                           )}
                           {order.orderStatus === "EXCEPTION" && (
-                            <span className="px-2.5 py-1 rounded-full text-[11px] font-serif bg-red-50 text-red-800 border border-red-200 inline-flex items-center gap-1">
+                            <span className="px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1 bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]">
                               <AlertTriangle className="w-3 h-3" /> {order.deliveryOutcome === "NONE" ? "Not delivered" : "Shortfall / Issue"}
                             </span>
                           )}
@@ -278,24 +278,24 @@ export default function OrdersPage() {
 
                         {/* Payment badge (delivery orders are due for what was delivered, at the saved prices) */}
                         {order.deliveryOutcome === "NONE" ? (
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded inline-block bg-[#FAF8F5] text-[#5D7656] border border-[#E6E1DA]">
-                            NOTHING DUE
+                          <span className="text-[12px] font-semibold px-2.5 py-1 rounded-full inline-block bg-[#ECE8E2] text-[#3D3631] border border-[#D6CFC5]">
+                            Nothing due
                           </span>
                         ) : (
                         <span
-                          className={`text-[10px] font-mono px-2 py-0.5 rounded inline-block ${
+                          className={`text-[12px] font-bold px-2.5 py-1 rounded-full inline-block tabular-nums border ${
                             order.paymentStatus === "PAID"
-                              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                              ? "bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]"
                               : order.paymentStatus === "PARTIALLY_PAID"
-                              ? "bg-amber-50 text-amber-800 border border-amber-200"
-                              : "bg-red-50 text-red-800 border border-red-200"
+                              ? "bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]"
+                              : "bg-[#C93A22] text-white border-[#A82E19]"
                           }`}
                         >
                           {order.paymentStatus === "PAID"
-                            ? `PAID (₹${order.amountDue ?? order.totalAmount})`
+                            ? `Paid ₹${order.amountDue ?? order.totalAmount}`
                             : order.paymentStatus === "PARTIALLY_PAID"
-                            ? `PART PAID ₹${order.collectedAmount} · ₹${order.remainingAmount} PENDING`
-                            : `UNPAID ₹${order.remainingAmount}`}
+                            ? `Part paid ₹${order.collectedAmount} · ₹${order.remainingAmount} due`
+                            : `Unpaid ₹${order.remainingAmount}`}
                         </span>
                         )}
                       </div>
@@ -307,8 +307,15 @@ export default function OrdersPage() {
                         <MapPin className="w-3.5 h-3.5 text-[#B58A57] shrink-0 mt-0.5" />
                         <span className="text-[#1A2E20] font-medium">{order.deliveryAddress}</span>
                         {order.assignedToName ? (
-                          <span className="text-[#8E9F89] font-serif ml-auto shrink-0">
-                            Delivered by: <strong>{order.assignedToName}</strong>
+                          <span className="text-[var(--rn-ink-2)] ml-auto shrink-0">
+                            {order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
+                              ? "Delivered by"
+                              : order.orderStatus === "EXCEPTION"
+                              ? "Attempted by"
+                              : order.orderStatus === "OUT_FOR_DELIVERY"
+                              ? "Out with"
+                              : "Assigned to"}{" "}
+                            <strong className="text-[var(--rn-ink)]">{order.assignedToName}</strong>
                           </span>
                         ) : (
                           <span className="text-amber-700 font-serif ml-auto shrink-0">Not assigned yet</span>
@@ -339,11 +346,11 @@ export default function OrdersPage() {
                           (order.deliveryStatus === "PENDING" || order.deliveryStatus === "ASSIGNED" || order.deliveryStatus === "OUT_FOR_DELIVERY") &&
                           !(order.collectedAmount && order.collectedAmount > 0) && (
                             <>
-                              <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="text-[11px] font-serif text-[#1A2E20] underline-offset-2 hover:underline">
+                              <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="h-9 px-3 rounded-full text-[12.5px] font-semibold text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
                                 Change
                               </button>
-                              <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="text-[11px] font-serif text-rose-700 underline-offset-2 hover:underline">
-                                Cancel
+                              <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="h-9 px-3 rounded-full text-[12.5px] font-semibold text-[#A3261A] hover:bg-[#FBEDE8]">
+                                Cancel order
                               </button>
                             </>
                           )}
@@ -353,10 +360,10 @@ export default function OrdersPage() {
                         )}
                         {isDelivery && (
                           <Link
-                            href="/delivery"
-                            className="inline-flex items-center gap-1 text-[11px] font-serif text-[#C89F6B] hover:text-[#B58A57] font-medium"
+                            href={`/delivery?tab=board&date=${order.serviceDate}&meal=${order.mealType}`}
+                            className="ml-1 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-full border border-[var(--rn-accent)] text-[12.5px] font-semibold text-[var(--rn-accent)] hover:bg-[var(--rn-accent-tint)]"
                           >
-                            View Delivery &rarr;
+                            View delivery <span aria-hidden>&rarr;</span>
                           </Link>
                         )}
                       </div>

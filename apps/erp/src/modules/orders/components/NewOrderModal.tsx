@@ -658,15 +658,15 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, defaultDate }: 
                           />
                         </div>
 
-                        {isLoadingHistory && <p className={`text-[13px] ${INK2}`}>Loading past orders…</p>}
+                        {isLoadingHistory && <p className={`text-[13px] ${INK2}`}>Loading the last order…</p>}
                         {orderHistory.length > 0 && (
                           <div className="pt-3 border-t border-[var(--rn-line)] space-y-2">
                             <p className={`flex items-center gap-1.5 text-[13.5px] font-semibold ${INK}`}>
                               <RotateCcw className="w-4 h-4 text-[var(--rn-accent)]" />
-                              Repeat a past order
+                              Repeat the last order
                             </p>
                             <ul className="space-y-1.5">
-                              {orderHistory.slice(0, 5).map((past, idx) => (
+                              {orderHistory.slice(0, 1).map((past, idx) => (
                                 <li key={past.orderId || idx} className="flex items-center justify-between gap-3 p-2.5 pl-3.5 rounded-xl bg-[var(--rn-accent-tint)]">
                                   <span className="min-w-0">
                                     <span className={`block text-[13.5px] font-medium truncate ${INK}`}>

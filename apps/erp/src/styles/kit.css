@@ -100,16 +100,16 @@
 /* Inputs */
 :where(.rn-app) .rn-input {
   height: 40px;
-  padding: 0 14px;
+  padding: 0 18px;
   border-radius: 9999px;
   font-size: 13.5px;
   color: var(--rn-ink);
   background: rgba(255, 255, 255, 0.86);
   border: 1px solid rgba(26, 46, 32, 0.12);
 }
-:where(.rn-app) select.rn-input { padding-right: 32px; }
+:where(.rn-app) select.rn-input { padding-right: 38px; }
 :where(.rn-app) textarea.rn-input { height: auto; min-height: 72px; border-radius: 18px; padding: 10px 14px; line-height: 1.45; }
-:where(.rn-app) .rn-input-search { padding-left: 40px; }
+:where(.rn-app) .rn-input-search { padding-left: 44px; }
 
 /* Badges */
 :where(.rn-app) .rn-badge {

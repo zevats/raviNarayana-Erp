@@ -118,7 +118,7 @@ export function EmptyState({ title, children, action, className, kind = "empty" 
 export function SearchField({ value, onChange, placeholder = "Search", label, className }: { value: string; onChange: (v: string) => void; placeholder?: string; label?: string; className?: string }) {
   return (
     <label className={cx("relative block min-w-[180px]", className)}>
-      <svg aria-hidden viewBox="0 0 24 24" className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--rn-ink-3)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+      <svg aria-hidden viewBox="0 0 24 24" className="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-[var(--rn-ink-3)]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
       <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} aria-label={label ?? placeholder} className="rn-input rn-input-search w-full" />
     </label>
   );

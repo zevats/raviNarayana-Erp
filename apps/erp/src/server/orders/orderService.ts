@@ -797,7 +797,8 @@ export async function getCustomerOrderHistory(
     "o.order_type = 'DELIVERY' AND o.status <> 'CANCELLED' AND (o.customer_phone = ? OR o.customer_phone = ?)",
     [customerPhone, compactPhone]
   );
-  const history = stored.slice(0, 5).map((o) => ({
+  // Only the most recent order is offered for repeat (owner decision, 2026-11-09).
+  const history = stored.slice(0, 1).map((o) => ({
     orderId: o.orderId || o.id,
     orderDate: o.serviceDate,
     mealType: o.mealType,
