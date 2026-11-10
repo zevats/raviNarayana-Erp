@@ -3,7 +3,7 @@
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, BedDouble, DoorOpen, UtensilsCrossed, ReceiptText, MapPin, Wallet, HandCoins, QrCode } from "lucide-react";
 import { RnLogo, type RnBrand } from "@/components/brand/RnLogo";
 import { storedBrand, rememberBrand } from "@/lib/brand";
 
@@ -350,17 +350,57 @@ export function LoginForm() {
       <div className="w-full flex flex-col lg:flex-row lg:max-w-[1120px] lg:min-h-[640px] rn-login-shell">
       {/* Large screens: the brand panel (sidebar glass, the PG photo, the logo and name). */}
       <aside className={`rn-login-brand hidden lg:flex ${erp ? "" : "rn-login-brand-delivery"}`} aria-hidden="true">
-        <div className="rn-login-brand-photo" />
-        <div className="relative z-[1] flex flex-col h-full w-full p-12">
-          <div className="flex items-center gap-3">
-            <RnLogo brand={brand} size={52} onColor title="" />
-            <span className="text-[19px] font-bold tracking-[-0.02em] text-white">Ravinarayan</span>
+        <svg className="rn-login-lines" viewBox="0 0 600 760" preserveAspectRatio="xMidYMid slice" fill="none">
+          <circle cx="470" cy="250" r="230" />
+          <circle cx="470" cy="250" r="150" />
+          <circle cx="90" cy="690" r="190" />
+          <path d="M-20 180 L300 -40 L640 220 L420 560 L60 470 Z" />
+          <path d="M300 -40 L420 560 M-20 180 L640 220 M60 470 L640 220 M-20 180 L420 560" />
+          <path d="M120 760 L260 330 L640 520" />
+        </svg>
+        <div className="relative z-[1] flex flex-col h-full w-full p-11">
+          <div className="flex items-center gap-3.5">
+            <span className="rn-login-tile"><RnLogo brand={brand} size={36} onColor title="" /></span>
+            <span className="leading-tight">
+              <span className="block text-[17px] font-bold tracking-[0.14em] text-white">RAVINARAYAN</span>
+              <span className="block text-[11px] font-bold tracking-[0.2em] rn-login-accent">{erp ? "PG & TIFFIN ERP" : "DELIVERY"}</span>
+            </span>
           </div>
-          <div className="mt-auto">
-            <RnLogo brand={brand} size={148} onColor title="" className="rn-logo-in drop-shadow-[0_18px_30px_rgba(0,0,0,0.28)]" />
-            <p className="mt-8 text-[40px] leading-[1.08] font-semibold tracking-[-0.03em] text-white">{erp ? "PG & Tiffin" : "Delivery"}</p>
-            <p className="mt-2 text-[13px] font-semibold uppercase tracking-[0.22em] text-white/60">{erp ? "Operations" : "Partner app"}</p>
+          <span className="rn-login-pill mt-5 self-start"><i />{erp ? "Operations" : "Partner app"}</span>
+          <div className="my-auto pt-10">
+            <p className="text-[46px] leading-[1.06] font-bold tracking-[-0.035em] text-white">
+              {erp ? "Management," : "Deliveries,"}
+              <br />
+              made simpler.
+            </p>
+            <div className="mt-9 grid grid-cols-2 gap-2.5 max-w-[380px]">
+              {(erp
+                ? [
+                    [BedDouble, "Residents"],
+                    [DoorOpen, "Rooms & beds"],
+                    [UtensilsCrossed, "Tiffin & orders"],
+                    [ReceiptText, "Billing"],
+                  ]
+                : [
+                    [MapPin, "Today’s stops"],
+                    [QrCode, "UPI payments"],
+                    [Wallet, "Cash collected"],
+                    [HandCoins, "Handover"],
+                  ]
+              ).map(([Icon, label]) => {
+                const I = Icon as React.ElementType;
+                return (
+                  <span key={label as string} className="rn-login-chip">
+                    <I className="w-4 h-4 rn-login-accent" />
+                    {label as string}
+                  </span>
+                );
+              })}
+            </div>
           </div>
+          <p className="flex items-center gap-2 text-[12px] font-semibold text-white/55">
+            <Lock className="w-3.5 h-3.5 rn-login-accent" /> Ravinarayan PG &amp; Tiffin
+          </p>
         </div>
       </aside>
       <div className="flex-1 min-w-0 flex flex-col justify-center rn-login-formside">
@@ -389,7 +429,7 @@ export function LoginForm() {
       {/* Form card */}
       <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0" : "relative -mt-16 sm:-mt-20 lg:mt-0 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0 flex-1 lg:flex-none"}>
         <div className={`${erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"} lg:!bg-transparent lg:!border-transparent lg:!shadow-none lg:![backdrop-filter:none] lg:!max-w-[380px] lg:!px-0`}>
-          <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-[#16241B]">{titles[step]}</h1>
+          <h1 className="text-[22px] lg:text-[34px] font-extrabold lg:font-bold tracking-[-0.01em] lg:tracking-[-0.03em] text-[#16241B]">{step === "LOGIN" ? <><span className="lg:hidden">Sign in</span><span className="hidden lg:inline">Welcome back</span></> : titles[step]}</h1>
           {step === "OTP" && (
             <p className="mt-1 text-[14px] text-[#5B6B5F]">
               Code sent to <span className="font-semibold text-[#16241B]">{maskedEmail || "your email"}</span>
@@ -443,7 +483,8 @@ export function LoginForm() {
                     className="text-[13px] font-semibold"
                     style={{ color: t.link }}
                   >
-                    Forgot?
+                    <span className="lg:hidden">Forgot?</span>
+                    <span className="hidden lg:inline underline decoration-dotted underline-offset-4">Forgot password?</span>
                   </button>
                 }
                 trailing={
@@ -637,7 +678,7 @@ function Field({ id, label, icon, t, aside, trailing, children }: { id: string; 
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <label htmlFor={id} className="text-[13px] font-semibold text-[#2B3A30]">
+        <label htmlFor={id} className="text-[13px] font-semibold text-[#2B3A30] lg:text-[11.5px] lg:font-bold lg:uppercase lg:tracking-[0.12em] lg:text-[#1A2E20]">
           {label}
         </label>
         {aside}
@@ -666,7 +707,12 @@ function PrimaryButton({ t, disabled, busy, busyLabel, children }: { t: BrandUi;
       onMouseEnter={(e) => !disabled && (e.currentTarget.style.background = t.buttonHover)}
       onMouseLeave={(e) => (e.currentTarget.style.background = t.button)}
     >
-      {busy ? busyLabel : children}
+      {busy ? busyLabel : (
+        <>
+          {children}
+          <ArrowRight className="hidden lg:block w-[18px] h-[18px]" />
+        </>
+      )}
     </button>
   );
 }
