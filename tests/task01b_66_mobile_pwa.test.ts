@@ -71,7 +71,7 @@ async function runTask66Tests() {
   const webmanifestContent = fs.readFileSync(manifestWebmanifestPath, "utf-8");
   const parsedManifest = JSON.parse(webmanifestContent);
 
-  assert(parsedManifest.name.includes("Ravi Narayana"), "Manifest name matches brand identity");
+  assert(parsedManifest.name.includes("Ravinarayan"), "Manifest name matches brand identity");
   assert(
     parsedManifest.short_name.includes("Ravi") || parsedManifest.short_name.includes("RN"),
     "Manifest short_name matches brand abbreviation"

@@ -118,8 +118,9 @@ export function SubscriptionsView() {
           { label: "Paused", value: counts.PAUSED, tone: counts.PAUSED ? "warn" : "default" },
           ...(canSeeMoney
             ? [
-                { label: "Monthly value", value: rupees(monthly), note: "active plans" },
-                { label: "Billed this month", value: `${billed} of ${billed + unbilled}`, note: unbilled ? `${unbilled} not billed yet` : "all billed", tone: (unbilled ? "warn" : "good") as "warn" | "good" },
+                { label: "Monthly value", value: rupees(monthly) },
+                { label: "Billed this month", value: billed, tone: "good" as const },
+                { label: "To bill", value: unbilled, tone: (unbilled ? "warn" : "default") as "warn" | "default" },
               ]
             : []),
         ]}

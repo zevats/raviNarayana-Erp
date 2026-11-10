@@ -428,8 +428,18 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   };
 
   // Quantity controllers
+  // A plan meal is the plan's thalis, never priced one by one: the meal thali count stops at the plan's.
+  const capPlan = (prev: typeof cart, next: typeof cart, productId: string): typeof cart => {
+    const item = next[productId];
+    if (!item || !planCovers || item.product.category !== "STANDARD_MEAL") return next;
+    const others = Object.values(next).filter((it) => it.product.id !== productId && it.product.category === "STANDARD_MEAL").reduce((n, it) => n + it.quantity, 0);
+    const allowed = Math.max(0, planFreeThalis - others);
+    if (item.quantity <= allowed) return next;
+    if (allowed === 0) return prev;
+    return { ...next, [productId]: { ...item, quantity: allowed } };
+  };
   const handleQuantityChange = (productId: string, delta: number) => {
-    setCart((prev) => {
+    setCart((prev) => capPlan(prev, ((): typeof cart => {
       const current = prev[productId];
       if (!current) {
         const prod = products.find((p) => p.id === productId);
@@ -443,12 +453,12 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         return copy;
       }
       return { ...prev, [productId]: { ...current, quantity: newQty } };
-    });
+    })(), productId));
   };
 
   const handleManualQtyInput = (productId: string, val: string) => {
     const num = parseInt(val, 10);
-    setCart((prev) => {
+    setCart((prev) => capPlan(prev, ((): typeof cart => {
       const prod = prev[productId]?.product || products.find((p) => p.id === productId);
       if (!prod) return prev;
       if (isNaN(num) || num <= 0) {
@@ -457,7 +467,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         return copy;
       }
       return { ...prev, [productId]: { product: prod, quantity: num } };
-    });
+    })(), productId));
   };
 
   // Cart summary calculations
@@ -703,7 +713,6 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         <header className="shrink-0 px-5 sm:px-6 pt-5 pb-4 bg-white border-b border-[var(--rn-line)]">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className={`text-[12px] font-semibold uppercase tracking-[0.1em] ${INK2}`}>Fast order entry</p>
               <h2 id="new-order-title" className={`text-[22px] leading-tight font-bold ${INK}`}>
                 New tiffin order
               </h2>
@@ -821,11 +830,6 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                           ]}
                         />
                       </div>
-                      <p className="text-[12.5px] rounded-lg bg-[var(--rn-accent-tint)] px-3 py-2 text-[var(--rn-ink)]">
-                        {orderType === "DINE_IN"
-                          ? "The plan's thali for the meal is free at the counter; extra thalis and other items are charged. The plan's delivery for that meal is skipped."
-                          : "The plan's thali for the meal is free; extra thalis and other items are charged. The plan's usual delivery for that meal is replaced by this order."}
-                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -1096,13 +1100,6 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
 
           {step === 2 && (
             <section className="space-y-3">
-              {forPlan && plan && (
-                <p className={`rounded-xl px-3.5 py-2.5 text-[13.5px] ${planCovers ? "bg-[#E6F4E1] text-[#1D4E16]" : "bg-[#FFF6E5] text-[#6B4A06]"}`}>
-                  {planCovers
-                    ? `${plan.quantityPerMeal} thali${plan.quantityPerMeal === 1 ? "" : "s"} free with the plan this meal. Extra thalis and other items are charged.`
-                    : `The plan does not include ${mealType === "LUNCH" ? "lunch" : "dinner"}, so everything is charged.`}
-                </p>
-              )}
               <div className="flex items-end justify-between gap-3">
                 <h3 className={`text-[15px] font-bold ${INK}`}>Items &amp; quantities</h3>
                 <span className={`text-[13px] ${INK2}`}>
@@ -1143,6 +1140,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                 )}
                 {filteredProducts.map((p) => {
                   const qty = cart[p.id]?.quantity || 0;
+                  const inPlan = planCovers && p.category === "STANDARD_MEAL";
+                  const planFull = inPlan && cartItems.filter((it) => it.product.category === "STANDARD_MEAL").reduce((n, it) => n + it.quantity, 0) >= planFreeThalis;
                   return (
                     <li
                       key={p.id}
@@ -1160,8 +1159,14 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         <span className={`block text-[15px] font-semibold leading-snug ${INK}`}>{p.name}</span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full bg-[#EFEBE6] text-[#3D3631]">{categoryLabel(p.category)}</span>
-                          <span className={`text-[13px] tabular-nums ${INK2}`}>₹{p.price} each</span>
-                          {qty > 0 && <span className={`text-[13px] font-bold tabular-nums ${INK}`}>= {rupees(qty * p.price)}</span>}
+                          {inPlan ? (
+                            <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-[#E6F4E1] text-[#1D4E16]">In plan</span>
+                          ) : (
+                            <>
+                              <span className={`text-[13px] tabular-nums ${INK2}`}>₹{p.price} each</span>
+                              {qty > 0 && <span className={`text-[13px] font-bold tabular-nums ${INK}`}>= {rupees(qty * p.price)}</span>}
+                            </>
+                          )}
                         </span>
                       </button>
                       {/* Pill stepper: 44px targets */}
@@ -1189,8 +1194,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         <button
                           type="button"
                           onClick={() => handleQuantityChange(p.id, 1)}
+                          disabled={planFull}
                           aria-label={`One more ${p.name}`}
-                          className="w-11 h-11 rounded-full flex items-center justify-center bg-[var(--rn-accent)] text-white"
+                          className="w-11 h-11 rounded-full flex items-center justify-center bg-[var(--rn-accent)] text-white disabled:opacity-35"
                         >
                           <Plus className="w-4 h-4" />
                         </button>

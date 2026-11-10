@@ -30,9 +30,9 @@ export function renderAccountCodeEmail(purpose: AccountCodePurpose, code: string
   const details: Array<[string, string]> = [["Requested", istTime(ctx.when || new Date())], ...(ctx.device ? ([["Device", ctx.device]] as Array<[string, string]>) : [])];
   const newEmail = escapeHtml(ctx.newEmail || "a new address");
   const copy = {
-    PASSWORD: { subject: `${code} is your code to change your password`, title: "Change your password", lines: ["Expires in 10 minutes."] },
-    EMAIL_CURRENT: { subject: `${code} is your code to change your email`, title: "Change your email", lines: [`New email: <strong>${newEmail}</strong>`, "Expires in 10 minutes."] },
-    EMAIL_NEW: { subject: `${code} is your code to confirm this email`, title: "Confirm this email", lines: ["Expires in 10 minutes."] },
+    PASSWORD: { subject: `${code} is your code to change your password`, title: "Change your password", lines: [] as string[] },
+    EMAIL_CURRENT: { subject: `${code} is your code to change your email`, title: "Change your email", lines: [`New email: <strong>${newEmail}</strong>`] },
+    EMAIL_NEW: { subject: `${code} is your code to confirm this email`, title: "Confirm this email", lines: [] as string[] },
   }[purpose];
   return render(copy.subject, `${code} · expires in 10 minutes`, {
     title: copy.title,

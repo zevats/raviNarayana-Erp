@@ -305,7 +305,7 @@ export default function OrdersPage() {
             <>
             {filteredOrders.length > visibleOrders.length && (
               <div className="px-4 pt-4 flex items-center justify-center gap-3">
-                <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums">Latest {visibleOrders.length} of {filteredOrders.length}</span>
+                <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums">{visibleOrders.length}/{filteredOrders.length}</span>
                 <button type="button" className="rn-btn" onClick={() => setShown((n) => n + PAGE)}>
                   Show {Math.min(PAGE, filteredOrders.length - visibleOrders.length)} earlier orders
                 </button>

@@ -137,10 +137,10 @@ export function TiffinBillingView() {
 
       <StatStrip
         items={[
-          { label: "Plan bills", value: `${bills.length - unbilled.length} of ${bills.length}`, note: unbilled.length ? `${unbilled.length} not created yet` : "all created", tone: unbilled.length ? "warn" : "good" },
-          { label: "Not billed yet", value: rupees(unbilledTotal), tone: unbilledTotal ? "warn" : "default" },
-          { label: "Bills paid", value: `${paidCount} of ${bills.length - unbilled.length}`, tone: "good" },
-          { label: "Due from customers", value: rupees(dueTotal), note: `${dues.length} customer${dues.length === 1 ? "" : "s"}`, tone: dueTotal ? "bad" : "good" },
+          { label: "Billed", value: bills.length - unbilled.length, tone: "good" },
+          { label: "To bill", value: rupees(unbilledTotal), tone: unbilledTotal ? "warn" : "default" },
+          { label: "Paid", value: paidCount, tone: "good" },
+          { label: "Due from customers", value: rupees(dueTotal), tone: dueTotal ? "bad" : "good" },
         ]}
       />
 

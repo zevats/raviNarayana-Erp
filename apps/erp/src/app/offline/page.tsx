@@ -73,7 +73,7 @@ export default function OfflineFallbackPage() {
           />
           <div>
             <h1 className="font-serif text-sm font-semibold tracking-tight text-[#1A2E20]">
-              Ravi Narayana ERP
+              Ravinarayan PG &amp; Tiffin
             </h1>
           </div>
         </div>

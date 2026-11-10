@@ -364,7 +364,7 @@ async function runTestSuite() {
       // parse fail
     }
     assert(Boolean(manifestJson), "manifest.webmanifest is valid JSON");
-    assert(manifestJson?.name === "Ravi Narayana ERP & Delivery", "manifest.webmanifest has valid name");
+    assert(manifestJson?.name === "Ravinarayan PG & Tiffin", "manifest.webmanifest has valid name");
     assert(manifestJson?.display === "standalone", "manifest.webmanifest has display 'standalone'");
     assert(Array.isArray(manifestJson?.icons) && manifestJson.icons.length > 0, "manifest.webmanifest has icons array");
   }

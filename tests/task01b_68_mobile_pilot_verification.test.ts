@@ -135,8 +135,8 @@ async function runTask68Tests() {
   assert(fs.existsSync(webmanifestPath), "apps/erp/public/manifest.webmanifest exists");
   const manifest = JSON.parse(fs.readFileSync(webmanifestPath, "utf-8"));
 
-  assert(manifest.name.includes("Ravi Narayana"), "Manifest defines application name");
-  assert(manifest.short_name.includes("Ravi Narayana") || manifest.short_name === "RN ERP", "Manifest defines short name for mobile home screen");
+  assert(manifest.name.includes("Ravinarayan"), "Manifest defines application name");
+  assert(manifest.short_name.includes("Ravinarayan") || manifest.short_name === "RN ERP", "Manifest defines short name for mobile home screen");
   assert(manifest.display === "standalone", "Manifest display mode is standalone (app window without browser chrome)");
   assert(manifest.start_url === "/", "Manifest start_url is /");
   assert(manifest.theme_color === "#1A2E20", "Manifest theme_color matches brand Evergreen (#1A2E20)");

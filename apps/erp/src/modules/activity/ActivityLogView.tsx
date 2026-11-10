@@ -147,7 +147,7 @@ export function ActivityLogView() {
 
       {total > PAGE && (
         <div className="flex items-center justify-between text-xs text-[#5A6C5E]">
-          <span>{page * PAGE + 1}–{Math.min(total, (page + 1) * PAGE)} of {total}</span>
+          <span>{page * PAGE + 1}–{Math.min(total, (page + 1) * PAGE)} / {total}</span>
           <div className="flex gap-2">
             <button type="button" disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="rn-btn rn-btn-sm">Newer</button>
             <button type="button" disabled={(page + 1) * PAGE >= total} onClick={() => setPage((p) => p + 1)} className="rn-btn rn-btn-sm">Older</button>

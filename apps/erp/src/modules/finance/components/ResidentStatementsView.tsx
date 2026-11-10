@@ -319,7 +319,7 @@ export function ResidentStatementsView({
           </AppSelect>
 
           <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
-            {filteredResidents.length} of {residents.length}
+            {filteredResidents.length}/{residents.length}
           </span>
         </div>
       </div>

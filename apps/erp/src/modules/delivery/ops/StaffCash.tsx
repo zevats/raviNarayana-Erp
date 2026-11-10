@@ -248,7 +248,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
                     </p>
                     {handedShort > 0 && (
                       <p className="text-[12px] text-[#9A3423]">
-                        Gave {rupees(h.declaredCash)} of {rupees(h.recordedCash ?? h.declaredCash)} recorded{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
+                        Gave {rupees(h.declaredCash)} / {rupees(h.recordedCash ?? h.declaredCash)}{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
                       </p>
                     )}
                     {countShort !== 0 && (

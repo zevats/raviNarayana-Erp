@@ -58,8 +58,8 @@ async function runTests() {
     manifestJson = JSON.parse(manifestRaw);
   } catch {}
   testAssert(Boolean(manifestJson), "manifest.webmanifest is valid, parseable JSON");
-  testAssert(manifestJson?.name === "Ravi Narayana ERP & Delivery", "Manifest name matches brand identity");
-  testAssert(manifestJson?.short_name === "Ravi Narayana" || manifestJson?.short_name === "RN ERP", "Manifest short_name is valid");
+  testAssert(manifestJson?.name === "Ravinarayan PG & Tiffin", "Manifest name matches brand identity");
+  testAssert(manifestJson?.short_name === "Ravinarayan" || manifestJson?.short_name === "RN ERP", "Manifest short_name is valid");
   testAssert(manifestJson?.display === "standalone", "Manifest display mode is 'standalone'");
   testAssert(manifestJson?.start_url === "/", "Manifest start_url is '/'");
   testAssert(manifestJson?.theme_color === "#1A2E20", "Manifest theme_color is brand Evergreen (#1A2E20)");

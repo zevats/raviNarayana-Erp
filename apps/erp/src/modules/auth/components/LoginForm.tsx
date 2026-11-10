@@ -39,6 +39,10 @@ export function LoginForm() {
   const [challengeId, setChallengeId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otp, setOtp] = useState("");
+  // Code accepted: a full-screen logo covers the switch to the app (no frozen button, no sudden page).
+  const [entering, setEntering] = useState(false);
+  const otpFormRef = useRef<HTMLFormElement | null>(null);
+  const autoSent = useRef("");
   const [resendCooldown, setResendCooldown] = useState(0);
 
   // Forgot / Reset Password State
@@ -149,6 +153,7 @@ export function LoginForm() {
 
       // Direct session login fallback if OTP is not required
       setLoginPhase("IDLE");
+      setEntering(true);
       router.replace(nextUrl);
     } catch (err) {
       clearTimeout(phaseTimer);
@@ -202,6 +207,7 @@ export function LoginForm() {
       // consumed code cannot be resubmitted while the next page loads. Delivery staff go straight
       // to their run sheet instead of rendering the dashboard only to be redirected from it.
       rememberBrand(data.user?.role === "DELIVERY_PERSON" ? "delivery" : "standard");
+      setEntering(true);
       const landing =
         !searchParams.get("next") && data.user?.role === "DELIVERY_PERSON" ? "/delivery" : nextUrl;
       router.replace(landing);
@@ -339,6 +345,19 @@ export function LoginForm() {
     }
   };
 
+  // While the code is typed, the app it opens is already being fetched.
+  useEffect(() => {
+    if (step !== "OTP") return;
+    router.prefetch(searchParams.get("next") || "/dashboard");
+    router.prefetch("/delivery");
+  }, [step, router, searchParams]);
+  // The sixth digit sends the code (once per code; a wrong code is not resent by itself).
+  useEffect(() => {
+    if (step !== "OTP" || otp.length !== 6 || isVerifyingOtp || autoSent.current === otp) return;
+    autoSent.current = otp;
+    otpFormRef.current?.requestSubmit();
+  }, [otp, step, isVerifyingOtp]);
+
   const t = BRAND_UI[brand];
   const titles: Record<typeof step, string> = { LOGIN: "Sign in", OTP: "Verify it’s you", FORGOT: "Reset your password", RESET: "Set a new password" };
 
@@ -346,8 +365,13 @@ export function LoginForm() {
   // glass card. The delivery (orange) edition keeps its app's layout unchanged.
   const erp = brand !== "delivery";
   return (
-    <div className={`min-h-[100dvh] w-full flex flex-col lg:items-center lg:justify-center lg:p-8 ${erp ? "rn-login justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
-      <div className="w-full flex flex-col lg:flex-row lg:max-w-[1120px] lg:min-h-[640px] rn-login-shell">
+    <div className={`min-h-[100dvh] w-full flex flex-col lg:h-[100dvh] lg:overflow-hidden ${erp ? "rn-login justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
+      {entering && (
+        <div className="rn-login-enter" role="status" aria-label="Signing in">
+          <RnLogo brand={brand} size={96} title="" className="rn-login-enter-logo" />
+        </div>
+      )}
+      <div className="w-full flex flex-col lg:flex-row lg:h-full rn-login-shell">
       {/* Large screens: the brand panel (sidebar glass, the PG photo, the logo and name). */}
       <aside className={`rn-login-brand hidden lg:flex ${erp ? "" : "rn-login-brand-delivery"}`} aria-hidden="true">
         <svg className="rn-login-lines" viewBox="0 0 600 760" preserveAspectRatio="xMidYMid slice" fill="none">
@@ -362,13 +386,12 @@ export function LoginForm() {
           <div className="flex items-center gap-3.5">
             <span className="rn-login-tile"><RnLogo brand={brand} size={36} onColor title="" /></span>
             <span className="leading-tight">
-              <span className="block text-[17px] font-bold tracking-[0.14em] text-white">RAVINARAYAN</span>
-              <span className="block text-[11px] font-bold tracking-[0.2em] rn-login-accent">{erp ? "PG & TIFFIN ERP" : "DELIVERY"}</span>
+              <span className="block text-[16px] font-semibold tracking-[0.16em] text-white">RAVINARAYAN</span>
+              <span className="block text-[11px] font-medium tracking-[0.22em] rn-login-accent">{erp ? "PG & TIFFIN" : "DELIVERY"}</span>
             </span>
           </div>
-          <span className="rn-login-pill mt-5 self-start"><i />{erp ? "Operations" : "Partner app"}</span>
           <div className="my-auto pt-10">
-            <p className="text-[46px] leading-[1.06] font-bold tracking-[-0.035em] text-white">
+            <p className="rn-login-headline">
               {erp ? "Management," : "Deliveries,"}
               <br />
               made simpler.
@@ -398,9 +421,6 @@ export function LoginForm() {
               })}
             </div>
           </div>
-          <p className="flex items-center gap-2 text-[12px] font-semibold text-white/55">
-            <Lock className="w-3.5 h-3.5 rn-login-accent" /> Ravinarayan PG &amp; Tiffin
-          </p>
         </div>
       </aside>
       <div className="flex-1 min-w-0 flex flex-col justify-center rn-login-formside">
@@ -410,7 +430,7 @@ export function LoginForm() {
             <RnLogo brand="standard" size={96} title="" />
           </div>
           <p className="rn-login-mark">Ravinarayan</p>
-          <p className="rn-login-sub">PG &amp; Tiffin ERP</p>
+          <p className="rn-login-sub">PG &amp; Tiffin</p>
         </header>
       ) : (
       <header className="lg:hidden relative px-6 pt-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] pb-24 sm:pb-28 text-center overflow-hidden" style={{ background: t.hero }}>
@@ -421,7 +441,7 @@ export function LoginForm() {
         </div>
         <p className="relative mt-4 text-[28px] font-extrabold tracking-[-0.02em] text-white">Ravinarayan</p>
         <p className="relative mt-0.5 text-[13px] font-semibold tracking-[0.18em] uppercase" style={{ color: t.caption }}>
-          {brand === "delivery" ? "Delivery" : "ERP"}
+          {brand === "delivery" ? "Delivery" : "PG & Tiffin"}
         </p>
       </header>
       )}
@@ -429,7 +449,7 @@ export function LoginForm() {
       {/* Form card */}
       <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0" : "relative -mt-16 sm:-mt-20 lg:mt-0 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0 flex-1 lg:flex-none"}>
         <div className={`${erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"} lg:!bg-transparent lg:!border-transparent lg:!shadow-none lg:![backdrop-filter:none] lg:!max-w-[380px] lg:!px-0`}>
-          <h1 className="text-[22px] lg:text-[34px] font-extrabold lg:font-bold tracking-[-0.01em] lg:tracking-[-0.03em] text-[#16241B]">{step === "LOGIN" ? <><span className="lg:hidden">Sign in</span><span className="hidden lg:inline">Welcome back</span></> : titles[step]}</h1>
+          <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-[#16241B] rn-login-title">{step === "LOGIN" ? <><span className="lg:hidden">Sign in</span><span className="hidden lg:inline">Welcome back</span></> : titles[step]}</h1>
           {step === "OTP" && (
             <p className="mt-1 text-[14px] text-[#5B6B5F]">
               Code sent to <span className="font-semibold text-[#16241B]">{maskedEmail || "your email"}</span>
@@ -515,7 +535,7 @@ export function LoginForm() {
           )}
 
           {step === "OTP" && (
-            <form method="post" onSubmit={handleOtpVerify} className="mt-5 space-y-4" noValidate>
+            <form ref={otpFormRef} method="post" onSubmit={handleOtpVerify} className="mt-5 space-y-4" noValidate>
               <label htmlFor="otp" className="sr-only">
                 6-digit code
               </label>

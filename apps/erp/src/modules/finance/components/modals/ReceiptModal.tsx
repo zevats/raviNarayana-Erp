@@ -48,7 +48,7 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
               TRANSACTION VOUCHER
             </span>
             <h3 className="font-serif text-xl font-normal mt-0.5">
-              Ravinarayan ERP
+              Ravinarayan PG &amp; Tiffin
             </h3>
             <p className="text-[11px] text-white/70">
               PG Accommodation &amp; Operations

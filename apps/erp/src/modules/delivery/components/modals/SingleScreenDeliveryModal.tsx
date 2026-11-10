@@ -117,7 +117,7 @@ export function SingleScreenDeliveryModal({ task, isOpen, onClose, onSuccess, cu
     : nothingDelivered
       ? { text: "Not delivered — nothing to collect", tone: "warn" }
       : hasShortfall
-        ? { text: `Partly delivered (${deliveredUnits} of ${orderedUnits}) · ${remaining > 0 ? `₹${remaining} pending` : "fully paid"}`, tone: "warn" }
+        ? { text: `Partly delivered (${deliveredUnits}/${orderedUnits}) · ${remaining > 0 ? `₹${remaining} pending` : "fully paid"}`, tone: "warn" }
         : remaining > 0
           ? { text: `Fully delivered · ₹${remaining} pending`, tone: "warn" }
           : { text: "Fully delivered · fully paid", tone: "ok" };

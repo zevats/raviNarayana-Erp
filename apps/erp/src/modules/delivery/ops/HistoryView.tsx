@@ -65,7 +65,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
               },
               {
                 label: "Collected",
-                value: `${rupees(c.summary.money.collected)} of ${rupees(c.summary.money.due)}`,
+                value: `${rupees(c.summary.money.collected)} / ${rupees(c.summary.money.due)}`,
                 note: c.summary.money.outstanding ? `${rupees(c.summary.money.outstanding)} still to collect` : "all collected",
               },
             ]}
@@ -117,7 +117,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
                     <li key={`${s.taskId}-${k}`}>
                       <button type="button" onClick={() => onOpen(s.taskId)} className="w-full text-left py-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 hover:bg-white/50 rounded-xl">
                         <span className="text-[13.5px] text-[var(--rn-ink)]">
-                          <span className="font-medium">{s.customerName}</span> · {s.undelivered} of {s.ordered} {s.productName} — {s.reason || "no reason given"}
+                          <span className="font-medium">{s.customerName}</span> · {s.undelivered}/{s.ordered} {s.productName} not delivered — {s.reason || "no reason given"}
                         </span>
                         <span className="rn-t-meta">
                           {s.disposition ? DISPOSITION_LABEL[s.disposition] : "where it went not recorded"} · {s.staffName || "Unassigned"}

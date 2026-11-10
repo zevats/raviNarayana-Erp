@@ -785,7 +785,7 @@ export default function ResidentsPage() {
               <option value="CHECKED_OUT">Checked out</option>
               <option value="UNASSIGNED">Not assigned</option>
             </AppSelect>
-            <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length} of {residents.length}</span>
+            <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length}/{residents.length}</span>
           </div>
         </div>
       {loading ? (

@@ -342,7 +342,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
             </div>
             <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-[var(--rn-line)]">
               <span className="rn-t-meta">
-                {first}–{last} of {data.total} account{data.total === 1 ? "" : "s"}
+                {first}–{last} / {data.total}
                 {list.isRevalidating ? " · updating…" : ""}
               </span>
               <div className="flex gap-2">

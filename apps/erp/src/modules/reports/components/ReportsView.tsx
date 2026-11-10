@@ -189,7 +189,7 @@ export function ReportsView() {
 
         {r && r.total > PAGE && (
           <div className="flex items-center justify-between text-xs text-[#5A6C5E]">
-            <span>{page * PAGE + 1}–{Math.min(r.total, (page + 1) * PAGE)} of {r.total}</span>
+            <span>{page * PAGE + 1}–{Math.min(r.total, (page + 1) * PAGE)} / {r.total}</span>
             <div className="flex gap-2">
               <button type="button" disabled={page === 0} onClick={() => setPage((x) => x - 1)} className="rn-btn rn-btn-sm">Previous</button>
               <button type="button" disabled={(page + 1) * PAGE >= r.total} onClick={() => setPage((x) => x + 1)} className="rn-btn rn-btn-sm">Next</button>

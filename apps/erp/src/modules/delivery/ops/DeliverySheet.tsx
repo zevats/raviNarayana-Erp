@@ -362,7 +362,7 @@ export function DeliveryForm({
         <section aria-label="Items" className="space-y-2.5">
           <div className="flex items-baseline justify-between">
             <p className={K.eyebrow}>{itemsTitle}</p>
-            <p className={`text-[12px] ${panel ? "font-semibold text-[#2F6B24]" : "text-[#6E7F70]"}`}>{panel ? `${deliveredUnits} of ${orderedUnits} delivered` : "Expected / Delivered"}</p>
+            <p className={`text-[12px] ${panel ? "font-semibold text-[#2F6B24]" : "text-[#6E7F70]"}`}>{panel ? `${deliveredUnits}/${orderedUnits} delivered` : "Expected / Delivered"}</p>
           </div>
           {lines.map((l) => {
             const st = state[l.lineId] || { delivered: l.quantity, reason: "", disposition: null };
@@ -561,7 +561,7 @@ export function DeliveryForm({
               : nothing
                 ? "Save as Not Delivered"
                 : shortLines.length > 0
-                  ? `Confirm Partial Delivery (${deliveredUnits} of ${orderedUnits})`
+                  ? `Confirm partial delivery (${deliveredUnits}/${orderedUnits})`
                   : doorstep && payLater
                     ? "Mark as delivered · Pay Later"
                     : `Confirm Delivery${panel && stopNo !== undefined ? ` (Stop #${stopNo})` : ""}`}

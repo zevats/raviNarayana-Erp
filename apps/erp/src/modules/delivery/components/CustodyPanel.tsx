@@ -60,7 +60,7 @@ function HandoverHistory({ handovers }: { handovers: DriverCashHandover[] }) {
             </div>
             {(h.shortfallCash ?? 0) > 0 && (
               <p className="text-red-800">
-                Handed over {inr(h.declaredCash)} of {inr(h.recordedCash ?? h.declaredCash)} recorded: {inr(h.shortfallCash ?? 0)} short{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
+                Handed over {inr(h.declaredCash)} / {inr(h.recordedCash ?? h.declaredCash)} · {inr(h.shortfallCash ?? 0)} short{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
               </p>
             )}
             {(h.writtenOffCash ?? 0) > 0 && <p className="text-[#5A6C5E]">Written off by the Owner: {inr(h.writtenOffCash ?? 0)}{h.writeOffReason ? ` — ${h.writeOffReason}` : ""}</p>}
@@ -169,7 +169,7 @@ export function MyCustody({ staffId }: { staffId: string }) {
           )}
           {pending && (
             <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-xl p-2">
-              Declaration of {when(pending.createdAt)} is awaiting the manager: cash {inr(pending.declaredCash)}, UPI {inr(pending.declaredUpi || 0)}.
+              Waiting for the manager since {when(pending.createdAt)}: cash {inr(pending.declaredCash)}, UPI {inr(pending.declaredUpi || 0)}.
             </p>
           )}
           {message && (
@@ -574,7 +574,7 @@ function WriteOffShortage({ row, onClose }: { row: StaffCustodyRow; onClose: (ms
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not write off the shortage.");
       invalidateErpCache(["custody", "handover"]);
-      onClose(`${inr(n)} of ${row.staffName}'s shortage written off.`);
+      onClose(`${inr(n)} written off for ${row.staffName}.`);
     } catch (e: any) {
       setError(friendlyError(e.message));
     } finally {

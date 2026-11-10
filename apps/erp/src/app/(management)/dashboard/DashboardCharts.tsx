@@ -368,7 +368,7 @@ export function CompletionTrend({ days }: { days: Array<{ date: string; value: n
                 {days.map((d) => (
                   <tr key={d.date}>
                     <td className="py-1.5 border-b border-[var(--rn-line)] text-[var(--rn-ink-2)]">{longLabel(d.date)}</td>
-                    <td className="py-1.5 border-b border-[var(--rn-line)] text-right tabular-nums">{d.total > 0 ? `${d.delivered} of ${d.total}` : "—"}</td>
+                    <td className="py-1.5 border-b border-[var(--rn-line)] text-right tabular-nums">{d.total > 0 ? `${d.delivered}/${d.total}` : "—"}</td>
                     <td className="py-1.5 border-b border-[var(--rn-line)] text-right tabular-nums">{d.total > 0 ? `${d.value}%` : <span className="text-[var(--rn-ink-3)]">no stops</span>}</td>
                   </tr>
                 ))}
@@ -431,7 +431,7 @@ export function CompletionTrend({ days }: { days: Array<{ date: string; value: n
                 role="status"
               >
                 <span className="block font-semibold tabular-nums text-[var(--rn-ink)]">{h.total > 0 ? `${h.value}%` : "No stops"}</span>
-                <span className="block text-[11px] text-[var(--rn-ink-3)]">{longLabel(h.date)}{h.total > 0 ? ` · ${h.delivered} of ${h.total} delivered` : ""}</span>
+                <span className="block text-[11px] text-[var(--rn-ink-3)]">{longLabel(h.date)}{h.total > 0 ? ` · ${h.delivered}/${h.total} delivered` : ""}</span>
               </div>
             )}
           </div>

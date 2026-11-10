@@ -563,7 +563,7 @@ export function TiffinCustomerDirectory() {
                 <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="px-2 font-medium">
-                Page {currentPage} of {totalPages}
+                Page {currentPage}/{totalPages}
               </span>
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}

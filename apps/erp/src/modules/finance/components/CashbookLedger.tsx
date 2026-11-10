@@ -649,7 +649,7 @@ export function CashbookLedger({
                 </button>
 
                 <span className="font-sans text-xs tabular-nums text-[#1A2E20]">
-                  Page {currentPage} of {totalPages}
+                  Page {currentPage}/{totalPages}
                 </span>
 
                 <button

@@ -255,7 +255,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
         <div className="w-56 lg:w-64">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[14px] font-bold">
-              {completed} of {tasks.length} Completed
+              {completed}/{tasks.length} done
             </span>
             <Pill tone="grey">{open.length} Remaining</Pill>
           </div>
@@ -300,7 +300,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
                 <NextUp task={next} stopNo={numbers.get(next.id)} queueTotal={open.length} selected={wide && selected?.id === next.id} starting={starting === next.id} onStart={() => start(next)} onDeliver={() => deliver(next)} />
               )}
               {!next && (
-                <EmptyState title="All stops done" detail={`${completed} of ${tasks.length} ${mealWord.toLowerCase()} stops recorded`} />
+                <EmptyState title="All stops done" detail={`${completed}/${tasks.length} ${mealWord.toLowerCase()} stops`} />
               )}
               <ul className="space-y-2.5">
                 {rest.map((t) => {
@@ -310,8 +310,8 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
                       {isOpen(t) ? (
                         <>
                           <div className="md:hidden space-y-2 pt-1">
-                            <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">{open.indexOf(t) + 1} of {open.length}</span>
-                            <OpenStopCard task={t} label={`Stop ${open.indexOf(t) + 1} of ${open.length}`} starting={starting === t.id} onStart={() => start(t)} onDeliver={() => deliver(t)} />
+                            <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">{open.indexOf(t) + 1}/{open.length}</span>
+                            <OpenStopCard task={t} label={`Stop ${open.indexOf(t) + 1}/${open.length}`} starting={starting === t.id} onStart={() => start(t)} onDeliver={() => deliver(t)} />
                           </div>
                           <div className="hidden md:block">{row}</div>
                         </>
@@ -357,7 +357,7 @@ function NextUp({ task, stopNo, selected, starting, onStart, onDeliver, queueTot
           <span className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.08em] text-[#B4440F]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#B4440F]" /> Next delivery
           </span>
-          <span className="text-[13px] font-semibold text-[#5A6C5E]">{queueTotal ? `1 of ${queueTotal}` : ""}</span>
+          <span className="text-[13px] font-semibold text-[#5A6C5E]">{queueTotal ? `1/${queueTotal}` : ""}</span>
         </div>
         <OpenStopCard task={task} label="Next stop" starting={starting} onStart={onStart} onDeliver={onDeliver} />
       </div>

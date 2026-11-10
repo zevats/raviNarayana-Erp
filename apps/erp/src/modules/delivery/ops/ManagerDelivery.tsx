@@ -293,7 +293,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         <div className="rn-stat col-span-3 sm:col-span-1">
           <span className="block text-[12px] text-[var(--rn-ink-3)]">Outstanding</span>
           <span className="block mt-1 text-[22px] leading-tight font-semibold tabular-nums text-[var(--rn-accent)]"><Count value={rupees(summary.money.outstanding)} /></span>
-          <span className="block text-[11.5px] text-[var(--rn-ink-3)]">{rupees(summary.money.collected)} of {rupees(summary.money.due)} in</span>
+          <span className="block text-[11.5px] text-[var(--rn-ink-3)]">{rupees(summary.money.collected)} / {rupees(summary.money.due)} in</span>
         </div>
       </section>
 
@@ -366,7 +366,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                       <td className="px-2 py-2 text-right">{r.failed}</td>
                       <td className="px-2 py-2 text-right">{r.open}</td>
                       <td className="px-2 py-2 text-right text-text-muted">{r.cancelled}</td>
-                      <td className="px-4 py-2 text-right">{rupees(r.collected)}{r.due > r.collected ? <span className="text-text-muted"> of {rupees(r.due)}</span> : null}</td>
+                      <td className="px-4 py-2 text-right">{rupees(r.collected)}{r.due > r.collected ? <span className="text-text-muted"> / {rupees(r.due)}</span> : null}</td>
                     </tr>
                   ))}
                 </tbody>

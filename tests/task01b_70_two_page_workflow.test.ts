@@ -478,7 +478,7 @@ async function runTestSuite() {
   assert(fs.existsSync(manifestPath), "public/manifest.webmanifest exists on filesystem");
 
   const manifestContent = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
-  assert(manifestContent.name.includes("Ravi Narayana"), "Manifest contains valid name");
+  assert(manifestContent.name.includes("Ravinarayan"), "Manifest contains valid name");
   assert(manifestContent.display === "standalone", "Manifest display mode is 'standalone'");
   assert(manifestContent.icons && manifestContent.icons.length >= 2, "Manifest includes required app icons");
 

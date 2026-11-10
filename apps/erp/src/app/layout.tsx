@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import { Plus_Jakarta_Sans, Cormorant_Garamond } from "next/font/google";
 import "@/styles/globals.css";
 import "@/styles/glass.css";
 import "@/styles/kit.css";
@@ -9,6 +9,8 @@ import { NativeBridge } from "@/components/native/NativeBridge";
 
 // Brand sans (Plus Jakarta Sans, @ravinarayan/brand). Only defines --font-rn-display; the manager
 // shell (.rn-app) uses it, so the delivery staff app and sign-in keep their current type.
+// The website's heading serif, used for the large sign-in headline.
+const serif = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-rn-serif", display: "swap" });
 const display = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-rn-display", display: "swap" });
 
 export const viewport: Viewport = {
@@ -23,15 +25,15 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: {
-    default: "Ravinarayan ERP | Operations Management",
-    template: "%s | Ravinarayan ERP",
+    default: "Ravinarayan PG & Tiffin",
+    template: "%s | Ravinarayan PG & Tiffin",
   },
-  description: "Internal Operations & Management System for Ravinarayan PG Guesthouse.",
+  description: "Ravinarayan PG & Tiffin",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Ravi Narayana",
+    title: "Ravinarayan",
   },
   other: {
     "mobile-web-app-capable": "yes",
@@ -55,7 +57,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`h-full ${display.variable}`}>
+    <html lang="en" className={`h-full ${display.variable} ${serif.variable}`}>
       <body className="min-h-full bg-[#FAF8F5] text-[#1A2E20] font-sans antialiased selection:bg-[#B58A57]/25 selection:text-[#1A2E20]">
         <PwaRegistrar />
         <KeepFieldInView />

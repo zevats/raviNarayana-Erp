@@ -255,9 +255,9 @@ async function runAllSuites() {
   assert(rendered.html.includes("<!DOCTYPE html"), "HTML contains valid DOCTYPE");
   assert(rendered.html.includes("849201"), "HTML email displays the 6-digit OTP code");
   assert(rendered.html.includes("#1A2E20"), "HTML email features Deep Forest (#1A2E20) brand color");
-  assert(rendered.html.includes("#F2F0E9"), "HTML email features the ivory canvas background");
+  assert(rendered.html.includes("#FAF8F5"), "HTML email features the ivory canvas background");
   assert(rendered.html.includes("font-family"), "HTML email has inline font-family declarations for email clients");
-  assert(rendered.html.includes("max-width: 520px"), "HTML container constrained to 520px width");
+  assert(rendered.html.includes("max-width:580px"), "HTML container constrained to 580px width");
 
   // ---------------------------------------------------------------------------
   // [TEST SUITE 5] Middleware Route Matching Integrity

@@ -243,6 +243,8 @@ export function useErpQuery<T = any>(
   const [isLoading, setIsLoading] = useState<boolean>(!initialEntry && enabled && !!key);
   const [isRevalidating, setIsRevalidating] = useState<boolean>(false);
 
+  const hasDataRef = useRef(false);
+  hasDataRef.current = data !== undefined;
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   // The key this component currently shows; a response for an earlier key (filter/date changed
@@ -305,8 +307,9 @@ export function useErpQuery<T = any>(
         setData(entry.data as T);
         setIsLoading(false);
       } else {
-        // Cache was invalidated, trigger fresh fetch
-        performFetch(false);
+        // Cache was invalidated: refresh. Rows already on screen stay there while the new data
+        // loads (a quiet background refresh); only an empty view shows the loader.
+        performFetch(hasDataRef.current);
       }
     };
 
@@ -357,7 +360,7 @@ export function useErpQuery<T = any>(
     [key, data, tags, performFetch]
   );
 
-  const refetch = useCallback(() => performFetch(false), [performFetch]);
+  const refetch = useCallback(() => performFetch(hasDataRef.current), [performFetch]);
 
   // Visibility-aware background polling, skipped while the shared entry is still fresh.
   useEffect(() => {
