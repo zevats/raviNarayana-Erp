@@ -139,7 +139,6 @@ export function ResidentStatementsView({
                     <Phone className="w-3.5 h-3.5 text-[#5D7656]" />
                     {selectedStatement.phone}
                   </span>
-                  <span>ID: {selectedStatement.residentId}</span>
                 </div>
               </div>
             </div>
@@ -389,7 +388,6 @@ export function ResidentStatementsView({
                             >
                               {r.fullName}
                             </button>
-                            <span className="text-[10px] text-[#6E7F70] font-sans">{r.id}</span>
                           </div>
                         </div>
                       </td>

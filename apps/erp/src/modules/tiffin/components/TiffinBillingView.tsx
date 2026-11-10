@@ -1,508 +1,250 @@
 "use client";
 
+import React, { useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, ReceiptText, Wallet } from "lucide-react";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { Card, CardHeader, StatStrip, SearchField, Badge } from "@/components/ui/kit";
+import { LoadError, SkeletonRows } from "@/components/ui/states";
+import { ConfirmDialog } from "@/components/ui/Dialog";
+import { useTimedMessage } from "@/lib/useTimedMessage";
+import { businessToday } from "@/lib/businessDate";
 import { friendlyError } from "@/lib/friendlyError";
-import { AppSelect } from "@/components/forms/AppSelect";
-import React, { useState, useEffect, useMemo } from "react";
-import { StatStrip } from "@/components/ui/kit";
-import { RefreshButton } from "@/components/ui/states";
-import {
-  Receipt,
-  Search,
-  Filter,
-  Plus,
-  Printer,
-  CreditCard,
-  CheckCircle2,
-  AlertCircle,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  RefreshCw,
-  Eye,
-  ShieldCheck,
-  Utensils,
-  Package,
-  FileText,
-  AlertTriangle,
-} from "lucide-react";
-import {
-  TiffinBillingPeriodPreview,
-  TiffinBillingCustomerPreview,
-  GenerateTiffinInvoicesResult,
-  Invoice,
-} from "@/types";
-import { GenerateTiffinInvoicesModal } from "./modals/GenerateTiffinInvoicesModal";
-import { RecordTiffinPaymentModal } from "./modals/RecordTiffinPaymentModal";
-import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal";
-import { PrintableInvoiceModal } from "@/modules/finance/components/modals/PrintableInvoiceModal";
-import { formatNumberIN } from "@/lib/format";
+import { AccountSheet } from "@/modules/finance/components/ReceivablesView";
 
+const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+const monthLabel = (m: string) => new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${m}-01T00:00:00Z`));
+const shiftMonth = (m: string, by: number) => {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(Date.UTC(y, mo - 1 + by, 1)).toISOString().slice(0, 7);
+};
+
+interface PlanBill {
+  customerId: string;
+  customerName: string;
+  phone: string;
+  subscriptionId: string;
+  productName: string;
+  totalAmount: number;
+  alreadyBilled: boolean;
+  existingInvoiceNumber?: string | null;
+  existingInvoiceStatus?: string | null;
+}
+interface DueAccount {
+  accountKey: string;
+  kind: "RESIDENT" | "CUSTOMER" | "ORDER";
+  name: string;
+  phone: string | null;
+  tiffin: number;
+  delivery: number;
+  total: number;
+  ageDays: number | null;
+}
+
+/**
+ * Tiffin billing, in one place: this month's plan bills (create the missing ones in one step, see
+ * which are paid) and every customer who owes money (plan bills and unpaid orders), with Collect
+ * opening the customer's account to take a payment. Payments use the same account and allocation
+ * as Finance → Receivables.
+ */
 export function TiffinBillingView() {
-  // Current Period YYYY-MM
-  const [selectedPeriod, setSelectedPeriod] = useState<string>(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    return `${y}-${m}`;
-  });
-
-  const [preview, setPreview] = useState<TiffinBillingPeriodPreview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const thisMonth = businessToday().slice(0, 7);
+  const [month, setMonth] = useState(thisMonth);
+  const [search, setSearch] = useState("");
+  const [confirm, setConfirm] = useState<{ ids: string[]; total: number; one?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notification, setNotification] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [account, setAccount] = useState<string | null>(null);
+  const [notice, setNotice] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
 
-  // Filters
-  const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"ALL" | "UNBILLED" | "INVOICED" | "ZERO_MEALS">("ALL");
+  const billsQ = useErpQuery<PlanBill[]>(
+    `billing:plans:${month}`,
+    async () => {
+      const r = await fetch(`/api/tiffin/billing/preview?billingPeriod=${month}`, { cache: "no-store" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Could not load the plan bills.");
+      return (d.preview?.customers ?? []) as PlanBill[];
+    },
+    { ttl: 20000, tags: ["finance", "invoices", "tiffin_subscriptions"] }
+  );
+  const duesQ = useErpQuery<DueAccount[]>(
+    "billing:dues",
+    async () => {
+      const load = async (source: string) => {
+        const r = await fetch(`/api/finance/receivables?source=${source}&limit=100`, { cache: "no-store" });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.error || "Could not load customer dues.");
+        return (d.accounts ?? []) as DueAccount[];
+      };
+      const [t, dl] = await Promise.all([load("TIFFIN"), load("DELIVERY")]);
+      const by = new Map<string, DueAccount>();
+      for (const a of [...t, ...dl]) {
+        if (a.kind === "RESIDENT") continue;
+        const prev = by.get(a.accountKey);
+        by.set(a.accountKey, prev ? { ...a, tiffin: Math.max(prev.tiffin, a.tiffin), delivery: Math.max(prev.delivery, a.delivery), ageDays: Math.max(prev.ageDays ?? 0, a.ageDays ?? 0) } : a);
+      }
+      return [...by.values()].map((a) => ({ ...a, total: (a.tiffin || 0) + (a.delivery || 0) })).filter((a) => a.total > 0).sort((a, b) => b.total - a.total);
+    },
+    { ttl: 20000, tags: ["finance", "invoices", "orders", "receivables"] }
+  );
 
-  // Modals state
-  const [isGenerateOpen, setIsGenerateOpen] = useState(false);
-  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-  const [isBalanceOpen, setIsBalanceOpen] = useState(false);
-  const [isPrintOpen, setIsPrintOpen] = useState(false);
+  const bills = billsQ.data ?? [];
+  const unbilled = bills.filter((b) => !b.alreadyBilled);
+  const unbilledTotal = unbilled.reduce((a, b) => a + b.totalAmount, 0);
+  const paidCount = bills.filter((b) => b.existingInvoiceStatus === "PAID").length;
+  const dues = duesQ.data ?? [];
+  const dueTotal = dues.reduce((a, d) => a + d.total, 0);
+  const shownDues = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return dues.filter((d) => !s || d.name.toLowerCase().includes(s) || (d.phone || "").includes(s));
+  }, [dues, search]);
 
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-
-  const fetchPreview = async () => {
-    setLoading(true);
+  const createBills = async () => {
+    if (!confirm) return;
+    setBusy(true);
     setError(null);
     try {
-      const res = await fetch(`/api/tiffin/billing/preview?billingPeriod=${selectedPeriod}`);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load tiffin billing preview.");
-      }
-      setPreview(data.preview);
-    } catch (err: any) {
-      setError(friendlyError(err.message || "Failed to load billing preview."));
+      const r = await fetch("/api/tiffin/billing/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billingPeriod: month, customerIds: confirm.ids, autoIssue: true }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || "Could not create the bills.");
+      const made = Number(d.result?.generatedCount ?? d.generatedCount ?? confirm.ids.length);
+      invalidateErpCache(["finance", "invoices", "receivables", "tiffin_customers", "tiffin_subscriptions"]);
+      setConfirm(null);
+      setNotice({ tone: "ok", text: `${made} plan bill${made === 1 ? "" : "s"} created for ${monthLabel(month)}.` });
+    } catch (e: any) {
+      setError(friendlyError(e?.message || "Could not create the bills."));
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   };
-
-  useEffect(() => {
-    fetchPreview();
-  }, [selectedPeriod]);
-
-  // Navigate periods
-  const handlePrevMonth = () => {
-    const [y, m] = selectedPeriod.split("-").map(Number);
-    const d = new Date(y, m - 2, 1);
-    setSelectedPeriod(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  };
-
-  const handleNextMonth = () => {
-    const [y, m] = selectedPeriod.split("-").map(Number);
-    const d = new Date(y, m, 1);
-    setSelectedPeriod(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  };
-
-  const handleCurrentMonth = () => {
-    const now = new Date();
-    setSelectedPeriod(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
-  };
-
-  // Filtered customer list
-  const filteredCustomers = useMemo(() => {
-    if (!preview) return [];
-    return preview.customers.filter((c: TiffinBillingCustomerPreview) => {
-      // Search term
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        const matchesName = c.customerName.toLowerCase().includes(term);
-        const matchesPhone = c.phone.includes(term);
-        const matchesInvoice = c.existingInvoiceNumber?.toLowerCase().includes(term);
-        if (!matchesName && !matchesPhone && !matchesInvoice) {
-          return false;
-        }
-      }
-
-      // Filter status
-      if (filterStatus === "UNBILLED") {
-        return !c.alreadyBilled && c.totalAmount > 0;
-      }
-      if (filterStatus === "INVOICED") {
-        return c.alreadyBilled;
-      }
-      if (filterStatus === "ZERO_MEALS") {
-        return !c.alreadyBilled && c.totalAmount === 0;
-      }
-
-      return true;
-    });
-  }, [preview, searchTerm, filterStatus]);
-
-  // Open invoice print modal
-  const handleViewInvoice = async (invoiceId: string) => {
-    try {
-      const res = await fetch(`/api/finance/invoices/${invoiceId}`);
-      const data = await res.json();
-      if (res.ok && data.invoice) {
-        setSelectedInvoice(data.invoice);
-        setIsPrintOpen(true);
-      } else {
-        setNotification({ message: "Failed to load invoice details.", type: "error" });
-      }
-    } catch {
-      setNotification({ message: "Failed to load invoice details.", type: "error" });
-    }
-  };
-
-  // Customer options for payment modal
-  const customerOptions = useMemo(() => {
-    if (!preview) return [];
-    return preview.customers.map((c) => ({
-      id: c.customerId,
-      name: c.customerName,
-      customerType: c.customerType,
-    }));
-  }, [preview]);
 
   return (
-    <div className="space-y-5">
-      {/* Notifications */}
-      {notification && (
-        <div
-          className={`p-3 rounded-xl border text-xs flex items-center justify-between ${
-            notification.type === "success"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-red-50 border-red-200 text-red-800"
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            {notification.type === "success" ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            ) : (
-              <AlertCircle className="w-4 h-4 text-red-600" />
-            )}
-            <span>{notification.message}</span>
-          </div>
-          <button
-            onClick={() => setNotification(null)}
-            className="text-xs font-bold hover:underline"
-          >
-            Dismiss
+    <div className="space-y-5 min-w-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 rounded-full rn-glass p-1" role="group" aria-label="Month">
+          <button type="button" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month" className="grid place-items-center w-10 h-10 rounded-full hover:bg-black/[0.05]">
+            <ChevronLeft className="w-4 h-4" />
           </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Period Bar & Actions */}
-      <div className="rn-card px-4 py-3.5 sm:px-5 flex flex-wrap items-center justify-between gap-3">
-        {/* Month Navigator */}
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
-          <span className="rn-t-label">Billing period</span>
-          <div className="flex items-center bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl p-0.5">
-            <button
-              onClick={handlePrevMonth}
-              title="Previous Month"
-              className="p-1 text-gray-600 hover:text-[#1A2E20] hover:bg-white rounded-lg transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <input
-              type="month"
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="px-2 py-0.5 text-xs font-bold text-[#1A2E20] bg-transparent focus:outline-hidden"
-            />
-            <button
-              onClick={handleNextMonth}
-              title="Next Month"
-              className="p-1 text-gray-600 hover:text-[#1A2E20] hover:bg-white rounded-lg transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-          <button type="button" onClick={handleCurrentMonth} className="rn-btn rn-btn-sm">
-            This month
-          </button>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <RefreshButton onRefresh={fetchPreview} busy={loading} label="Refresh billing preview" />
-
-          <button
-            onClick={() => {
-              setSelectedCustomerId(null);
-              setIsPaymentOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-[#8E9F89]/40 hover:bg-gray-50 text-emerald-800 rounded-xl text-xs font-bold transition-all shadow-2xs"
-          >
-            <CreditCard className="w-4 h-4 text-emerald-700" />
-            <span>Record Payment</span>
-          </button>
-
-          <button
-            onClick={() => setIsGenerateOpen(true)}
-            disabled={!preview || preview.customers.filter((c) => !c.alreadyBilled && c.totalAmount > 0).length === 0}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-[#1A2E20] hover:bg-[#1A2E20]/90 text-[#FAF8F5] rounded-xl text-xs font-bold transition-all disabled:opacity-50 shadow-xs"
-          >
-            <FileText className="w-4 h-4 text-[#B58A57]" />
-            <span>Generate Invoices</span>
+          <span className="px-3 min-w-[150px] text-center text-[15px] font-semibold text-[var(--rn-ink)]">{monthLabel(month)}</span>
+          <button type="button" onClick={() => setMonth(shiftMonth(month, 1))} disabled={month >= thisMonth} aria-label="Next month" className="grid place-items-center w-10 h-10 rounded-full hover:bg-black/[0.05] disabled:opacity-30">
+            <ChevronRight className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       <StatStrip
         items={[
-          { label: "Customers", value: preview?.totalEligibleCustomers || 0, note: "with a subscription" },
-          { label: "Meals delivered", value: preview?.totalBillableDeliveredMeals || 0, note: "billable" },
-          { label: "To bill", value: `₹${formatNumberIN(preview?.totalProjectedAmount || 0)}`, note: "this period" },
-          {
-            label: "Invoiced",
-            value: `${preview?.alreadyBilledInvoicesCount || 0} / ${preview?.totalEligibleCustomers || 0}`,
-            note: `${(preview?.totalEligibleCustomers || 0) - (preview?.alreadyBilledInvoicesCount || 0)} not yet`,
-          },
+          { label: "Plan bills", value: `${bills.length - unbilled.length} of ${bills.length}`, note: unbilled.length ? `${unbilled.length} not created yet` : "all created", tone: unbilled.length ? "warn" : "good" },
+          { label: "Not billed yet", value: rupees(unbilledTotal), tone: unbilledTotal ? "warn" : "default" },
+          { label: "Bills paid", value: `${paidCount} of ${bills.length - unbilled.length}`, tone: "good" },
+          { label: "Due from customers", value: rupees(dueTotal), note: `${dues.length} customer${dues.length === 1 ? "" : "s"}`, tone: dueTotal ? "bad" : "good" },
         ]}
       />
 
-      {/* Customer Deliveries Table Card */}
-      <div className="rn-card">
-        {/* Table Filters Bar */}
-        <div className="p-3.5 border-b border-[#8E9F89]/20 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-1">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="pointer-events-none w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                placeholder="Search customer, phone, invoice..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:ring-1 focus:ring-[#1A2E20]"
-              />
-            </div>
+      {notice && (
+        <p role="status" className={`rounded-2xl px-4 py-3 text-[14px] ${notice.tone === "ok" ? "bg-[#E4F2E0] text-[#1D4E16]" : "bg-[#FDECE8] text-[#A3311D]"}`}>{notice.text}</p>
+      )}
 
-            <AppSelect
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as any)}
-              className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden"
-            >
-              <option value="ALL">All Customers ({preview?.customers.length || 0})</option>
-              <option value="UNBILLED">Ready to Bill ({preview?.customers.filter((c) => !c.alreadyBilled && c.totalAmount > 0).length || 0})</option>
-              <option value="INVOICED">Already Invoiced ({preview?.customers.filter((c) => c.alreadyBilled).length || 0})</option>
-              <option value="ZERO_MEALS">Zero Deliveries ({preview?.customers.filter((c) => !c.alreadyBilled && c.totalAmount === 0).length || 0})</option>
-            </AppSelect>
-          </div>
-
-          <div className="text-xs text-gray-500 text-right">
-            Showing <span className="font-semibold text-[#1A2E20]">{filteredCustomers.length}</span> profiles
-          </div>
+      {/* Plan bills for the month */}
+      <Card flush>
+        <div className="p-4 sm:p-5 border-b border-[var(--rn-line)]">
+          <CardHeader
+            className="flex-wrap items-center"
+            title={<span className="inline-flex items-center gap-2"><ReceiptText className="w-4 h-4 text-[var(--rn-accent-mid)]" /> Plan bills</span>}
+            action={
+              unbilled.length > 0 ? (
+                <button type="button" onClick={() => setConfirm({ ids: [...new Set(unbilled.map((b) => b.customerId))], total: unbilledTotal })} className="rn-btn rn-btn-primary w-full sm:w-auto">
+                  Bill {unbilled.length} plan{unbilled.length === 1 ? "" : "s"} · {rupees(unbilledTotal)}
+                </button>
+              ) : null
+            }
+          />
         </div>
+        {billsQ.isLoading && !billsQ.data ? (
+          <div className="p-4 sm:p-5"><SkeletonRows rows={4} /></div>
+        ) : billsQ.error && !billsQ.data ? (
+          <div className="p-4 sm:p-5"><LoadError message={billsQ.error.message} onRetry={() => billsQ.refetch()} /></div>
+        ) : bills.length === 0 ? (
+          <p className="px-5 py-10 text-center text-[15px] text-[var(--rn-ink-2)]">No plans ran in {monthLabel(month)}.</p>
+        ) : (
+          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Plan bills">
+            {bills.map((b) => {
+              const st = b.existingInvoiceStatus;
+              return (
+                <li key={b.subscriptionId} className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[15px] font-semibold text-[var(--rn-ink)] truncate">{b.customerName}</p>
+                    <p className="text-[13px] text-[var(--rn-ink-2)] truncate">{b.productName}{b.existingInvoiceNumber ? ` · ${b.existingInvoiceNumber}` : ""}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
+                    <span className="text-[15px] font-semibold tabular-nums text-[var(--rn-ink)]">{rupees(b.totalAmount)}</span>
+                    {!b.alreadyBilled ? <Badge>Not billed</Badge> : st === "PAID" ? <Badge tone="good">Paid</Badge> : st === "PARTIALLY_PAID" ? <Badge tone="warn">Part paid</Badge> : <Badge tone="bad">Unpaid</Badge>}
+                  </div>
+                  {!b.alreadyBilled ? (
+                    <button type="button" onClick={() => setConfirm({ ids: [b.customerId], total: b.totalAmount, one: b.customerName })} className="rn-btn rn-btn-sm">Bill</button>
+                  ) : st !== "PAID" ? (
+                    <button type="button" onClick={() => setAccount(`C:${b.customerId}`)} className="rn-btn rn-btn-sm"><Wallet /> Collect</button>
+                  ) : (
+                    <button type="button" onClick={() => setAccount(`C:${b.customerId}`)} className="rn-btn rn-btn-sm">Account</button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] font-bold text-[#1A2E20] uppercase tracking-wider">
-                <th className="py-3 px-4">Customer</th>
-                <th className="py-3 px-3">Active Subscription</th>
-                <th className="py-3 px-3 text-center">Verified Deliveries</th>
-                <th className="py-3 px-3 text-right">Amount (₹)</th>
-                <th className="py-3 px-3 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#8E9F89]/15">
-              {filteredCustomers.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-12 text-center text-gray-500">
-                    {loading ? "Loading preview calculations..." : "No customers found matching current filters."}
-                  </td>
-                </tr>
-              ) : (
-                filteredCustomers.map((cust) => {
-                  return (
-                    <tr key={cust.subscriptionId} className="hover:bg-[#FAF8F5]/60 transition-colors">
-                      {/* Customer */}
-                      <td className="py-3 px-4">
-                        <div className="font-semibold text-[#1A2E20] flex items-center gap-1.5">
-                          <span>{cust.customerName}</span>
-                          <span
-                            className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold uppercase ${
-                              cust.customerType === "CORPORATE"
-                                ? "bg-purple-100 text-purple-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {cust.customerType}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 font-mono mt-0.5">
-                          {cust.phone}
-                        </div>
-                      </td>
-
-                      {/* Active Subscription */}
-                      <td className="py-3 px-3">
-                        <div className="font-medium text-[#1A2E20]">{cust.productName}</div>
-                        <div className="text-[10px] text-gray-500">
-                          ₹{formatNumberIN(cust.unitPrice)}{cust.billingUnit === "PER_MEAL" ? "/meal" : "/mo"} • {cust.mealTypes}
-                        </div>
-                      </td>
-
-                      {/* Verified Deliveries */}
-                      <td className="py-3 px-3 text-center">
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
-                          <Utensils className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="font-bold text-xs">{cust.deliveredCount}</span>
-                          <span className="text-[10px] text-emerald-600">delivered</span>
-                        </div>
-                        {cust.excludedCount > 0 && (
-                          <div className="text-[9px] text-gray-400 mt-0.5">
-                            {cust.excludedCount} outside period
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Amount */}
-                      <td className="py-3 px-3 text-right">
-                        <div className="font-bold text-[#1A2E20] font-serif text-sm">
-                          ₹{formatNumberIN(cust.totalAmount)}
-                        </div>
-                        {cust.warnings.length > 0 && (
-                          <div className="text-[10px] text-amber-700 mt-0.5" title={cust.warnings.join("; ")}>
-                            {cust.warnings[0]}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-3 px-3 text-center">
-                        {cust.alreadyBilled ? (
-                          <div>
-                            <button
-                              onClick={() => cust.existingInvoiceId && handleViewInvoice(cust.existingInvoiceId)}
-                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold font-mono bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
-                            >
-                              <CheckCircle2 className="w-3 h-3 text-green-600" />
-                              {cust.existingInvoiceNumber || "INVOICED"}
-                            </button>
-                            {cust.existingInvoiceStatus && (
-                              <div className="text-[9px] text-gray-400 uppercase mt-0.5">
-                                {cust.existingInvoiceStatus}
-                              </div>
-                            )}
-                          </div>
-                        ) : cust.totalAmount === 0 ? (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-100 text-gray-600">
-                            Zero Deliveries
-                          </span>
-                        ) : (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800">
-                            Ready to Bill
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Financial Dossier / Ledger */}
-                          <button
-                            onClick={() => {
-                              setSelectedCustomerId(cust.customerId);
-                              setIsBalanceOpen(true);
-                            }}
-                            title="View Customer Balance & Invoices"
-                            className="p-1.5 text-gray-600 hover:text-[#1A2E20] hover:bg-[#FAF8F5] rounded-lg border border-gray-200 transition-colors"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Record Payment */}
-                          <button
-                            onClick={() => {
-                              setSelectedCustomerId(cust.customerId);
-                              setIsPaymentOpen(true);
-                            }}
-                            title="Record Payment for Customer"
-                            className="p-1.5 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors"
-                          >
-                            <CreditCard className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Print / View Bill if generated */}
-                          {cust.existingInvoiceId && (
-                            <button
-                              onClick={() => handleViewInvoice(cust.existingInvoiceId!)}
-                              title="Print / View Invoice"
-                              className="p-1.5 text-purple-700 hover:text-purple-900 hover:bg-purple-50 rounded-lg border border-purple-200 transition-colors"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {/* Customer dues: plan bills and unpaid orders */}
+      <Card flush>
+        <div className="flex flex-wrap items-center gap-3 p-4 sm:p-5 border-b border-[var(--rn-line)]">
+          <h2 className="flex-1 text-[17px] font-semibold text-[var(--rn-ink)]">Customer dues</h2>
+          <SearchField value={search} onChange={setSearch} placeholder="Search customer or phone" className="w-full sm:w-72" />
         </div>
-      </div>
+        {duesQ.isLoading && !duesQ.data ? (
+          <div className="p-4 sm:p-5"><SkeletonRows rows={4} /></div>
+        ) : duesQ.error && !duesQ.data ? (
+          <div className="p-4 sm:p-5"><LoadError message={duesQ.error.message} onRetry={() => duesQ.refetch()} /></div>
+        ) : shownDues.length === 0 ? (
+          <p className="px-5 py-10 text-center text-[15px] text-[var(--rn-ink-2)]">{search.trim() ? "No customer matches." : "No customer owes anything."}</p>
+        ) : (
+          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Customer dues">
+            {shownDues.map((d) => (
+              <li key={d.accountKey} className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-[var(--rn-ink)] truncate">{d.name}</p>
+                  <p className="text-[13px] text-[var(--rn-ink-2)]">
+                    {[d.tiffin > 0 ? `Plan bills ${rupees(d.tiffin)}` : null, d.delivery > 0 ? `Orders ${rupees(d.delivery)}` : null].filter(Boolean).join(" · ")}
+                    {d.ageDays ? ` · oldest ${d.ageDays} day${d.ageDays === 1 ? "" : "s"}` : ""}
+                  </p>
+                </div>
+                <span className="text-[16px] font-semibold tabular-nums text-[#A3311D]">{rupees(d.total)}</span>
+                <button type="button" onClick={() => setAccount(d.accountKey)} className="rn-btn rn-btn-sm rn-btn-primary"><Wallet /> Collect</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
-      {/* Generate Invoices Modal */}
-      <GenerateTiffinInvoicesModal
-        isOpen={isGenerateOpen}
-        onClose={() => setIsGenerateOpen(false)}
-        billingPeriod={selectedPeriod}
-        preview={preview}
-        onSuccess={(result: GenerateTiffinInvoicesResult) => {
-          setNotification({
-            message: `Successfully generated ${result.generatedCount} tiffin invoices.`,
-            type: "success",
-          });
-          fetchPreview();
-        }}
-      />
+      <ConfirmDialog
+        open={Boolean(confirm)}
+        onClose={() => !busy && setConfirm(null)}
+        onConfirm={createBills}
+        busy={busy}
+        error={error}
+        title={confirm?.one ? `Bill ${confirm.one}?` : `Bill ${confirm?.ids.length ?? 0} plans?`}
+        confirmLabel={`Create bill${confirm && confirm.ids.length === 1 ? "" : "s"} · ${rupees(confirm?.total ?? 0)}`}
+      >
+        <p className="text-[14px] text-[var(--rn-ink-2)]">{monthLabel(month)}. Bills already created are not made again.</p>
+      </ConfirmDialog>
 
-      {/* Record Payment Modal */}
-      <RecordTiffinPaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        customers={customerOptions}
-        initialCustomerId={selectedCustomerId || undefined}
-        onSuccess={() => {
-          setNotification({
-            message: "Payment recorded successfully and posted to finance cashbook.",
-            type: "success",
-          });
-          fetchPreview();
-        }}
-      />
-
-      {/* Customer Balance Dossier Modal */}
-      <TiffinCustomerBalanceModal
-        isOpen={isBalanceOpen}
-        onClose={() => setIsBalanceOpen(false)}
-        customerId={selectedCustomerId}
-        onOpenRecordPayment={(cid) => {
-          setSelectedCustomerId(cid);
-          setIsPaymentOpen(true);
-        }}
-        onOpenPrintInvoice={(inv) => {
-          setSelectedInvoice(inv);
-          setIsPrintOpen(true);
-        }}
-      />
-
-      {/* Printable Invoice Modal */}
-      <PrintableInvoiceModal
-        isOpen={isPrintOpen}
-        onClose={() => setIsPrintOpen(false)}
-        invoice={selectedInvoice}
-        onIssueInvoice={async () => {
-          fetchPreview();
+      <AccountSheet
+        accountKey={account}
+        onClose={() => {
+          setAccount(null);
+          invalidateErpCache(["finance", "invoices", "receivables"]);
         }}
       />
     </div>

@@ -45,7 +45,8 @@ import { RoomBedsPanel } from "@/modules/rooms/RoomBedsPanel";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
-
+
+import { PhoneError } from "@/components/forms/PhoneError";
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   SINGLE: "Single Occupancy",
   DOUBLE_SHARING: "Double Sharing",
@@ -696,7 +697,7 @@ export default function RoomsPage() {
       <Card flush>
         <div className="p-4 sm:p-5 flex flex-wrap items-center gap-2.5 border-b border-[var(--rn-line)]">
           <SearchField value={search} onChange={setSearch} placeholder="Search room or resident" className="flex-1 basis-[240px]" />
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 rn-filter-row">
             <AppSelect value={selectedFloor} onChange={(e) => setSelectedFloor(e.target.value)} aria-label="Floor" className="rn-input">
               <option value="ALL">All floors</option>
               {floors.map((fl) => (
@@ -721,9 +722,7 @@ export default function RoomsPage() {
         <EmptyState
           title={rooms.length === 0 ? "No rooms yet" : "No rooms match"}
           action={rooms.length === 0 ? <button type="button" onClick={handleOpenAddModal} className="rn-btn rn-btn-primary"><Plus /> Add room</button> : undefined}
-        >
-          {rooms.length === 0 ? "Add the first room to start assigning beds." : "Try another search or filter."}
-        </EmptyState>
+        />
       ) : (
         <div className="rn-rows">
           {filteredRooms.map((room) => {
@@ -969,8 +968,8 @@ export default function RoomsPage() {
       {/* MODAL: ADD TENANT DIRECTLY TO AVAILABLE BED                    */}
       {/* ============================================================== */}
       {assigningRoom && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-[#1A2E20] text-[#B58A57] flex items-center justify-center shrink-0">
@@ -1076,6 +1075,7 @@ export default function RoomsPage() {
                           }
                           className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                         />
+                        <PhoneError value={tenantFormData.phone} rule="resident" />
                       </div>
                     </div>
 
@@ -1146,7 +1146,7 @@ export default function RoomsPage() {
                         <BikeLoader tone="forest" size="sm" label="Loading checked-out residents…" className="py-3" />
                       ) : checkedOutResidents.length === 0 ? (
                         <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
-                          No checked-out residents found. Please switch to the &ldquo;Register New Tenant&rdquo; tab.
+                          No checked-out residents found.
                         </div>
                       ) : (
                         <AppSelect
@@ -1248,13 +1248,6 @@ export default function RoomsPage() {
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
                   <button
-                    type="button"
-                    onClick={() => setAssigningRoom(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
-                  <button
                     type="submit"
                     className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-medium shadow-xs"
                   >
@@ -1344,8 +1337,8 @@ export default function RoomsPage() {
       {/* MODAL 1: ADD NEW ROOM (Real-time duplicate validation)          */}
       {/* ============================================================== */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-5 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-5 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <BedDouble className="w-5 h-5 text-[#B58A57]" />
@@ -1481,13 +1474,6 @@ export default function RoomsPage() {
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                >
-                  Cancel
-                </button>
-                <button
                   type="submit"
                   disabled={
                     submitting ||
@@ -1508,8 +1494,8 @@ export default function RoomsPage() {
       {/* MODAL 2: EDIT ROOM (Full Editing, Duplicate & Capacity Guard) */}
       {/* ============================================================== */}
       {editingRoom && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-5 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-5 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div>
                 <h3 className="font-serif text-xl text-[#1A2E20] font-bold tabular-nums">
@@ -1657,19 +1643,9 @@ export default function RoomsPage() {
                     }
                     className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums"
                   />
-                  <p className="text-[11px] text-[#8E9F89] mt-1 font-light">
-                    Note: Base rent edits apply to future check-ins and do not alter existing resident agreements or historical charges.
-                  </p>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setEditingRoom(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
                   <button
                     type="submit"
                     disabled={
@@ -1747,8 +1723,8 @@ export default function RoomsPage() {
       {/* MODAL 3: DELETE ROOM CONFIRMATION DIALOG                       */}
       {/* ============================================================== */}
       {deletingRoom && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-rose-600" />
@@ -1775,20 +1751,10 @@ export default function RoomsPage() {
                 <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
                   <p className="font-semibold mb-1">Cannot Delete Occupied Room</p>
                   <p>
-                    Room {deletingRoom.roomNumber} currently has{" "}
-                    <strong className="tabular-nums">{deletingRoom.occupiedBeds} active occupant(s)</strong>.
-                    To maintain data integrity, you must check out all residents before this room can be removed.
+                    Check out its <strong className="tabular-nums">{deletingRoom.occupiedBeds}</strong> resident{deletingRoom.occupiedBeds === 1 ? "" : "s"} first.
                   </p>
                 </div>
 
-                <div className="pt-2 flex justify-end">
-                  <button
-                    onClick={() => setDeletingRoom(null)}
-                    className="px-5 py-2 rounded-xl bg-[#1A2E20] text-white text-xs font-medium"
-                  >
-                    Close
-                  </button>
-                </div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1804,12 +1770,6 @@ export default function RoomsPage() {
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
-                  <button
-                    onClick={() => setDeletingRoom(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
                   <button
                     onClick={handleDeleteRoom}
                     disabled={submitting}
@@ -1828,8 +1788,8 @@ export default function RoomsPage() {
       {/* MODAL 4: EDIT RESIDENT DETAILS                                 */}
       {/* ============================================================== */}
       {editingResident && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <UserCog className="w-5 h-5 text-[#B58A57]" />
@@ -1894,6 +1854,7 @@ export default function RoomsPage() {
                     }
                     className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
+                  <PhoneError value={residentFormData.phone} rule="resident" />
                 </div>
 
                 <div>
@@ -1949,13 +1910,6 @@ export default function RoomsPage() {
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
                   <button
-                    type="button"
-                    onClick={() => setEditingResident(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
-                  <button
                     type="submit"
                     disabled={submitting}
                     className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-medium disabled:opacity-50"
@@ -1973,8 +1927,8 @@ export default function RoomsPage() {
       {/* MODAL 5: RESIDENT CHECK-OUT CONFIRMATION DIALOG               */}
       {/* ============================================================== */}
       {checkingOutResident && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <LogOut className="w-5 h-5 text-amber-600" />
@@ -2036,13 +1990,6 @@ export default function RoomsPage() {
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setCheckingOutResident(null)}
-                  className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                >
-                  Cancel
-                </button>
                 <button
                   type="submit"
                   disabled={submitting}

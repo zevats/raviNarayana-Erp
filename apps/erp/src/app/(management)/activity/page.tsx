@@ -9,7 +9,7 @@ export default async function ActivityPage() {
   await requirePagePermission("system.manage");
   return (
     <div className="space-y-5 min-w-0">
-      <PageHeader title="Activity log" description="Everything staff did, newest first. Entries cannot be changed." />
+      <PageHeader title="Activity log" />
       <ActivityLogView />
     </div>
   );

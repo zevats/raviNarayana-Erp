@@ -2,7 +2,10 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import nodemailer, { Transporter } from "nodemailer";
-import { renderOtpEmail, RenderedEmail } from "./emailTemplate";
+import { renderOtpEmail, RenderedEmail, renderPasswordResetEmail } from "./emailTemplate";
+
+/** Marks every message as an automated, transactional email (no auto-replies; better inbox placement). */
+const AUTO_HEADERS: Record<string, string> = { "Auto-Submitted": "auto-generated", "X-Auto-Response-Suppress": "OOF, AutoReply" };
 
 export interface EmailMessage {
   to: string;
@@ -88,7 +91,8 @@ export class OutboxEmailAdapter implements EmailAdapter {
   }
 
   async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
-    return this.write("password_reset", { to, subject: "Ravinarayan ERP Password Reset Request", resetUrl });
+    const r = renderPasswordResetEmail(resetUrl);
+    return this.write("password_reset", { to, subject: r.subject, resetUrl, text: r.text, html: r.html });
   }
 
   async sendRendered(to: string, email: RenderedEmail, meta: { kind: string; otp?: string }): Promise<boolean> {
@@ -116,13 +120,8 @@ export class MockEmailAdapter implements EmailAdapter {
   }
 
   async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
-    mockSentEmails.push({
-      to,
-      subject: "Ravinarayan ERP Password Reset Request",
-      html: `<p>Please click the link below to reset your password: <a href="${resetUrl}">${resetUrl}</a></p>`,
-      text: `Please reset your password using this link: ${resetUrl}`,
-      timestamp: new Date().toISOString(),
-    });
+    const r = renderPasswordResetEmail(resetUrl);
+    mockSentEmails.push({ to, subject: r.subject, html: r.html, text: r.text, timestamp: new Date().toISOString() });
     return true;
   }
 
@@ -284,6 +283,7 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
         subject: rendered.subject,
         text: rendered.text,
         html: rendered.html,
+        headers: AUTO_HEADERS,
       });
 
       const totalSmtpMs = Date.now() - t0;
@@ -327,7 +327,7 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
 
   async sendRendered(to: string, email: RenderedEmail, meta: { kind: string }): Promise<boolean> {
     try {
-      const info = await this.transporter.sendMail({ from: this.from, to, subject: email.subject, text: email.text, html: email.html });
+      const info = await this.transporter.sendMail({ from: this.from, to, subject: email.subject, text: email.text, html: email.html, headers: AUTO_HEADERS });
       return Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0);
     } catch (err: any) {
       console.error(`[SMTP Delivery Error] Failed to send ${meta.kind} email:`, err?.message || "Unknown SMTP transport error");
@@ -337,13 +337,8 @@ export class GmailSmtpEmailAdapter implements EmailAdapter {
 
   async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
     try {
-      const info = await this.transporter.sendMail({
-        from: this.from,
-        to,
-        subject: "Ravinarayan ERP Password Reset Request",
-        text: `Reset your password at: ${resetUrl}. Valid for 1 hour.`,
-        html: `<p>A password reset was requested for your account.</p><p><a href="${resetUrl}">Click here to reset your password</a></p><p>This link expires in 1 hour.</p>`,
-      });
+      const r = renderPasswordResetEmail(resetUrl);
+      const info = await this.transporter.sendMail({ from: this.from, to, subject: r.subject, text: r.text, html: r.html, headers: AUTO_HEADERS });
       return Boolean(info && Array.isArray(info.accepted) && info.accepted.length > 0);
     } catch (err: any) {
       console.error(
@@ -545,13 +540,13 @@ export class HttpApiEmailAdapter implements EmailAdapter {
           ? await fetch("https://api.brevo.com/v3/smtp/email", {
               method: "POST",
               headers: { "api-key": this.apiKey, "content-type": "application/json", accept: "application/json" },
-              body: JSON.stringify({ sender: { name: this.fromName, email: this.fromEmail }, to: [{ email: to }], subject, htmlContent: html, textContent: text }),
+              body: JSON.stringify({ sender: { name: this.fromName, email: this.fromEmail }, to: [{ email: to }], subject, htmlContent: html, textContent: text, headers: AUTO_HEADERS }),
               signal: ctrl.signal,
             })
           : await fetch("https://api.resend.com/emails", {
               method: "POST",
               headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
-              body: JSON.stringify({ from: `${this.fromName} <${this.fromEmail}>`, to: [to], subject, html, text }),
+              body: JSON.stringify({ from: `${this.fromName} <${this.fromEmail}>`, to: [to], subject, html, text, headers: AUTO_HEADERS }),
               signal: ctrl.signal,
             });
       if (!res.ok) {
@@ -574,13 +569,8 @@ export class HttpApiEmailAdapter implements EmailAdapter {
   }
 
   async sendPasswordReset(to: string, resetUrl: string): Promise<boolean> {
-    return this.post(
-      to,
-      "Ravinarayan ERP Password Reset Request",
-      `<p>A password reset was requested for your account.</p><p><a href="${resetUrl}">Click here to reset your password</a></p><p>This link expires in 1 hour.</p>`,
-      `Reset your password at: ${resetUrl}. Valid for 1 hour.`,
-      "password_reset"
-    );
+    const r = renderPasswordResetEmail(resetUrl);
+    return this.post(to, r.subject, r.html, r.text, "password_reset");
   }
 
   async sendRendered(to: string, email: RenderedEmail, meta: { kind: string }): Promise<boolean> {

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
-import { Download, Printer, FileText, X, Check, ArrowRight } from "lucide-react";
+import { Download, Printer, FileText, X, Check } from "lucide-react";
 import { businessToday } from "@/lib/businessDate";
 
 interface ExportReportModalProps {
@@ -32,6 +32,7 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
   const currentUser = useCurrentUser();
   const [isOpen, setIsOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [format, setFormat] = useState<"csv" | "pdf">("csv");
 
   const handleDownloadCsv = async () => {
     try {
@@ -56,7 +57,7 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Failed to download CSV report:", err);
-      alert("Unable to generate CSV report. Please try again.");
+      alert("The report could not be prepared. Please try again.");
     } finally {
       setDownloading(false);
     }
@@ -81,115 +82,69 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
         <span>Export Report</span>
       </button>
 
-      {/* Modal Backdrop & Dialog */}
+      {/* Modal: choose a format (two cards), then one action in the footer */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs no-print">
-          <div
-            className="w-full max-w-lg bg-[#FAF8F5] rounded-2xl border border-[#8E9F89]/30 shadow-2xl overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-150"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="modal-title"
-          >
-            {/* Modal Header */}
-            <div className="bg-[#1A2E20] text-white px-6 py-5 flex items-center justify-between border-b border-[#263B2D]">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-[#263B2D] border border-[#B58A57]/30 flex items-center justify-center text-[#B58A57]">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 id="modal-title" className="text-base font-semibold tracking-wide text-white">
-                    Executive Report Export
-                  </h3>
-                  <p className="text-[11px] text-[#A8B9A1] mt-0.5">
-                    Prepared for {currentUser?.fullName || "Owner"}
-                  </p>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 no-print rn-modal-scrim" onClick={() => setIsOpen(false)}>
+          <div className="rn-modal" role="dialog" aria-modal="true" aria-labelledby="export-title" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-[rgba(30,35,32,0.08)]">
+              <div className="min-w-0">
+                <h3 id="export-title" className="text-[19px] font-semibold text-[#1E2320]">Export report</h3>
               </div>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="text-white/60 hover:text-white transition-colors p-1 rounded-md"
-                aria-label="Close modal"
-              >
+              <button type="button" onClick={() => setIsOpen(false)} aria-label="Close" className="grid place-items-center w-11 h-11 -mr-2 rounded-full text-[#4A504B] hover:bg-black/[0.05]">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-6 space-y-5">
-              <p className="text-xs text-[#3E4E42] leading-relaxed">
-                Generate an official, database-backed operational briefing. Select your preferred format below:
-              </p>
-
-              {/* Option Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                {/* CSV Option */}
-                <div className="p-4 rounded-xl bg-white border border-[#8E9F89]/25 hover:border-[#B58A57] transition-all flex flex-col justify-between shadow-2xs group">
-                  <div className="space-y-2">
-                    <div className="w-8 h-8 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center text-[#1A2E20] group-hover:text-[#B58A57] transition-colors">
-                      <Download className="w-4 h-4" />
-                    </div>
-                    <h4 className="text-xs font-semibold text-[#1A2E20]">
-                      Data Spreadsheet (.csv)
-                    </h4>
-                    <p className="text-[11px] text-[#5A6C5E] leading-normal">
-                      RFC 4180 compliant CSV with formula protection. Complete metric breakdown.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleDownloadCsv}
-                    disabled={downloading}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#1A2E20] text-white hover:bg-[#263B2D] text-xs font-medium transition-colors shadow-2xs"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>{downloading ? "Generating..." : "Download CSV"}</span>
-                  </button>
-                </div>
-
-                {/* Printable PDF Option */}
-                <div className="p-4 rounded-xl bg-white border border-[#8E9F89]/25 hover:border-[#B58A57] transition-all flex flex-col justify-between shadow-2xs group">
-                  <div className="space-y-2">
-                    <div className="w-8 h-8 rounded-lg bg-[#FAF8F5] border border-[#8E9F89]/30 flex items-center justify-center text-[#1A2E20] group-hover:text-[#B58A57] transition-colors">
-                      <Printer className="w-4 h-4" />
-                    </div>
-                    <h4 className="text-xs font-semibold text-[#1A2E20]">
-                      Printable PDF Report
-                    </h4>
-                    <p className="text-[11px] text-[#5A6C5E] leading-normal">
-                      Clean A4 executive layout. Ready for printing or saving directly to PDF.
-                    </p>
-                  </div>
-                  <button
-                    onClick={handlePrint}
-                    className="mt-4 w-full inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-[#B58A57] text-white hover:bg-[#9E7443] text-xs font-medium transition-colors shadow-2xs"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Print / Save PDF</span>
-                  </button>
-                </div>
+            <div className="px-6 py-5 space-y-5">
+              <div role="radiogroup" aria-label="Format" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {([
+                  { v: "csv" as const, icon: <Download className="w-5 h-5" />, title: "Spreadsheet (CSV)" },
+                  { v: "pdf" as const, icon: <Printer className="w-5 h-5" />, title: "Printable PDF" },
+                ]).map((o) => {
+                  const on = format === o.v;
+                  return (
+                    <button
+                      key={o.v}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setFormat(o.v)}
+                      className={`relative text-left rounded-2xl p-4 bg-white transition-colors ${on ? "border-2 border-[#1E3A2B] shadow-[0_8px_24px_-16px_rgba(30,58,43,0.6)]" : "border-2 border-[rgba(30,35,32,0.10)] hover:border-[rgba(30,58,43,0.35)]"}`}
+                    >
+                      <span className={`grid place-items-center w-10 h-10 rounded-xl ${on ? "bg-[#1E3A2B] text-white" : "bg-[#EEF3EA] text-[#1E3A2B]"}`}>{o.icon}</span>
+                      <span className="mt-3 block text-[15px] font-semibold text-[#1E2320]">{o.title}</span>
+                      {on && (
+                        <span className="absolute right-3 top-3 grid place-items-center w-6 h-6 rounded-full bg-[#1E3A2B] text-white">
+                          <Check className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
-              {/* Data Invariants Verification Card */}
-              <div className="bg-[#FAF8F5] border border-[#8E9F89]/20 rounded-xl p-3.5 text-[11px] text-[#5A6C5E] space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-[#1A2E20]">
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Real-time Verified Figures</span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] pt-1">
-                  <div>Occupancy: <strong className="text-[#1A2E20]">{summary.occupancyRate}% ({summary.occupiedBeds}/{summary.totalCapacity})</strong></div>
-                  <div>Rent MTD: <strong className="text-[#1A2E20]">₹{summary.currentMonthRent.toLocaleString("en-IN")}</strong></div>
-                  <div>Outstanding: <strong className="text-[#1A2E20]">₹{summary.outstandingRent.toLocaleString("en-IN")}</strong></div>
-                  <div>Tiffin Net: <strong className="text-[#1A2E20]">₹{summary.tiffinNetResult.toLocaleString("en-IN")}</strong></div>
+              <div className="rounded-2xl bg-[#F6F3EC] px-4 py-3.5 text-[13px] text-[#3A403C]">
+                <p className="flex items-center gap-1.5 font-semibold text-[#1E2320]">
+                  <Check className="w-4 h-4 text-[#2F6B24]" /> Included in the report
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                  <span>Occupancy <strong className="text-[#1E2320]">{summary.occupancyRate}%</strong> ({summary.occupiedBeds}/{summary.totalCapacity})</span>
+                  <span>Rent this month <strong className="text-[#1E2320]">₹{summary.currentMonthRent.toLocaleString("en-IN")}</strong></span>
+                  <span>Rent owed <strong className="text-[#1E2320]">₹{summary.outstandingRent.toLocaleString("en-IN")}</strong></span>
+                  <span>Tiffin net <strong className="text-[#1E2320]">₹{summary.tiffinNetResult.toLocaleString("en-IN")}</strong></span>
                 </div>
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="bg-[#FAF8F5] px-6 py-3.5 border-t border-[#8E9F89]/20 flex justify-end">
+            <div className="flex justify-end px-6 py-4 border-t border-[rgba(30,35,32,0.08)]">
               <button
-                onClick={() => setIsOpen(false)}
-                className="px-4 py-1.5 rounded-lg text-xs font-medium text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-stone-200/50 transition-colors"
+                type="button"
+                onClick={format === "csv" ? handleDownloadCsv : handlePrint}
+                disabled={downloading}
+                className="rn-btn-primary inline-flex items-center gap-2 h-12 px-6 rounded-full text-[15px] font-semibold disabled:opacity-60"
               >
-                Close
+                {format === "csv" ? <Download className="w-4 h-4" /> : <Printer className="w-4 h-4" />}
+                {format === "csv" ? (downloading ? "Preparing…" : "Download CSV") : "Print or save PDF"}
               </button>
             </div>
           </div>

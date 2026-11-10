@@ -22,7 +22,7 @@ type Section = keyof SettingsPayload["settings"];
 const input = "rn-input w-full";
 const label = "block text-[12px] font-medium text-[var(--rn-ink-3)] mb-1.5";
 
-function Card({ icon: Icon, title, hint, changed, children, wide = false }: { icon: React.ElementType; title: string; hint: string; changed?: { at: string; by: string | null }; children: React.ReactNode; wide?: boolean }) {
+function Card({ icon: Icon, title, changed, children, wide = false }: { icon: React.ElementType; title: string; changed?: { at: string; by: string | null }; children: React.ReactNode; wide?: boolean }) {
   return (
     <section className={`rn-card p-5 sm:p-6 space-y-4 ${wide ? "xl:col-span-2" : ""}`}>
       <div className="flex items-start gap-3">
@@ -31,7 +31,6 @@ function Card({ icon: Icon, title, hint, changed, children, wide = false }: { ic
         </span>
         <div className="min-w-0">
           <h2 className="text-[17px] font-semibold text-[var(--rn-ink)]">{title}</h2>
-          <p className="text-[12.5px] text-[var(--rn-ink-3)] mt-0.5">{hint}</p>
           {changed && (
             <p className="text-[11.5px] text-[var(--rn-ink-3)] mt-1">
               Last changed {new Date(changed.at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" })}
@@ -49,7 +48,7 @@ function SaveRow({ busy, onSave, message }: { busy: boolean; onSave: () => void;
   return (
     <div className="flex flex-wrap items-center gap-3 pt-1">
       <button type="button" onClick={onSave} disabled={busy} className="inline-flex items-center gap-2 px-4 min-h-[40px] rounded-full bg-[#1A2E20] text-white text-sm font-semibold hover:bg-[#263B2D] disabled:opacity-60">
-        {busy ? <BikeLoader inline tone="light" label="Saving" /> : "Save"}
+        {busy ? "Saving…" : "Save"}
       </button>
       {message && (
         <span className={`inline-flex items-center gap-1.5 text-xs ${message.ok ? "text-emerald-700" : "text-rose-700"}`}>
@@ -125,7 +124,7 @@ export function SettingsView() {
 
   return (
     <div className="grid gap-5 xl:grid-cols-2 items-start">
-      <Card wide icon={Building2} title="Business details" hint="Shown on new invoices. Invoices already issued keep their details." changed={lastChanged.business}>
+      <Card wide icon={Building2} title="Business details" changed={lastChanged.business}>
         <div className="grid sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
             <label className={label} htmlFor="b-name">Business name</label>
@@ -151,7 +150,7 @@ export function SettingsView() {
         <SaveRow busy={busy === "business"} onSave={() => save("business")} message={messages.business ?? null} />
       </Card>
 
-      <Card icon={Clock} title="Meal times" hint="When each meal's delivery list is prepared, and the cutoff after which changes need a Manager override (Indian time)." changed={lastChanged.meals}>
+      <Card icon={Clock} title="Meal times" changed={lastChanged.meals}>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {([
             ["lunchPrepareAt", "Lunch list at"],
@@ -168,7 +167,7 @@ export function SettingsView() {
         <SaveRow busy={busy === "meals"} onSave={() => save("meals")} message={messages.meals ?? null} />
       </Card>
 
-      <Card icon={Truck} title="Default delivery partner" hint="New delivery orders go to this person. Any single order can still be reassigned on the Delivery page." changed={lastChanged.delivery}>
+      <Card icon={Truck} title="Default delivery partner" changed={lastChanged.delivery}>
         <SelectMenu
           label="Default delivery partner"
           tone="forest"
@@ -185,7 +184,7 @@ export function SettingsView() {
         <SaveRow busy={busy === "delivery"} onSave={() => save("delivery")} message={messages.delivery ?? null} />
       </Card>
 
-      <Card icon={CalendarClock} title="Monthly rent" hint="Day of the month on which each resident's rent is charged automatically. Leave empty to charge rent by hand." changed={lastChanged.finance}>
+      <Card icon={CalendarClock} title="Monthly rent" changed={lastChanged.finance}>
         <div className="max-w-[220px]">
           <label className={label} htmlFor="f-due">Rent due day (1–28)</label>
           <input
@@ -202,7 +201,7 @@ export function SettingsView() {
         <SaveRow busy={busy === "finance"} onSave={() => save("finance")} message={messages.finance ?? null} />
       </Card>
 
-      <Card icon={Bell} title="Alerts" hint="Reminders shown in the notification bell." changed={lastChanged.notifications}>
+      <Card icon={Bell} title="Alerts" changed={lastChanged.notifications}>
         <div className="space-y-2">
           {([
             ["subscriptionExpiry", "Subscriptions ending within 7 days"],

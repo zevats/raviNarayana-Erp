@@ -120,8 +120,8 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-2.5">
@@ -132,9 +132,6 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
               <h3 className="font-serif text-xl text-[#1A2E20] font-bold">
                 Record Operational Expense
               </h3>
-              <p className="text-[11px] text-[#5A6C5E]">
-                Log verified operational disbursement and vendor payment
-              </p>
             </div>
           </div>
           <button
@@ -298,14 +295,6 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
 
           {/* Action Buttons */}
           <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#8E9F89]/20">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs font-semibold text-[#1A2E20] hover:bg-[#FAF8F5]"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={submitting}

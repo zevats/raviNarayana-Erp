@@ -41,8 +41,6 @@ const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModa
 const NewOrderModal = dynamic(() => loadNewOrderModal().then((m) => m.NewOrderModal), { ssr: false });
 const loadEditOrderModal = () => import("@/modules/orders/components/EditOrderModal");
 const EditOrderModal = dynamic(() => loadEditOrderModal().then((m) => m.EditOrderModal), { ssr: false });
-const loadSubscriptionsToday = () => import("@/modules/delivery/ops/SubscriptionsToday");
-const SubscriptionsToday = dynamic(() => loadSubscriptionsToday().then((m) => m.SubscriptionsToday), { ssr: false });
 const loadMenuCatalog = () => import("@/modules/delivery/ops/MenuCatalog");
 const MenuCatalog = dynamic(() => loadMenuCatalog().then((m) => m.MenuCatalog), { ssr: false });
 
@@ -51,7 +49,7 @@ const ORDERS_POLL_MS = 20000;
 
 export default function OrdersPage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadNewOrderModal, loadEditOrderModal, loadSubscriptionsToday, loadMenuCatalog]), []);
+  useEffect(() => preloadWhenIdle([loadNewOrderModal, loadEditOrderModal, loadMenuCatalog]), []);
   // Signed-in user from the server-rendered shell (no /api/auth/me round-trip).
   const currentUser = useCurrentUser();
   const [serviceDate, setServiceDate] = useState(businessToday());
@@ -120,7 +118,18 @@ export default function OrdersPage() {
     const t = setTimeout(() => setOrderNotice(null), 5000);
     return () => clearTimeout(t);
   }, [orderNotice]);
-  const [activeSection, setActiveSection] = useState<"DAILY_ORDERS" | "SUBSCRIPTIONS" | "MENU_CATALOG">("DAILY_ORDERS");
+  const [activeSection, setActiveSection] = useState<"DAILY_ORDERS" | "MENU_CATALOG">("DAILY_ORDERS");
+  // Subscriptions → Take order opens /orders?take=<subscription id>: the form opens with that plan.
+  const [presetPlanId, setPresetPlanId] = useState<string | null>(null);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const take = url.searchParams.get("take");
+    if (!take) return;
+    setPresetPlanId(take);
+    setIsNewOrderModalOpen(true);
+    url.searchParams.delete("take");
+    window.history.replaceState(window.history.state, "", url.toString());
+  }, []);
 
 
   // Orders are cached per date and type and reused across visits; refreshed every 20s while the
@@ -184,7 +193,9 @@ export default function OrdersPage() {
   const PAGE = 60;
   const [shown, setShown] = useState(PAGE);
   useEffect(() => setShown(PAGE), [serviceDate, orderTypeFilter, statusFilter, deferredSearch]);
-  const visibleOrders = filteredOrders.length > shown ? filteredOrders.slice(0, shown) : filteredOrders;
+  // A busy day shows its latest orders (where new orders land, in number order); earlier ones open
+  // with "Show earlier orders" above the list.
+  const visibleOrders = filteredOrders.length > shown ? filteredOrders.slice(filteredOrders.length - shown) : filteredOrders;
   // Each order of the day gets a short number in the order it was taken (#1 is the first), so it
   // can be told apart and called out ("order 12") at a glance.
   const orderNo = useMemo(() => {
@@ -245,7 +256,6 @@ export default function OrdersPage() {
               onChange={setActiveSection}
               options={[
                 { value: "DAILY_ORDERS", label: "Today", count: counts.today },
-                { value: "SUBSCRIPTIONS", label: "Subscriptions" },
                 { value: "MENU_CATALOG", label: "Menu" },
               ]}
             />
@@ -270,7 +280,7 @@ export default function OrdersPage() {
         <div className="rn-card">
           <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-2.5">
             <SearchField value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone or address" className="flex-1 basis-[240px]" />
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap rn-filter-row">
               <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Service date" className="rn-input" />
               <AppSelect value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value as any)} aria-label="Order type" className="rn-input">
                 <option value="ALL">All orders</option>
@@ -290,10 +300,17 @@ export default function OrdersPage() {
           {isLoading ? (
             <BikeLoader label="Loading orders" className="py-12" />
           ) : filteredOrders.length === 0 && shownPending.length === 0 ? (
-            <EmptyState title="No orders for this date">
-              Nothing matches these filters. Use New order at the top to add one.
-            </EmptyState>
+            <EmptyState title="No orders for this date" />
           ) : (
+            <>
+            {filteredOrders.length > visibleOrders.length && (
+              <div className="px-4 pt-4 flex items-center justify-center gap-3">
+                <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums">Latest {visibleOrders.length} of {filteredOrders.length}</span>
+                <button type="button" className="rn-btn" onClick={() => setShown((n) => n + PAGE)}>
+                  Show {Math.min(PAGE, filteredOrders.length - visibleOrders.length)} earlier orders
+                </button>
+              </div>
+            )}
             <div className="rn-order-cards p-3 sm:p-4 space-y-3">
               {visibleOrders.map((order) => {
                 const isDelivery = order.orderType === "DELIVERY";
@@ -463,29 +480,9 @@ export default function OrdersPage() {
                   />
                 );
               })}
-              {filteredOrders.length > visibleOrders.length && (
-                <div className="p-4 flex items-center justify-center gap-3">
-                  <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums">Showing {visibleOrders.length} of {filteredOrders.length}</span>
-                  <button type="button" className="rn-btn" onClick={() => setShown((n) => n + PAGE)}>
-                    Show {Math.min(PAGE, filteredOrders.length - visibleOrders.length)} more
-                  </button>
-                </div>
-              )}
             </div>
+            </>
           )}
-        </div>
-      )}
-
-      {/* Subscriptions: today's status, skip / extra for this meal, residents' room delivery */}
-      {activeSection === "SUBSCRIPTIONS" && (
-        <div className="rn-card p-4 sm:p-6">
-          <SubscriptionsToday
-            canChange={currentUser?.role === "SUPER_ADMIN" || currentUser?.role === "OPERATIONS_MANAGER"}
-            onTakeOrder={(customer) => {
-              setPresetCustomer(customer);
-              setIsNewOrderModalOpen(true);
-            }}
-          />
         </div>
       )}
 
@@ -517,8 +514,10 @@ export default function OrdersPage() {
         onClose={() => {
           setIsNewOrderModalOpen(false);
           setPresetCustomer(null);
+          setPresetPlanId(null);
         }}
         presetCustomer={presetCustomer}
+        presetPlanId={presetPlanId}
         onOrderCreated={(message) => {
           setOrderNotice(message);
           invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"]);

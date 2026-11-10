@@ -263,9 +263,6 @@ export function ReceivePaymentDialog({
               );
             })}
           </ul>
-          {lines.some((l) => l.source === "DELIVERY") && (
-            <p className="rn-t-meta">Order payments are dated today (the moment they are recorded) and, when paid in cash, are in your custody, as with any office collection.</p>
-          )}
           <p className={`text-[13px] tabular-nums ${ready ? "text-[#2F6B24]" : "text-[var(--rn-ink-2)]"}`}>
             Applied {formatMoney(applied)}
             {Number.isFinite(receivedNum) && receivedNum > 0 ? ` of ${formatMoney(receivedNum)} received` : ""}

@@ -64,9 +64,9 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
                 tone: c.summary.items.undelivered ? "warn" : "default",
               },
               {
-                label: "Doorstep money (one-off orders)",
+                label: "Collected",
                 value: `${rupees(c.summary.money.collected)} of ${rupees(c.summary.money.due)}`,
-                note: c.summary.money.outstanding ? `${rupees(c.summary.money.outstanding)} still to collect` : "all collected · subscriptions are billed monthly",
+                note: c.summary.money.outstanding ? `${rupees(c.summary.money.outstanding)} still to collect` : "all collected",
               },
             ]}
           />

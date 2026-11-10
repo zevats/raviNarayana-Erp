@@ -66,8 +66,8 @@ export function TaskTimelineModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 border border-[#E6E1DA] shadow-xl">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 border border-[#E6E1DA] shadow-xl">
         <div className="flex items-center justify-between border-b border-[#E6E1DA] pb-3">
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-[#B58A57]" />
@@ -133,14 +133,6 @@ export function TaskTimelineModal({
           </div>
         )}
 
-        <div className="flex justify-end pt-2 border-t border-[#E6E1DA]">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-[#FAF8F5] text-[#1A2E20] text-xs font-serif rounded-xl border border-[#DCD6CD] hover:bg-white transition"
-          >
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );

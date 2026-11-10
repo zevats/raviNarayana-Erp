@@ -86,7 +86,7 @@ export function CollectionsChart({
         <div>
           <h2 className="text-[17px] font-semibold text-[var(--rn-ink)]">Money received</h2>
           <p className="text-[12.5px] text-[var(--rn-ink-3)] mt-0.5">
-            Rent and tiffin, {range === "30d" ? "last 30 days" : "last 6 months"} · <span className="tabular-nums text-[var(--rn-ink-2)]">{rupees(total)}</span>
+            <span className="tabular-nums text-[var(--rn-ink-2)]">{rupees(total)}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -202,7 +202,6 @@ export function ExpenseDonut({ items, total }: { items: Array<{ category: string
       <div className="flex items-start justify-between gap-2">
         <div>
           <h2 className="text-[17px] font-semibold text-[var(--rn-ink)]">Spending</h2>
-          <p className="text-[12.5px] text-[var(--rn-ink-3)] mt-0.5">Expenses by category, this month</p>
         </div>
         {slices.length > 0 && (
           <button type="button" onClick={() => setTable((t) => !t)} className="h-8 px-3 rounded-full text-[12px] text-[var(--rn-ink-3)] hover:text-[var(--rn-ink)] hover:bg-black/[0.04]">
@@ -276,6 +275,36 @@ export function ExpenseDonut({ items, total }: { items: Array<{ category: string
  * Days with no scheduled stops are gaps in the line, not 0%: nothing was due, so nothing failed.
  * Crosshair + tooltip on hover/focus; table view; one series, so no legend (the title names it).
  */
+/** Smooth monotone cubic path through points sorted by x (no overshoot between points). */
+function smoothPath(p: Array<{ x: number; y: number }>): string {
+  if (p.length === 0) return "";
+  if (p.length === 1) return `M${p[0].x.toFixed(1)},${p[0].y.toFixed(1)}`;
+  const n = p.length;
+  const dx: number[] = [];
+  const slope: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx.push(p[i + 1].x - p[i].x);
+    slope.push((p[i + 1].y - p[i].y) / (p[i + 1].x - p[i].x || 1));
+  }
+  const t: number[] = [slope[0]];
+  for (let i = 1; i < n - 1; i++) t.push(slope[i - 1] * slope[i] <= 0 ? 0 : (slope[i - 1] + slope[i]) / 2);
+  t.push(slope[n - 2]);
+  for (let i = 0; i < n - 1; i++) {
+    if (slope[i] === 0) { t[i] = 0; t[i + 1] = 0; continue; }
+    const a = t[i] / slope[i];
+    const b = t[i + 1] / slope[i];
+    const h = a * a + b * b;
+    if (h > 9) { const r = 3 / Math.sqrt(h); t[i] = r * a * slope[i]; t[i + 1] = r * b * slope[i]; }
+  }
+  let d = `M${p[0].x.toFixed(1)},${p[0].y.toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const c1x = p[i].x + dx[i] / 3, c1y = p[i].y + (t[i] * dx[i]) / 3;
+    const c2x = p[i + 1].x - dx[i] / 3, c2y = p[i + 1].y - (t[i + 1] * dx[i]) / 3;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p[i + 1].x.toFixed(1)},${p[i + 1].y.toFixed(1)}`;
+  }
+  return d;
+}
+
 export function CompletionTrend({ days }: { days: Array<{ date: string; value: number; delivered: number; total: number }> }) {
   const [hover, setHover] = useState<number | null>(null);
   const [table, setTable] = useState(false);
@@ -291,7 +320,7 @@ export function CompletionTrend({ days }: { days: Array<{ date: string; value: n
   }, [table]);
   const W = 640;
   const H = 150;
-  const L = 40;
+  const L = 34 + 18 * k;
   const T = 10;
   const label = (d: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
   const longLabel = (d: string) => new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
@@ -300,14 +329,11 @@ export function CompletionTrend({ days }: { days: Array<{ date: string; value: n
   const y = (pct: number) => T + (1 - pct / 100) * (H - T);
   const withStops = days.filter((d) => d.total > 0);
   const avg = withStops.length ? Math.round((withStops.reduce((a, d) => a + d.delivered, 0) / Math.max(1, withStops.reduce((a, d) => a + d.total, 0))) * 100) : null;
-  // Line segments break at days without stops.
-  const segments: string[] = [];
-  let cur = "";
-  days.forEach((d, i) => {
-    if (d.total > 0) cur += `${cur ? "L" : "M"}${x(i).toFixed(1)},${y(d.value).toFixed(1)} `;
-    else if (cur) { segments.push(cur); cur = ""; }
-  });
-  if (cur) segments.push(cur);
+  // One continuous line through every day that had stops (days without stops are bridged), drawn
+  // as a smooth monotone curve: it bends gently but never overshoots above 100% or below 0%.
+  const pts = days.map((d, i) => (d.total > 0 ? { x: x(i), y: y(d.value) } : null)).filter((p): p is { x: number; y: number } => p !== null);
+  const line = smoothPath(pts);
+  const area = pts.length > 1 ? `${line} L${pts[pts.length - 1].x.toFixed(1)},${H} L${pts[0].x.toFixed(1)},${H} Z` : "";
   const h = hover !== null ? days[hover] : null;
 
   return (
@@ -359,17 +385,28 @@ export function CompletionTrend({ days }: { days: Array<{ date: string; value: n
                 </g>
               ))}
               {hover !== null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H} stroke="rgba(26,46,32,0.22)" />}
-              {segments.map((d, j) => (
-                <path key={j} d={d} fill="none" stroke={MARK} strokeWidth={2 * k} strokeLinejoin="round" strokeLinecap="round" />
-              ))}
+              <defs>
+                <linearGradient id="rn-done-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={MARK} stopOpacity="0.16" />
+                  <stop offset="100%" stopColor={MARK} stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {area && <path d={area} fill="url(#rn-done-fill)" stroke="none" />}
+              {pts.length > 1 && <path d={line} fill="none" stroke={MARK} strokeWidth={2.25 * k} strokeLinejoin="round" strokeLinecap="round" />}
               {days.map((d, i) =>
                 d.total > 0 ? (
                   <circle key={d.date} cx={x(i)} cy={y(d.value)} r={(hover === i ? 5 : 3.5) * k} fill={MARK} stroke="#fff" strokeWidth={2 * k} />
                 ) : null
               )}
-              {days.map((d, i) => (i % (k > 1.6 ? 6 : 3) === 0 || i === days.length - 1) && (
+              {days.map((d, i) => {
+                // Every 3rd (6th when narrow) day and the last one, without crowding the last label.
+                const every = k > 1.6 ? 6 : 3;
+                const last = days.length - 1;
+                const show = i === last || (i % every === 0 && last - i >= Math.ceil(every / 1.5));
+                return show && (
                 <text key={`t-${d.date}`} x={x(i)} y={H + 18 * k} textAnchor={i === 0 ? "start" : i === days.length - 1 ? "end" : "middle"} fontSize={11 * k} fill="#6E7F70">{label(d.date)}</text>
-              ))}
+                );
+              })}
               {days.map((d, i) => (
                 <rect
                   key={`h-${d.date}`}

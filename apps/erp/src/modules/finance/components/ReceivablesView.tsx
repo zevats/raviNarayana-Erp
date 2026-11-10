@@ -172,7 +172,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
         {s && (s.unallocatedCredit !== 0 || s.reviews > 0) && (
           <div className="flex flex-wrap gap-2 text-[12.5px]">
             {s.unallocatedCredit !== 0 && (
-              <span className="rn-t-meta">Tiffin payments not yet allocated to an invoice: {formatMoney(s.unallocatedCredit)} (included in the total)</span>
+              <span className="rn-t-meta">Advance paid: {formatMoney(s.unallocatedCredit)}</span>
             )}
             {s.reviews > 0 && (
               <button type="button" onClick={() => setReviewOnly(true)} className="inline-flex items-center gap-1.5 text-[#9A3423] font-semibold">
@@ -199,7 +199,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
           />
           <SearchField value={search} onChange={setSearch} placeholder="Search name, phone or room" label="Search accounts" className="lg:flex-1 min-w-0" />
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 rn-filter-row">
           <label className="min-w-0">
             <span className="rn-t-label block mb-1">Payment status</span>
             <AppSelect value={status} onChange={(e) => setStatus(e.target.value as any)} className="rn-input w-full">
@@ -255,7 +255,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
             ))}
           </div>
         ) : data.accounts.length === 0 ? (
-          <div className="p-5">{filtersOn ? <NoMatches onClear={clear} /> : <EmptyData title="Nothing outstanding">Every PG, tiffin and delivery balance is paid.</EmptyData>}</div>
+          <div className="p-5">{filtersOn ? <NoMatches onClear={clear} /> : <EmptyData title="Nothing outstanding" />}</div>
         ) : (
           <>
             {/* Phones: cards */}
@@ -397,7 +397,7 @@ interface StatementResponse {
 }
 
 /** One account: open balances, Pay Later (customers), statement, receive payment. */
-function AccountSheet({ accountKey, onClose }: { accountKey: string | null; onClose: () => void }) {
+export function AccountSheet({ accountKey, onClose }: { accountKey: string | null; onClose: () => void }) {
   const canRecord = useHasPermission("finance.record");
   const canManageDelivery = useHasPermission("delivery.manage");
   const [tab, setTab] = useState<"balances" | "statement">("balances");
@@ -426,13 +426,14 @@ function AccountSheet({ accountKey, onClose }: { accountKey: string | null; onCl
       ) : (
         <div className="space-y-4 min-w-0">
           {notice && <p role="status" className="rounded-xl bg-[#E6F1E3] text-[#2F6B24] text-[13px] px-3 py-2">{notice}</p>}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-2">
+            {/* Only the parts that apply: rent for a resident, plan bills and orders for a customer. */}
             {[
-              { l: "Total", v: a.totals.total },
-              { l: "PG rent", v: a.totals.PG },
-              { l: "Tiffin", v: a.totals.TIFFIN },
-              { l: "Delivery", v: a.totals.DELIVERY },
-            ].map((c) => (
+              { l: "Total", v: a.totals.total, show: true },
+              { l: "PG rent", v: a.totals.PG, show: a.account.kind === "RESIDENT" || a.totals.PG !== 0 },
+              { l: "Tiffin", v: a.totals.TIFFIN, show: a.account.kind !== "RESIDENT" || a.totals.TIFFIN !== 0 },
+              { l: "Delivery", v: a.totals.DELIVERY, show: a.account.kind !== "RESIDENT" || a.totals.DELIVERY !== 0 },
+            ].filter((c) => c.show).map((c) => (
               <div key={c.l} className="min-w-0 rounded-xl border border-[var(--rn-line)] px-3 py-2">
                 <span className="block rn-t-meta">{c.l}</span>
                 <span className="block tabular-nums font-semibold break-words">{formatMoney(c.v)}</span>

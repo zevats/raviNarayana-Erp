@@ -10,7 +10,9 @@ import java.util.List;
 
 /**
  * Small bridge used by the web app:
- *  - setBrand({ brand }): remembers the edition (standard | delivery) for the next launch's splash;
+ *  - setBrand({ brand }): remembers the edition (standard | delivery) for the next launch's opening
+ *    animation and launcher icon;
+ *  - ready(): the page is ready, so the opening animation ends;
  *  - pushReady(): whether this build has a Firebase configuration, so the web app only registers
  *    for delivery alerts when it can actually receive them.
  */
@@ -21,6 +23,13 @@ public class RnAppPlugin extends Plugin {
     public void setBrand(PluginCall call) {
         String brand = "delivery".equals(call.getString("brand", "standard")) ? "delivery" : "standard";
         getContext().getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE).edit().putString("brand", brand).apply();
+        call.resolve();
+    }
+
+    /** The web app has drawn its first screen: the opening animation can end. */
+    @PluginMethod
+    public void ready(PluginCall call) {
+        MainActivity.markWebReady();
         call.resolve();
     }
 

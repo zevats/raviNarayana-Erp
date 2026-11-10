@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { greeting } from "@/lib/names";
 import Link from "next/link";
-import { Users, Truck, ReceiptText, ArrowUpRight, BedDouble, UtensilsCrossed, AlertTriangle, Info, CheckCircle2, ArrowDownLeft, ArrowUpLeft, ChevronDown, Wallet, Banknote } from "lucide-react";
+import { Users, Truck, ReceiptText, ArrowUpRight, BedDouble, UtensilsCrossed, AlertTriangle, Info, CheckCircle2, ArrowDownLeft, ArrowUpLeft, ArrowRight, Wallet, Banknote } from "lucide-react";
 import type { DashboardOps } from "@/server/dashboard/dashboardOpsService";
 import type { NotificationItem, ClosingDivision } from "@/types";
 import { CollectionsChart, ExpenseDonut, CompletionTrend } from "./DashboardCharts";
@@ -49,7 +49,7 @@ function StatTile({ icon: Icon, title, value, note, href }: { icon: React.Elemen
           <ArrowUpRight className="w-4 h-4" />
         </span>
       </span>
-      <span className="sm:-mb-2 truncate text-[12px] sm:text-[14px] font-medium leading-tight text-[var(--rn-ink-2)] sm:text-[var(--rn-ink)]">{title}</span>
+      <span className="sm:-mb-2 sm:truncate leading-tight text-[12px] sm:text-[14px] font-medium leading-tight text-[var(--rn-ink-2)] sm:text-[var(--rn-ink)]">{title}</span>
       <span className="mt-auto flex items-end gap-x-3 gap-y-1 flex-wrap">
         <span className="text-[20px] sm:text-[30px] leading-none font-semibold tracking-[-0.02em] text-[var(--rn-ink)] tabular-nums">{value}</span>
         <span className="hidden sm:inline text-[12.5px] text-[var(--rn-ink-3)] pb-0.5 truncate max-w-full">{note}</span>
@@ -63,44 +63,34 @@ function Failed({ what }: { what: string }) {
 }
 
 /**
- * A card with a list: shows the first few rows; when there are more, the whole card is clickable
- * (and a "Show all" control is at its foot) and it opens to show every row, then closes again.
- * Links inside the rows keep working as links.
+ * A list card: the first few rows, and a link to the full page when there are more (the card never
+ * grows on the dashboard). Links inside the rows keep working as links.
  */
-function ExpandableCard<T>({
+function ListCard<T>({
   title,
   action,
   items,
-  collapsedCount = 4,
+  shownCount = 4,
   empty,
   renderItem,
   listClassName = "mt-3 divide-y divide-[var(--rn-line)]",
+  moreHref,
   id,
 }: {
   title: string;
   action?: React.ReactNode;
   items: T[] | null;
-  collapsedCount?: number;
+  shownCount?: number;
   empty: React.ReactNode;
   renderItem: (item: T, i: number) => React.ReactNode;
   listClassName?: string;
+  moreHref: string;
   id?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const more = items ? Math.max(0, items.length - collapsedCount) : 0;
-  const shown = items ? (open ? items : items.slice(0, collapsedCount)) : [];
-  const toggle = (e: React.MouseEvent) => {
-    if (!more) return;
-    if ((e.target as HTMLElement).closest("a, button")) return;
-    setOpen((o) => !o);
-  };
+  const more = items ? Math.max(0, items.length - shownCount) : 0;
+  const shown = items ? items.slice(0, shownCount) : [];
   return (
-    <section
-      id={id}
-      onClick={toggle}
-      aria-expanded={more ? open : undefined}
-      className={`rn-glass rounded-[28px] p-5 sm:p-6 min-w-0 h-full flex flex-col ${more ? "cursor-pointer" : ""}`}
-    >
+    <section id={id} className="rn-glass rounded-[28px] p-5 sm:p-6 min-w-0 h-full flex flex-col">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[17px] font-semibold text-[var(--rn-ink)]">{title}</h2>
         {action}
@@ -113,15 +103,14 @@ function ExpandableCard<T>({
         <ul className={listClassName}>{shown.map((it, i) => renderItem(it, i))}</ul>
       )}
       {more > 0 && (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
+        <Link
+          href={moreHref}
+          prefetch={false}
           className="mt-auto pt-3 self-start inline-flex items-center gap-1.5 text-[13px] font-semibold text-[var(--rn-accent)] hover:underline underline-offset-2"
         >
-          {open ? "Show less" : `Show all ${items!.length}`}
-          <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
-        </button>
+          See all {items!.length}
+          <ArrowRight className="w-4 h-4" />
+        </Link>
       )}
     </section>
   );
@@ -181,29 +170,42 @@ export function DashboardView({
         ]
       : division === "TIFFIN"
       ? [
-          <StatTile key="del" icon={Truck} title="Deliveries today" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
-          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out today" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
-          <StatTile key="cust" icon={Users} title="Tiffin customers" value={ops.tiffin ? String(ops.tiffin.activeCustomers) : "—"} note={ops.tiffin ? `${ops.tiffin.activeSubscriptions} active plans` : "not loaded"} href="/tiffin" />,
+          <StatTile key="del" icon={Truck} title="Deliveries" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
+          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
+          <StatTile key="cust" icon={Users} title="Customers" value={ops.tiffin ? String(ops.tiffin.activeCustomers) : "—"} note={ops.tiffin ? `${ops.tiffin.activeSubscriptions} active plans` : "not loaded"} href="/tiffin" />,
         ]
       : [
           <StatTile key="res" icon={Users} title="Residents" value={ops.people ? String(ops.people.activeResidents) : "—"} note={<>{occupancy.occupancyRate}% of {occupancy.totalCapacity} beds</>} href="/residents" />,
-          <StatTile key="del" icon={Truck} title="Deliveries today" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
-          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out today" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
+          <StatTile key="del" icon={Truck} title="Deliveries" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
+          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
         ];
 
   const roomsCard = (
-    <Link href="/rooms" prefetch={false} className="flex flex-col rn-glass rn-hover-lift rounded-[28px] p-5 flex-1 min-h-0">
+    <Link href="/rooms" prefetch={false} className="flex flex-col rn-glass rn-hover-lift rounded-[28px] p-5 flex-1">
       <div className="flex items-center gap-3">
         <span className="grid place-items-center w-10 h-10 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent-mid)]"><BedDouble className="w-5 h-5" strokeWidth={1.7} /></span>
         <span className="flex-1 text-[15px] font-semibold text-[var(--rn-ink)]">Rooms &amp; beds</span>
         <span className="text-[13px] text-[var(--rn-ink-3)] tabular-nums">{occupancy.totalRooms} {occupancy.totalRooms === 1 ? "room" : "rooms"}</span>
       </div>
-      {/* One dot per bed: occupied (filled) and free (outline), from the live counts */}
-      <div className="mt-4 flex flex-wrap gap-1.5" aria-label={`${occupancy.occupiedBeds} beds occupied, ${free} free`}>
-        {Array.from({ length: Math.min(occupancy.totalCapacity, 60) }, (_, i) => (
-          <span key={i} className={`w-3.5 h-3.5 rounded-full ${i < occupancy.occupiedBeds ? "bg-[var(--rn-accent-mid)]" : "border-2 border-[var(--rn-accent-mid)]/40"}`} />
-        ))}
-      </div>
+      {/* Few beds: one dot per bed (filled = occupied). Many beds: one occupancy bar, so the card
+          keeps its size whatever the number of beds. */}
+      {occupancy.totalCapacity <= 24 ? (
+        <div className="mt-4 flex flex-wrap gap-1.5" aria-label={`${occupancy.occupiedBeds} beds occupied, ${free} free`}>
+          {Array.from({ length: occupancy.totalCapacity }, (_, i) => (
+            <span key={i} className={`w-3.5 h-3.5 rounded-full ${i < occupancy.occupiedBeds ? "bg-[var(--rn-accent-mid)]" : "border-2 border-[var(--rn-accent-mid)]/40"}`} />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4" aria-label={`${occupancy.occupiedBeds} of ${occupancy.totalCapacity} beds occupied`}>
+          <div className="flex items-baseline justify-between text-[12.5px] text-[var(--rn-ink-3)]">
+            <span>{occupancy.totalCapacity} beds</span>
+            <span className="tabular-nums font-semibold text-[var(--rn-ink)]">{occupancy.totalCapacity > 0 ? Math.round((occupancy.occupiedBeds / occupancy.totalCapacity) * 100) : 0}% full</span>
+          </div>
+          <div className="mt-2 h-2.5 rounded-full bg-black/[0.07] overflow-hidden">
+            <div className="h-full rounded-full bg-[var(--rn-accent-mid)]" style={{ width: `${occupancy.totalCapacity > 0 ? Math.min(100, (occupancy.occupiedBeds / occupancy.totalCapacity) * 100) : 0}%` }} />
+          </div>
+        </div>
+      )}
       {/* The counts fill the card (no empty band when the row is taller than the card's content) */}
       <div className="mt-4 flex-1 grid grid-cols-2 gap-2 text-center">
         {[
@@ -219,7 +221,7 @@ export function DashboardView({
     </Link>
   );
   const tiffinCard = (
-    <Link href="/tiffin?tab=subscriptions" prefetch={false} className="flex flex-col rn-glass rn-hover-lift rounded-[28px] p-5 flex-1 min-h-0">
+    <Link href="/tiffin?tab=subscriptions" prefetch={false} className="flex flex-col rn-glass rn-hover-lift rounded-[28px] p-5 flex-1">
       <div className="flex items-center gap-3">
         <span className="grid place-items-center w-10 h-10 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent-mid)]"><UtensilsCrossed className="w-5 h-5" strokeWidth={1.7} /></span>
         <span className="flex-1 text-[15px] font-semibold text-[var(--rn-ink)]">Tiffin</span>
@@ -247,7 +249,7 @@ export function DashboardView({
     ops.charts && pg ? (
       <MiniBars
         title="Occupancy at month end"
-        subtitle="From residents' stay dates, last 6 months"
+        subtitle="Last 6 months"
         data={ops.charts.occupancyHistory.map((m) => ({ label: new Intl.DateTimeFormat("en-IN", { month: "short", timeZone: "UTC" }).format(new Date(`${m.month}-01T00:00:00Z`)), value: m.value, detail: `${m.occupied} of ${m.capacity} beds` }))}
       />
     ) : null;
@@ -265,9 +267,6 @@ export function DashboardView({
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
           <h2 className="lg:hidden text-[26px] font-semibold tracking-[-0.02em] text-[var(--rn-ink)]">{greeting(ownerName)}</h2>
-          <p className="text-[14px] text-[var(--rn-ink-3)] mt-1 lg:mt-0">
-            {division === "PG" ? "Here is how the house is doing today." : division === "TIFFIN" ? "Here is how the kitchen and deliveries are doing today." : "Here is how the house and the kitchen are doing today."}
-          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {showMoney && divisions.length > 1 && (
@@ -361,11 +360,12 @@ export function DashboardView({
       </div>
 
       {/* Row 2: transactions, attention, and the rooms / tiffin cards; every card in the row is the
-          same height (lists show a few rows and open on a click when there are more). */}
+          same height (lists show a few rows; "See all" opens the full page). */}
       <div className={`grid gap-5 items-stretch lg:grid-cols-2 ${showMoney ? "xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,0.9fr)]" : ""}`}>
         {showMoney && (
-          <ExpandableCard
+          <ListCard
             title="Recent transactions"
+            moreHref="/finance?tab=cashbook"
             action={<Link href="/finance?tab=cashbook" prefetch={false} className="text-[13px] text-[var(--rn-ink-3)] hover:text-[var(--rn-ink)]">See all</Link>}
             items={ops.recent}
             empty={<p className="text-[13px] text-[var(--rn-ink-3)]">No transactions yet.</p>}
@@ -390,8 +390,9 @@ export function DashboardView({
           />
         )}
 
-        <ExpandableCard
+        <ListCard
           id="notifications"
+          moreHref="/notifications"
           title="Needs attention"
           items={attention}
           listClassName="mt-3 space-y-2"
@@ -404,7 +405,7 @@ export function DashboardView({
                 </span>
                 <span className="min-w-0">
                   <span className={`block text-[13.5px] truncate ${n.isRead ? "text-[var(--rn-ink-2)]" : "text-[var(--rn-ink)] font-medium"}`}>{n.title}</span>
-                  <span className="block text-[12px] text-[var(--rn-ink-3)] line-clamp-1">{n.description}</span>
+                  <span className="block text-[12px] text-[var(--rn-ink-3)] truncate">{n.description}</span>
                 </span>
               </Link>
             </li>

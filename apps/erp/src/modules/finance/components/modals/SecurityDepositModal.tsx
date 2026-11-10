@@ -103,8 +103,8 @@ export function SecurityDepositModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-2.5">
@@ -115,9 +115,6 @@ export function SecurityDepositModal({
               <h3 className="font-serif text-xl text-[#1A2E20] font-bold">
                 Receive Security Deposit
               </h3>
-              <p className="text-[11px] text-[#5A6C5E]">
-                Record refundable tenant deposit held in escrow
-              </p>
             </div>
           </div>
           <button
@@ -141,9 +138,6 @@ export function SecurityDepositModal({
           {/* Accounting Note */}
           <div className="p-3 rounded-xl bg-[#FAF8F5] border border-[#8E9F89]/25 flex items-start gap-2 text-[#5A6C5E]">
             <Info className="w-4 h-4 text-[#5D7656] shrink-0 mt-0.5" />
-            <span className="text-[11px] leading-relaxed">
-              Security deposits are held as a refundable liability. They are not accounted as operational rent revenue.
-            </span>
           </div>
 
           {/* Select Resident */}
@@ -245,14 +239,6 @@ export function SecurityDepositModal({
 
           {/* Action Buttons */}
           <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#8E9F89]/20">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs font-semibold text-[#1A2E20] hover:bg-[#FAF8F5]"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={submitting}

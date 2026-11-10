@@ -39,8 +39,8 @@ export function ReceiptModal({ transaction, onClose }: ReceiptModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs animate-fade-in print:p-0 print:bg-white">
-      <div className="bg-white rounded-3xl max-w-md w-full border border-[#8E9F89]/30 shadow-2xl overflow-hidden animate-slide-up print:border-none print:shadow-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-2xs animate-fade-in print:p-0 print:bg-white rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-3xl max-w-md w-full border border-[#8E9F89]/30 shadow-2xl overflow-hidden animate-slide-up print:border-none print:shadow-none">
         {/* Header */}
         <div className="p-5 sm:p-6 bg-gradient-to-br from-[#1A2E20] to-[#263B2D] text-white flex items-center justify-between">
           <div>

@@ -69,29 +69,27 @@ export function UpiQr({ amount, note }: { amount: number; note?: string }) {
         <p className="text-[22px] leading-none font-extrabold tabular-nums text-[#1F2320]">{amount > 0 ? rupees(amount) : "Any amount"}</p>
         <p className="text-[12.5px] text-[#5A6C5E] break-all">{UPI_ID}</p>
         <p className="text-[12px] text-[#6E7F70] truncate">{UPI_NAME}</p>
-        <p className="text-[11.5px] text-[#8A6A4F]">Tap the code to enlarge</p>
       </div>
       {big &&
         typeof document !== "undefined" &&
         // Drawn at the top of the page (not inside the delivery sheet), centred and sized to the
-        // screen so the whole code is visible without scrolling; a tap anywhere outside closes it.
+        // screen so the whole code is visible without scrolling. Only the close button closes it (a
+        // customer touching the screen around the code must not close it while scanning).
         createPortal(
           <div
             className="rn-enter fixed inset-0 z-[120] flex items-center justify-center p-4 bg-[rgba(20,14,10,0.72)] backdrop-blur-[3px]"
             role="dialog"
             aria-modal="true"
             aria-label="UPI QR code"
-            onClick={() => setBig(false)}
           >
             <div
               className="relative w-full max-w-[360px] max-h-[calc(100dvh-2rem)] rounded-[28px] bg-white px-5 pt-5 pb-4 text-center shadow-[0_30px_80px_-20px_rgba(0,0,0,0.55)] flex flex-col items-center"
-              onClick={(e) => e.stopPropagation()}
             >
               <button
                 type="button"
                 onClick={() => setBig(false)}
                 aria-label="Close"
-                className="absolute top-3 right-3 w-10 h-10 rounded-full flex items-center justify-center text-[#5A6C5E] hover:bg-[#F4F0E8]"
+                className="absolute top-3 right-3 w-11 h-11 rounded-full flex items-center justify-center bg-[#F4F0E8] text-[#3E4540] hover:bg-[#ECE5D9]"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -105,7 +103,6 @@ export function UpiQr({ amount, note }: { amount: number; note?: string }) {
               />
               <p className="mt-3 text-[14.5px] font-semibold text-[#1F2320] break-all">{UPI_ID}</p>
               <p className="text-[12.5px] text-[#5A6C5E]">{UPI_NAME}</p>
-              <p className="mt-2 text-[11.5px] text-[#8A7F74]">Tap outside to close</p>
             </div>
           </div>,
           document.body

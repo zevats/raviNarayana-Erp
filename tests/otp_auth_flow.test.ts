@@ -185,8 +185,8 @@ async function runTests() {
     `Email recipient is authoritative Gmail address: ${sentMsg.to}`
   );
   assert(
-    sentMsg.subject.includes("Verification Code"),
-    `Email subject contains Verification Code (got "${sentMsg.subject}")`
+    /^\d{6} is your Ravinarayan sign-in code$/.test(sentMsg.subject),
+    `Email subject leads with the 6-digit code (got "${sentMsg.subject}")`
   );
 
   // Extract the generated 6-digit OTP code from email text
@@ -515,8 +515,8 @@ async function runTests() {
     `Recipient is authoritative address owner.admin@example.com (got "${sentOptions.to}")`
   );
   assert(
-    sentOptions.subject === "Your Ravinarayan ERP Verification Code",
-    `Email subject correctly formatted (got "${sentOptions.subject}")`
+    /^\d{6} is your Ravinarayan sign-in code$/.test(sentOptions.subject),
+    `Email subject leads with the code (got "${sentOptions.subject}")`
   );
   assert(
     sentOptions.text.includes("482910") && sentOptions.html.includes("482910"),

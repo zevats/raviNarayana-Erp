@@ -8,7 +8,8 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../apps/erp/src/server/database/db";
 import { closePg } from "../apps/erp/src/server/database/client";
 import { createTiffinCustomer, createTiffinProduct, createTiffinSubscription } from "../apps/erp/src/server/tiffin/tiffinService";
-import { createUnifiedOrder } from "../apps/erp/src/server/orders/orderService";
+import { createUnifiedOrder, getCustomerMonthlyActivity } from "../apps/erp/src/server/orders/orderService";
+import { businessToday } from "../apps/erp/src/lib/businessDate";
 import { useVerifyDatabase, migrateVerifyDatabase, createAsserter, insertStaff, uniqueBusinessDate } from "./helpers/pgVerifyTarget";
 
 const verifyUrl = useVerifyDatabase();
@@ -93,7 +94,43 @@ async function main() {
   const owed = await num(db, "SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = ? AND payment_choice = 'PAY_LATER'", [c4.id]);
   assert(owed === 0, "Nothing is put on the customer account");
 
-  console.log("\n--- 5. Duplicate customer: a plain message ---");
+  console.log("\n--- 4b. One-thali plan: any meal, once a day ---");
+  const c6 = await cust();
+  const s6: any = await createTiffinSubscription(manager, { customerId: c6.id, productId: plan1.id, startDate: day, mealTypes: "ANY", quantityPerMeal: 1, deliveryAddress: "Plan Lane 1" } as any, IP, db);
+  assert(s6.mealTypes === "ANY", "A one-thali plan is saved as any meal");
+  const anyOrder = (date: string, meal: string, qty: number) =>
+    createUnifiedOrder(manager, {
+      orderType: "DELIVERY", customerId: c6.id, customerName: c6.fullName, customerPhone: c6.phone, deliveryAddress: "Plan Lane 1", serviceDate: date, mealType: meal,
+      subscriptionId: s6.id, items: [{ productId: thali.id, productName: thali.name, quantity: qty, unitPrice: thali.price }], idempotencyKey: `any_${rnd()}`,
+    } as any, IP, db) as any;
+  const a1 = await anyOrder(day, "DINNER", 1);
+  assert(a1.totalAmount === 0, `Dinner thali on the plan: free (₹${a1.totalAmount})`);
+  const a2 = await anyOrder(day, "LUNCH", 1);
+  assert(a2.totalAmount === 90, `A second thali the same day (lunch) is charged (₹${a2.totalAmount})`);
+  const next = new Date(`${day}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+  const a3 = await anyOrder(next.toISOString().slice(0, 10), "LUNCH", 1);
+  assert(a3.totalAmount === 0, `Next day, the plan thali is free again (₹${a3.totalAmount})`);
+
+  console.log("\n--- 5. Customer details: orders and payments, last 3 months ---");
+  const c5 = await cust();
+  const today = businessToday();
+  const unpaid = await createUnifiedOrder(manager, {
+    orderType: "DELIVERY", customerId: c5.id, customerName: c5.fullName, customerPhone: c5.phone, deliveryAddress: "Plan Lane 1", serviceDate: today, mealType: "LUNCH",
+    items: [{ productId: thali.id, productName: thali.name, quantity: 2, unitPrice: thali.price }], idempotencyKey: `act_${rnd()}`,
+  } as any, IP, db) as any;
+  const paidDine = await createUnifiedOrder(manager, {
+    orderType: "DINE_IN", customerId: c5.id, customerName: c5.fullName, customerPhone: c5.phone, serviceDate: today, mealType: "DINNER", paymentMethod: "CASH",
+    items: [{ productId: lassi.id, productName: lassi.name, quantity: 1, unitPrice: lassi.price }], idempotencyKey: `act_${rnd()}`,
+  } as any, IP, db) as any;
+  const act = await getCustomerMonthlyActivity(manager, c5.id, 3, db);
+  const cur = act[0];
+  const kinds = Object.fromEntries(cur.orders.map((o) => [o.orderId, o.payment]));
+  assert(act.length === 3 && cur.month === today.slice(0, 7), `Three months, newest first (${act.map((m) => m.month).join(", ")})`);
+  assert(cur.totals.orders === 2 && cur.totals.amount === 220 && cur.totals.paid === 40 && cur.totals.due === 180,
+    `This month: ${cur.totals.orders} orders, ₹${cur.totals.amount}, paid ₹${cur.totals.paid}, due ₹${cur.totals.due}`);
+  assert(kinds[unpaid.orderId] === "UNPAID" && kinds[paidDine.orderId] === "PAID", `Payment shown per order: ${JSON.stringify(kinds)}`);
+
+  console.log("\n--- 6. Duplicate customer: a plain message ---");
   const dup = await refused(() => createTiffinCustomer(manager, { fullName: "Second Person", phone: c1.phone, deliveryAddress: "Plan Lane 2" } as any, IP, db));
   assert(Boolean(dup) && dup!.includes(c1.fullName) && !/ID:|cust_|confirmDuplicate/.test(dup!), `Same phone: "${dup}"`);
 

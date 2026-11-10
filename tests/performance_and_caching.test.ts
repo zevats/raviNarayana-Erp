@@ -244,19 +244,20 @@ async function runAllSuites() {
     expiresInMinutes: 10,
   });
 
-  assert(rendered.subject === "Your Ravinarayan ERP Verification Code", `Subject is correct: "${rendered.subject}"`);
+  assert(rendered.subject === "849201 is your Ravinarayan sign-in code", `Subject leads with the code (shows in the notification): "${rendered.subject}"`);
   assert(rendered.text.includes("849201"), "Plain-text email contains the 6-digit OTP code");
   assert(rendered.text.includes("10 minutes"), "Plain-text email mentions 10-minute expiry");
-  assert(rendered.text.includes("RAVINARAYAN ERP"), "Plain-text email branded with RAVINARAYAN ERP");
-  assert(rendered.text.includes("SECURITY NOTICE"), "Plain-text email includes security notice");
+  assert(rendered.text.includes("Ravinarayan"), "Plain-text email is branded");
+  assert(/Not you\?/.test(rendered.text) && /Never share/.test(rendered.text), "Plain-text email includes the short security line");
+  assert(rendered.html.includes("849201 · expires in 10 minutes"), "Preview line (preheader) carries the code");
 
   // HTML layout assertions
   assert(rendered.html.includes("<!DOCTYPE html"), "HTML contains valid DOCTYPE");
   assert(rendered.html.includes("849201"), "HTML email displays the 6-digit OTP code");
   assert(rendered.html.includes("#1A2E20"), "HTML email features Deep Forest (#1A2E20) brand color");
-  assert(rendered.html.includes("#FAF8F5") || rendered.html.includes("#FAF9F6"), "HTML email features ivory canvas background");
+  assert(rendered.html.includes("#F2F0E9"), "HTML email features the ivory canvas background");
   assert(rendered.html.includes("font-family"), "HTML email has inline font-family declarations for email clients");
-  assert(rendered.html.includes("max-width: 580px"), "HTML container constrained to 580px width");
+  assert(rendered.html.includes("max-width: 520px"), "HTML container constrained to 520px width");
 
   // ---------------------------------------------------------------------------
   // [TEST SUITE 5] Middleware Route Matching Integrity

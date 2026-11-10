@@ -21,13 +21,38 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:exported="true">
+        </activity>
 
+        <!-- Two launcher entries for the same app; exactly one is enabled. The house icon is the
+             default; the rider icon is switched on for a phone where a delivery partner signs in
+             (RnAppPlugin.setBrand, applied when the app goes to the background). -->
+        <activity-alias
+            android:name=".LauncherHome"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:label="@string/app_name"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity-alias>
 
-        </activity>
+        <activity-alias
+            android:name=".LauncherDelivery"
+            android:targetActivity=".MainActivity"
+            android:icon="@mipmap/ic_launcher_delivery"
+            android:roundIcon="@mipmap/ic_launcher_round_delivery"
+            android:label="@string/app_name"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name="androidx.core.content.FileProvider"

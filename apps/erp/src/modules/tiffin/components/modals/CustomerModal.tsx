@@ -5,7 +5,8 @@ import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { TiffinCustomer, CustomerType, DietaryPreference } from "@/types";
-
+
+import { PhoneError } from "@/components/forms/PhoneError";
 interface CustomerModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -155,9 +156,9 @@ export function CustomerModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="customer-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
+      <div className="rn-modal bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -168,11 +169,6 @@ export function CustomerModal({
               <h2 id="customer-modal-title" className="text-base sm:text-lg font-bold text-[#1A2E20]">
                 {isEditing ? "Edit Tiffin Customer" : "Add Tiffin Customer"}
               </h2>
-              <p className="text-xs text-[#5A6C5E]">
-                {isEditing
-                  ? "Update customer contact, delivery instructions, and preferences."
-                  : "Register a new commercial or residential meal client."}
-              </p>
             </div>
           </div>
           <button
@@ -243,6 +239,7 @@ export function CustomerModal({
                 required
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
               />
+              <PhoneError value={phone} />
             </div>
           </div>
 
@@ -260,6 +257,7 @@ export function CustomerModal({
                 onChange={(e) => setAlternatePhone(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
               />
+              <PhoneError value={alternatePhone} required={false} />
             </div>
             <div>
               <label htmlFor="cust-type" className="block text-xs font-semibold text-[#1A2E20] mb-1">
@@ -275,29 +273,6 @@ export function CustomerModal({
                 <option value="CORPORATE">Corporate / Factory Group</option>
                 <option value="RESIDENTIAL_PG">Residential PG Tenant</option>
               </AppSelect>
-            </div>
-          </div>
-
-          {/* Dietary Preference */}
-          <div>
-            <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-              Dietary Preference
-            </label>
-            <div className="flex gap-2">
-              {(["VEG", "NON_VEG", "JAIN"] as DietaryPreference[]).map((pref) => (
-                <button
-                  key={pref}
-                  type="button"
-                  onClick={() => setDietaryPreference(pref)}
-                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                    dietaryPreference === pref
-                      ? "border-[#1A2E20] bg-[#1A2E20] text-white shadow-2xs"
-                      : "border-[#8E9F89]/30 bg-white text-[#5A6C5E] hover:bg-[#FAF8F5]"
-                  }`}
-                >
-                  {pref === "VEG" ? "Pure Vegetarian" : pref === "NON_VEG" ? "Non-Vegetarian" : "Jain Preparation"}
-                </button>
-              ))}
             </div>
           </div>
 
@@ -364,14 +339,6 @@ export function CustomerModal({
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#8E9F89]/20">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#8E9F89]/30 rounded-xl text-xs font-medium text-[#5A6C5E] hover:bg-[#FAF8F5]"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={submitting || (Boolean(duplicateWarning) && !confirmDuplicate)}

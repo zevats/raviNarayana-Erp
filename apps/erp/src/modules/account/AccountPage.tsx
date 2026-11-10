@@ -78,9 +78,9 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   return (
-    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center rn-modal-scrim">
       <div className="rn-scrim absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} {...drag.bind} style={drag.style} className="rn-sheet relative w-full md:max-w-md max-h-[92dvh] overflow-y-auto bg-[#FBF9F3] rounded-t-[28px] md:rounded-[28px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} {...drag.bind} style={drag.style} className="rn-modal rn-sheet relative w-full md:max-w-md max-h-[92dvh] overflow-y-auto bg-[#FBF9F3] rounded-t-[28px] md:rounded-[28px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
         <div className="md:hidden mx-auto -mt-2 mb-1 h-1 w-10 rounded-full bg-[#DAD3C6]" aria-hidden="true" />
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-[20px] font-extrabold tracking-[-0.01em] text-[#1F2320]">{title}</h2>
@@ -152,7 +152,7 @@ function CodeField({ label, value, onChange, ring }: { label: React.ReactNode; v
 function Busy({ busy, idle, label }: { busy: boolean; idle: string; label: string }) {
   return busy ? (
     <span className="inline-flex items-center gap-2">
-      <BikeLoader inline tone="light" label={label} /> {label}
+      {label}
     </span>
   ) : (
     <>{idle}</>
@@ -269,12 +269,15 @@ function PasswordSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () 
           <Field label="Current password" value={current} onChange={setCurrent} autoComplete="current-password" ring={t.ring} reveal />
           <Field label="New password" value={next} onChange={setNext} autoComplete="new-password" ring={t.ring} reveal />
           <Field label="Type the new password again" value={again} onChange={setAgain} autoComplete="new-password" ring={t.ring} reveal />
-          {/* Live checklist: a grey bullet until the rule is met, then a green tick. */}
-          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-1.5 rounded-xl bg-[#F4F0E8] px-3.5 py-3" aria-label="Password rules" aria-live="polite">
+          {/* Live checklist: every rule has a check mark; grey outline until met, then solid green. */}
+          <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2.5 rounded-2xl bg-[#F4F0E8] px-4 py-3.5" aria-label="Password rules" aria-live="polite">
             {rules.map((x) => (
-              <li key={x.text} className={`flex items-center gap-2 text-[13px] transition-colors ${x.ok ? "text-[#2F6B24] font-semibold" : "text-[#6E7F70]"}`}>
-                <span className="w-4 h-4 flex items-center justify-center shrink-0" aria-hidden="true">
-                  {x.ok ? <Check className="rn-tick w-4 h-4 text-[#2F6B24]" strokeWidth={3} /> : <span className="w-1.5 h-1.5 rounded-full bg-[#B7AE9F]" />}
+              <li key={x.text} className={`flex items-center gap-2.5 text-[13.5px] transition-colors ${x.ok ? "text-[#1E3A2B] font-semibold" : "text-[#4A504B]"}`}>
+                <span
+                  className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-colors ${x.ok ? "bg-[#2F6B24] text-white" : "border-2 border-[#C9C1B3] text-[#C9C1B3]"}`}
+                  aria-hidden="true"
+                >
+                  <Check className={x.ok ? "rn-tick w-3 h-3" : "w-2.5 h-2.5"} strokeWidth={3.5} />
                 </span>
                 <span>
                   {x.text}
@@ -678,7 +681,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
       <button type="button" onClick={signOut} disabled={signingOut} className="rn-press w-full h-12 rounded-full bg-[#FBE3DD] text-[#9A3423] font-bold flex items-center justify-center gap-2 hover:bg-[#F7D3CA] active:bg-[#F2C4B8] disabled:opacity-70">
         {signingOut ? (
           <>
-            <BikeLoader inline tone={tone} label="Signing out" /> Signing out…
+            Signing out…
           </>
         ) : (
           <>

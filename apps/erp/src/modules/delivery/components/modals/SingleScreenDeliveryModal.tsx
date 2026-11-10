@@ -207,12 +207,12 @@ export function SingleScreenDeliveryModal({ task, isOpen, onClose, onSuccess, cu
   const customerName = task.orderType === "EXTERNAL" ? task.customerName || "Customer" : task.residentName || `Room ${task.roomNumber}`;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4 rn-modal-scrim">
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Record delivery"
-        className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border border-[#DCD6CD] shadow-2xl flex flex-col max-h-[96dvh] overflow-hidden"
+        className="rn-modal bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl border border-[#DCD6CD] shadow-2xl flex flex-col max-h-[96dvh] overflow-hidden"
       >
         <div className="px-4 py-3 bg-[#FAF8F5] border-b border-[#E6E1DA] flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">

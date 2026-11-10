@@ -68,8 +68,8 @@ export function NotificationRows({ items, onOpen, onMarkRead }: { items: Notific
         <li key={n.id} className="flex items-start gap-3 px-3 py-3">
           <TypeIcon type={n.type} />
           <button type="button" onClick={() => onOpen(n)} className="flex-1 min-w-0 text-left rounded-xl focus-visible:outline-2 focus-visible:outline-[var(--rn-accent-mid)]">
-            <span className="flex items-baseline justify-between gap-2">
-              <span className={`text-[13.5px] truncate ${n.isRead ? "text-[var(--rn-ink-2)]" : "text-[var(--rn-ink)] font-semibold"}`}>{n.title}</span>
+            <span className="flex items-start justify-between gap-2">
+              <span className={`text-[13.5px] line-clamp-2 break-words ${n.isRead ? "text-[var(--rn-ink-2)]" : "text-[var(--rn-ink)] font-semibold"}`}>{n.title}</span>
               <span className="rn-t-meta shrink-0 tabular-nums">{formatNotificationTime(n.timestamp)}</span>
             </span>
             <span className="block rn-t-meta mt-0.5 line-clamp-2">{n.description}</span>
@@ -191,7 +191,7 @@ export function NotificationBell() {
             ) : feed.isLoading && !feed.data ? (
               <BikeLoader label="Loading notifications" size="sm" className="py-8" />
             ) : notifications.length === 0 ? (
-              <StateMessage kind="empty" title="No notifications" compact>You are all caught up.</StateMessage>
+              <StateMessage kind="empty" title="No notifications" compact />
             ) : (
               <NotificationRows items={notifications} onOpen={open} onMarkRead={markOne} />
             )}

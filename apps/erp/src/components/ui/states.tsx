@@ -40,7 +40,14 @@ export function StateMessage({
   const tone = kind === "error" ? "rn-state-bad" : kind === "forbidden" || kind === "offline" ? "rn-state-warn" : "";
   return (
     <div role={kind === "error" ? "alert" : undefined} className={`rn-state ${tone} ${compact ? "py-6" : "py-12"} ${className}`}>
-      <span className="rn-state-icon" aria-hidden><Icon /></span>
+      {kind === "empty" ? (
+        <span className="rn-state-icon rn-state-brand" aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/logo-home.png" alt="" width={44} height={44} />
+        </span>
+      ) : (
+        <span className="rn-state-icon" aria-hidden><Icon /></span>
+      )}
       <p className="rn-t-card mt-3">{title}</p>
       {children && <p className="rn-t-meta mt-1 max-w-[42ch] mx-auto">{children}</p>}
       {action && <div className="mt-4 flex justify-center gap-2">{action}</div>}
@@ -67,12 +74,12 @@ export function LoadError({ message, onRetry, title = "Could not load this" }: {
   );
 }
 export const NoAccess = ({ children }: { children?: React.ReactNode }) => (
-  <StateMessage kind="forbidden" title="You don't have access to this">{children ?? "Ask the Owner if you need it."}</StateMessage>
+  <StateMessage kind="forbidden" title="You don't have access to this">{children}</StateMessage>
 );
 export const NotFound = ({ what = "record", action }: { what?: string; action?: React.ReactNode }) => (
-  <StateMessage kind="notFound" title={`This ${what} does not exist`} action={action}>It may have been removed, or the link is wrong.</StateMessage>
+  <StateMessage kind="notFound" title={`This ${what} does not exist`} action={action} />
 );
-export const Offline = () => <StateMessage kind="offline" title="You are offline">Changes will load again when the connection returns.</StateMessage>;
+export const Offline = () => <StateMessage kind="offline" title="You are offline" />;
 
 /** Loading inside a card or page section (the section's own loader: house or scooter). */
 export function Loading({ label = "Loading…", className = "py-12" }: { label?: string; className?: string }) {

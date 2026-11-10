@@ -1,5 +1,6 @@
 "use client";
 
+import { readableNote } from "@/lib/format";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
@@ -261,7 +262,7 @@ export function CashbookLedger({
                     {/* Description if present */}
                     {tx.description && (
                       <p className="text-[11px] text-[#5A6C5E] bg-[#FAF8F5] p-2 rounded-lg border border-[#8E9F89]/15">
-                        {tx.description}
+                        {readableNote(tx.description)}
                       </p>
                     )}
 
@@ -426,8 +427,8 @@ export function CashbookLedger({
                               {tx.billingPeriod}
                             </div>
                           )}
-                          <div className="text-[11px] text-[#5A6C5E] truncate" title={tx.description || ""}>
-                            {tx.description || "—"}
+                          <div className="text-[11px] text-[#5A6C5E] truncate" title={readableNote(tx.description)}>
+                            {readableNote(tx.description) || "—"}
                           </div>
                         </td>
 
@@ -508,7 +509,7 @@ export function CashbookLedger({
         </div>
 
         {/* Division, Type, Method & Status Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 rn-filter-row">
           <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Division:</span>
           <AppSelect
             value={divisionFilter}

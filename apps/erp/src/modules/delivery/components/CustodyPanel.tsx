@@ -276,14 +276,14 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4 rn-modal-scrim">
       <form
         onSubmit={submit}
         noValidate
         role="dialog"
         aria-modal="true"
         aria-label={`Verify handover from ${handover.driverName}`}
-        className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 max-h-[94dvh] overflow-y-auto"
+        className="rn-modal bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3 max-h-[94dvh] overflow-y-auto"
       >
         <div className="flex items-start justify-between">
           <div>
@@ -347,7 +347,7 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
           </div>
         )}
         <button type="submit" disabled={busy} className="w-full h-12 rounded-2xl bg-emerald-700 text-white font-bold disabled:opacity-50 flex items-center justify-center gap-2">
-          {busy ? <BikeLoader inline tone="light" label="Working" /> : <ShieldCheck className="w-5 h-5" />}
+          {busy ? "Working…" : <ShieldCheck className="w-5 h-5" />}
           {differs ? "Record received amounts and discrepancy" : "Accept handover"}
         </button>
       </form>
@@ -360,8 +360,8 @@ function StaffDetail({ staffId, onClose }: { staffId: string; onClose: () => voi
   const q = useErpQuery<Detail>(key, () => getJson<Detail>(key), { ttl: LIVE_MS, tags: ["custody", "handover"] });
   const d = q.data;
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-label="Employee custody" className="bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[94dvh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4 rn-modal-scrim">
+      <div role="dialog" aria-modal="true" aria-label="Employee custody" className="rn-modal rn-modal-wide bg-white w-full sm:max-w-2xl rounded-t-3xl sm:rounded-3xl p-5 space-y-4 max-h-[94dvh] overflow-y-auto">
         <div className="flex items-start justify-between">
           <div>
             <span className="text-[11px] text-[#8E9F89]">Custody ledger</span>
@@ -441,7 +441,6 @@ function StaffOverview() {
       <div className="px-5 sm:px-6 pt-5 sm:pt-6 pb-4 flex items-start justify-between gap-3">
         <div>
           <h2 className="rn-t-section">Staff custody</h2>
-          <p className="rn-t-meta mt-0.5">Cash each person collected, handed over, and still holds.</p>
         </div>
         {pending.length > 0 && <Badge tone="warn">{pending.length} to verify</Badge>}
       </div>
@@ -451,7 +450,7 @@ function StaffOverview() {
       ) : q.isLoading && !q.data ? (
         <BikeLoader label="Loading custody" className="py-10" />
       ) : rows.length === 0 ? (
-        <StateMessage title="No cash with staff" compact>Cash collected on deliveries appears here until it is handed over.</StateMessage>
+        <StateMessage title="No cash with staff" compact />
       ) : (
         <table className="rn-table">
           <thead>
@@ -584,8 +583,8 @@ function WriteOffShortage({ row, onClose }: { row: StaffCustodyRow; onClose: (ms
     }
   };
   return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/30 sm:p-4">
-      <div role="dialog" aria-modal="true" aria-label={`Write off ${row.staffName}'s shortage`} className="rn-dialog bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3">
+    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center bg-black/30 sm:p-4 rn-modal-scrim">
+      <div role="dialog" aria-modal="true" aria-label={`Write off ${row.staffName}'s shortage`} className="rn-modal rn-dialog bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[11px] text-[#8E9F89]">Write off a cash shortage</p>

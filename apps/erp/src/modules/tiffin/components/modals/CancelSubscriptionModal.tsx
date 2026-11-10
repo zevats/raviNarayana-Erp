@@ -59,9 +59,9 @@ export function CancelSubscriptionModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="cancel-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-md w-full my-6 overflow-hidden flex flex-col">
+      <div className="rn-modal bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-md w-full my-6 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -70,7 +70,7 @@ export function CancelSubscriptionModal({
             </div>
             <div>
               <h2 id="cancel-modal-title" className="text-base font-bold text-[#1A2E20]">
-                Cancel Subscription
+                End subscription
               </h2>
               <p className="text-xs text-[#5A6C5E]">
                 {subscription.customerName} — {subscription.productName}
@@ -94,13 +94,10 @@ export function CancelSubscriptionModal({
             </div>
           )}
 
-          <p className="text-xs text-gray-600">
-            Are you sure you want to cancel this subscription? Service will be permanently stopped. All historical records and pricing will be preserved for audit and billing.
-          </p>
 
           <div>
             <label htmlFor="cancel-reason" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-              Cancellation Reason (Optional)
+              Reason (optional)
             </label>
             <textarea
               id="cancel-reason"
@@ -114,19 +111,11 @@ export function CancelSubscriptionModal({
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#8E9F89]/20">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#8E9F89]/40 text-[#5A6C5E] hover:text-[#1A2E20] rounded-xl text-xs font-semibold hover:bg-gray-100 transition-colors"
-            >
-              Back
-            </button>
-            <button
               type="submit"
               disabled={submitting}
               className="px-5 py-2 bg-red-600 text-white rounded-xl text-xs font-semibold hover:bg-red-700 transition-colors shadow-xs disabled:opacity-50"
             >
-              {submitting ? "Cancelling..." : "Confirm Cancellation"}
+              {submitting ? "Ending…" : "End subscription"}
             </button>
           </div>
         </form>

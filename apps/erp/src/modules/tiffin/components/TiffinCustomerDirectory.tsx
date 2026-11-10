@@ -47,7 +47,6 @@ export function TiffinCustomerDirectory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [dietFilter, setDietFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
 
   // Modal states
@@ -107,9 +106,6 @@ export function TiffinCustomerDirectory() {
         return false;
       }
       // Diet filter
-      if (dietFilter !== "ALL" && cust.dietaryPreference !== dietFilter) {
-        return false;
-      }
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
@@ -124,7 +120,7 @@ export function TiffinCustomerDirectory() {
       }
       return true;
     });
-  }, [customers, typeFilter, statusFilter, dietFilter, searchQuery]);
+  }, [customers, typeFilter, statusFilter, searchQuery]);
 
   // Pagination
   const totalPages = Math.ceil(filteredCustomers.length / ITEMS_PER_PAGE) || 1;
@@ -320,7 +316,7 @@ export function TiffinCustomerDirectory() {
         </div>
 
         {/* Filters bar */}
-        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#8E9F89]/20 text-xs">
+        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#8E9F89]/20 text-xs rn-filter-row">
           <span className="font-medium text-gray-500">Filter by:</span>
 
           {/* Type filter */}
@@ -339,22 +335,6 @@ export function TiffinCustomerDirectory() {
             <option value="RESIDENTIAL_PG">PG Resident</option>
           </AppSelect>
 
-          {/* Diet filter */}
-          <AppSelect
-            value={dietFilter}
-            onChange={(e) => {
-              setDietFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-            aria-label="Filter by dietary preference"
-            className="px-2.5 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/40 rounded-lg text-gray-700 font-medium focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20"
-          >
-            <option value="ALL">All Diets</option>
-            <option value="VEG">Veg</option>
-            <option value="NON_VEG">Non-Veg</option>
-            <option value="JAIN">Jain</option>
-          </AppSelect>
-
           {/* Status filter */}
           <AppSelect
             value={statusFilter}
@@ -370,12 +350,11 @@ export function TiffinCustomerDirectory() {
             <option value="INACTIVE">Inactive</option>
           </AppSelect>
 
-          {(typeFilter !== "ALL" || statusFilter !== "ALL" || dietFilter !== "ALL" || searchQuery) && (
+          {(typeFilter !== "ALL" || statusFilter !== "ALL" || searchQuery) && (
             <button
               onClick={() => {
                 setTypeFilter("ALL");
                 setStatusFilter("ALL");
-                setDietFilter("ALL");
                 setSearchQuery("");
                 setCurrentPage(1);
               }}
@@ -408,11 +387,11 @@ export function TiffinCustomerDirectory() {
             <User className="w-12 h-12 mx-auto text-gray-300 mb-3" />
             <h3 className="text-base font-bold text-[#1A2E20]">No tiffin customers found</h3>
             <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-              {searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL" || dietFilter !== "ALL"
+              {searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL"
                 ? "No customers matched your active filter criteria. Try adjusting or resetting your search."
                 : "Get started by adding your first commercial tiffin customer with delivery details."}
             </p>
-            {!(searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL" || dietFilter !== "ALL") && (
+            {!(searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL") && (
               <button
                 onClick={handleOpenAdd}
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-[#1A2E20] text-white text-xs font-semibold rounded-xl hover:bg-[#2A4430] transition-colors"
@@ -461,12 +440,14 @@ export function TiffinCustomerDirectory() {
           </ul>
           <div className="hidden sm:block overflow-x-auto">
             <table className="w-full table-fixed text-left border-collapse">
+              {/* Short columns get the width their content needs; the address takes the rest
+                  (no wide empty gaps between short values on large screens). */}
               <colgroup>
-                <col className="w-[30%]" />
-                <col className="w-[17%]" />
-                <col className="w-[27%]" />
-                <col className="w-[13%]" />
-                <col className="w-[13%]" />
+                <col className="w-[34%]" />
+                <col className="w-[156px]" />
+                <col />
+                <col className="w-[120px]" />
+                <col className="w-[116px]" />
               </colgroup>
               <thead>
                 <tr className="border-b border-[#8E9F89]/20 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#7A8A7C]">

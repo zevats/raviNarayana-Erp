@@ -1508,7 +1508,7 @@ export interface UpdateTiffinProductInput {
 // ============================================================================
 
 export type SubscriptionStatus = "ACTIVE" | "PAUSED" | "CANCELLED" | "COMPLETED";
-export type SubscriptionMealTypes = "LUNCH" | "DINNER" | "BOTH" | "BREAKFAST";
+export type SubscriptionMealTypes = "LUNCH" | "DINNER" | "BOTH" | "BREAKFAST" | "ANY";
 export type SubscriptionServiceDays = "ALL_DAYS" | "MON_SAT" | "MON_FRI";
 
 export interface TiffinSubscription {

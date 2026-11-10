@@ -160,8 +160,13 @@ export function AppSidebar({
         {indicator && (
           <span
             aria-hidden
-            className="rn-nav-indicator absolute left-3 right-3 rounded-full bg-white/95 shadow-[0_10px_24px_-14px_rgba(0,0,0,0.55)]"
-            style={{ transform: `translateY(${indicator.top}px)`, height: indicator.height, top: 0 }}
+            className="rn-nav-indicator absolute rounded-full bg-white/95 shadow-[0_10px_24px_-14px_rgba(0,0,0,0.55)]"
+            // Collapsed: a full circle around the icon (as wide as it is tall), centred in the rail.
+            style={
+              collapsed
+                ? { transform: `translateY(${indicator.top}px)`, height: indicator.height, width: indicator.height, left: `calc(50% - ${indicator.height / 2}px)`, top: 0 }
+                : { transform: `translateY(${indicator.top}px)`, height: indicator.height, width: "calc(100% - 24px)", left: 12, top: 0 }
+            }
           />
         )}
         {groups.map((g, gi) => (

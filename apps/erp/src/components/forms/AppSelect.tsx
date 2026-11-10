@@ -81,7 +81,7 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
     const below = window.innerHeight - r.bottom - 12;
     const above = r.top - 12;
     const up = below < 220 && above > below;
-    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - Math.max(r.width, 180) - 8)), top: up ? r.top - 6 : r.bottom + 6, width: Math.max(r.width, 180), up, max: Math.max(160, Math.min(320, up ? above : below)) });
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 168)), top: up ? r.top - 6 : r.bottom + 6, width: Math.max(r.width, 180), up, max: Math.max(160, Math.min(320, up ? above : below)) });
   }, []);
 
   useLayoutEffect(() => {
@@ -213,7 +213,9 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
             role="listbox"
             aria-label={(rest as any)["aria-label"] || chosen?.label}
             className="rn-app-select-list fixed z-[200] overflow-y-auto overscroll-contain rounded-2xl bg-white border border-[#E6E0D6] shadow-[0_18px_44px_-12px_rgba(40,25,15,0.35)] p-1.5 text-[14px] text-[#1F2320]"
-            style={{ left: pos.left, width: pos.width, maxHeight: pos.max, ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }) }}
+            // As wide as its options (at least 160px, never past the screen edge), starting under the
+            // field: no empty band to the right of short choices in a wide field.
+            style={{ left: pos.left, width: "max-content", minWidth: Math.min(160, pos.width), maxWidth: Math.min(440, window.innerWidth - pos.left - 8), maxHeight: pos.max, ...(pos.up ? { bottom: window.innerHeight - pos.top } : { top: pos.top }) }}
           >
             {options.map((o, i) => {
               const on = o.value === current;
@@ -229,12 +231,15 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
                     onMouseEnter={() => !o.disabled && setActive(i)}
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => choose(i)}
-                    className={`min-h-[40px] px-3 py-2 rounded-xl flex items-center gap-2.5 ${
+                    className={`min-h-[40px] pl-2.5 pr-4 py-2 rounded-xl flex items-center gap-2 ${
                       o.disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
                     } ${on ? "bg-[var(--rn-accent-tint,#F6EEE4)] font-semibold text-[var(--rn-ink,#1F2320)]" : i === active ? "bg-[#F4F0E8]" : ""}`}
                   >
-                    <span className="flex-1 min-w-0">{o.label || " "}</span>
-                    {on && <Check aria-hidden className="w-4 h-4 shrink-0 text-[var(--rn-accent,#B4461A)]" />}
+                    {/* The tick sits before the label (every row keeps its place), so nothing floats at the far right. */}
+                    <span className="w-4 shrink-0 flex items-center" aria-hidden>
+                      {on && <Check className="w-4 h-4 text-[var(--rn-accent,#B4461A)]" />}
+                    </span>
+                    <span className="min-w-0">{o.label || " "}</span>
                   </li>
                 </React.Fragment>
               );

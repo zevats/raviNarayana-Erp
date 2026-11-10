@@ -249,10 +249,7 @@ export function InvoiceLedgerView({
             Total Invoiced
           </div>
           <div className="text-xl sm:text-2xl font-bold text-[#1A2E20] mt-1 font-serif">
-            ₹{formatINR(totalBilled)}
-          </div>
-          <div className="text-[11px] text-[#5A6C5E] mt-0.5">
-            Across {filteredInvoices.length} invoices
+            {formatINR(totalBilled)}
           </div>
         </div>
 
@@ -261,10 +258,7 @@ export function InvoiceLedgerView({
             Payments Allocated
           </div>
           <div className="text-xl sm:text-2xl font-bold text-green-700 mt-1 font-serif">
-            ₹{formatINR(totalCollected)}
-          </div>
-          <div className="text-[11px] text-[#5A6C5E] mt-0.5">
-            Settled against bills
+            {formatINR(totalCollected)}
           </div>
         </div>
 
@@ -273,10 +267,7 @@ export function InvoiceLedgerView({
             Remaining Invoiced Due
           </div>
           <div className="text-xl sm:text-2xl font-bold text-[#B58A57] mt-1 font-serif">
-            ₹{formatINR(totalDue)}
-          </div>
-          <div className="text-[11px] text-[#5A6C5E] mt-0.5">
-            Outstanding receivables
+            {formatINR(totalDue)}
           </div>
         </div>
       </div>
@@ -289,29 +280,29 @@ export function InvoiceLedgerView({
             Accounts Receivable Ageing Breakdown
           </span>
           <span className="text-[10px] text-[#5A6C5E]">
-            As of Today ({todayStr})
+            {todayStr}
           </span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2.5 text-center">
           <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-2xs">
             <span className="text-[10px] font-semibold uppercase text-emerald-700 tracking-wider block">Current (&le;0d)</span>
-            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">₹{formatINR(ageingBuckets.current)}</span>
+            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">{formatINR(ageingBuckets.current)}</span>
           </div>
           <div className="p-2 rounded-xl bg-white border border-amber-100 shadow-2xs">
             <span className="text-[10px] font-semibold uppercase text-amber-700 tracking-wider block">1–30 Days</span>
-            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">₹{formatINR(ageingBuckets.days1To30)}</span>
+            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">{formatINR(ageingBuckets.days1To30)}</span>
           </div>
           <div className="p-2 rounded-xl bg-white border border-orange-100 shadow-2xs">
             <span className="text-[10px] font-semibold uppercase text-orange-700 tracking-wider block">31–60 Days</span>
-            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">₹{formatINR(ageingBuckets.days31To60)}</span>
+            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">{formatINR(ageingBuckets.days31To60)}</span>
           </div>
           <div className="p-2 rounded-xl bg-white border border-rose-100 shadow-2xs">
             <span className="text-[10px] font-semibold uppercase text-rose-700 tracking-wider block">61–90 Days</span>
-            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">₹{formatINR(ageingBuckets.days61To90)}</span>
+            <span className="text-xs sm:text-sm font-bold text-[#1A2E20] mt-0.5 block">{formatINR(ageingBuckets.days61To90)}</span>
           </div>
           <div className="p-2 rounded-xl bg-white border border-red-200 shadow-2xs col-span-2 sm:col-span-1">
             <span className="text-[10px] font-semibold uppercase text-red-700 tracking-wider block">90+ Days</span>
-            <span className="text-xs sm:text-sm font-bold text-red-700 mt-0.5 block">₹{formatINR(ageingBuckets.days90Plus)}</span>
+            <span className="text-xs sm:text-sm font-bold text-red-700 mt-0.5 block">{formatINR(ageingBuckets.days90Plus)}</span>
           </div>
         </div>
       </div>
@@ -477,16 +468,16 @@ export function InvoiceLedgerView({
                     <div className="grid grid-cols-3 gap-2 bg-[#FAF8F5] p-2.5 rounded-xl border border-[#8E9F89]/15 text-center text-xs">
                       <div>
                         <span className="text-[10px] text-[#5A6C5E] block">Total</span>
-                        <span className="font-bold text-[#1A2E20]">₹{formatINR(inv.totalAmount)}</span>
+                        <span className="font-bold text-[#1A2E20]">{formatINR(inv.totalAmount)}</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-[#5A6C5E] block">Paid</span>
-                        <span className="font-bold text-green-700">₹{formatINR(inv.amountPaid)}</span>
+                        <span className="font-bold text-green-700">{formatINR(inv.amountPaid)}</span>
                       </div>
                       <div>
                         <span className="text-[10px] text-[#5A6C5E] block">Balance</span>
                         <span className={`font-bold ${inv.balanceDue > 0 ? "text-rose-700" : "text-[#1A2E20]"}`}>
-                          ₹{formatINR(inv.balanceDue)}
+                          {formatINR(inv.balanceDue)}
                         </span>
                       </div>
                     </div>
@@ -614,22 +605,22 @@ export function InvoiceLedgerView({
 
                       {/* Total */}
                       <td className="py-3 px-3 text-right font-medium text-[#1A2E20]">
-                        ₹{formatINR(inv.totalAmount)}
+                        {formatINR(inv.totalAmount)}
                         {isGst && inv.totalTax > 0 && (
                           <div className="text-[10px] text-[#5A6C5E]">
-                            (Tax ₹{formatINR(inv.totalTax)})
+                            (Tax {formatINR(inv.totalTax)})
                           </div>
                         )}
                       </td>
 
                       {/* Paid */}
                       <td className="py-3 px-3 text-right font-medium text-green-700">
-                        ₹{formatINR(inv.amountPaid)}
+                        {formatINR(inv.amountPaid)}
                       </td>
 
                       {/* Balance Due */}
                       <td className="py-3 px-3 text-right font-bold text-[#B58A57]">
-                        ₹{formatINR(inv.balanceDue)}
+                        {formatINR(inv.balanceDue)}
                       </td>
 
                       {/* Status Badge */}
@@ -725,9 +716,6 @@ export function InvoiceLedgerView({
               </div>
               <div>
                 <h3 className="font-bold text-sm text-[#1A2E20]">Cancel Invoice</h3>
-                <p className="text-xs text-[#5A6C5E]">
-                  This action is permanent and recorded in the audit trail.
-                </p>
               </div>
             </div>
 

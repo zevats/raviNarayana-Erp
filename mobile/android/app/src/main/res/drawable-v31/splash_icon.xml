@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Splash: the house logo (owner and managers) -->
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-    android:src="@drawable/splash_logo"
-    android:gravity="center"
-    android:antialias="true"
-    android:filter="true" />

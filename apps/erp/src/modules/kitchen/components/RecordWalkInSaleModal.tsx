@@ -137,8 +137,8 @@ export function RecordWalkInSaleModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[90dvh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Modal Header */}
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
@@ -147,7 +147,6 @@ export function RecordWalkInSaleModal({
             </span>
             <div>
               <h3 className="font-serif font-bold text-lg leading-tight">Record Walk-in Sale</h3>
-              <p className="text-xs text-white/70">Kitchen counter offline sale ({serviceDate})</p>
             </div>
           </div>
           <button
@@ -332,21 +331,13 @@ export function RecordWalkInSaleModal({
           {/* Action buttons */}
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-gray-100">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={submitting}
               className="px-5 py-2.5 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
               {submitting ? (
                 <>
-                  <BikeLoader inline tone="light" label="Working" />
+                  Working…
                   <span>Recording...</span>
                 </>
               ) : (

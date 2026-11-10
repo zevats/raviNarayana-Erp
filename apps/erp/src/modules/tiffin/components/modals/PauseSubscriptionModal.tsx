@@ -87,9 +87,9 @@ export function PauseSubscriptionModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="pause-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-md w-full my-6 overflow-hidden flex flex-col">
+      <div className="rn-modal bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-md w-full my-6 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -98,7 +98,7 @@ export function PauseSubscriptionModal({
             </div>
             <div>
               <h2 id="pause-modal-title" className="text-base font-bold text-[#1A2E20]">
-                Pause Subscription
+                Pause subscription
               </h2>
               <p className="text-xs text-[#5A6C5E]">
                 {subscription.customerName} — {subscription.productName}
@@ -122,9 +122,6 @@ export function PauseSubscriptionModal({
             </div>
           )}
 
-          <p className="text-xs text-gray-600">
-            Pausing this subscription stops upcoming meal deliveries while keeping all history intact.
-          </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -166,26 +163,18 @@ export function PauseSubscriptionModal({
               rows={2}
               value={pauseReason}
               onChange={(e) => setPauseReason(e.target.value)}
-              placeholder="e.g. Traveling out of station for a week..."
+              placeholder="e.g. Travelling for a week"
               className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
             />
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#8E9F89]/20">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#8E9F89]/40 text-[#5A6C5E] hover:text-[#1A2E20] rounded-xl text-xs font-semibold hover:bg-gray-100 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={submitting}
               className="px-5 py-2 bg-amber-600 text-white rounded-xl text-xs font-semibold hover:bg-amber-700 transition-colors shadow-xs disabled:opacity-50"
             >
-              {submitting ? "Pausing..." : "Confirm Pause"}
+              {submitting ? "Pausing…" : "Pause"}
             </button>
           </div>
         </form>

@@ -1,5 +1,6 @@
 "use client";
 
+import { planMealsLabel, planCoversMeal } from "@/lib/planMeals";
 import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Truck, Utensils, Search, Plus, Minus, Check, AlertCircle, RotateCcw, User, MapPin, ChevronLeft, ArrowRight } from "lucide-react";
@@ -7,6 +8,7 @@ import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType, TiffinSubsc
 import { businessToday, businessMeal } from "@/lib/businessDate";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 
+import { PhoneError } from "@/components/forms/PhoneError";
 interface NewOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -20,6 +22,8 @@ interface NewOrderModalProps {
   defaultDate?: string;
   /** Opens with this customer already chosen (e.g. taking an order for a subscriber). */
   presetCustomer?: TiffinCustomer | null;
+  /** Subscriptions → Take order: open as a subscription order with this plan chosen. */
+  presetPlanId?: string | null;
 }
 
 export interface PendingOrderJob {
@@ -125,7 +129,7 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
   );
 }
 
-export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackground, defaultDate, presetCustomer }: NewOrderModalProps) {
+export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackground, defaultDate, presetCustomer, presetPlanId }: NewOrderModalProps) {
   const [step, setStep] = useState<Step>(1);
   // Closing after Confirm: a short fade and drop instead of disappearing at once.
   const [leaving, setLeaving] = useState(false);
@@ -209,6 +213,21 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       setCustomerMode("EXISTING");
       setSelectedCustomer(presetCustomer);
       setNewCustomerAddress(presetCustomer.deliveryAddress || "");
+    }
+    if (presetPlanId) {
+      setForPlan(true);
+      setOrderType("DELIVERY");
+      setCustomerMode("EXISTING");
+      fetch(`/api/tiffin/subscriptions/${encodeURIComponent(presetPlanId)}`, { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const s: TiffinSubscription | undefined = d?.subscription;
+          if (!s) return;
+          setPlan(s);
+          setSelectedCustomer({ id: s.customerId, fullName: s.customerName || "", phone: s.customerPhone || "", deliveryAddress: s.deliveryAddress, status: "ACTIVE" } as TiffinCustomer);
+          setNewCustomerAddress(s.deliveryAddress || "");
+        })
+        .catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -444,7 +463,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   // Cart summary calculations
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const totalQuantity = useMemo(() => cartItems.reduce((s, it) => s + it.quantity, 0), [cartItems]);
-  const planCovers = Boolean(forPlan && plan && (plan.mealTypes === "BOTH" || plan.mealTypes === mealType));
+  const planCovers = Boolean(forPlan && plan && planCoversMeal(plan.mealTypes, mealType));
   const planFreeThalis = planCovers && plan ? plan.quantityPerMeal : 0;
   const planFreeValue = useMemo(() => {
     let left = planFreeThalis;
@@ -667,7 +686,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     // Own scrim and panel (not the generic page-dialog styles): the panel never scrolls as a whole;
     // only its body does, between a fixed header and a fixed action bar.
     <div
-      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px] transition-opacity duration-150 ${leaving ? "opacity-0" : "opacity-100"}`}
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px] transition-opacity duration-150 ${leaving ? "opacity-0" : "opacity-100"} rn-modal-scrim`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) onClose();
       }}
@@ -677,7 +696,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-order-title"
-        className={`w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""}`}
+        className={`rn-modal w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""}`}
         style={{ backgroundColor: "#FBF8F4" }}
       >
         {/* Header: title and the three steps */}
@@ -762,9 +781,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                     }
                   }}
                   options={[
-                    { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span>, hint: "To the door" },
-                    { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span>, hint: "At the counter" },
-                    { v: "SUBSCRIPTION" as BusinessOrderType, label: <span className="flex items-center gap-2"><RotateCcw className="w-4 h-4" />Subscription</span>, hint: "Plan customer" },
+                    { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span> },
+                    { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span> },
+                    { v: "SUBSCRIPTION" as BusinessOrderType, label: <span className="flex items-center gap-2"><RotateCcw className="w-4 h-4" />Subscription</span> },
                   ]}
                 />
               </section>
@@ -784,7 +803,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         </button>
                       </div>
                       <p className={`text-[13.5px] ${INK}`}>
-                        <strong>{plan.productName}</strong> · {plan.mealTypes === "BOTH" ? "Lunch & dinner" : plan.mealTypes === "LUNCH" ? "Lunch" : "Dinner"} · {plan.quantityPerMeal} thali{plan.quantityPerMeal === 1 ? "" : "s"} a meal
+                        <strong>{plan.productName}</strong> · {planMealsLabel(plan.mealTypes)} · {plan.quantityPerMeal} thali{plan.quantityPerMeal === 1 ? "" : "s"} a meal
                       </p>
                       <p className={`text-[13px] ${INK2}`}>{plan.deliveryAddress}</p>
                       <div className="pt-1">
@@ -1044,6 +1063,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                             onChange={(e) => setNewCustomerPhone(e.target.value)}
                             className={`${FIELD} ${duplicateCustomer ? "!border-[#E0A93A]" : ""}`}
                           />
+                          <PhoneError value={newCustomerPhone} />
                         </div>
                       </div>
                       <div>
@@ -1066,6 +1086,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                     <div>
                       <label htmlFor="no-guest-phone" className={LABEL}>Phone</label>
                       <input id="no-guest-phone" type="tel" inputMode="tel" placeholder="Optional" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} className={FIELD} />
+                      <PhoneError value={newCustomerPhone} required={false} />
                     </div>
                   </div>
                 </section>
@@ -1286,11 +1307,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
             </p>
             <p className={`text-[20px] leading-tight font-bold tabular-nums whitespace-nowrap ${INK}`}>{rupees(totalAmount)}</p>
           </div>
-          {step === 1 ? (
-            <button type="button" onClick={onClose} className={`h-12 px-4 rounded-full text-[14px] font-semibold ${INK2} hover:bg-[var(--rn-accent-tint)]`}>
-              Cancel
-            </button>
-          ) : (
+          {step > 1 && (
             <button
               type="button"
               onClick={() => goTo((step - 1) as Step)}

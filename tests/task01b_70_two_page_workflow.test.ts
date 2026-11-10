@@ -511,7 +511,7 @@ async function runTestSuite() {
 
   const tiffinPagePath = path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "tiffin", "page.tsx");
   const tiffinPageContent = fs.readFileSync(tiffinPagePath, "utf-8");
-  assert(!tiffinPageContent.includes('redirect(') && tiffinPageContent.includes("TiffinSubscriptionList"), "/tiffin is the Tiffin management page (customers, subscriptions, menu, billing)");
+  assert(!tiffinPageContent.includes('redirect(') && tiffinPageContent.includes("SubscriptionsView"), "/tiffin is the Tiffin management page (customers, subscriptions, billing)");
 
   // --------------------------------------------------------------------------
   // SECTION 10: Primary Database Immutability Guard

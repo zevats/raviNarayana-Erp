@@ -58,8 +58,8 @@ async function main() {
   const driver2 = await insertStaff(db, "DELIVERY_PERSON", "P2 Other Driver");
   const day = uniqueBusinessDate(61);
   const product = await createTiffinProduct(owner, { code: `P2_${rnd()}`.toUpperCase(), name: "P2 Thali", category: "STANDARD_MEAL", billingUnit: "PER_MEAL", price: 100 } as any, undefined, db);
-  const customer = async (name: string, ph = phone()) =>
-    (await createTiffinCustomer(manager, { fullName: `${name} ${rnd()}`, phone: ph, deliveryAddress: "P2 Lane" } as any, IP, db)) as any;
+  const customer = async (name: string, ph = phone(), confirmDuplicate = false) =>
+    (await createTiffinCustomer(manager, { fullName: `${name} ${rnd()}`, phone: ph, deliveryAddress: "P2 Lane", confirmDuplicate } as any, IP, db)) as any;
 
   /** A delivery order of `qty` × ₹100 for a customer, assigned to `who`, not yet delivered. */
   const placeOrder = async (cust: any, qty = 3, who: AuthenticatedUser = driver) => {
@@ -308,7 +308,8 @@ async function main() {
   assert(cxs.some((e) => e.type === "Payment reversed" && e.source === "DELIVERY") && cxs.filter((e) => e.type === "Delivered order").length === 5,
     "Customer statement lists delivered orders, their payments and the reversed UPI collection");
 
-  const twin: any = await customer("P2 Same Phone", sharedPhone);
+  // The resident already has a matching customer (created with the resident); this is the "add anyway" path.
+  const twin: any = await customer("P2 Same Phone", sharedPhone, true);
   await setPayLater(owner, twin.id, true, IP, db);
   await deliver(await placeOrder(twin, 1), { paymentChoice: "PAY_LATER", payLaterAllowedAtSelection: true });
   const byPhone = await listReceivables(owner, { q: sharedPhone, limit: 50 }, db);

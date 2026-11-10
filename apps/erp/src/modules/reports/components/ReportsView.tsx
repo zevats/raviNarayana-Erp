@@ -102,7 +102,6 @@ export function ReportsView() {
       <section className="space-y-3 min-w-0">
         <div className="rn-card">
         <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] space-y-3">
-          {info && <p className="text-[13px] text-[var(--rn-ink-3)]">{info.description}</p>}
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-[12.5px] text-[var(--rn-ink-3)] flex items-center gap-1.5">From <input type="date" value={from} max={to} onChange={(e) => { setFrom(e.target.value); reset(); }} className="rn-input px-3 text-[12.5px]" /></label>
             <label className="text-[12.5px] text-[var(--rn-ink-3)] flex items-center gap-1.5">To <input type="date" value={to} min={from} onChange={(e) => { setTo(e.target.value); reset(); }} className="rn-input px-3 text-[12.5px]" /></label>
@@ -127,7 +126,23 @@ export function ReportsView() {
         ) : q.isLoading && !q.data ? (
           <div className="py-16 flex justify-center"><BikeLoader label="Running report" /></div>
         ) : r && r.total === 0 ? (
-          <EmptyState title="Nothing for this period" />
+          <EmptyState
+            title="Nothing for this period"
+            action={
+              <button
+                type="button"
+                className="rn-btn rn-btn-sm"
+                onClick={() => {
+                  const d = new Date(`${to}T00:00:00Z`);
+                  d.setUTCDate(d.getUTCDate() - 90);
+                  setFrom(d.toISOString().slice(0, 10));
+                  reset();
+                }}
+              >
+                Show the last 3 months
+              </button>
+            }
+          />
         ) : r ? (
           <div>
             <table className="rn-table">

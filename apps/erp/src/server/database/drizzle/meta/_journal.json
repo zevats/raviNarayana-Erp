@@ -183,6 +183,13 @@
       "when": 1793335200000,
       "tag": "0025_plan_dine_in",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1793421600000,
+      "tag": "0026_any_meal_plans",
+      "breakpoints": true
     }
   ]
 }

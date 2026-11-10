@@ -1333,7 +1333,7 @@ export async function reverseTransaction(
       current.customerId,
       current.stayId,
       current.category,
-      `Correction / Reversal of ${current.id}: ${cleanReason}`,
+      `Reversal: ${cleanReason}`,
       current.payeeVendor,
       current.id,
       actor.id,

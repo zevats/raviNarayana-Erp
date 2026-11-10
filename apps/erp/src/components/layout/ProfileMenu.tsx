@@ -76,7 +76,7 @@ export function ProfileMenu({ user, open, onClose, onLogout, isLoggingOut }: { u
         >
           {isLoggingOut ? (
             <>
-              <BikeLoader inline tone="orange" label="Signing out" /> Signing out…
+              Signing out…
             </>
           ) : (
             <>

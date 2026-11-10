@@ -27,11 +27,13 @@ const ORDER = ["STANDARD_MEAL", "SPECIAL", "EXTRA", "BEVERAGE", "SUBSCRIPTION_PA
 export function MenuCatalog() {
   const user = useCurrentUser();
   const canEdit = hasPermission(user?.role, "tiffin.manage");
-  const q = useErpQuery<TiffinProduct[]>("/api/tiffin/products", async () => (await getJson<{ products: TiffinProduct[] }>("/api/tiffin/products")).products || [], {
+  // Own cache key: other screens keep the same address cached in another shape ({ products }),
+  // which made this list crash when one of them had been opened first.
+  const q = useErpQuery<TiffinProduct[]>("menu-catalog:/api/tiffin/products", async () => (await getJson<{ products: TiffinProduct[] }>("/api/tiffin/products")).products || [], {
     ttl: 60000,
     tags: ["products"],
   });
-  const products = q.data ?? [];
+  const products: TiffinProduct[] = Array.isArray(q.data) ? q.data : Array.isArray((q.data as any)?.products) ? (q.data as any).products : [];
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<TiffinProduct | null | "new">(null);
   const [priceFor, setPriceFor] = useState<string | null>(null);

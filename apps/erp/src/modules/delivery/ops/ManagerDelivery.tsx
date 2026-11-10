@@ -1,5 +1,6 @@
 "use client";
 
+import { RoomMeals } from "./RoomMeals";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ClipboardList, RefreshCw, AlertTriangle, Download } from "lucide-react";
@@ -18,7 +19,7 @@ import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
 
-type Tab = "board" | "problems" | "custody" | "history";
+type Tab = "board" | "problems" | "custody" | "history" | "rooms";
 const FILTERS: Array<DeliveryOutcome | "ALL"> = ["ALL", "WAITING", "OUT", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
 
 /** Remembers each row's last outcome so a row that changes state briefly lights up. */
@@ -76,7 +77,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const t = p.get("tab");
-    if (t === "board" || t === "problems" || t === "custody" || t === "history") setTab(t);
+    if (t === "board" || t === "problems" || t === "custody" || t === "history" || t === "rooms") setTab(t);
     const d = p.get("date");
     if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) setDate(d);
     const m = p.get("meal");
@@ -305,8 +306,11 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           { value: "problems", label: "Problems", count: problems.length || undefined },
           { value: "custody", label: "Custody" },
           { value: "history", label: "History" },
+          { value: "rooms", label: "Room meals" },
         ]}
       />
+
+      {tab === "rooms" && <RoomMeals canChange={canManage} date={date} meal={meal} />}
 
       {tab === "board" && (
         <section className="rn-enter space-y-4">

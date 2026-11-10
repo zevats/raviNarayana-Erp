@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Launcher icon: the Ravinarayan house logo (bitmap per density, inside the adaptive-icon safe zone) -->
-<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
-    android:src="@drawable/ic_launcher_logo"
-    android:gravity="center"
-    android:antialias="true"
-    android:filter="true" />

@@ -26,7 +26,11 @@ export function NativeBridge() {
     if (!isNativeApp()) return;
     document.documentElement.classList.add("rn-native");
     const P = nativePlugins();
-    requestAnimationFrame(() => P.SplashScreen?.hide?.({ fadeOutDuration: 280 }).catch?.(() => {}));
+    requestAnimationFrame(() => {
+      P.SplashScreen?.hide?.({ fadeOutDuration: 280 }).catch?.(() => {});
+      // The app's opening animation (house / rider) ends once the page is ready.
+      P.RnApp?.ready?.().catch?.(() => {});
+    });
     let sub: any;
     P.App?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => {
       const sheet = document.querySelector("[role=dialog], [data-profile-menu] [role=menu]");

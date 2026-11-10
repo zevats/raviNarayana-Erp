@@ -70,9 +70,9 @@ export function PrintableInvoiceModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="invoice-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto print:p-0 print:bg-white print:static rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92dvh] print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:m-0">
+      <div className="rn-modal rn-modal-wide bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92dvh] print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:m-0">
         {/* Top Control Bar (Hidden when printing) */}
         <div className="flex items-center justify-between p-4 bg-white border-b border-[#8E9F89]/20 print:hidden">
           <div className="flex items-center gap-2">
@@ -277,17 +277,17 @@ export function PrintableInvoiceModal({
                       </td>
                       <td className="py-2.5 px-2 text-[#5A6C5E]">{item.sacHsnCode || "—"}</td>
                       <td className="py-2.5 px-2 text-right text-[#5A6C5E]">{item.quantity}</td>
-                      <td className="py-2.5 px-2 text-right text-[#5A6C5E]">₹{formatINR(item.unitPrice)}</td>
-                      <td className="py-2.5 px-2 text-right text-[#1A2E20] font-medium">₹{formatINR(item.amount)}</td>
+                      <td className="py-2.5 px-2 text-right text-[#5A6C5E]">{formatINR(item.unitPrice)}</td>
+                      <td className="py-2.5 px-2 text-right text-[#1A2E20] font-medium">{formatINR(item.amount)}</td>
                       {isGst && (
                         <>
                           <td className="py-2.5 px-2 text-right text-[#5A6C5E]">{item.taxRate}%</td>
-                          <td className="py-2.5 px-2 text-right text-[#5A6C5E]">₹{formatINR(item.cgstAmount)}</td>
-                          <td className="py-2.5 px-2 text-right text-[#5A6C5E]">₹{formatINR(item.sgstAmount)}</td>
+                          <td className="py-2.5 px-2 text-right text-[#5A6C5E]">{formatINR(item.cgstAmount)}</td>
+                          <td className="py-2.5 px-2 text-right text-[#5A6C5E]">{formatINR(item.sgstAmount)}</td>
                         </>
                       )}
                       <td className="py-2.5 pl-2 text-right font-bold text-[#1A2E20]">
-                        ₹{formatINR(item.totalItemAmount)}
+                        {formatINR(item.totalItemAmount)}
                       </td>
                     </tr>
                   ))
@@ -320,41 +320,41 @@ export function PrintableInvoiceModal({
             <div className="w-full sm:w-64 space-y-1.5 text-xs">
               <div className="flex justify-between text-[#5A6C5E]">
                 <span>Taxable Subtotal:</span>
-                <span className="font-medium text-[#1A2E20]">₹{formatINR(invoice.subtotal)}</span>
+                <span className="font-medium text-[#1A2E20]">{formatINR(invoice.subtotal)}</span>
               </div>
               {isGst && (
                 <>
                   <div className="flex justify-between text-[#5A6C5E]">
                     <span>CGST (Central Tax):</span>
-                    <span>₹{formatINR(invoice.cgstAmount)}</span>
+                    <span>{formatINR(invoice.cgstAmount)}</span>
                   </div>
                   <div className="flex justify-between text-[#5A6C5E]">
                     <span>SGST (State Tax):</span>
-                    <span>₹{formatINR(invoice.sgstAmount)}</span>
+                    <span>{formatINR(invoice.sgstAmount)}</span>
                   </div>
                   {invoice.igstAmount > 0 && (
                     <div className="flex justify-between text-[#5A6C5E]">
                       <span>IGST (Integrated Tax):</span>
-                      <span>₹{formatINR(invoice.igstAmount)}</span>
+                      <span>{formatINR(invoice.igstAmount)}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-[#5A6C5E]">
                     <span>Total Tax:</span>
-                    <span>₹{formatINR(invoice.totalTax)}</span>
+                    <span>{formatINR(invoice.totalTax)}</span>
                   </div>
                 </>
               )}
               <div className="flex justify-between text-sm font-bold text-[#1A2E20] pt-2 border-t-2 border-[#1A2E20]">
                 <span>Invoice Total:</span>
-                <span>₹{formatINR(invoice.totalAmount)}</span>
+                <span>{formatINR(invoice.totalAmount)}</span>
               </div>
               <div className="flex justify-between text-xs text-green-700 font-semibold">
                 <span>Amount Paid:</span>
-                <span>- ₹{formatINR(invoice.amountPaid)}</span>
+                <span>- {formatINR(invoice.amountPaid)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold text-[#B58A57] pt-1 border-t border-[#8E9F89]/20">
                 <span>Balance Due:</span>
-                <span>₹{formatINR(invoice.balanceDue)}</span>
+                <span>{formatINR(invoice.balanceDue)}</span>
               </div>
             </div>
           </div>
@@ -389,7 +389,7 @@ export function PrintableInvoiceModal({
                       )}
                     </div>
                     <div className={alloc.paymentReversed ? "font-bold text-[#8E9F89] line-through" : "font-bold text-green-700"}>
-                      ₹{formatINR(alloc.amount)}
+                      {formatINR(alloc.amount)}
                     </div>
                   </div>
                 ))}

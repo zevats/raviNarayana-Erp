@@ -14,10 +14,12 @@ const BAR_KEYS = ["dashboard", "orders", "delivery", "residents"];
 /** Phone and tablet: glass top bar, floating bottom bar (Dashboard, Orders, Delivery, Residents, More), More sheet. */
 export function MobileTopBar({ title, queued, online }: { title: string; queued: number; online: boolean }) {
   return (
-    <header className="lg:hidden sticky top-0 z-40 px-3 pt-[max(0.6rem,env(safe-area-inset-top))] pb-2">
+    // A soft canvas fade behind the floating bar: scrolled content fades out under it instead of
+    // showing through the glass. The bar shows the brand; each page has its own heading.
+    <header className="lg:hidden sticky top-0 z-40 px-3 pt-[max(0.6rem,env(safe-area-inset-top))] pb-3 rn-mobile-top" aria-label={title}>
       <div className="rn-glass rn-blur rounded-full h-14 pl-2 pr-2 flex items-center gap-3">
         <RnLogo size={42} title="Ravinarayan" />
-        <p className="flex-1 min-w-0 text-[15px] font-semibold tracking-tight text-[var(--rn-ink)] truncate">{title}</p>
+        <p className="flex-1 min-w-0 text-[16px] font-bold tracking-[-0.02em] text-[var(--rn-ink)] truncate">Ravinarayan</p>
         {(!online || queued > 0) && (
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">{online ? `${queued} to send` : "Offline"}</span>
         )}

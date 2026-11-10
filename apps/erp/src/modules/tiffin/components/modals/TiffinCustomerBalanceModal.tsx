@@ -51,9 +51,9 @@ export function TiffinCustomerBalanceModal({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
+      <div className="rn-modal rn-modal-wide bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20 shrink-0">
           <div className="flex items-center gap-2.5">
@@ -278,14 +278,6 @@ export function TiffinCustomerBalanceModal({
         </div>
 
         {/* Footer */}
-        <div className="p-4 bg-white border-t border-gray-200 flex justify-end shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
-          >
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );

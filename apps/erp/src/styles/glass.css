@@ -121,8 +121,10 @@
   background: linear-gradient(180deg, var(--rn-side-top) 0%, var(--rn-side-bottom) 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 30px 60px -30px rgba(10, 20, 14, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  /* The same corner radius open and collapsed; opening and closing are instant (no sliding name). */
-  border-radius: 30px;
+  /* Fully round ends (half the collapsed width), the same open and collapsed. Concentric with the
+     48px circles inside it: 18px inset + 24px radius = 42px, so the curves run parallel. */
+  border-radius: 42px;
+  transition: width var(--rn-med) var(--rn-ease);
 }
 /* Collapsed: the initial is the expand button, centred over the icon column below it. */
 .rn-brand-initial {
@@ -132,7 +134,6 @@
   transition: background-color var(--rn-fast) linear;
 }
 .rn-brand-initial:hover { background: rgba(255, 255, 255, 0.16); }
-.rn-brand-initial .rn-brandmark-name::after { display: none; }
 .rn-brand-initial:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
 .rn-sidebar .rn-nav-icon { background: rgba(255, 255, 255, 0.07); }
 .rn-sidebar .rn-nav-item.is-active { color: var(--rn-ink); }
@@ -147,7 +148,7 @@
 .rn-brandmark-name::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 3px; border-radius: 9999px; background: var(--rn-highlight); vertical-align: baseline; }
 .rn-brandmark-sub { margin-top: 5px; font-size: 10.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); }
 .rn-nav-indicator {
-  transition: transform var(--rn-med) var(--rn-ease-out), height var(--rn-med) var(--rn-ease-out), opacity var(--rn-fast) linear;
+  transition: transform var(--rn-med) var(--rn-ease-out), height var(--rn-med) var(--rn-ease-out), left var(--rn-med) var(--rn-ease), width var(--rn-med) var(--rn-ease), opacity var(--rn-fast) linear;
 }
 .rn-nav-item { transition: color var(--rn-fast) linear, background-color var(--rn-fast) linear; }
 .rn-nav-item .rn-nav-icon { transition: background-color var(--rn-med) var(--rn-ease), color var(--rn-med) var(--rn-ease), transform var(--rn-fast) var(--rn-ease); }
@@ -496,3 +497,207 @@
   .rn-main .rn-stats .tabular-nums { font-size: clamp(15px, 4.8vw, 22px); overflow-wrap: anywhere; }
   .rn-main h1 { font-size: 22px; }
 }
+
+/* ---------------------------------------------------------------- Modals (one system everywhere)
+   Every management modal panel carries .rn-modal (its backdrop .rn-modal-scrim). One palette: dark
+   forest green for primary actions on white, dark text, helper text that passes 4.5:1. One shape:
+   at most 85% of the screen tall and 320-640px wide (wide documents up to 960px); the header and
+   the action bar stay put while only the body scrolls, and the scrollbar keeps a 24px gutter so it
+   never touches labels or prices. Controls are at least 44px to tap. */
+.rn-modal-scrim { background: rgba(18, 28, 22, 0.38) !important; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.rn-modal {
+  --rn-accent: #1E3A2B;
+  --rn-accent-strong: #16301F;
+  --rn-accent-mid: #3F5E48;
+  --rn-accent-soft: #DCE5D7;
+  --rn-accent-tint: #EEF3EA;
+  --rn-ink: #1E2320;
+  --rn-ink-2: #3A403C;
+  --rn-ink-3: #4A504B;
+  --rn-line: rgba(30, 35, 32, 0.10);
+  width: clamp(320px, 90vw, 640px) !important;
+  max-width: 100% !important;
+  max-height: 85vh !important;
+  max-height: 85dvh !important;
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+  display: flex !important;
+  flex-direction: column;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #FFFFFF !important;
+  color: var(--rn-ink);
+  border-radius: 28px !important;
+  border: 1px solid rgba(30, 35, 32, 0.08) !important;
+  box-shadow: 0 1px 2px rgba(20, 30, 24, 0.06), 0 40px 90px -40px rgba(20, 30, 24, 0.55) !important;
+}
+.rn-modal.rn-modal-wide { width: clamp(320px, 94vw, 960px) !important; }
+/* Phones: the panel rises from the bottom edge as a sheet. */
+@media (max-width: 639.98px) {
+  .rn-modal { width: 100% !important; max-height: 92dvh !important; margin-bottom: 0 !important; border-radius: 28px 28px 0 0 !important; }
+  .rn-modal-scrim { align-items: flex-end !important; padding: 0 !important; }
+}
+/* Fixed header: the first block stays at the top while the body scrolls. */
+.rn-modal > :first-child { position: sticky; top: 0; z-index: 3; flex-shrink: 0; }
+.rn-modal > :first-child:not([class*="bg-"]) { background: #FFFFFF; }
+/* Fixed action bar: the block holding the submit button stays at the bottom. */
+.rn-modal > :last-child:has(button[type="submit"]),
+.rn-modal form > :last-child:has(button[type="submit"]),
+.rn-modal > :last-child:has(> button:only-child),
+.rn-modal > div:last-child:has(> .rn-btn-primary) {
+  position: sticky; bottom: 0; z-index: 3; flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.96);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(30, 35, 32, 0.08);
+  padding-top: 14px !important; padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+  margin-top: 8px;
+}
+.rn-modal form { display: flex; flex-direction: column; min-height: 0; }
+/* Inner scrolling areas keep the scrollbar off the content. */
+.rn-modal :is(.overflow-y-auto, .overflow-auto) { padding-right: 24px; scrollbar-gutter: stable; }
+/* One palette: no stray brown / terracotta buttons or headers inside modals. */
+.rn-modal :is([class~="bg-[#C85223]"], [class~="bg-[#C9501C]"], [class~="bg-[#B4461A]"], [class~="bg-[#A9400F]"], [class~="bg-[#B58A57]"], .bg-orange-600, .bg-amber-700) { background-color: #1E3A2B !important; }
+.rn-modal :is([class~="bg-[#C85223]"], [class~="bg-[#C9501C]"], [class~="bg-[#B4461A]"]):hover { background-color: #16301F !important; }
+.rn-modal :is([class~="text-[#C85223]"], [class~="text-[#C9501C]"], [class~="text-[#B4461A]"], [class~="text-[#B4440F]"]) { color: #1E3A2B !important; }
+.rn-modal :is([class~="border-[#C85223]"], [class~="border-[#C9501C]"]) { border-color: #1E3A2B !important; }
+.rn-modal .rn-btn-primary { background: #1E3A2B !important; color: #FFFFFF !important; border-color: #1E3A2B !important; }
+.rn-modal .rn-btn-primary:hover { background: #16301F !important; }
+/* Helper text: high contrast on white. */
+.rn-modal :is(.text-gray-400, .text-gray-500, .text-text-muted, [class~="text-[#8E9F89]"], [class~="text-[#9AA59B]"], [class~="text-[#6E7F70]"], [class~="text-[#5A6C5E]"], [class~="text-[#8A8F8B]"], [class~="text-[#A8A29E]"], [class~="text-[#7A7F7B]"]) { color: #4A504B !important; }
+.rn-modal ::placeholder { color: #6B716C; opacity: 1; }
+/* Touch targets. */
+.rn-modal :is(button, [role="button"], [role="radio"], select, .rn-app-select, input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="file"])) { min-height: 44px; }
+.rn-modal :is(button, a):has(> svg:only-child) { min-width: 44px; }
+
+/* Modals open smoothly: the backdrop fades in, the panel rises and scales in (a sheet slides up on
+   phones). Nothing pops in at once. */
+@keyframes rn-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rn-modal-in { from { opacity: 0; transform: translateY(8px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes rn-sheet-in { from { opacity: 0.6; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+/* fill-mode backwards: nothing is left applied afterwards (a swipe-to-close sheet keeps its drag). */
+.rn-modal-scrim { animation: rn-scrim-in 0.25s ease backwards; }
+.rn-modal { animation: rn-modal-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) backwards !important; }
+@media (max-width: 639.98px) { .rn-modal { animation: rn-sheet-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards !important; } }
+@media (prefers-reduced-motion: reduce) { .rn-modal, .rn-modal-scrim { animation: none !important; } }
+
+/* Instant feedback on a tap: rows and buttons react the moment they are pressed, before anything
+   loads. */
+.rn-main :is(tr.cursor-pointer, li.cursor-pointer, [role="row"].cursor-pointer):active { background-color: var(--rn-accent-tint) !important; }
+.rn-main :is(button, a.rn-btn, [role="button"]):not(:disabled):active { transform: scale(0.97); transition: transform 60ms ease-out; }
+
+/* Field errors: a short message right under the field, and a red outline on the field itself. */
+.rn-field-error {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin-top: 6px; font-size: 12.5px; line-height: 1.35; font-weight: 500; color: #A3311D;
+  animation: rn-scrim-in 0.18s ease backwards;
+}
+.rn-field-error > svg { width: 14px; height: 14px; margin-top: 1px; flex-shrink: 0; }
+input[aria-invalid="true"], textarea[aria-invalid="true"] {
+  border-color: #C2412A !important;
+  box-shadow: 0 0 0 3px rgba(194, 65, 42, 0.14) !important;
+  background-color: #FFFBFA !important;
+}
+
+/* Pop-ups are always solid: the see-through "glass" treatment of white boxes on pages never
+   applies inside a dialog, a modal, a menu or a sheet (text behind them must not show through). */
+.rn-main :is([role="dialog"], [aria-modal="true"], .rn-modal, [role="menu"], [role="listbox"]):is(.bg-white, [class*="bg-white "]),
+.rn-main :is([role="dialog"], [aria-modal="true"], .rn-modal, [role="menu"], [role="listbox"]) .bg-white {
+  background: #FFFFFF !important;
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.rn-main :is([role="dialog"], [aria-modal="true"], .rn-modal) .bg-\[\#FAF8F5\] { background: #FAF8F5 !important; }
+
+/* ---------------------------------------------------------------- Sign-in on large screens
+   Two panels in one glass shell: the brand panel (the sidebar's deep glass over the PG photo, the
+   logo and name) and the form on frosted white. Phones keep the single centred column. */
+@media (min-width: 1024px) {
+  .rn-login-shell {
+    border-radius: 36px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow: 0 2px 2px rgba(26, 46, 32, 0.04), 0 50px 100px -40px rgba(26, 46, 32, 0.45);
+    -webkit-backdrop-filter: blur(22px) saturate(140%);
+    backdrop-filter: blur(22px) saturate(140%);
+  }
+  .rn-login-brand {
+    position: relative;
+    flex: 0 0 48%;
+    overflow: hidden;
+    background: linear-gradient(180deg, #263B2D 0%, #16261C 100%);
+    border-radius: 30px;
+    margin: 10px;
+  }
+  .rn-login-brand-delivery { background: linear-gradient(165deg, #E07434 0%, #C9501C 55%, #9E3A10 100%); }
+  .rn-login-brand-photo {
+    position: absolute; inset: 0;
+    background: url("/suite-showcase.jpg") center / cover no-repeat;
+    opacity: 0.22;
+    mix-blend-mode: luminosity;
+  }
+  .rn-login-brand::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(120% 80% at 0% 100%, rgba(0, 0, 0, 0.35), transparent 60%), radial-gradient(90% 70% at 100% 0%, rgba(255, 255, 255, 0.10), transparent 60%);
+    pointer-events: none;
+  }
+  .rn-login-formside { padding: 56px; }
+}
+
+/* Phones: the floating top bar sits on a canvas-coloured fade, so content scrolling under it never
+   collides with the bar or shows through the glass. */
+@media (max-width: 1023.98px) {
+  .rn-mobile-top {
+    background: linear-gradient(180deg, var(--rn-canvas, #F2F0E9) 0%, var(--rn-canvas, #F2F0E9) 72%, transparent 100%);
+  }
+}
+
+/* Phones: a group of filters is one row that slides sideways (fading at the edge), never a cramped
+   grid of dropdowns. */
+@media (max-width: 639.98px) {
+  .rn-main .rn-filter-row {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+            mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  }
+  .rn-main .rn-filter-row::-webkit-scrollbar { display: none; }
+  .rn-main .rn-filter-row > * { flex: 0 0 auto; width: auto !important; min-width: 9.5rem; max-width: 80vw; }
+  .rn-main .rn-filter-row > *:last-child { margin-right: 20px; }
+}
+
+/* Status badges: solid tints with bold, high-contrast text (readable in bright light on cream). */
+.rn-app .rn-badge { font-weight: 650; }
+.rn-app .rn-badge-neutral { background: #E6E2D8; color: #2E332F; }
+.rn-app .rn-badge-good { background: #D5EBCF; color: #1D4E16; }
+.rn-app .rn-badge-warn { background: #F6E3B8; color: #5E3F04; }
+.rn-app .rn-badge-bad { background: #F8D6CD; color: #7E2412; }
+.rn-app .rn-badge-info { background: #D7E6F8; color: #163F73; }
+.rn-app .rn-badge-accent { background: var(--rn-accent-soft); color: var(--rn-accent-strong, var(--rn-accent)); }
+
+/* Empty states: the house logo, softened, in a larger tinted circle with a quiet ring. */
+.rn-app .rn-state-icon { width: 64px; height: 64px; box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.55), 0 0 0 9px rgba(30, 58, 43, 0.06); }
+.rn-app .rn-state-brand { background: #EEF3EA; }
+.rn-app .rn-state-brand img { width: 40px; height: 40px; opacity: 0.85; filter: saturate(0.8); }
+.rn-app .rn-state-icon svg { width: 24px; height: 24px; }
+
+/* Loader: the house-and-tiffin logo drawn stroke by stroke (fast), held, faded, drawn again. */
+@keyframes rn-draw-stroke {
+  0% { stroke-dashoffset: 1; opacity: 1; }
+  42% { stroke-dashoffset: 0; opacity: 1; }
+  82% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+.rn-draw path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: rn-draw-stroke 1.7s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+  animation-delay: calc(var(--i) * 55ms);
+}
+@media (prefers-reduced-motion: reduce) { .rn-draw path { animation: none; stroke-dashoffset: 0; } }

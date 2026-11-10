@@ -1,4 +1,5 @@
 import { friendlyError } from "@/lib/friendlyError";
+import { syncResidentCustomers } from "@/server/tiffin/residentCustomers";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -97,6 +98,8 @@ export async function GET(request: NextRequest) {
       offset = parsedOffset;
     }
 
+    // PG residents who are not yet tiffin customers are added first (only missing ones).
+    await syncResidentCustomers(user);
     const result = await listTiffinCustomers(user, {
       search,
       status,

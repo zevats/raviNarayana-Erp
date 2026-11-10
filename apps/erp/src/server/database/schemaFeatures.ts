@@ -66,5 +66,18 @@ export async function hasPlanDineInSchema(db: AsyncDb): Promise<boolean> {
   return planDineIn;
 }
 
+/** Migration 0026 is installed: a one-thali plan may be taken at any meal (meal_types ANY). */
+let anyMeal: boolean | null = null;
+let anyMealCheckedAt = 0;
+export async function hasAnyMealPlanSchema(db: AsyncDb): Promise<boolean> {
+  if (anyMeal) return true;
+  if (!db.isPostgres) return false;
+  if (anyMeal === false && Date.now() - anyMealCheckedAt < 60_000) return false;
+  const row = await db.queryOne<{ d: string | null }>("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint WHERE conname = 'chk_tiffin_sub_meal_types' LIMIT 1");
+  anyMealCheckedAt = Date.now();
+  anyMeal = Boolean(row?.d && row.d.includes("'ANY'"));
+  return anyMeal;
+}
+
 /** Migration 0023 is installed: readable tiffin customer codes (TC-0001). */
 export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "customer_code");

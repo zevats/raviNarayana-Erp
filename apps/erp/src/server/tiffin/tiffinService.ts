@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { hasCustomerCodeSchema } from "../database/schemaFeatures";
+import { hasCustomerCodeSchema, hasAnyMealPlanSchema } from "../database/schemaFeatures";
 import { loadCustomerBalancesById } from "./customerBalance";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
@@ -1266,8 +1266,11 @@ export async function createTiffinSubscription(
   }
 
   const mealTypes: SubscriptionMealTypes = input.mealTypes || "BOTH";
-  if (!["LUNCH", "DINNER", "BOTH"].includes(mealTypes)) {
-    throw new Error(mealTypes === "BREAKFAST" ? "Breakfast is not offered. Choose lunch, dinner or both." : `Invalid mealTypes '${mealTypes}'. Allowed values: LUNCH, DINNER, BOTH.`);
+  if (!["LUNCH", "DINNER", "BOTH", "ANY"].includes(mealTypes)) {
+    throw new Error(mealTypes === "BREAKFAST" ? "Breakfast is not offered. Choose lunch, dinner or both." : `Invalid mealTypes '${mealTypes}'. Allowed values: LUNCH, DINNER, BOTH, ANY.`);
+  }
+  if (mealTypes === "ANY" && !(await hasAnyMealPlanSchema(db))) {
+    throw new Error("A one-thali-any-meal plan needs the latest database update, which is not installed yet.");
   }
 
   const serviceDays: SubscriptionServiceDays = input.serviceDays || "ALL_DAYS";
@@ -1540,8 +1543,11 @@ export async function updateTiffinSubscription(
   let mealTypes = current.mealTypes;
   if (input.mealTypes) {
     // An existing breakfast plan may keep its value; nothing is changed to breakfast.
-    if (!["LUNCH", "DINNER", "BOTH"].includes(input.mealTypes) && !(input.mealTypes === "BREAKFAST" && current.mealTypes === "BREAKFAST")) {
+    if (!["LUNCH", "DINNER", "BOTH", "ANY"].includes(input.mealTypes) && !(input.mealTypes === "BREAKFAST" && current.mealTypes === "BREAKFAST")) {
       throw new Error(input.mealTypes === "BREAKFAST" ? "Breakfast is not offered. Choose lunch, dinner or both." : `Invalid mealTypes '${input.mealTypes}'.`);
+    }
+    if (input.mealTypes === "ANY" && current.mealTypes !== "ANY" && !(await hasAnyMealPlanSchema(db))) {
+      throw new Error("A one-thali-any-meal plan needs the latest database update, which is not installed yet.");
     }
     mealTypes = input.mealTypes;
   }

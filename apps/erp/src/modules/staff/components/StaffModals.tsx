@@ -1,5 +1,6 @@
 "use client";
 
+import { DetailsList } from "@/components/ui/DetailsList";
 import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState } from "react";
@@ -85,8 +86,8 @@ export function CreateStaffModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden animate-fadeIn">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <User className="w-5 h-5 text-[#B58A57]" />
@@ -182,19 +183,11 @@ export function CreateStaffModal({
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E6E0D2]">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 text-xs font-bold text-[#445448] hover:bg-gray-100 rounded-xl transition-colors"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Create Account"}
+              {loading ? "Working…" : "Create Account"}
             </button>
           </div>
         </form>
@@ -253,8 +246,8 @@ export function EditStaffModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
           <h3 className="font-serif font-bold text-lg">Edit Profile: {staff.username}</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
@@ -298,19 +291,11 @@ export function EditStaffModal({
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E6E0D2]">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 text-xs font-bold text-[#445448] hover:bg-gray-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Save Changes"}
+              {loading ? "Working…" : "Save Changes"}
             </button>
           </div>
         </form>
@@ -371,8 +356,8 @@ export function ChangeRoleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-[#B58A57]" />
@@ -393,8 +378,7 @@ export function ChangeRoleModal({
 
           <div>
             <p className="text-xs text-[#445448] mb-3">
-              Modifying role for <strong>{staff.fullName}</strong> (<code className="text-xs">{staff.username}</code>).
-              Role permissions will update immediately on their next request.
+              <strong>{staff.fullName}</strong> (<code className="text-xs">{staff.username}</code>)
             </p>
 
             <label className="block text-xs font-bold text-[#1A2E20] uppercase tracking-wider mb-1.5">
@@ -443,19 +427,11 @@ export function ChangeRoleModal({
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E6E0D2]">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 text-xs font-bold text-[#445448] hover:bg-gray-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={loading || selectedRole === staff.role}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2 disabled:opacity-50"
             >
-              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Update Role"}
+              {loading ? "Working…" : "Update Role"}
             </button>
           </div>
         </form>
@@ -506,8 +482,8 @@ export function DeactivateStaffModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
         <div className={`px-6 py-4 text-white flex items-center justify-between ${isDeactivating ? "bg-[#842213]" : "bg-[#1A2E20]"}`}>
           <div className="flex items-center gap-2">
             <ShieldAlert className="w-5 h-5 text-white" />
@@ -537,22 +513,10 @@ export function DeactivateStaffModal({
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] leading-relaxed">
                 <strong>Security Impact:</strong> Deactivating this account will immediately revoke all active sessions across all devices. The staff member will be logged out on their next request and blocked from signing in. All historical transactions and records authored by this staff member will remain intact.
               </div>
-            ) : (
-              <p className="text-[11px] text-gray-500">
-                Reactivating this account will permit the staff member to sign in again using their existing credentials.
-              </p>
-            )}
+            ) : null}
           </div>
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E6E0D2]">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 text-xs font-bold text-[#445448] hover:bg-gray-100 rounded-xl"
-            >
-              Cancel
-            </button>
             <button
               type="button"
               onClick={handleToggle}
@@ -564,7 +528,7 @@ export function DeactivateStaffModal({
               }`}
             >
               {loading ? (
-                <BikeLoader inline tone="light" label="Working" />
+                "Working…"
               ) : isDeactivating ? (
                 "Deactivate & Revoke Sessions"
               ) : (
@@ -625,8 +589,8 @@ export function DirectResetModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-[#B58A57]" />
@@ -646,8 +610,7 @@ export function DirectResetModal({
           )}
 
           <p className="text-xs text-[#445448]">
-            Setting a new security password directly for <strong>{staff.fullName}</strong>.
-            This emergency action will invalidate all current active sessions for this account.
+            <strong>{staff.fullName}</strong> will be signed out everywhere.
           </p>
 
           <div>
@@ -667,19 +630,11 @@ export function DirectResetModal({
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-[#E6E0D2]">
             <button
-              type="button"
-              onClick={onClose}
-              disabled={loading}
-              className="px-4 py-2 text-xs font-bold text-[#445448] hover:bg-gray-100 rounded-xl"
-            >
-              Cancel
-            </button>
-            <button
               type="submit"
               disabled={loading}
               className="px-5 py-2 text-xs font-bold text-white bg-[#1A2E20] hover:bg-[#263B2D] rounded-xl transition-all shadow-sm flex items-center gap-2"
             >
-              {loading ? <BikeLoader inline tone="light" label="Working" /> : "Reset & Invalidate Sessions"}
+              {loading ? "Working…" : "Reset & Invalidate Sessions"}
             </button>
           </div>
         </form>
@@ -725,8 +680,8 @@ export function StaffHistoryModal({
   if (!isOpen || !staff) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[85dvh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal rn-modal-wide w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[85dvh]">
         <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <History className="w-5 h-5 text-[#B58A57]" />
@@ -767,9 +722,7 @@ export function StaffHistoryModal({
                     {ev.ipAddress && <span className="text-gray-400">({ev.ipAddress})</span>}
                   </div>
                   {ev.metadata && (
-                    <pre className="text-[10px] bg-white p-2 rounded-lg border border-[#E6E0D2] text-[#654735] overflow-x-auto">
-                      {JSON.stringify(ev.metadata, null, 2)}
-                    </pre>
+                    <DetailsList data={ev.metadata} className="mt-1" />
                   )}
                 </div>
               ))}
@@ -777,14 +730,6 @@ export function StaffHistoryModal({
           )}
         </div>
 
-        <div className="p-4 bg-gray-50 border-t border-[#E6E0D2] flex justify-end shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-bold text-[#1A2E20] hover:bg-gray-200 rounded-xl transition-colors"
-          >
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );

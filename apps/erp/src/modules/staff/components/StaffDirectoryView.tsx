@@ -334,7 +334,6 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
         busy={deleting}
         danger
         title={`Delete ${deleteTarget?.fullName ?? "this account"}?`}
-        description="Only an account with no history can be deleted. If this person has made deliveries, handled cash or used the ERP, the account is kept so those records stay attributable — deactivate it instead."
         confirmLabel="Delete account"
         error={deleteError}
       />

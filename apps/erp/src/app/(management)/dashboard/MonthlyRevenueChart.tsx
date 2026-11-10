@@ -32,9 +32,6 @@ export function MonthlyRevenueChart({ data }: MonthlyRevenueChartProps) {
           <h3 className="text-base font-semibold text-[#1A2E20] tracking-tight">
             Monthly Revenue
           </h3>
-          <p className="text-xs text-[#5A6C5E] mt-0.5">
-            Collections across the last 6 months
-          </p>
         </div>
 
         {/* Year Dropdown Indicator */}
@@ -62,11 +59,7 @@ export function MonthlyRevenueChart({ data }: MonthlyRevenueChartProps) {
               <span>Collected: <strong className="font-semibold text-emerald-400">₹{formatNumberIN(data[hoveredIdx].collected)}</strong></span>
               <span>Expenses: <strong className="font-semibold text-rose-300">₹{formatNumberIN(data[hoveredIdx].expenses)}</strong></span>
             </div>
-          ) : (
-            <div className="text-[11px] text-[#8E9F89]">
-              Hover over pillars to view verified collections & expenses
-            </div>
-          )}
+          ) : null}
         </div>
 
         {/* 6 Vertical Pillars */}
@@ -134,9 +127,6 @@ export function MonthlyRevenueChart({ data }: MonthlyRevenueChartProps) {
         <div className="flex items-center gap-1.5">
           <TrendingUp className="w-3.5 h-3.5 text-emerald-700" />
           <span>Peak Collection: <strong className="text-[#1A2E20] font-semibold">₹{formatNumberIN(peakCollected)}</strong></span>
-        </div>
-        <div className="text-[11px] text-[#8E9F89]">
-          Database-backed posted transactions
         </div>
       </div>
     </div>

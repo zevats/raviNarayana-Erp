@@ -9,7 +9,7 @@ export default async function ReportsPage() {
   await requirePagePermission("finance.read");
   return (
     <div className="space-y-5 min-w-0">
-      <PageHeader title="Reports" description="Totals cover every matching row, not only this page." />
+      <PageHeader title="Reports" />
       <ReportsView />
     </div>
   );

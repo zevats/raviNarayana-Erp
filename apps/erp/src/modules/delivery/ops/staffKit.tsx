@@ -173,7 +173,7 @@ export function LoadError({ text, onRetry }: { text: string; onRetry: () => unkn
         }}
         className={`${K.primaryBtn} h-11 px-6 text-[14px]`}
       >
-        {busy ? <BikeLoader inline tone="light" label="Trying again" /> : "Try again"}
+        {busy ? "Trying again…" : "Try again"}
       </button>
     </div>
   );

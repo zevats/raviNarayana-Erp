@@ -81,7 +81,7 @@ export default function NotificationsPage() {
           show === "unread" ? (
             <StateMessage kind="empty" title="No unread notifications" action={<button type="button" className="rn-btn rn-btn-sm" onClick={() => setShow("all")}>Show all</button>} />
           ) : (
-            <StateMessage kind="empty" title="No notifications">Alerts about rent, deliveries and cash appear here.</StateMessage>
+            <StateMessage kind="empty" title="No notifications" />
           )
         ) : (
           <div className="p-2">

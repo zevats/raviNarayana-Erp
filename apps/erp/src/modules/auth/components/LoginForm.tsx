@@ -1,10 +1,9 @@
 "use client";
 
 import { useTimedMessage } from "@/lib/useTimedMessage";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { RnLogo, type RnBrand } from "@/components/brand/RnLogo";
 import { storedBrand, rememberBrand } from "@/lib/brand";
 
@@ -78,7 +77,8 @@ export function LoginForm() {
   const [hydrated, setHydrated] = useState(false);
   // Edition shown before sign-in: remembered from the last sign-in on this device (visual only).
   const [brand, setBrand] = useState<RnBrand>("standard");
-  useEffect(() => {
+  // Before the first paint (layout effect), so a delivery phone never flashes the other edition.
+  useLayoutEffect(() => {
     setHydrated(true);
     setBrand(storedBrand());
   }, []);
@@ -346,9 +346,26 @@ export function LoginForm() {
   // glass card. The delivery (orange) edition keeps its app's layout unchanged.
   const erp = brand !== "delivery";
   return (
-    <div className={`min-h-[100dvh] w-full flex flex-col ${erp ? "rn-login sm:justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
+    <div className={`min-h-[100dvh] w-full flex flex-col lg:items-center lg:justify-center lg:p-8 ${erp ? "rn-login justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
+      <div className="w-full flex flex-col lg:flex-row lg:max-w-[1120px] lg:min-h-[640px] rn-login-shell">
+      {/* Large screens: the brand panel (sidebar glass, the PG photo, the logo and name). */}
+      <aside className={`rn-login-brand hidden lg:flex ${erp ? "" : "rn-login-brand-delivery"}`} aria-hidden="true">
+        <div className="rn-login-brand-photo" />
+        <div className="relative z-[1] flex flex-col h-full w-full p-12">
+          <div className="flex items-center gap-3">
+            <RnLogo brand={brand} size={52} onColor title="" />
+            <span className="text-[19px] font-bold tracking-[-0.02em] text-white">Ravinarayan</span>
+          </div>
+          <div className="mt-auto">
+            <RnLogo brand={brand} size={148} onColor title="" className="rn-logo-in drop-shadow-[0_18px_30px_rgba(0,0,0,0.28)]" />
+            <p className="mt-8 text-[40px] leading-[1.08] font-semibold tracking-[-0.03em] text-white">{erp ? "PG & Tiffin" : "Delivery"}</p>
+            <p className="mt-2 text-[13px] font-semibold uppercase tracking-[0.22em] text-white/60">{erp ? "Operations" : "Partner app"}</p>
+          </div>
+        </div>
+      </aside>
+      <div className="flex-1 min-w-0 flex flex-col justify-center rn-login-formside">
       {erp ? (
-        <header className="px-6 pt-[max(3rem,calc(env(safe-area-inset-top)+2rem))] sm:pt-0 pb-7 text-center">
+        <header className="lg:hidden px-6 pt-[max(2rem,calc(env(safe-area-inset-top)+1.5rem))] pb-7 text-center">
           <div className="rn-logo-in inline-block mb-3">
             <RnLogo brand="standard" size={96} title="" />
           </div>
@@ -356,7 +373,7 @@ export function LoginForm() {
           <p className="rn-login-sub">PG &amp; Tiffin ERP</p>
         </header>
       ) : (
-      <header className="relative px-6 pt-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] pb-24 sm:pb-28 text-center overflow-hidden" style={{ background: t.hero }}>
+      <header className="lg:hidden relative px-6 pt-[max(3.5rem,calc(env(safe-area-inset-top)+2.5rem))] pb-24 sm:pb-28 text-center overflow-hidden" style={{ background: t.hero }}>
         <div aria-hidden="true" className="absolute -right-16 -top-16 w-64 h-64 rounded-full opacity-[0.07] bg-white" />
         <div aria-hidden="true" className="absolute -left-20 bottom-0 w-56 h-56 rounded-full opacity-[0.05] bg-white" />
         <div className="relative rn-logo-in inline-block">
@@ -370,15 +387,14 @@ export function LoginForm() {
       )}
 
       {/* Form card */}
-      <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:flex-none flex-1" : "relative -mt-16 sm:-mt-20 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] flex-1"}>
-        <div className={erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"}>
+      <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0" : "relative -mt-16 sm:-mt-20 lg:mt-0 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0 flex-1 lg:flex-none"}>
+        <div className={`${erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"} lg:!bg-transparent lg:!border-transparent lg:!shadow-none lg:![backdrop-filter:none] lg:!max-w-[380px] lg:!px-0`}>
           <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-[#16241B]">{titles[step]}</h1>
           {step === "OTP" && (
             <p className="mt-1 text-[14px] text-[#5B6B5F]">
               Code sent to <span className="font-semibold text-[#16241B]">{maskedEmail || "your email"}</span>
             </p>
           )}
-          {step === "FORGOT" && <p className="mt-1 text-[14px] text-[#5B6B5F]">We’ll email you a link to set a new one.</p>}
 
           {errorMessage && (
             <p role="alert" className="mt-4 flex items-start gap-2 rounded-xl bg-[#FDECE8] text-[#93301F] text-[13px] font-medium px-3.5 py-3">
@@ -462,26 +478,15 @@ export function LoginForm() {
               <label htmlFor="otp" className="sr-only">
                 6-digit code
               </label>
-              <input
-                id="otp"
-                name="otp"
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                autoComplete="one-time-code"
-                required
-                autoFocus
-                disabled={isVerifyingOtp || isResendingOtp}
+              <OtpBoxes
                 value={otp}
-                onChange={(e) => {
-                  setOtp(e.target.value.replace(/\D/g, ""));
+                disabled={isVerifyingOtp || isResendingOtp}
+                ring={t.ring}
+                focusColor={t.focus}
+                onChange={(v) => {
+                  setOtp(v);
                   if (errorMessage) setErrorMessage(null);
                 }}
-                placeholder="••••••"
-                className="w-full h-16 rounded-2xl border border-[#DCD5C6] bg-[#FBFAF6] text-center font-mono text-[28px] font-bold tracking-[0.55em] text-[#16241B] placeholder:text-[#CFC7B6] outline-none transition-shadow focus:bg-white"
-                style={{ boxShadow: "none" }}
-                onFocus={(e) => (e.currentTarget.style.boxShadow = `0 0 0 4px ${t.ring}`)}
-                onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
               />
               <PrimaryButton t={t} disabled={!hydrated || isVerifyingOtp || isResendingOtp || otp.length !== 6} busy={isVerifyingOtp} busyLabel="Verifying…">
                 Verify and sign in
@@ -594,6 +599,8 @@ export function LoginForm() {
           )}
         </div>
       </section>
+      </div>
+      </div>
     </div>
   );
 }
@@ -659,14 +666,80 @@ function PrimaryButton({ t, disabled, busy, busyLabel, children }: { t: BrandUi;
       onMouseEnter={(e) => !disabled && (e.currentTarget.style.background = t.buttonHover)}
       onMouseLeave={(e) => (e.currentTarget.style.background = t.button)}
     >
-      {busy ? (
-        <>
-          <BikeLoader inline tone="light" label={busyLabel} /> {busyLabel}
-        </>
-      ) : (
-        children
-      )}
+      {busy ? busyLabel : children}
     </button>
+  );
+}
+
+/**
+ * The 6-digit code as six boxes: typing moves to the next box, Backspace goes back, and pasting or
+ * the phone's one-time-code suggestion fills all six at once.
+ */
+function OtpBoxes({ value, onChange, disabled, ring, focusColor }: { value: string; onChange: (v: string) => void; disabled?: boolean; ring: string; focusColor: string }) {
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
+  const [focus, setFocus] = useState<number | null>(null);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] || "");
+  const put = (from: number, text: string) => {
+    const clean = text.replace(/\D/g, "");
+    if (!clean) return;
+    const next = (value.slice(0, from) + clean).slice(0, 6);
+    onChange(next);
+    refs.current[Math.min(next.length, 5)]?.focus();
+  };
+  useEffect(() => {
+    refs.current[Math.min(value.length, 5)]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="flex items-center justify-between gap-2" role="group" aria-label="6-digit code">
+      {digits.map((d, i) => (
+        <input
+          key={i}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
+          id={i === 0 ? "otp" : undefined}
+          name={i === 0 ? "otp" : undefined}
+          type="text"
+          inputMode="numeric"
+          autoComplete={i === 0 ? "one-time-code" : "off"}
+          aria-label={`Digit ${i + 1}`}
+          maxLength={i === 0 ? 6 : 1}
+          disabled={disabled}
+          value={d}
+          onFocus={(e) => {
+            setFocus(i);
+            e.currentTarget.select();
+          }}
+          onBlur={() => setFocus(null)}
+          onPaste={(e) => {
+            e.preventDefault();
+            put(0, e.clipboardData.getData("text"));
+          }}
+          onChange={(e) => {
+            const v = e.target.value.replace(/\D/g, "");
+            if (v.length > 1) return put(i === 0 ? 0 : i, v);
+            const next = (value.slice(0, i) + v + value.slice(i + 1)).slice(0, 6);
+            onChange(v ? next : value.slice(0, i) + value.slice(i + 1));
+            if (v && i < 5) refs.current[i + 1]?.focus();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Backspace" && !digits[i] && i > 0) {
+              e.preventDefault();
+              onChange(value.slice(0, i - 1) + value.slice(i));
+              refs.current[i - 1]?.focus();
+            } else if (e.key === "ArrowLeft" && i > 0) refs.current[i - 1]?.focus();
+            else if (e.key === "ArrowRight" && i < 5) refs.current[i + 1]?.focus();
+          }}
+          className="w-full min-w-0 h-14 sm:h-16 rounded-2xl border bg-[#FBFAF6] text-center text-[26px] font-bold tabular-nums text-[#16241B] outline-none transition-[box-shadow,border-color,background-color] disabled:opacity-60"
+          style={{
+            borderColor: focus === i ? focusColor : d ? "#BFB6A4" : "#DCD5C6",
+            boxShadow: focus === i ? `0 0 0 4px ${ring}` : "none",
+            background: focus === i || d ? "#FFFFFF" : "#FBFAF6",
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

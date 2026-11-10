@@ -87,8 +87,8 @@ export function EditOrderModal({ order, mode, onClose, onDone }: { order: Unifie
   const needsCutoff = error ? /cutoff/i.test(error) : false;
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="edit-order-title" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs">
-      <div className="bg-white border border-[#E6E1DA] rounded-3xl shadow-2xl max-w-lg w-full max-h-[90dvh] overflow-hidden flex flex-col">
+    <div role="dialog" aria-modal="true" aria-labelledby="edit-order-title" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal bg-white border border-[#E6E1DA] rounded-3xl shadow-2xl max-w-lg w-full max-h-[90dvh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#E6E1DA]">
           <h2 id="edit-order-title" className="font-serif text-lg font-bold text-[#1A2E20]">
             {mode === "edit" ? "Change order" : "Cancel order"} · {order.customerName}
@@ -130,7 +130,7 @@ export function EditOrderModal({ order, mode, onClose, onDone }: { order: Unifie
             </>
           ) : (
             <p className="text-[#5A6C5E]">
-              The delivery is cancelled and the order is kept as cancelled with your reason. Orders with any money collected cannot be cancelled.
+              Orders with money collected cannot be cancelled.
             </p>
           )}
           <label className="block">
@@ -163,7 +163,7 @@ export function EditOrderModal({ order, mode, onClose, onDone }: { order: Unifie
             onClick={submit}
             className={`px-4 min-h-[40px] rounded-full text-white text-sm font-semibold disabled:opacity-50 ${mode === "cancel" ? "bg-rose-700 hover:bg-rose-800" : "bg-[#1A2E20] hover:bg-[#263B2D]"}`}
           >
-            {busy ? <BikeLoader inline tone="light" label="Saving" /> : mode === "cancel" ? "Cancel order" : "Save changes"}
+            {busy ? "Saving…" : mode === "cancel" ? "Cancel order" : "Save changes"}
           </button>
         </div>
       </div>

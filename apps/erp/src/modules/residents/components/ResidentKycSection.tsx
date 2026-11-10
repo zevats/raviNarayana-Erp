@@ -191,9 +191,6 @@ export function ResidentKycSection({
         <div className="p-4 bg-stone-50 border border-stone-200 rounded-2xl text-center space-y-1">
           <FileText className="w-6 h-6 text-stone-400 mx-auto" />
           <p className="text-xs font-medium text-stone-600">No KYC documents attached</p>
-          <p className="text-[11px] text-stone-500">
-            Government ID, Aadhaar, address proofs or lease clearance slips can be securely stored.
-          </p>
         </div>
       ) : (
         <div className="space-y-2">

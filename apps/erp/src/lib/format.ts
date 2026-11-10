@@ -35,3 +35,16 @@ export function formatDateTime(date: Date | string | number, locale: string | un
   }
   return f.format(date instanceof Date ? date : new Date(date));
 }
+
+/**
+ * A stored note as people read it: the old "Correction / Reversal of txn_…: reason" wording becomes
+ * "Reversal: reason", and any other internal record id is left out.
+ */
+export function readableNote(note: string | null | undefined): string {
+  if (!note) return "";
+  return note
+    .replace(/^Correction \/ Reversal of [A-Za-z0-9_-]+:\s*/, "Reversal: ")
+    .replace(/\s*\(?\b[a-z]{2,6}_[A-Za-z0-9-]{6,}\b\)?/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}

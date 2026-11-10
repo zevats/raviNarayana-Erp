@@ -18,11 +18,11 @@
   "plugins": {
     "SplashScreen": {
       "launchAutoHide": true,
-      "launchShowDuration": 12000,
-      "backgroundColor": "#173A29",
+      "launchShowDuration": 0,
+      "backgroundColor": "#FBF9F3",
       "showSpinner": false,
       "androidScaleType": "CENTER",
-      "launchFadeOutDuration": 300
+      "launchFadeOutDuration": 0
     },
     "PushNotifications": {
       "presentationOptions": [

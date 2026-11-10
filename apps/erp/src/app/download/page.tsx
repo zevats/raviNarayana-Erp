@@ -59,7 +59,7 @@ export default function DownloadPage() {
           <div className="flex items-start gap-2.5 rounded-2xl bg-[#F7F3EC] p-3.5 text-[12px] text-[#5B6B5F]">
             <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-[#1F5A3D]" />
             <span>
-              Signed by Ravinarayan. Updates install over the existing app with your sign-in kept.
+              Signed by Ravinarayan
               {b ? <span className="block mt-1 break-all font-mono text-[10.5px] text-[#8A968D]">SHA-256 {b.sha256}</span> : null}
             </span>
           </div>

@@ -67,8 +67,8 @@ export function BatchAssignModal({
   const blockedTasks = selectedTasks.filter((t) => t.status === "DELIVERED" || !!t.invoiceId);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 border border-[#E6E1DA] shadow-xl">
+    <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-2xl max-w-lg w-full p-6 space-y-5 border border-[#E6E1DA] shadow-xl">
         <div className="flex items-center justify-between border-b border-[#E6E1DA] pb-3">
           <div className="flex items-center gap-2">
             <UserCheck className="w-5 h-5 text-[#B58A57]" />
@@ -138,14 +138,6 @@ export function BatchAssignModal({
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 text-xs font-serif text-[#5D7656] hover:text-[#1A2E20]"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={submitting || !selectedStaffId || eligibleTasks.length === 0}

@@ -202,7 +202,7 @@ export function CreateInvoiceModal({
       const invoiceNum = data.invoice.invoiceNumber || "Draft";
       onSuccess(
         data.invoice,
-        `Invoice ${invoiceNum} generated successfully for ₹${formatINR(data.invoice.totalAmount)}.`
+        `Invoice ${invoiceNum} generated successfully for ${formatINR(data.invoice.totalAmount)}.`
       );
       onClose();
     } catch (err: any) {
@@ -220,9 +220,9 @@ export function CreateInvoiceModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-invoice-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs overflow-y-auto rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
+      <div className="rn-modal rn-modal-wide bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full my-6 overflow-hidden flex flex-col max-h-[90dvh]">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -268,9 +268,6 @@ export function CreateInvoiceModal({
                 }`}
               >
                 <div className="font-semibold text-xs text-[#1A2E20]">Regular Bill</div>
-                <div className="text-[11px] text-[#5A6C5E] mt-0.5">
-                  Standard Non-GST PG bill (0% tax)
-                </div>
               </button>
 
               <button
@@ -283,9 +280,6 @@ export function CreateInvoiceModal({
                 }`}
               >
                 <div className="font-semibold text-xs text-[#B58A57]">GST Tax Invoice</div>
-                <div className="text-[11px] text-[#5A6C5E] mt-0.5">
-                  Tax invoice with CGST/SGST breakdown
-                </div>
               </button>
             </div>
           </div>
@@ -463,7 +457,7 @@ export function CreateInvoiceModal({
                         </AppSelect>
                       </div>
                       <div>
-                        Tax: ₹{formatINR(Math.round((item.quantity * item.unitPrice * (item.taxRate || 0)) / 100))}
+                        Tax: {formatINR(Math.round((item.quantity * item.unitPrice * (item.taxRate || 0)) / 100))}
                       </div>
                     </div>
                   )}
@@ -509,9 +503,6 @@ export function CreateInvoiceModal({
                   onChange={(e) => setLinkExistingCharge(e.target.checked)}
                   className="rounded border-[#8E9F89]/40 text-[#1A2E20] focus:ring-[#1A2E20]"
                 />
-                <span className="text-[11px] text-[#5A6C5E]">
-                  Link existing posted rent charge for this period to prevent double-charging
-                </span>
               </label>
             )}
           </div>
@@ -520,30 +511,22 @@ export function CreateInvoiceModal({
           <div className="p-3 bg-[#1A2E20]/5 rounded-xl border border-[#1A2E20]/15 space-y-1">
             <div className="flex justify-between text-xs text-[#5A6C5E]">
               <span>Subtotal:</span>
-              <span>₹{formatINR(subtotal)}</span>
+              <span>{formatINR(subtotal)}</span>
             </div>
             {invoiceType === "GST_TAX_INVOICE" && (
               <div className="flex justify-between text-xs text-[#5A6C5E]">
                 <span>Total Tax (CGST + SGST):</span>
-                <span>₹{formatINR(totalTax)}</span>
+                <span>{formatINR(totalTax)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm font-bold text-[#1A2E20] pt-1 border-t border-[#1A2E20]/10">
               <span>Grand Total:</span>
-              <span>₹{formatINR(grandTotal)}</span>
+              <span>{formatINR(grandTotal)}</span>
             </div>
           </div>
 
           {/* Modal Actions */}
           <div className="flex items-center justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#8E9F89]/30 rounded-xl text-xs font-medium text-[#5A6C5E] hover:bg-[#FAF8F5] transition-colors"
-            >
-              Cancel
-            </button>
             <button
               type="submit"
               disabled={submitting}
@@ -552,7 +535,7 @@ export function CreateInvoiceModal({
               {submitting
                 ? "Generating..."
                 : autoIssue
-                ? `Issue Invoice (₹${formatINR(grandTotal)})`
+                ? `Issue Invoice (${formatINR(grandTotal)})`
                 : "Save as Draft"}
             </button>
           </div>

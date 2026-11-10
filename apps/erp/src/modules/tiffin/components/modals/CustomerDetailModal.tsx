@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { X, Phone, MapPin, Navigation, Pencil, Wallet, Power, CalendarDays, StickyNote, UtensilsCrossed } from "lucide-react";
+import { X, Phone, MapPin, Navigation, Pencil, Wallet, Power, CalendarDays, StickyNote, UtensilsCrossed, ReceiptText } from "lucide-react";
 import { TiffinCustomer, TiffinSubscription } from "@/types";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 import { formatINR } from "@/modules/finance/utils/formatUtils";
+import type { CustomerMonth } from "@/server/orders/orderService";
 
 const SUB_STATUS: Record<string, [string, string]> = {
   ACTIVE: ["Active", "bg-[#E4F2E0] text-[#2F6B24]"],
@@ -12,9 +13,8 @@ const SUB_STATUS: Record<string, [string, string]> = {
   CANCELLED: ["Cancelled", "bg-[#EEECE8] text-[#6E6A63]"],
   COMPLETED: ["Completed", "bg-[#E6EEF6] text-[#2D5277]"],
 };
-const MEALS_LABEL: Record<string, string> = { LUNCH: "Lunch", DINNER: "Dinner", BOTH: "Lunch & dinner", BREAKFAST: "Breakfast" };
+const MEALS_LABEL: Record<string, string> = { LUNCH: "Lunch", DINNER: "Dinner", BOTH: "Lunch + dinner", ANY: "Any meal", BREAKFAST: "Breakfast" };
 const TYPE_LABEL: Record<string, string> = { INDIVIDUAL: "Individual", CORPORATE: "Corporate", RESIDENTIAL_PG: "PG resident" };
-const DIET_LABEL: Record<string, string> = { VEG: "Veg", NON_VEG: "Non-veg", EGG: "Eggetarian", JAIN: "Jain", VEGAN: "Vegan" };
 
 interface CustomerDetailModalProps {
   isOpen: boolean;
@@ -38,6 +38,21 @@ const dayLabel = (iso: string) => {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00`);
   return Number.isNaN(d.getTime()) ? iso.slice(0, 10) : d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 };
+
+const shortDate = (d: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
+
+/** Payment state of an order or bill, in plain words. */
+function PayPill({ kind, due }: { kind: "PAID" | "PART_PAID" | "UNPAID" | "PAY_LATER" | "IN_PLAN"; due: number }) {
+  const map: Record<string, [string, string]> = {
+    PAID: ["Paid", "bg-[#E4F2E0] text-[#1D4E16]"],
+    IN_PLAN: ["In plan", "bg-[#EEF3EA] text-[#1E3A2B]"],
+    PART_PAID: [`Part paid · ${formatINR(due)} due`, "bg-[#FBF0D9] text-[#6B4A06]"],
+    PAY_LATER: [`On account · ${formatINR(due)}`, "bg-[#FBF0D9] text-[#6B4A06]"],
+    UNPAID: [`Unpaid · ${formatINR(due)}`, "bg-[#FDECE8] text-[#A3311D]"],
+  };
+  const [label, cls] = map[kind] || map.UNPAID;
+  return <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold whitespace-nowrap ${cls}`}>{label}</span>;
+}
 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
@@ -65,6 +80,19 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
     { ttl: 15000, tags: ["tiffin_subscriptions", "subscriptions"] }
   );
 
+  // Orders and monthly bills: this month and the two before, with what is paid and what is due.
+  const actKey = isOpen && customer ? `/api/tiffin/customers/${encodeURIComponent(customer.id)}/orders?months=3` : null;
+  const actQ = useErpQuery<{ months: CustomerMonth[] }>(
+    actKey,
+    async () => {
+      const res = await fetch(actKey as string, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Could not load the orders.");
+      return body;
+    },
+    { ttl: 15000, tags: ["orders", "finance", "tiffin_customers"] }
+  );
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -79,14 +107,14 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
   const due = b?.due ?? 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#1A2E20]/45 backdrop-blur-[2px] sm:p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#1A2E20]/45 backdrop-blur-[2px] sm:p-4 rn-modal-scrim" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="customer-detail-title"
         onClick={(e) => e.stopPropagation()}
         style={{ backgroundColor: "#FAF8F5" }}
-        className="rn-rise relative w-full sm:max-w-xl max-h-[94dvh] flex flex-col overflow-hidden rounded-t-[28px] sm:rounded-[28px] shadow-[0_24px_60px_-20px_rgba(26,46,32,0.45)]"
+        className="rn-modal rn-rise relative w-full sm:max-w-xl max-h-[94dvh] flex flex-col overflow-hidden rounded-t-[28px] sm:rounded-[28px] shadow-[0_24px_60px_-20px_rgba(26,46,32,0.45)]"
       >
         {/* Header */}
         <header className="relative px-5 sm:px-6 pt-5 pb-4 bg-[#1A2E20] text-white">
@@ -107,8 +135,6 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/70">
                 {customer.customerCode && <span className="font-semibold text-[#E4C9A4] tabular-nums">{customer.customerCode}</span>}
                 <span>{TYPE_LABEL[customer.customerType] || customer.customerType}</span>
-                <span aria-hidden>·</span>
-                <span>{DIET_LABEL[customer.dietaryPreference] || customer.dietaryPreference}</span>
                 <span
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${
                     isActive ? "bg-[#3C8A2E]/25 text-[#BFE5B5]" : "bg-white/10 text-white/70"
@@ -122,7 +148,7 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-4 pb-6 space-y-3">
           {/* Balance */}
           <section className="rounded-2xl bg-white border border-[#ECE6DB] p-4" aria-label="Balance">
             <div className="flex items-end justify-between gap-3">
@@ -233,6 +259,67 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
             )}
           </Section>
 
+          {/* Orders and payments, month by month */}
+          <Section icon={<ReceiptText className="w-3.5 h-3.5" />} title="Orders and payments · last 3 months">
+            {actQ.isLoading && !actQ.data ? (
+              <div className="space-y-2" aria-busy="true">
+                <div className="h-14 rounded-xl bg-[#F4F0E8] animate-pulse" />
+                <div className="h-14 rounded-xl bg-[#F4F0E8] animate-pulse" />
+              </div>
+            ) : actQ.error && !actQ.data ? (
+              <p className="text-[13px] text-[#9A3423]">Couldn&apos;t load the orders. {actQ.error.message}</p>
+            ) : (
+              <div className="space-y-4">
+                {(actQ.data?.months ?? []).map((mo) => (
+                  <div key={mo.month}>
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                      <p className="text-[14px] font-semibold text-[#1E2320]">{mo.label}</p>
+                      <p className="text-[12.5px] text-[#4A504B] tabular-nums">
+                        {mo.totals.orders} order{mo.totals.orders === 1 ? "" : "s"}
+                        {mo.bills.length > 0 ? ` · ${mo.bills.length} bill${mo.bills.length === 1 ? "" : "s"}` : ""}
+                        {" · "}
+                        <span className="text-[#2F6B24] font-semibold">Paid {formatINR(mo.totals.paid)}</span>
+                        {mo.totals.due > 0 && <span className="text-[#A3311D] font-semibold"> · Due {formatINR(mo.totals.due)}</span>}
+                      </p>
+                    </div>
+                    {mo.orders.length === 0 && mo.bills.length === 0 ? (
+                      <p className="mt-1.5 text-[13px] text-[#4A504B]">No orders or bills.</p>
+                    ) : (
+                      <ul className="mt-2 rounded-xl border border-[#EFE9DF] divide-y divide-[#F1ECE3] bg-[#FDFCFA]">
+                        {mo.bills.map((b) => (
+                          <li key={b.invoiceId} className="flex items-center gap-3 px-3 py-2.5">
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[13.5px] font-medium text-[#1E2320] truncate">Monthly bill{b.number ? ` ${b.number}` : ""}</span>
+                              <span className="block text-[12px] text-[#4A504B]">Issued {dayLabel(b.issueDate)}</span>
+                            </span>
+                            <span className="text-right">
+                              <span className="block text-[13.5px] font-semibold tabular-nums text-[#1E2320]">{formatINR(b.total)}</span>
+                              <PayPill kind={b.due === 0 ? "PAID" : b.paid > 0 ? "PART_PAID" : "UNPAID"} due={b.due} />
+                            </span>
+                          </li>
+                        ))}
+                        {mo.orders.map((o) => (
+                          <li key={o.orderId} className="flex items-center gap-3 px-3 py-2.5">
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-[13.5px] font-medium text-[#1E2320]">
+                                {shortDate(o.date)} · {o.mealType === "DINNER" ? "Dinner" : o.mealType === "LUNCH" ? "Lunch" : o.mealType} · {o.orderType === "DINE_IN" ? "Dine in" : "Delivery"}
+                              </span>
+                              <span className="block text-[12px] text-[#4A504B] truncate" title={o.items}>{o.items || "—"}</span>
+                            </span>
+                            <span className="text-right shrink-0">
+                              <span className="block text-[13.5px] font-semibold tabular-nums text-[#1E2320]">{formatINR(o.total)}</span>
+                              <PayPill kind={o.payment} due={o.due} />
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
           {customer.notes && (
             <Section icon={<StickyNote className="w-3.5 h-3.5" />} title="Notes">
               <p className="text-[13.5px] text-[#3E4E42] leading-relaxed whitespace-pre-line">{customer.notes}</p>
@@ -247,7 +334,7 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
         </div>
 
         {/* Actions */}
-        <footer className="px-4 sm:px-6 py-3.5 bg-white border-t border-[#ECE6DB] flex items-center gap-2">
+        <footer className="shrink-0 px-5 sm:px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-[#ECE6DB] flex items-center gap-3">
           {onToggleStatus && (
             <button
               type="button"
@@ -255,8 +342,8 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
                 onClose();
                 onToggleStatus(customer);
               }}
-              className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-full text-[13.5px] font-semibold transition-colors ${
-                isActive ? "text-[#9A3423] hover:bg-[#FBE9E4]" : "text-[#2F6B24] hover:bg-[#E4F2E0]"
+              className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-full border text-[13.5px] font-semibold transition-colors ${
+                isActive ? "border-[#E8C4BA] text-[#9A3423] hover:bg-[#FBE9E4]" : "border-[#BFDDB6] text-[#2F6B24] hover:bg-[#E4F2E0]"
               }`}
             >
               <Power className="w-4 h-4" />

@@ -1,3 +1,4 @@
+import { businessToday } from "../../lib/businessDate";
 import { hasDineInPayLaterSchema, hasPlanDineInSchema } from "../database/schemaFeatures";
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
@@ -160,14 +161,24 @@ export async function planAllowance(db: AsyncDb, subscriptionId: string, custome
   if (s.status !== "ACTIVE") return { included: 0, reason: "The plan is not active, so every thali is charged." };
   if (serviceDate < s.start_date || (s.end_date && serviceDate > s.end_date)) return { included: 0, reason: "The plan does not cover this date, so every thali is charged." };
   if (s.pause_start_date && serviceDate >= s.pause_start_date && (!s.pause_resume_date || serviceDate < s.pause_resume_date)) return { included: 0, reason: "The plan is paused on this date." };
-  const covers = s.meal_types === "BOTH" || s.meal_types === mealType;
+  const anyMeal = s.meal_types === "ANY";
+  const covers = anyMeal || s.meal_types === "BOTH" || s.meal_types === mealType;
   if (!covers) return { included: 0, reason: `The plan does not include ${String(mealType).toLowerCase()}.` };
+  // Thalis of the plan already taken as orders: per meal, or per day for an any-meal plan.
+  const used = await db.queryOne<{ n: number | string | null }>(
+    `SELECT COALESCE(SUM(oi.quantity), 0) AS n FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.customer_id = ? AND o.service_date = ? AND o.status <> 'CANCELLED' AND oi.unit_price = 0 AND oi.product_name LIKE ?${anyMeal ? "" : " AND o.meal_type = ?"}`,
+    anyMeal ? [s.customer_id, serviceDate, "%(in plan)"] : [s.customer_id, serviceDate, "%(in plan)", mealType]
+  );
+  const left = Math.max(0, (Number(s.quantity_per_meal) || 0) - (Number(used?.n) || 0));
+  if (left === 0) return { included: 0, reason: anyMeal ? "Today's plan thali has already been taken." : "This meal's plan thali has already been taken." };
+  if (anyMeal) return { included: left, reason: null };
   const sent = await db.queryOne<{ n: number | string }>(
     "SELECT COUNT(*) AS n FROM delivery_tasks WHERE subscription_id = ? AND service_date = ? AND meal_type = ? AND status IN ('OUT_FOR_DELIVERY', 'DELIVERED')",
     [subscriptionId, serviceDate, mealType]
   );
   if (Number(sent?.n || 0) > 0) return { included: 0, reason: "This meal of the plan has already gone out." };
-  return { included: Math.max(0, Number(s.quantity_per_meal) || 0), reason: null };
+  return { included: left, reason: null };
 }
 
 /** Splits meal thali lines so that up to `included` thalis cost nothing (marked "in plan"). */
@@ -1161,4 +1172,122 @@ export async function backfillLegacyOrders(asyncDb?: AsyncDb): Promise<LegacyOrd
   }
 
   return result;
+}
+
+/** One order line of a customer's month (Customer details → Orders and payments). */
+export interface CustomerMonthOrder {
+  orderId: string;
+  date: string;
+  mealType: string;
+  orderType: "DELIVERY" | "DINE_IN";
+  items: string;
+  total: number;
+  paid: number;
+  due: number;
+  /** PAID, PART_PAID, UNPAID, PAY_LATER (on the account) or IN_PLAN (nothing to pay). */
+  payment: "PAID" | "PART_PAID" | "UNPAID" | "PAY_LATER" | "IN_PLAN";
+  status: string;
+}
+export interface CustomerMonthBill {
+  invoiceId: string;
+  number: string | null;
+  issueDate: string;
+  total: number;
+  paid: number;
+  due: number;
+  status: string;
+}
+export interface CustomerMonth {
+  month: string;
+  label: string;
+  orders: CustomerMonthOrder[];
+  bills: CustomerMonthBill[];
+  totals: { orders: number; amount: number; paid: number; due: number };
+}
+
+/**
+ * A tiffin customer's orders and monthly bills for this month and the previous `months - 1`
+ * months, with what was paid and what is still due, newest month first.
+ */
+export async function getCustomerMonthlyActivity(
+  actor: AuthenticatedUser,
+  customerId: string,
+  months = 3,
+  asyncDb?: AsyncDb
+): Promise<CustomerMonth[]> {
+  if (!hasPermission(actor.role, "tiffin.manage") && !hasPermission(actor.role, "delivery.read") && !hasPermission(actor.role, "finance.read")) {
+    throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
+  }
+  const db = asyncDb || getAsyncDb();
+  const cust = await db.queryOne<{ id: string; phone: string | null }>("SELECT id, phone FROM tiffin_customers WHERE id = ?", [customerId]);
+  if (!cust) throw new Error("This customer was not found.");
+  const today = businessToday();
+  const [y, m] = today.split("-").map(Number);
+  const startMonth = new Date(Date.UTC(y, m - 1 - (Math.max(1, Math.min(12, months)) - 1), 1));
+  const from = startMonth.toISOString().slice(0, 10);
+  const phone = (cust.phone || "").trim();
+  const compact = phone.replace(/\s+/g, "");
+
+  const [orders, bills] = await Promise.all([
+    loadOrders(
+      db,
+      "(o.customer_id = ? OR (? <> '' AND (o.customer_phone = ? OR o.customer_phone = ?))) AND o.service_date >= ? AND o.status <> 'CANCELLED'",
+      [customerId, phone, phone, compact, from],
+      400
+    ),
+    db.query<any>(
+      `SELECT id, invoice_number, issue_date, total_amount, amount_paid, balance_due, status
+       FROM invoices WHERE customer_id = ? AND invoice_category = 'TIFFIN' AND status <> 'CANCELLED' AND status <> 'DRAFT' AND issue_date >= ?
+       ORDER BY issue_date DESC`,
+      [customerId, from]
+    ),
+  ]);
+
+  const byMonth = new Map<string, CustomerMonth>();
+  const monthOf = (d: string) => d.slice(0, 7);
+  const label = (key: string) => new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${key}-01T00:00:00Z`));
+  for (let i = 0; i < Math.max(1, Math.min(12, months)); i++) {
+    const d = new Date(Date.UTC(y, m - 1 - i, 1));
+    const key = d.toISOString().slice(0, 7);
+    byMonth.set(key, { month: key, label: label(key), orders: [], bills: [], totals: { orders: 0, amount: 0, paid: 0, due: 0 } });
+  }
+  for (const o of orders) {
+    const bucket = byMonth.get(monthOf(o.serviceDate));
+    if (!bucket) continue;
+    const total = Number(o.totalAmount) || 0;
+    const due = Math.max(0, Number(o.remainingAmount ?? (o.paymentStatus === "PAID" ? 0 : total)) || 0);
+    const paid = Math.max(0, total - due);
+    const payLater = (o as any).paymentChoice === "PAY_LATER" || (o.orderType === "DINE_IN" && o.paymentStatus !== "PAID" && due > 0);
+    const payment: CustomerMonthOrder["payment"] =
+      total === 0 ? "IN_PLAN" : due === 0 ? "PAID" : payLater ? "PAY_LATER" : paid > 0 ? "PART_PAID" : "UNPAID";
+    bucket.orders.push({
+      orderId: o.orderId || o.id,
+      date: o.serviceDate,
+      mealType: o.mealType,
+      orderType: o.orderType as "DELIVERY" | "DINE_IN",
+      items: (o.items || []).map((it) => `${it.quantity}× ${it.productName}`).join(", "),
+      total,
+      paid,
+      due,
+      payment,
+      status: o.orderStatus,
+    });
+    bucket.totals.orders += 1;
+    bucket.totals.amount += total;
+    bucket.totals.paid += paid;
+    bucket.totals.due += due;
+  }
+  for (const b of bills) {
+    const bucket = byMonth.get(monthOf(String(b.issue_date)));
+    if (!bucket) continue;
+    const total = Number(b.total_amount) || 0;
+    const paid = Number(b.amount_paid) || 0;
+    const due = Math.max(0, Number(b.balance_due) || 0);
+    bucket.bills.push({ invoiceId: b.id, number: b.invoice_number || null, issueDate: String(b.issue_date), total, paid, due, status: b.status });
+    bucket.totals.amount += total;
+    bucket.totals.paid += paid;
+    bucket.totals.due += due;
+  }
+  for (const b of byMonth.values()) b.orders.sort((a, c) => (a.date < c.date ? 1 : a.date > c.date ? -1 : 0));
+  return [...byMonth.values()];
 }

@@ -103,13 +103,13 @@ export function AllocatePaymentModal({
       return;
     }
     if (numAmount > invoice.balanceDue) {
-      setError(`Cannot allocate ₹${formatINR(numAmount)}. Invoice balance due is only ₹${formatINR(invoice.balanceDue)}.`);
+      setError(`Cannot allocate ${formatINR(numAmount)}. Invoice balance due is only ${formatINR(invoice.balanceDue)}.`);
       return;
     }
 
     const sel = payments.find((p) => p.paymentId === selectedPaymentId);
     if (sel && numAmount > sel.unallocatedAmount) {
-      setError(`Cannot allocate ₹${formatINR(numAmount)}. Selected payment only has ₹${formatINR(sel.unallocatedAmount)} unallocated.`);
+      setError(`Cannot allocate ${formatINR(numAmount)}. Selected payment only has ${formatINR(sel.unallocatedAmount)} unallocated.`);
       return;
     }
 
@@ -135,7 +135,7 @@ export function AllocatePaymentModal({
       onSuccess(
         data.invoice,
         data.allocation,
-        `₹${formatINR(numAmount)} successfully allocated to Invoice ${invoice.invoiceNumber || invoice.id}.`
+        `${formatINR(numAmount)} successfully allocated to Invoice ${invoice.invoiceNumber || invoice.id}.`
       );
       onClose();
     } catch (err: any) {
@@ -155,9 +155,9 @@ export function AllocatePaymentModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="alloc-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs rn-modal-scrim"
     >
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+      <div className="rn-modal bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <div className="flex items-center gap-3">
@@ -196,7 +196,7 @@ export function AllocatePaymentModal({
             </div>
             <div className="text-right">
               <div className="text-[11px] text-[#5A6C5E]">Balance Due</div>
-              <div className="text-sm font-bold text-[#B58A57]">₹{formatINR(invoice.balanceDue)}</div>
+              <div className="text-sm font-bold text-[#B58A57]">{formatINR(invoice.balanceDue)}</div>
             </div>
           </div>
 
@@ -239,13 +239,13 @@ export function AllocatePaymentModal({
                 >
                   {payments.map((p) => (
                     <option key={p.paymentId} value={p.paymentId}>
-                      {p.transactionDate} — ₹{formatINR(p.amount)} ({p.paymentMethod || "CASH"}) • Available: ₹{formatINR(p.unallocatedAmount)}
+                      {p.transactionDate} — {formatINR(p.amount)} ({p.paymentMethod || "CASH"}) • Available: {formatINR(p.unallocatedAmount)}
                     </option>
                   ))}
                 </AppSelect>
                 {selectedPayment && (
                   <div className="text-[11px] text-[#5A6C5E] mt-1">
-                    Reference: {selectedPayment.referenceNumber || "None"} • Unallocated Remaining: ₹{formatINR(selectedPayment.unallocatedAmount)}
+                    Reference: {selectedPayment.referenceNumber || "None"} • Unallocated Remaining: {formatINR(selectedPayment.unallocatedAmount)}
                   </div>
                 )}
               </div>
@@ -269,7 +269,7 @@ export function AllocatePaymentModal({
                   />
                 </div>
                 <div className="flex justify-between text-[11px] text-[#5A6C5E] mt-1">
-                  <span>Max applicable: ₹{formatINR(Math.min(selectedPayment?.unallocatedAmount || 0, invoice.balanceDue))}</span>
+                  <span>Max applicable: {formatINR(Math.min(selectedPayment?.unallocatedAmount || 0, invoice.balanceDue))}</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -303,21 +303,13 @@ export function AllocatePaymentModal({
 
           {/* Modal Actions */}
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#8E9F89]/20">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 border border-[#8E9F89]/30 rounded-xl text-xs font-medium text-[#5A6C5E] hover:bg-[#FAF8F5] transition-colors"
-            >
-              Cancel
-            </button>
             {payments.length > 0 && (
               <button
                 type="submit"
                 disabled={submitting || !selectedPaymentId || Number(amount) <= 0}
                 className="px-5 py-2 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50"
               >
-                {submitting ? "Allocating..." : `Confirm Allocation (₹${formatINR(Number(amount) || 0)})`}
+                {submitting ? "Allocating..." : `Confirm Allocation (${formatINR(Number(amount) || 0)})`}
               </button>
             )}
           </div>

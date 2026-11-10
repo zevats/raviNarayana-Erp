@@ -2,7 +2,8 @@
 
 import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { RowMenu } from "@/components/ui/RowMenu";
 import Link from "next/link";
 import {
   Users,
@@ -54,6 +55,7 @@ import { PageHeader, StatStrip, Card, SearchField, EmptyState, Badge } from "@/c
 import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
 
+import { PhoneError } from "@/components/forms/PhoneError";
 /**
  * Maps database floor integer to human-readable full label.
  */
@@ -153,6 +155,9 @@ export default function ResidentsPage() {
   const [viewHistoryResident, setViewHistoryResident] = useState<ResidentDetail | null>(null);
   const [residentFinanceSummary, setResidentFinanceSummary] = useState<ResidentFinancialSummary | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  // A modal frame shown the moment a resident is opened, while the details load.
+  const [opening, setOpening] = useState<{ name: string; what: string } | null>(null);
+  const openTicket = useRef(0);
 
   // 5. Edit Resident Profile Modal
   const [editingResident, setEditingResident] = useState<ResidentDetail | null>(null);
@@ -252,10 +257,12 @@ export default function ResidentsPage() {
   // ---------------------------------------------------------------------------
 
   // Open Detailed Resident View & Stay History
-  const handleViewDetails = async (residentId: string) => {
+  const handleViewDetails = async (residentId: string, name?: string) => {
     setLoadingHistory(true);
     setViewHistoryResident(null);
     setResidentFinanceSummary(null);
+    const ticket = ++openTicket.current;
+    setOpening({ name: name || "Resident", what: "Profile and stay history" });
 
     try {
       const [res, finRes] = await Promise.all([
@@ -263,6 +270,7 @@ export default function ResidentsPage() {
         fetch(`/api/finance/residents/${residentId}`, { cache: "no-store" }),
       ]);
       const data = await res.json();
+      if (ticket !== openTicket.current) return; // closed while loading
       if (!res.ok) throw new Error(data.error || "Failed to load stay history");
       setViewHistoryResident(data.resident);
 
@@ -271,20 +279,26 @@ export default function ResidentsPage() {
         setResidentFinanceSummary(finData.summary || null);
       }
     } catch (err: any) {
-      alert(err.message || "Failed to load stay history");
+      if (ticket === openTicket.current) setActionError(friendlyError(err.message || "Could not open this resident. Try again."));
     } finally {
-      setLoadingHistory(false);
+      if (ticket === openTicket.current) {
+        setLoadingHistory(false);
+        setOpening(null);
+      }
     }
   };
 
   // Open Edit Resident Modal (from table row or from details view)
-  const handleOpenEdit = async (residentId: string) => {
+  const handleOpenEdit = async (residentId: string, name?: string) => {
     setActionError(null);
     setShowEditConfirm(false);
+    const ticket = ++openTicket.current;
+    setOpening({ name: name || "Resident", what: "Edit profile" });
 
     try {
       const res = await fetch(`/api/residents/${residentId}`, { cache: "no-store" });
       const data = await res.json();
+      if (ticket !== openTicket.current) return; // closed while loading
       if (!res.ok) throw new Error(data.error || "Failed to load resident profile");
 
       setEditingResident(data.resident);
@@ -296,7 +310,9 @@ export default function ResidentsPage() {
         notes: data.resident.notes || "",
       });
     } catch (err: any) {
-      setActionError(friendlyError(err.message || "Failed to fetch resident details"));
+      if (ticket === openTicket.current) setActionError(friendlyError(err.message || "Failed to fetch resident details"));
+    } finally {
+      if (ticket === openTicket.current) setOpening(null);
     }
   };
 
@@ -775,9 +791,7 @@ export default function ResidentsPage() {
       {loading ? (
         <BikeLoader tone="forest" label="Loading residents…" className="py-12" />
       ) : filteredResidents.length === 0 ? (
-        <EmptyState title={residents.length === 0 ? "No residents yet" : "No residents match"}>
-          {residents.length === 0 ? "Register the first resident to get started." : "Try another search or status."}
-        </EmptyState>
+        <EmptyState title={residents.length === 0 ? "No residents yet" : "No residents match"} />
       ) : (
             <table className="rn-table">
               <thead>
@@ -796,10 +810,7 @@ export default function ResidentsPage() {
                   const isCheckedOut = !isInHouse && (res.totalStayCount ?? 0) > 0;
 
                   return (
-                    <tr
-                      key={res.id}
-                      
-                    >
+                    <tr key={res.id} className="sm:h-[64px]">
                       {/* Column 1: Resident Name & Avatar */}
                       <td>
                         <div className="flex items-center gap-2.5">
@@ -808,7 +819,7 @@ export default function ResidentsPage() {
                           </div>
                           <div>
                             <button
-                              onClick={() => handleViewDetails(res.id)}
+                              onClick={() => handleViewDetails(res.id, res.fullName)}
                               className="font-medium text-[13.5px] text-[var(--rn-ink)] hover:underline text-left break-words"
                               title="Click to view profile & stay history"
                             >
@@ -825,8 +836,8 @@ export default function ResidentsPage() {
                             <span>{res.phone}</span>
                           </p>
                           {res.email && (
-                            <p className="text-[12px] text-[var(--rn-ink-3)] break-all">
-                              <span>{res.email}</span>
+                            <p className="text-[12px] text-[var(--rn-ink-3)] truncate max-w-[220px]" title={res.email}>
+                              {res.email}
                             </p>
                           )}
                         </div>
@@ -866,27 +877,8 @@ export default function ResidentsPage() {
 
                       {/* Column 6: Actions */}
                       <td className="text-right">
-                        <div className="inline-flex flex-wrap justify-end items-center gap-1.5">
-                          {/* View Details Button */}
-                          <button
-                            onClick={() => handleViewDetails(res.id)}
-                            className="rn-btn rn-btn-sm rn-btn-icon"
-                            title="Profile and stay history"
-                            aria-label="Profile and stay history"
-                          >
-                            <History />
-                          </button>
-
-                          {/* Edit Profile Button */}
-                          <button
-                            onClick={() => handleOpenEdit(res.id)}
-                            className="rn-btn rn-btn-sm rn-btn-icon"
-                            title="Edit profile"
-                            aria-label="Edit profile"
-                          >
-                            <UserCog />
-                          </button>
-
+                        {/* One main action on the row; the rest are in the ⋯ menu. */}
+                        <div className="inline-flex justify-end items-center gap-1.5">
                           {/* Check-In action if unassigned */}
                           {!isInHouse && (
                             <button
@@ -894,18 +886,6 @@ export default function ResidentsPage() {
                               className="rn-btn rn-btn-sm"
                             >
                               Assign room
-                            </button>
-                          )}
-
-                          {/* Room Transfer action if in-house (Task 01B.54) */}
-                          {isInHouse && (
-                            <button
-                              onClick={() => handleOpenTransferModal(res)}
-                              className="rn-btn rn-btn-sm"
-                              title="Move to another room"
-                            >
-                              <ArrowRightLeft />
-                              <span>Transfer</span>
                             </button>
                           )}
 
@@ -918,6 +898,15 @@ export default function ResidentsPage() {
                               Check out
                             </button>
                           )}
+
+                          <RowMenu
+                            label={`More for ${res.fullName}`}
+                            items={[
+                              { key: "profile", label: "Profile and stay history", icon: <History />, onSelect: () => handleViewDetails(res.id, res.fullName) },
+                              { key: "edit", label: "Edit profile", icon: <UserCog />, onSelect: () => handleOpenEdit(res.id, res.fullName) },
+                              { key: "transfer", label: "Move to another room", icon: <ArrowRightLeft />, onSelect: () => handleOpenTransferModal(res), hidden: !isInHouse },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -931,9 +920,36 @@ export default function ResidentsPage() {
       {/* ============================================================== */}
       {/* MODAL 1: RESIDENT DETAILS VIEW & STAY HISTORY (Dual Area)      */}
       {/* ============================================================== */}
+      {opening && !viewHistoryResident && !editingResident && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 rn-modal-scrim" onClick={() => { openTicket.current++; setOpening(null); setLoadingHistory(false); }}>
+          <div className="rn-modal" role="dialog" aria-modal="true" aria-busy="true" aria-label={`${opening.what}: ${opening.name}`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-[#1E3A2B] text-white flex items-center justify-center font-bold shrink-0">{opening.name.charAt(0).toUpperCase()}</div>
+                <div className="min-w-0">
+                  <p className="text-[17px] font-semibold text-[#1E2320] truncate">{opening.name}</p>
+                  <p className="text-[13px] text-[#4A504B]">{opening.what}</p>
+                </div>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => { openTicket.current++; setOpening(null); setLoadingHistory(false); }} className="grid place-items-center w-11 h-11 -mr-2 rounded-full hover:bg-black/[0.05]">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 pb-6 space-y-3" aria-hidden="true">
+              <div className="h-16 rounded-2xl bg-[#F1EEE7] animate-pulse" />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="h-12 rounded-xl bg-[#F1EEE7] animate-pulse" />
+                <div className="h-12 rounded-xl bg-[#F1EEE7] animate-pulse" />
+              </div>
+              <div className="h-24 rounded-2xl bg-[#F1EEE7] animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewHistoryResident && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-xl w-full p-6 shadow-2xl space-y-5 animate-scale-in max-h-[90dvh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-xl w-full p-6 shadow-2xl space-y-5 animate-scale-in max-h-[90dvh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-start justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-3">
@@ -1180,14 +1196,6 @@ export default function ResidentsPage() {
               />
             </div>
 
-            <div className="pt-2 text-right border-t border-[#8E9F89]/20">
-              <button
-                onClick={() => setViewHistoryResident(null)}
-                className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1196,8 +1204,8 @@ export default function ResidentsPage() {
       {/* MODAL 2: EDIT RESIDENT PROFILE                                 */}
       {/* ============================================================== */}
       {editingResident && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <UserCog className="w-5 h-5 text-[#B58A57]" />
@@ -1258,6 +1266,7 @@ export default function ResidentsPage() {
                     }
                     className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
+                  <PhoneError value={editProfileForm.phone} rule="resident" />
                 </div>
 
                 <div>
@@ -1312,13 +1321,6 @@ export default function ResidentsPage() {
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setEditingResident(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
                   <button
                     type="submit"
                     className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs"
@@ -1383,8 +1385,8 @@ export default function ResidentsPage() {
       {/* MODAL 3: ASSIGN ROOM / CHECK-IN                                */}
       {/* ============================================================== */}
       {isCheckInModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <BedDouble className="w-5 h-5 text-[#B58A57]" />
@@ -1526,13 +1528,6 @@ export default function ResidentsPage() {
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">
                   <button
-                    type="button"
-                    onClick={() => setIsCheckInModalOpen(false)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
-                  <button
                     type="submit"
                     disabled={availableRooms.length === 0}
                     className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold disabled:opacity-50"
@@ -1609,8 +1604,8 @@ export default function ResidentsPage() {
       {/* MODAL 4: CHECKOUT & FINAL FINANCIAL SETTLEMENT                 */}
       {/* ============================================================== */}
       {checkOutResidentTarget && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal rn-modal-wide bg-white rounded-3xl border border-[#8E9F89]/30 max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <LogOut className="w-5 h-5 text-amber-700" />
@@ -1759,11 +1754,7 @@ export default function ResidentsPage() {
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <p className="text-[11px] text-[#5A6C5E] italic">
-                        No deductions applied. Security deposit is fully eligible for refund or rent application.
-                      </p>
-                    )}
+                    ) : null}
 
                     {/* Add Deduction Form */}
                     <div className="pt-2 border-t border-[#8E9F89]/15 flex items-center gap-2">
@@ -1952,20 +1943,13 @@ export default function ResidentsPage() {
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
-                  type="button"
-                  onClick={() => setCheckOutResidentTarget(null)}
-                  className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                >
-                  Cancel
-                </button>
-                <button
                   type="submit"
                   disabled={submitting || loadingSettlementPreview}
                   className="px-5 py-2.5 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold disabled:opacity-50 shadow-md flex items-center gap-1.5"
                 >
                   {submitting ? (
                     <>
-                      <BikeLoader inline tone="light" label="Finalizing" />
+                      Finalizing…
                       Finalizing Settlement...
                     </>
                   ) : (
@@ -1982,8 +1966,8 @@ export default function ResidentsPage() {
       {/* MODAL 5: REGISTER NEW RESIDENT                                  */}
       {/* ============================================================== */}
       {isRegisterModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <Users className="w-5 h-5 text-[#B58A57]" />
@@ -2036,6 +2020,7 @@ export default function ResidentsPage() {
                   }
                   className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                 />
+                <PhoneError value={registerForm.phone} rule="resident" />
               </div>
 
               <div>
@@ -2088,13 +2073,6 @@ export default function ResidentsPage() {
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button
-                  type="button"
-                  onClick={() => setIsRegisterModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                >
-                  Cancel
-                </button>
-                <button
                   type="submit"
                   disabled={submitting}
                   className="px-5 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-md disabled:opacity-50"
@@ -2111,8 +2089,8 @@ export default function ResidentsPage() {
       {/* MODAL 6: ATOMIC ROOM TRANSFER (Task 01B.54)                   */}
       {/* ============================================================== */}
       {transferTargetResident && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-6 shadow-2xl space-y-4 animate-scale-in max-h-[90dvh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <ArrowRightLeft className="w-5 h-5 text-[#B58A57]" />
@@ -2237,9 +2215,6 @@ export default function ResidentsPage() {
                     onChange={(e) => setTransferForm({ ...transferForm, transferDate: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans focus:outline-hidden focus:border-[#1A2E20]"
                   />
-                  <p className="text-[10px] text-[#5A6C5E] mt-0.5">
-                    Previous room occupancy ends on this date; new room occupancy begins.
-                  </p>
                 </div>
 
                 {/* New Monthly Rent */}
@@ -2256,9 +2231,6 @@ export default function ResidentsPage() {
                     onChange={(e) => setTransferForm({ ...transferForm, newMonthlyRent: Number(e.target.value) })}
                     className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
-                  <p className="text-[10px] text-[#5A6C5E] mt-0.5">
-                    Defaults to base rent of destination room. You may adjust if a special rate applies.
-                  </p>
                 </div>
 
                 {/* Transfer Reason */}
@@ -2278,13 +2250,6 @@ export default function ResidentsPage() {
 
                 {/* Action Buttons */}
                 <div className="pt-2 flex items-center justify-end gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setTransferTargetResident(null)}
-                    className="px-4 py-2 rounded-xl border border-[#8E9F89]/30 text-xs text-[#1A2E20] hover:bg-[#FAF8F5]"
-                  >
-                    Cancel
-                  </button>
                   <button
                     type="submit"
                     disabled={submitting || rooms.filter((r) => r.isActive && r.availableBeds > 0 && r.roomNumber !== transferTargetResident.currentRoomNumber).length === 0}

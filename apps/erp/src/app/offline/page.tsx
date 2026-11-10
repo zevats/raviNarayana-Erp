@@ -75,9 +75,6 @@ export default function OfflineFallbackPage() {
             <h1 className="font-serif text-sm font-semibold tracking-tight text-[#1A2E20]">
               Ravi Narayana ERP
             </h1>
-            <p className="text-[10px] text-[#5D7656] uppercase tracking-wider font-mono">
-              Mobile App Console
-            </p>
           </div>
         </div>
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono bg-amber-500/10 text-amber-900 border border-amber-500/25">
@@ -96,9 +93,6 @@ export default function OfflineFallbackPage() {
           <h2 className="text-2xl font-serif font-medium text-[#1A2E20]">
             Connection Unavailable
           </h2>
-          <p className="text-xs text-[#5D7656] leading-relaxed max-w-sm mx-auto">
-            Your device is currently disconnected from the mobile network or Wi-Fi.
-          </p>
         </div>
 
         {/* Offline Queue Notice for Drivers */}
@@ -107,9 +101,6 @@ export default function OfflineFallbackPage() {
             <Truck className="w-4 h-4 text-[#B58A57]" />
             <span>Delivery Driver Offline Protection</span>
           </div>
-          <p className="text-[11px] text-[#5D7656] leading-relaxed">
-            If you have already loaded your stops today, any deliveries completed or collections recorded offline are safely queued in local device storage.
-          </p>
 
           <div className="pt-2 border-t border-[#8E9F89]/15 flex items-center justify-between">
             <span className="text-[11px] font-mono text-[#1A2E20]">

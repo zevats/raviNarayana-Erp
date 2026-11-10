@@ -334,10 +334,10 @@ export function DailyClosingView({
       {/* Day figures (same values and definitions as before) */}
       <StatStrip
         items={[
-          { label: "Opening cash", value: `₹${formatNumberIN(preview?.openingCashBalance || 0)}`, note: `all channels ₹${formatNumberIN(preview?.openingBalance || 0)}` },
+          { label: "Opening cash", value: `₹${formatNumberIN(preview?.openingCashBalance || 0)}` },
           { label: "Money in", value: `+₹${formatNumberIN(preview?.totalInflow || 0)}`, note: `cash +₹${formatNumberIN(preview?.channelBreakdown.CASH.inflow || 0)}`, tone: (preview?.totalInflow || 0) > 0 ? "good" : "default" },
           { label: "Money out", value: `−₹${formatNumberIN(preview?.totalOutflow || 0)}`, note: `cash −₹${formatNumberIN(preview?.channelBreakdown.CASH.outflow || 0)}`, tone: (preview?.totalOutflow || 0) > 0 ? "bad" : "default" },
-          { label: "Expected cash in hand", value: `₹${formatNumberIN(preview?.expectedCashBalance || 0)}`, note: `all channels ₹${formatNumberIN(preview?.expectedClosingBalance || 0)}` },
+          { label: "Expected cash in hand", value: `₹${formatNumberIN(preview?.expectedCashBalance || 0)}` },
         ]}
       />
 
@@ -560,7 +560,7 @@ export function DailyClosingView({
           <div className="flex items-center gap-3">
             {!canManageFinance ? (
               <p className="text-xs text-[#5C6B5A]">
-                Closing the day is done by the Owner. You can review the preview here.
+                Only the Owner can close the day.
               </p>
             ) : !isFinalized ? (
               <>

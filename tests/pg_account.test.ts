@@ -105,7 +105,7 @@ async function main() {
   const pwCode = codeFor(driver.email, "account_code_password");
   assert(Boolean(pwCode) && /^\d{6}$/.test(pwCode!) && pw.sentTo.includes("@"), "A 6-digit code is emailed to the current address");
   const pwMail = mails(driver.email).find((m) => m.kind === "account_code_password");
-  assert(/Confirm your new password/.test(pwMail?.html || "") && /Chrome on Android/.test(pwMail?.html || ""), "Branded email names the change and the device");
+  assert(/Change your password/.test(pwMail?.html || "") && /Chrome on Android/.test(pwMail?.html || ""), "Branded email names the change and the device");
   const decoded = Buffer.from(pw.requestId.split(".")[0], "base64url").toString("utf8");
   assert(!decoded.includes(pwCode!) && !decoded.includes(NEW_PW), "The request carries neither the code nor the new password");
   const tampered = pw.requestId.replace(/^./, (c) => (c === "e" ? "f" : "e"));

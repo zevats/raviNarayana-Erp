@@ -267,6 +267,14 @@ export async function registerResident(
     }, tx);
   });
 
+  // A PG resident is a tiffin customer too (added once; never blocks the registration).
+  try {
+    const { ensureResidentCustomer } = await import("../tiffin/residentCustomers");
+    await ensureResidentCustomer(actor, { fullName: cleanName, phone: cleanPhone }, clientIp, db);
+  } catch {
+    /* the customer list adds missing residents later */
+  }
+
   return {
     id,
     fullName: cleanName,

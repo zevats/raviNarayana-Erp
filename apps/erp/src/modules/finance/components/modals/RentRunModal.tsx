@@ -81,8 +81,8 @@ export function RentRunModal({ isOpen, onClose, onDone }: { isOpen: boolean; onC
   };
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="rent-run-title" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs">
-      <div className="bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90dvh] overflow-hidden flex flex-col">
+    <div role="dialog" aria-modal="true" aria-labelledby="rent-run-title" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#1A2E20]/60 backdrop-blur-xs rn-modal-scrim">
+      <div className="rn-modal rn-modal-wide bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90dvh] overflow-hidden flex flex-col">
         <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-[#8E9F89]/20">
           <h2 id="rent-run-title" className="text-base font-bold text-[#1A2E20] flex items-center gap-2">
             <CalendarClock className="w-5 h-5 text-[#B58A57]" /> Monthly rent
@@ -137,7 +137,7 @@ export function RentRunModal({ isOpen, onClose, onDone }: { isOpen: boolean; onC
         <div className="flex items-center justify-between gap-3 p-4 bg-white border-t border-[#8E9F89]/20">
           <span className="text-xs text-[#5A6C5E]">{toCharge.length > 0 ? `${toCharge.length} to charge · ${formatINR(data?.total ?? 0)}` : "Nothing to charge"}</span>
           <button type="button" disabled={busy || toCharge.length === 0} onClick={charge} className="px-4 py-2 rounded-xl bg-[#1A2E20] text-white text-xs font-semibold hover:bg-[#263B2D] disabled:opacity-50">
-            {busy ? <BikeLoader inline tone="light" label="Charging" /> : `Charge ${data?.label ?? "rent"}`}
+            {busy ? "Charging…" : `Charge ${data?.label ?? "rent"}`}
           </button>
         </div>
       </div>

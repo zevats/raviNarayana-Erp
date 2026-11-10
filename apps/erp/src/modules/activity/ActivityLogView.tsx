@@ -1,5 +1,6 @@
 "use client";
 
+import { DetailsList } from "@/components/ui/DetailsList";
 import React, { useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
@@ -40,6 +41,13 @@ const AREAS: Array<{ value: string; label: string }> = [
 
 const PAGE = 50;
 const when = (iso: string) => formatDateTime(iso, "en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
+/** "tiffin_customer" + "cust_37ec…" → "Tiffin customer #37EC57". */
+const recordLabel = (type?: string | null, id?: string | null) => {
+  const kind = (type || "").replace(/[_.]/g, " ").trim();
+  const name = kind ? kind.charAt(0).toUpperCase() + kind.slice(1).toLowerCase() : "";
+  const short = id ? `#${String(id).replace(/^[a-z]{2,6}_/, "").replace(/-/g, "").slice(0, 6).toUpperCase()}` : "";
+  return [name, short].filter(Boolean).join(" ") || "—";
+};
 const readable = (action: string) => action.split(".").slice(1).join(" ").replace(/_/g, " ") || action;
 
 export function ActivityLogView() {
@@ -86,6 +94,7 @@ export function ActivityLogView() {
       <div className="rn-card">
       <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <SearchField value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" className="lg:col-span-2" />
+        <div className="rn-filter-row sm:contents">
         <SelectMenu label="Area" tone="forest" value={area} onChange={(v) => { setArea(v); reset(); }} options={AREAS} triggerClassName="bg-white border border-[#8E9F89]/40 text-[#1A2E20]" />
         <SelectMenu
           label="Person"
@@ -98,6 +107,7 @@ export function ActivityLogView() {
         <div className="grid grid-cols-2 gap-2">
           <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); reset(); }} aria-label="From" className="rn-input min-w-0 px-3 text-[12.5px]" />
           <input type="date" value={to} onChange={(e) => { setTo(e.target.value); reset(); }} aria-label="To" className="rn-input min-w-0 px-3 text-[12.5px]" />
+        </div>
         </div>
       </div>
 
@@ -124,7 +134,7 @@ export function ActivityLogView() {
                   <td className="tabular-nums text-[var(--rn-ink-3)]">{when(e.at)}</td>
                   <td className="text-[var(--rn-ink)]">{e.actorName}</td>
                   <td><span className="text-[11px] uppercase tracking-wide text-[var(--rn-ink-3)] mr-1.5">{e.area}</span>{readable(e.action)}</td>
-                  <td className="text-[12px] text-[var(--rn-ink-3)] font-mono">{e.targetType}{e.targetId ? ` · ${e.targetId}` : ""}</td>
+                  <td className="text-[12px] text-[var(--rn-ink-3)]">{recordLabel(e.targetType, e.targetId)}</td>
                   <td>
                     <Badge tone={e.outcome === "REFUSED" ? "bad" : "good"}>{e.outcome === "REFUSED" ? "Refused" : "Done"}</Badge>
                   </td>
@@ -146,8 +156,8 @@ export function ActivityLogView() {
       )}
 
       {open && (
-        <div role="dialog" aria-modal="true" aria-labelledby="activity-detail" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-3 max-h-[85dvh] overflow-y-auto">
+        <div role="dialog" aria-modal="true" aria-labelledby="activity-detail" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-2xl max-w-lg w-full p-5 space-y-3 max-h-[85dvh] overflow-y-auto">
             <div className="flex items-start justify-between gap-3">
               <h2 id="activity-detail" className="text-base font-bold text-[#1A2E20]">{readable(open.action)}</h2>
               <button type="button" onClick={() => setOpen(null)} aria-label="Close" className="p-1 rounded-lg text-[#5A6C5E] hover:bg-[#FAF8F5]"><X className="w-5 h-5" /></button>
@@ -155,12 +165,11 @@ export function ActivityLogView() {
             <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 text-xs">
               <dt className="text-[#8E9F89]">When</dt><dd>{when(open.at)}</dd>
               <dt className="text-[#8E9F89]">Who</dt><dd>{open.actorName}</dd>
-              <dt className="text-[#8E9F89]">Action</dt><dd className="font-mono">{open.action}</dd>
-              <dt className="text-[#8E9F89]">Record</dt><dd className="font-mono break-all">{open.targetType}{open.targetId ? ` · ${open.targetId}` : ""}</dd>
+              <dt className="text-[#8E9F89]">Record</dt><dd className="break-all">{recordLabel(open.targetType, open.targetId)}</dd>
               {open.ipAddress && (<><dt className="text-[#8E9F89]">Address</dt><dd className="font-mono">{open.ipAddress}</dd></>)}
             </dl>
             {open.details && (
-              <pre className="text-[11px] bg-[#FAF8F5] border border-[#8E9F89]/20 rounded-xl p-3 whitespace-pre-wrap break-words">{JSON.stringify(open.details, null, 2)}</pre>
+              <DetailsList data={open.details} />
             )}
           </div>
         </div>
