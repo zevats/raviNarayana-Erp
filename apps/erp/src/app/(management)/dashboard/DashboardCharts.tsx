@@ -60,13 +60,28 @@ export function CollectionsChart({
   const peak = data.reduce((b, d, i) => (d.value > (data[b]?.value ?? -1) ? i : b), 0);
   const focus = hover ?? (max > 0 ? peak : null);
   const total = data.reduce((a, d) => a + d.value, 0);
-  const H = 190;
-  const W = 640;
+  // The chart is drawn at the box's real size (it fills the card, however tall the card is) so
+  // labels keep their size on phones and no empty band is left under the bars.
+  const box = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 688, h: 230 });
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([e]) => {
+      const w = Math.round(e.contentRect.width);
+      const h = Math.round(e.contentRect.height);
+      if (w > 0 && h > 0) setSize((s) => (s.w === w && s.h === h ? s : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = Math.max(120, size.h - 26);
+  const W = Math.max(160, size.w - 48);
   const gap = W / Math.max(1, data.length);
   const bar = Math.min(24, Math.max(6, gap - 6));
 
   return (
-    <section className="rn-glass rounded-[28px] p-5 sm:p-6 rn-rise rn-rise-2 min-w-0">
+    <section className="rn-glass rounded-[28px] p-5 sm:p-6 rn-rise rn-rise-2 min-w-0 h-full flex flex-col">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-[17px] font-semibold text-[var(--rn-ink)]">Money received</h2>
@@ -82,7 +97,8 @@ export function CollectionsChart({
         </div>
       </div>
 
-      <div className="mt-4 h-[230px]">
+      <div ref={box} className="mt-4 flex-1 min-h-[220px] relative">
+      <div className="absolute inset-0">
       {max <= 0 ? (
         <p className="h-full grid place-items-center text-[13px] text-[var(--rn-ink-3)]">No money received in this period yet.</p>
       ) : table ? (
@@ -112,7 +128,7 @@ export function CollectionsChart({
         </div>
       ) : (
         <div className="relative h-full">
-          <svg viewBox={`0 0 ${W + 48} ${H + 26}`} className="w-full h-full" role="img" aria-label={`Money received; highest ${data[peak].label}: ${rupees(data[peak].value)}`}>
+          <svg viewBox={`0 0 ${W + 48} ${H + 26}`} width={W + 48} height={H + 26} className="block w-full h-full" role="img" aria-label={`Money received; highest ${data[peak].label}: ${rupees(data[peak].value)}`}>
             <defs>
               <pattern id="rn-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <rect width="6" height="6" fill={MARK} />
@@ -163,6 +179,7 @@ export function CollectionsChart({
           )}
         </div>
       )}
+      </div>
       </div>
     </section>
   );

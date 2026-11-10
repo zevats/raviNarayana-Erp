@@ -36,26 +36,33 @@ export function RnMark({ brand = "standard", color, sun, speed }: { brand?: RnBr
   );
 }
 
-/** The logo pictures: the scooter for the delivery app, the house (bed and food) for everyone else. */
+/**
+ * The logo pictures (transparent PNGs, no tile behind them): the scooter rider for the delivery app,
+ * the house with a bed and a served dish for everyone else. `onColor` picks the edition drawn for
+ * the brand's own colour (orange sign-in header, green download page): there the part that would
+ * vanish into the background (orange or green) is drawn in cream.
+ */
 export const RN_LOGO_SRC: Record<RnBrand, string> = {
   standard: "/brand/logo-home.png",
   delivery: "/brand/logo-delivery.png",
 };
+const RN_LOGO_ON_COLOR: Record<RnBrand, string> = {
+  standard: "/brand/logo-home-on-green.png",
+  delivery: "/brand/logo-delivery-on-orange.png",
+};
 
-/**
- * The Ravinarayan logo on a white rounded tile: the scooter rider for delivery staff, the house with
- * a bed and a served dish for the owner and managers.
- */
-export function RnLogo({ brand = "standard", size = 56, className = "", title = "Ravinarayan", outline = false }: { brand?: RnBrand; size?: number; className?: string; title?: string; outline?: boolean }) {
+export function RnLogo({ brand = "standard", size = 56, className = "", title = "Ravinarayan", onColor = false }: { brand?: RnBrand; size?: number; className?: string; title?: string; onColor?: boolean; outline?: boolean }) {
   return (
-    <span
-      role="img"
-      aria-label={title}
-      className={`inline-flex items-center justify-center shrink-0 bg-white overflow-hidden ${outline ? "ring-2 ring-white/25" : ""} ${className}`}
-      style={{ width: size, height: size, borderRadius: Math.round(size * 0.26) }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={RN_LOGO_SRC[brand]} alt="" width={Math.round(size * 0.86)} height={Math.round(size * 0.86)} decoding="async" draggable={false} />
-    </span>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={(onColor ? RN_LOGO_ON_COLOR : RN_LOGO_SRC)[brand]}
+      alt={title}
+      width={size}
+      height={size}
+      decoding="async"
+      draggable={false}
+      className={`inline-block shrink-0 object-contain select-none ${className}`}
+      style={{ width: size, height: size }}
+    />
   );
 }

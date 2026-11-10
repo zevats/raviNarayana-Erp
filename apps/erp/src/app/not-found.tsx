@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Page not found" };
 export default function NotFound() {
   return (
     <main className="min-h-screen bg-[#FAF8F5]">
-      <StatusPage code="404 · Page not found" title="This road doesn’t go anywhere" message="The page you opened does not exist or has moved. Check the address, or head back home." />
+      <StatusPage code="404" title="Page not found" message="This page does not exist or has moved. Check the address, or go back home." />
     </main>
   );
 }

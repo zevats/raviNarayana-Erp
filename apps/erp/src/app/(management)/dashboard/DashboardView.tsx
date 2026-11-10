@@ -204,7 +204,18 @@ export function DashboardView({
           <span key={i} className={`w-3.5 h-3.5 rounded-full ${i < occupancy.occupiedBeds ? "bg-[var(--rn-accent-mid)]" : "border-2 border-[var(--rn-accent-mid)]/40"}`} />
         ))}
       </div>
-      <p className="mt-auto pt-3 text-[12.5px] text-[var(--rn-ink-3)]"><span className="text-[var(--rn-ink)] font-semibold tabular-nums">{occupancy.occupiedBeds}</span> occupied · <span className="text-[var(--rn-ink)] font-semibold tabular-nums">{free}</span> free</p>
+      {/* The counts fill the card (no empty band when the row is taller than the card's content) */}
+      <div className="mt-4 flex-1 grid grid-cols-2 gap-2 text-center">
+        {[
+          ["Occupied", occupancy.occupiedBeds],
+          ["Free beds", free],
+        ].map(([label, val]) => (
+          <div key={label as string} className="rounded-2xl bg-white/60 py-3 flex flex-col items-center justify-center">
+            <p className="text-[20px] font-semibold tabular-nums text-[var(--rn-ink)]">{val}</p>
+            <p className="text-[11.5px] text-[var(--rn-ink-3)]">{label}</p>
+          </div>
+        ))}
+      </div>
     </Link>
   );
   const tiffinCard = (
@@ -214,13 +225,13 @@ export function DashboardView({
         <span className="flex-1 text-[15px] font-semibold text-[var(--rn-ink)]">Tiffin</span>
       </div>
       {ops.tiffin ? (
-        <div className="mt-auto pt-4 grid grid-cols-3 gap-2 text-center">
+        <div className="mt-4 flex-1 grid grid-cols-3 gap-2 text-center">
           {[
             ["Active plans", ops.tiffin.activeSubscriptions],
             ["Paused", ops.tiffin.pausedSubscriptions],
             ["Customers", ops.tiffin.activeCustomers],
           ].map(([label, val]) => (
-            <div key={label as string} className="rounded-2xl bg-white/60 py-3">
+            <div key={label as string} className="rounded-2xl bg-white/60 py-3 flex flex-col items-center justify-center">
               <p className="text-[20px] font-semibold tabular-nums text-[var(--rn-ink)]">{val}</p>
               <p className="text-[11.5px] text-[var(--rn-ink-3)]">{label}</p>
             </div>

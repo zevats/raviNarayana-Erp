@@ -459,6 +459,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     return value;
   }, [cartItems, planFreeThalis]);
   const totalAmount = useMemo(() => cartItems.reduce((s, it) => s + it.quantity * it.product.price, 0) - planFreeValue, [cartItems, planFreeValue]);
+  // A plan customer whose plan covers the whole order pays nothing (no payment choice at the counter).
+  const nothingToPay = Boolean(forPlan && plan && totalAmount <= 0 && cartItems.length > 0);
 
   const filteredProducts = useMemo(() => {
     if (!menuSearch.trim()) return products;
@@ -468,6 +470,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
 
   /** What is wrong with the customer step, or null when it is complete. */
   const customerProblem = (): string | null => {
+    // A plan customer (delivery or dine in): the plan holds the name, phone and address.
+    if (forPlan) return plan ? null : "Choose the subscription customer.";
     if (orderType !== "DELIVERY") {
       // Pay Later at the counter: the guest must be identifiable to be asked for the money later.
       if (paymentMethod !== "PAY_LATER") return null;
@@ -475,7 +479,6 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
       return null;
     }
-    if (forPlan) return plan ? null : "Choose the subscription customer.";
     if (customerMode === "EXISTING") {
       return selectedCustomer ? null : "Choose the delivery customer, or switch to New customer.";
     }
@@ -546,6 +549,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         customerPhone = newCustomerPhone.trim();
         deliveryAddress = newCustomerAddress.trim();
       }
+    } else if (forPlan && selectedCustomer) {
+      customerId = selectedCustomer.id;
+      customerName = selectedCustomer.fullName;
+      customerPhone = selectedCustomer.phone;
     } else {
       customerName = newCustomerName.trim() || "Walk-in Guest";
       customerPhone = newCustomerPhone.trim() || "";
@@ -567,9 +574,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       serviceDate,
       mealType,
       items: itemsPayload,
-      paymentMethod: orderType === "DINE_IN" ? paymentMethod : undefined,
-      payLater: orderType === "DINE_IN" && paymentMethod === "PAY_LATER" ? true : undefined,
-      paymentStatus: orderType === "DINE_IN" && paymentMethod !== "PAY_LATER" ? "PAID" : "PENDING",
+      paymentMethod: orderType === "DINE_IN" && !nothingToPay ? paymentMethod : undefined,
+      payLater: orderType === "DINE_IN" && !nothingToPay && paymentMethod === "PAY_LATER" ? true : undefined,
+      paymentStatus: orderType === "DINE_IN" && (nothingToPay || paymentMethod !== "PAY_LATER") ? "PAID" : "PENDING",
       notes: notes.trim() || undefined,
       subscriptionId: forPlan && plan ? plan.id : undefined,
       idempotencyKey: key,
@@ -644,7 +651,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   if (!isOpen) return null;
 
   const who =
-    orderType === "DINE_IN"
+    forPlan && selectedCustomer
+      ? selectedCustomer.fullName
+      : orderType === "DINE_IN"
       ? newCustomerName.trim() || "Walk-in guest"
       : customerMode === "EXISTING"
         ? selectedCustomer?.fullName || ""
@@ -778,8 +787,25 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         <strong>{plan.productName}</strong> · {plan.mealTypes === "BOTH" ? "Lunch & dinner" : plan.mealTypes === "LUNCH" ? "Lunch" : "Dinner"} · {plan.quantityPerMeal} thali{plan.quantityPerMeal === 1 ? "" : "s"} a meal
                       </p>
                       <p className={`text-[13px] ${INK2}`}>{plan.deliveryAddress}</p>
+                      <div className="pt-1">
+                        <span className={LABEL}>How is the meal taken?</span>
+                        <Segmented
+                          label="Delivery or dine in"
+                          value={orderType}
+                          onChange={(v) => {
+                            setOrderType(v);
+                            setErrorMessage(null);
+                          }}
+                          options={[
+                            { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span> },
+                            { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span> },
+                          ]}
+                        />
+                      </div>
                       <p className="text-[12.5px] rounded-lg bg-[var(--rn-accent-tint)] px-3 py-2 text-[var(--rn-ink)]">
-                        The plan&apos;s thalis for the meal are free; extra thalis and other items are charged. The plan&apos;s usual delivery for that meal is replaced by this order.
+                        {orderType === "DINE_IN"
+                          ? "The plan's thali for the meal is free at the counter; extra thalis and other items are charged. The plan's delivery for that meal is skipped."
+                          : "The plan's thali for the meal is free; extra thalis and other items are charged. The plan's usual delivery for that meal is replaced by this order."}
                       </p>
                     </div>
                   ) : (
@@ -1167,7 +1193,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                   <span className={LABEL}>Meal</span>
                   <Segmented label="Meal" value={mealType} onChange={setMealType} options={MEALS.map((m) => ({ v: m.v, label: m.label }))} />
                 </div>
-                {orderType === "DINE_IN" && (
+                {orderType === "DINE_IN" && nothingToPay && (
+                  <p className="rounded-xl px-3.5 py-2.5 text-[13.5px] bg-[#E6F4E1] text-[#1D4E16]">Nothing to pay: the plan covers this meal.</p>
+                )}
+                {orderType === "DINE_IN" && !nothingToPay && (
                   <div>
                     <span className={LABEL}>Payment</span>
                     <Segmented
@@ -1185,8 +1214,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                     />
                     {paymentMethod === "PAY_LATER" && (
                       <p className={`mt-2 text-[13px] ${INK2}`}>
-                        Nothing is collected now: {rupees(totalAmount)} goes on {newCustomerName.trim() || "the guest"}&apos;s account (Finance → Receivables).
-                        {(newCustomerName.trim().length < 2 || newCustomerPhone.replace(/\D/g, "").length < 7) && (
+                        Nothing is collected now: {rupees(totalAmount)} goes on {(forPlan ? selectedCustomer?.fullName : newCustomerName.trim()) || "the guest"}&apos;s account (Finance → Receivables).
+                        {!forPlan && (newCustomerName.trim().length < 2 || newCustomerPhone.replace(/\D/g, "").length < 7) && (
                           <button type="button" onClick={() => goTo(1)} className="ml-1 font-semibold text-[var(--rn-accent)] underline underline-offset-2">
                             Add the guest name and phone
                           </button>

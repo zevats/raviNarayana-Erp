@@ -350,7 +350,7 @@ export function LoginForm() {
       {erp ? (
         <header className="px-6 pt-[max(3rem,calc(env(safe-area-inset-top)+2rem))] sm:pt-0 pb-7 text-center">
           <div className="rn-logo-in inline-block mb-3">
-            <RnLogo brand="standard" size={72} title="" className="shadow-[0_12px_30px_-12px_rgba(26,46,32,0.35)]" />
+            <RnLogo brand="standard" size={96} title="" />
           </div>
           <p className="rn-login-mark">Ravinarayan</p>
           <p className="rn-login-sub">PG &amp; Tiffin ERP</p>
@@ -360,7 +360,7 @@ export function LoginForm() {
         <div aria-hidden="true" className="absolute -right-16 -top-16 w-64 h-64 rounded-full opacity-[0.07] bg-white" />
         <div aria-hidden="true" className="absolute -left-20 bottom-0 w-56 h-56 rounded-full opacity-[0.05] bg-white" />
         <div className="relative rn-logo-in inline-block">
-          <RnLogo brand={brand} size={76} outline className="drop-shadow-[0_10px_24px_rgba(0,0,0,0.25)]" />
+          <RnLogo brand={brand} size={104} onColor className="drop-shadow-[0_8px_18px_rgba(0,0,0,0.22)]" />
         </div>
         <p className="relative mt-4 text-[28px] font-extrabold tracking-[-0.02em] text-white">Ravinarayan</p>
         <p className="relative mt-0.5 text-[13px] font-semibold tracking-[0.18em] uppercase" style={{ color: t.caption }}>

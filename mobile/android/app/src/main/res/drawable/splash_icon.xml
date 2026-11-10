@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="240dp" android:height="240dp" android:viewportWidth="108" android:viewportHeight="108">
-    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.62" android:scaleY="0.62">
-        <path android:pathData="M42,80 V33" android:strokeColor="#F7F1E3" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
-        <path android:pathData="M42,33 H58 a12.5,12.5 0 0,1 0,25 H42" android:strokeColor="#F7F1E3" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
-        <path android:pathData="M55,58 L70,80" android:strokeColor="#F7F1E3" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000"/>
-        <path android:pathData="M70,31 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#D4A24E"/>
-    </group>
-</vector>
+<!-- Splash: the house logo (owner and managers) -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/splash_logo"
+    android:gravity="center"
+    android:antialias="true"
+    android:filter="true" />

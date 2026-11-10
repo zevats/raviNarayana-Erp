@@ -6,7 +6,7 @@ import { Truck, Utensils, MapPin, Phone, Bike, Clock } from "lucide-react";
 /**
  * One order on Orders → Today, used for saved orders and for an order still being saved, so both
  * look the same and a saving card turns into the saved one in place. Colours come from the
- * section theme (--rn-*); the status colour runs down the left edge, the number identifies it.
+ * section theme (--rn-*); the status label shows the state, the number identifies it.
  */
 export interface OrderCardProps {
   no: number | string;
@@ -18,7 +18,8 @@ export interface OrderCardProps {
   address?: string | null;
   /** "Out with Suresh" etc.; null when nobody is assigned yet (delivery). */
   driverLabel?: { prefix: string; name: string } | null;
-  edge: string;
+  /** Kept for callers; the card no longer draws a coloured edge (its status label says it). */
+  edge?: string;
   status: React.ReactNode;
   payment?: React.ReactNode;
   items: Array<{ quantity: number; name: string; lineTotal: number }>;
@@ -44,10 +45,7 @@ export function OrderCard(p: OrderCardProps) {
         p.tone === "failed" ? "bg-[#FFF6F4] border-[#F2C2B8]" : p.highlight ? "bg-[var(--rn-accent-tint)] border-[var(--rn-accent-soft)]" : "bg-white border-[var(--rn-line)]"
       } shadow-[0_1px_2px_rgba(40,20,10,0.05),0_12px_28px_-22px_rgba(40,20,10,0.45)] hover:shadow-[0_1px_2px_rgba(40,20,10,0.06),0_18px_36px_-22px_rgba(40,20,10,0.5)]`}
     >
-      {/* Status colour down the left edge */}
-      <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[5px]" style={{ background: p.edge }} />
-
-      <div className="pl-6 pr-5 pt-4 pb-3.5 sm:pl-7 sm:pr-6">
+      <div className="px-5 pt-4 pb-3.5 sm:px-6">
         {/* Who and what */}
         <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="flex items-start gap-3 min-w-0">

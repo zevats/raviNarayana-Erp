@@ -14,7 +14,7 @@
  *    - Offline navigation requests fall back to the pre-cached /offline view.
  */
 
-const CACHE_NAME = "rn-erp-shell-v2"; // v2: new logos (2026-11-10)
+const CACHE_NAME = "rn-erp-shell-v3"; // v3: transparent logos and icons (2026-11-10)
 
 const PRECACHE_ASSETS = [
   "/offline",

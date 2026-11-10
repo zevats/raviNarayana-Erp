@@ -132,9 +132,9 @@ export function AppSidebar({
             onMouseLeave={hideTip}
             onFocus={(e) => showTip(e, "Expand")}
             onBlur={hideTip}
-            className="rn-side-toggle rn-brandmark grid place-items-center w-12 h-12 rounded-full"
+            className="rn-brand-initial"
           >
-            <span className="rn-brandmark-name" aria-hidden>R</span>
+            <span className="rn-brandmark-name" style={{ fontSize: 22 }} aria-hidden data-initial>R</span>
           </button>
         ) : (
           <>

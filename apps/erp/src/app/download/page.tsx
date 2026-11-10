@@ -24,7 +24,7 @@ export default function DownloadPage() {
   return (
     <main className="min-h-[100dvh] bg-[#F4F1EA] text-[#16241B]">
       <header className="px-6 pt-16 pb-24 text-center" style={{ background: "radial-gradient(120% 90% at 50% 0%, #22533A 0%, #173A29 55%, #0F2A1D 100%)" }}>
-        <RnLogo size={84} outline className="mx-auto drop-shadow-[0_10px_24px_rgba(0,0,0,0.25)]" />
+        <RnLogo size={96} onColor className="mx-auto drop-shadow-[0_8px_18px_rgba(0,0,0,0.25)]" />
         <h1 className="mt-4 text-[28px] font-extrabold tracking-[-0.02em] text-white">Ravinarayan for Android</h1>
         <p className="mt-1 text-[14px] font-semibold text-[#D4A24E]">ERP and Delivery, in one app</p>
       </header>

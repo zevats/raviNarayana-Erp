@@ -21,7 +21,7 @@
 
     <!-- Launch (splash): Ravinarayan ERP edition -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@color/rnGreen</item>
+        <item name="windowSplashScreenBackground">@color/rnSplash</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         <item name="windowSplashScreenAnimationDuration">950</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
@@ -30,7 +30,7 @@
 
     <!-- Launch (splash): Delivery edition, used once a delivery partner has signed in on this phone -->
     <style name="AppTheme.NoActionBarLaunch.Delivery">
-        <item name="windowSplashScreenBackground">@color/rnOrange</item>
+        <item name="windowSplashScreenBackground">@color/rnSplash</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon_delivery</item>
         <item name="android:statusBarColor">@color/rnOrange</item>
     </style>

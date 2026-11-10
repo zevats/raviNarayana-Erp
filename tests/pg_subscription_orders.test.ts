@@ -74,7 +74,26 @@ async function main() {
   const c3 = await cust();
   assert(/another customer/i.test((await refused(() => order(c3, s1, "DINNER", [[thali, 1]]))) || ""), "A plan of another customer cannot be used");
 
-  console.log("\n--- 4. Duplicate customer: a plain message ---");
+  console.log("\n--- 4. Dine in for a plan customer ---");
+  const c4 = await cust();
+  const s4: any = await createTiffinSubscription(manager, { customerId: c4.id, productId: plan2.id, startDate: day, mealTypes: "BOTH", quantityPerMeal: 1, deliveryAddress: "Plan Lane 1" } as any, IP, db);
+  const dine = (meal: string, lines: Array<[any, number]>, payment = "CASH") =>
+    createUnifiedOrder(manager, {
+      orderType: "DINE_IN", customerId: c4.id, customerName: c4.fullName, customerPhone: c4.phone, serviceDate: day, mealType: meal, paymentMethod: payment,
+      subscriptionId: s4.id, items: lines.map(([p, q]) => ({ productId: p.id, productName: p.name, quantity: q, unitPrice: p.price })), idempotencyKey: `sd_${rnd()}`,
+    } as any, IP, db) as any;
+  const free1 = await dine("LUNCH", [[thali, 1]]);
+  const freeRow = await db.queryOne<any>("SELECT total_amount, financial_transaction_id, customer_id, payment_choice FROM orders WHERE id = ?", [free1.orderId]);
+  assert(Number(freeRow.total_amount) === 0 && freeRow.financial_transaction_id === null && freeRow.customer_id === c4.id && freeRow.payment_choice === null, "Plan thali eaten at the counter: ₹0, no cashbook entry, on the customer, not Pay Later");
+  const skip4 = await num(db, "SELECT COUNT(*)::int AS n FROM subscription_day_overrides WHERE subscription_id = ? AND service_date = ? AND meal_type = 'LUNCH' AND action = 'SKIP'", [s4.id, day]);
+  assert(skip4 === 1, "The plan lunch delivery is skipped (the customer ate at the counter)");
+  const extra = await dine("DINNER", [[thali, 2]], "UPI");
+  const extraRow = await db.queryOne<any>("SELECT o.total_amount, f.amount, f.payment_method FROM orders o JOIN financial_transactions f ON f.id = o.financial_transaction_id WHERE o.id = ?", [extra.orderId]);
+  assert(Number(extraRow?.total_amount) === 90 && Number(extraRow?.amount) === 90 && extraRow?.payment_method === "UPI", `Dinner at the counter, 2 thalis: 1 free, ₹${extraRow?.total_amount} paid by UPI into the cashbook`);
+  const owed = await num(db, "SELECT COUNT(*)::int AS n FROM orders WHERE customer_id = ? AND payment_choice = 'PAY_LATER'", [c4.id]);
+  assert(owed === 0, "Nothing is put on the customer account");
+
+  console.log("\n--- 5. Duplicate customer: a plain message ---");
   const dup = await refused(() => createTiffinCustomer(manager, { fullName: "Second Person", phone: c1.phone, deliveryAddress: "Plan Lane 2" } as any, IP, db));
   assert(Boolean(dup) && dup!.includes(c1.fullName) && !/ID:|cust_|confirmDuplicate/.test(dup!), `Same phone: "${dup}"`);
 

@@ -121,10 +121,19 @@
   background: linear-gradient(180deg, var(--rn-side-top) 0%, var(--rn-side-bottom) 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 30px 60px -30px rgba(10, 20, 14, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  /* The same corner radius open and collapsed, so only the width moves. */
+  /* The same corner radius open and collapsed; opening and closing are instant (no sliding name). */
   border-radius: 30px;
-  transition: width var(--rn-med) var(--rn-ease);
 }
+/* Collapsed: the initial is the expand button, centred over the icon column below it. */
+.rn-brand-initial {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 9999px;
+  font-family: var(--font-rn-display), var(--font-sans); font-size: 22px; font-weight: 700; line-height: 1;
+  letter-spacing: 0; color: #fff; background: rgba(255, 255, 255, 0.08);
+  transition: background-color var(--rn-fast) linear;
+}
+.rn-brand-initial:hover { background: rgba(255, 255, 255, 0.16); }
+.rn-brand-initial .rn-brandmark-name::after { display: none; }
+.rn-brand-initial:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.7); outline-offset: 2px; }
 .rn-sidebar .rn-nav-icon { background: rgba(255, 255, 255, 0.07); }
 .rn-sidebar .rn-nav-item.is-active { color: var(--rn-ink); }
 .rn-sidebar .rn-nav-item.is-active .rn-nav-icon { background: var(--rn-accent); color: #fff; }

@@ -325,7 +325,7 @@ export default function OrdersPage() {
                           ? "bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]"
                           : order.paymentStatus === "PARTIALLY_PAID"
                           ? "bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]"
-                          : "bg-[#C93A22] text-white border-[#A82E19]"
+                          : "bg-[#FDECE8] text-[#A3311D] border-[#F4C3B8]"
                       }`}
                     >
                       {order.paymentStatus === "PAID"
@@ -368,17 +368,18 @@ export default function OrdersPage() {
                         : null
                     }
                     edge={
+                      // Theme colours: forest for done, burnt orange on the way, warm amber waiting.
                       order.orderStatus === "CANCELLED"
-                        ? "#B9B2A8"
+                        ? "#CFC6B8"
                         : order.orderStatus === "EXCEPTION"
-                        ? "#C93A22"
+                        ? "#9A3423"
                         : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL"
-                        ? "#D99A1E"
+                        ? "#C89F6B"
                         : order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
-                        ? "#3C8A2E"
+                        ? "#5D7656"
                         : order.orderStatus === "OUT_FOR_DELIVERY"
-                        ? "#4D56C9"
-                        : "#3F78C9"
+                        ? "#B4461A"
+                        : "#E8A57A"
                     }
                     status={status}
                     payment={payment}
@@ -434,7 +435,7 @@ export default function OrdersPage() {
                     customerPhone={j.customerPhone}
                     address={j.deliveryAddress}
                     driverLabel={undefined}
-                    edge={failed ? "#C93A22" : "#3F78C9"}
+                    edge={failed ? "#9A3423" : "#E8A57A"}
                     status={
                       failed ? (
                         <span className={`${pill} bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]`}><AlertTriangle className="w-3 h-3" /> Not saved</span>

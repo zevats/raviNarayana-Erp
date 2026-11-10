@@ -361,7 +361,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
 
       <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} />
 
-      <div className={`relative min-w-0 transition-[padding] duration-200 ease-out ${collapsed ? "lg:pl-[116px]" : "lg:pl-[288px]"}`}>
+      <div className={`relative min-w-0 ${collapsed ? "lg:pl-[116px]" : "lg:pl-[288px]"}`}>
         <div className="mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:pr-8 lg:pl-2">
           <TopBar user={user} title={shownKey === "dashboard" ? pageTitle(links, "dashboard", "/dashboard", user.fullName) : null} trail={trailFor(groups, shownKey, navPending && pendingHref ? pendingHref.split("?")[0] : pathname)} links={links} websiteUrl={websiteUrl} onLogout={handleLogout} isLoggingOut={isLoggingOut} />
           {/* While a section opens, its frame replaces the previous page at once (kept mounted, hidden). */}

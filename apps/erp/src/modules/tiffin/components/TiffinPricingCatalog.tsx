@@ -45,10 +45,6 @@ export function TiffinPricingCatalog() {
   const [statusTarget, setStatusTarget] = useState<TiffinProduct | null>(null);
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // Seeding state
-  const [isSeeding, setIsSeeding] = useState(false);
-  // Adding the default menu is an Owner action, previewed first (server: system.manage).
-  const canSeed = useHasPermission("system.manage");
   const canManageMenu = useHasPermission("tiffin.manage");
   const [deleteTarget, setDeleteTarget] = useState<TiffinProduct | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -195,38 +191,6 @@ export function TiffinPricingCatalog() {
     }
   };
 
-  const handleSeedMenu = async () => {
-    setIsSeeding(true);
-    try {
-      const previewRes = await fetch("/api/tiffin/products/seed", { cache: "no-store" });
-      const plan = await previewRes.json();
-      if (!previewRes.ok) throw new Error(plan.error || "Could not preview the default menu.");
-      if (plan.toAdd.length === 0) {
-        showFeedback("success", "Every default item is already on the menu. Nothing was changed.");
-        return;
-      }
-      const list = plan.toAdd.map((i: { name: string; price: number }) => `• ${i.name} — ₹${i.price}`).join("\n");
-      const kept = plan.existing.length > 0 ? `\n\n${plan.existing.length} item(s) already on the menu stay exactly as they are.` : "";
-      if (!window.confirm(`Add these ${plan.toAdd.length} default menu item(s)?\n\n${list}${kept}`)) return;
-
-      const res = await fetch("/api/tiffin/products/seed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: true }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not add the default menu.");
-
-      invalidateErpCache(["tiffin_products", "products"]);
-      refetch();
-      showFeedback("success", data.message);
-    } catch (err: any) {
-      showFeedback("error", err.message || "Could not add the default menu.");
-    } finally {
-      setIsSeeding(false);
-    }
-  };
-
   // Helper renderers
   const renderCategoryBadge = (category: ProductCategory) => {
     switch (category) {
@@ -345,17 +309,6 @@ export function TiffinPricingCatalog() {
               <RefreshCw className={`w-4 h-4 ${isRevalidating ? "animate-spin" : ""}`} />
             </button>
 
-            {canSeed && (
-              <button
-                onClick={handleSeedMenu}
-                disabled={isSeeding}
-                className="flex items-center gap-1.5 px-3 py-2 border border-[#8E9F89]/40 text-[#1A2E20] font-medium text-sm rounded-xl hover:bg-[#FAF8F5] transition-colors disabled:opacity-50"
-                title="Add the default menu items that are missing"
-              >
-                <Sparkles className={`w-4 h-4 text-[#B58A57] ${isSeeding ? "animate-spin" : ""}`} />
-                <span>{isSeeding ? "Checking..." : "Add default menu"}</span>
-              </button>
-            )}
 
             <button
               onClick={handleOpenAdd}
@@ -443,22 +396,10 @@ export function TiffinPricingCatalog() {
             <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
               {searchQuery || categoryFilter !== "ALL" || statusFilter !== "ALL"
                 ? "No products matched your active filters. Try adjusting or clearing search parameters."
-                : canSeed
-                ? "No tiffin products or meal packages exist yet. You can add the default menu or your own items."
-                : "No tiffin products or meal packages exist yet. Add your own items, or ask the Owner to add the default menu."}
+                : "No menu items yet. Add your thalis, extras, drinks and monthly plans."}
             </p>
             {!(searchQuery || categoryFilter !== "ALL" || statusFilter !== "ALL") && (
               <div className="mt-4 flex items-center justify-center gap-2">
-                {canSeed && (
-                  <button
-                    onClick={handleSeedMenu}
-                    disabled={isSeeding}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 border border-[#8E9F89]/50 text-[#1A2E20] text-xs font-semibold rounded-xl hover:bg-[#FAF8F5] transition-colors"
-                  >
-                    <Sparkles className="w-4 h-4 text-[#B58A57]" />
-                    Add default menu
-                  </button>
-                )}
                 <button
                   onClick={handleOpenAdd}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-[#1A2E20] text-white text-xs font-semibold rounded-xl hover:bg-[#2A4430] transition-colors"

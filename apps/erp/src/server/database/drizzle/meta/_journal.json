@@ -176,6 +176,13 @@
       "when": 1793248800000,
       "tag": "0024_dine_in_pay_later",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793335200000,
+      "tag": "0025_plan_dine_in",
+      "breakpoints": true
     }
   ]
 }

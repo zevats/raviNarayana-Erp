@@ -1,4 +1,4 @@
-import { hasDineInPayLaterSchema } from "../database/schemaFeatures";
+import { hasDineInPayLaterSchema, hasPlanDineInSchema } from "../database/schemaFeatures";
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { AuthorizationError } from "../authorization/authorize";
@@ -415,12 +415,24 @@ export async function createUnifiedOrder(
 
   const db = asyncDb || getAsyncDb();
   // The menu prices, the replay lookup and the plan allowance do not depend on each other.
-  const subscriptionId = orderType === "DELIVERY" ? (input as any).subscriptionId?.trim() || null : null;
+  // A monthly-plan customer may take the meal as a delivery or eat it at the counter (dine in).
+  const subscriptionId = (input as any).subscriptionId?.trim() || null;
+  if (subscriptionId && !input.customerId?.trim()) throw new Error("Choose the subscription customer.");
   const [catalogItems, priorByKey, allowance] = await Promise.all([
     resolveCatalogItems(db, items),
     idempotencyKey ? loadOrders(db, "o.idempotency_key = ?", [idempotencyKey]) : Promise.resolve([] as UnifiedOrder[]),
     subscriptionId ? planAllowance(db, subscriptionId, input.customerId?.trim() || null, serviceDate, mealType) : Promise.resolve({ included: 0, reason: null }),
   ]);
+  // The plan's own delivery for this meal would bring the same thalis again: skip it (the order
+  // brings them, or they were eaten at the counter). A failure here never undoes the order.
+  const skipPlanDelivery = async (reason: string) => {
+    try {
+      const { setSubscriptionDayOverride } = await import("../delivery/deliveryOps");
+      await setSubscriptionDayOverride(actor, { subscriptionId: subscriptionId!, serviceDate, mealType: mealType as "LUNCH" | "DINNER", action: "SKIP", reason }, clientIp, db);
+    } catch {
+      /* the plan delivery stays; the manager can skip it on the Subscriptions screen */
+    }
+  };
   // Subscription order: the plan's thalis for this meal are free, the rest is charged.
   const normalizedItems = subscriptionId ? applyPlanAllowance(catalogItems, allowance.included) : catalogItems.map(({ category: _c, ...it }: any) => it as OrderItem);
   const totalQuantity = normalizedItems.reduce((acc, it) => acc + it.quantity, 0);
@@ -563,25 +575,21 @@ export async function createUnifiedOrder(
     // Creation response contract (unchanged since Task 01B.70): orderStatus reports the order
     // lifecycle (CONFIRMED); dispatch progress is in deliveryStatus. List views derive the
     // combined status from the delivery task.
-    if (subscriptionId && allowance.included > 0 && !raced) {
-      // The plan's own delivery for this meal would bring the same thalis again: skip it (the
-      // order brings them). A failure here never undoes the order.
-      try {
-        const { setSubscriptionDayOverride } = await import("../delivery/deliveryOps");
-        await setSubscriptionDayOverride(actor, { subscriptionId, serviceDate, mealType: mealType as "LUNCH" | "DINNER", action: "SKIP", reason: "Taken as an order instead" }, clientIp, db);
-      } catch {
-        /* the plan delivery stays; the manager can skip it on the Subscriptions screen */
-      }
-    }
+    if (subscriptionId && allowance.included > 0 && !raced) await skipPlanDelivery("Taken as an order instead");
     return { ...created, orderStatus: "CONFIRMED" };
   }
 
   // DINE IN ORDER FLOW
+  // A plan customer eating the plan meal at the counter: nothing to pay when the plan covers it all.
+  const inPlanFree = Boolean(subscriptionId) && totalAmount === 0;
+  if (inPlanFree && !(await hasPlanDineInSchema(db))) {
+    throw new Error("A free plan meal at the counter needs the latest database update, which is not installed yet.");
+  }
   const customerName = input.customerName?.trim() || "Walk-in Guest";
   const customerPhone = input.customerPhone?.trim() || null;
   // Pay Later at the counter (migration 0024): no cashbook entry now; the order stays on the
   // guest's account (Finance -> Receivables) until it is paid. The guest must be identifiable.
-  const payLater = (input as any).payLater === true || String(input.paymentMethod || "").toUpperCase() === "PAY_LATER";
+  const payLater = !inPlanFree && ((input as any).payLater === true || String(input.paymentMethod || "").toUpperCase() === "PAY_LATER");
   if (payLater) {
     if (!(await hasDineInPayLaterSchema(db))) throw new Error("Pay Later for dine-in needs the latest database update, which is not installed yet.");
     if (!input.customerName?.trim() || input.customerName.trim().length < 2) throw new Error("Enter the guest name for a Pay Later order.");
@@ -604,7 +612,7 @@ export async function createUnifiedOrder(
       if (raced) return;
     }
 
-    if (!payLater) {
+    if (!payLater && !inPlanFree) {
       await tx.execute(`
         INSERT INTO financial_transactions (
           id, transaction_type, amount, transaction_date, payment_method,
@@ -620,7 +628,9 @@ export async function createUnifiedOrder(
       `, [txId, totalAmount, serviceDate, paymentMethod, description, actor.id, now, now]);
     }
     // A Pay Later guest who is already a customer (same phone) owes on that account.
-    const linked = payLater && customerPhone
+    const linked = subscriptionId
+      ? { id: input.customerId!.trim() }
+      : payLater && customerPhone
       ? await tx.queryOne<{ id: string }>("SELECT id FROM tiffin_customers WHERE phone = ? OR phone = ? LIMIT 1", [normalizePhoneNumber(customerPhone), customerPhone])
       : null;
 
@@ -637,8 +647,8 @@ export async function createUnifiedOrder(
         customerPhone,
         deliveryAddress: null,
         deliveryTaskId: null,
-        financialTransactionId: payLater ? null : txId,
-        paymentMethod: payLater ? null : paymentMethod,
+        financialTransactionId: payLater || inPlanFree ? null : txId,
+        paymentMethod: payLater || inPlanFree ? null : paymentMethod,
         notes: userNotes,
         idempotencyKey,
         source: "APP",
@@ -655,14 +665,15 @@ export async function createUnifiedOrder(
     await recordAuditEventAsync({
       actorId: actor.id,
       actorUsername: actor.username,
-      action: payLater ? "orders.dine_in_pay_later" : "kitchen.walkin_sale_recorded",
-      targetType: payLater ? "order" : "financial_transaction",
-      targetId: payLater ? orderId : txId,
+      action: inPlanFree ? "orders.dine_in_in_plan" : payLater ? "orders.dine_in_pay_later" : "kitchen.walkin_sale_recorded",
+      targetType: payLater || inPlanFree ? "order" : "financial_transaction",
+      targetId: payLater || inPlanFree ? orderId : txId,
       metadata: {
         category: "TIFFIN_WALKIN_SALE",
         orderId,
         amount: totalAmount,
-        paymentMethod: payLater ? "PAY_LATER" : paymentMethod,
+        paymentMethod: inPlanFree ? "IN_PLAN" : payLater ? "PAY_LATER" : paymentMethod,
+        subscriptionId,
         serviceDate,
         customerName,
         customerPhone,
@@ -674,6 +685,8 @@ export async function createUnifiedOrder(
 
   if (raced) return raced;
   const [created] = await loadOrders(db, "o.id = ?", [orderId]);
+  // Eaten at the counter: the plan delivery for this meal is not needed.
+  if (subscriptionId && allowance.included > 0) await skipPlanDelivery("Ate at the counter instead");
   return created;
 }
 

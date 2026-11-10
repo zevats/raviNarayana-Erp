@@ -1,46 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
-    <aapt:attr name="android:drawable">
-        <vector android:width="240dp" android:height="240dp" android:viewportWidth="108" android:viewportHeight="108">
-            <group android:pivotX="54" android:pivotY="54" android:scaleX="0.62" android:scaleY="0.62">
-            <group android:name="speed" android:pivotX="31" android:pivotY="58" android:scaleX="0" android:scaleY="1">
-                <path android:pathData="M20,47 H31 M24,58 H31 M20,69 H31" android:strokeColor="#FFD7BC" android:strokeWidth="5" android:strokeLineCap="round" android:fillColor="#00000000"/>
-            </group>
-        <path android:pathData="M42,80 V33" android:strokeColor="#FFFFFF" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:name="stem" android:trimPathEnd="0"/>
-        <path android:pathData="M42,33 H58 a12.5,12.5 0 0,1 0,25 H42" android:strokeColor="#FFFFFF" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:name="bowl" android:trimPathEnd="0"/>
-        <path android:pathData="M55,58 L70,80" android:strokeColor="#FFFFFF" android:strokeWidth="10" android:strokeLineCap="round" android:strokeLineJoin="round" android:fillColor="#00000000" android:name="leg" android:trimPathEnd="0"/>
-                <group android:name="sun" android:pivotX="76" android:pivotY="31" android:scaleX="0" android:scaleY="0">
-                    <path android:pathData="M70,31 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#FFE3C2"/>
-                </group>
-            </group>
-        </vector>
-    </aapt:attr>
-    <target android:name="stem">
-        <aapt:attr name="android:animation">
-            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="80" android:duration="260" android:interpolator="@android:interpolator/fast_out_slow_in"/>
-        </aapt:attr>
-    </target>
-    <target android:name="bowl">
-        <aapt:attr name="android:animation">
-            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="260" android:duration="320" android:interpolator="@android:interpolator/fast_out_slow_in"/>
-        </aapt:attr>
-    </target>
-    <target android:name="leg">
-        <aapt:attr name="android:animation">
-            <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="520" android:duration="200" android:interpolator="@android:interpolator/fast_out_slow_in"/>
-        </aapt:attr>
-    </target>
-    <target android:name="sun">
-        <aapt:attr name="android:animation">
-            <set>
-                <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="640" android:duration="260" android:interpolator="@android:interpolator/overshoot"/>
-                <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="640" android:duration="260" android:interpolator="@android:interpolator/overshoot"/>
-            </set>
-        </aapt:attr>
-    </target>
-    <target android:name="speed">
-        <aapt:attr name="android:animation">
-            <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:startOffset="700" android:duration="220" android:interpolator="@android:interpolator/fast_out_slow_in"/>
-        </aapt:attr>
-    </target>
-</animated-vector>
+<!-- Splash: the scooter logo (delivery partners) -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/splash_logo_delivery"
+    android:gravity="center"
+    android:antialias="true"
+    android:filter="true" />

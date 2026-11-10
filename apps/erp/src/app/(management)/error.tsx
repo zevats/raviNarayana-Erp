@@ -13,7 +13,7 @@ export default function ManagementError({ error, reset }: { error: Error & { dig
     <StatusPage
       code={offline ? "No internet" : "Something went wrong"}
       title={offline ? "You are offline" : "This page could not open"}
-      message={offline ? "Check your internet connection, then try again. Nothing you saved is lost." : "We could not load this page. Try again; if it keeps happening, tell your manager and share the reference below."}
+      message={offline ? "Check your internet connection, then try again. Nothing you saved is lost." : "Please try again. If it keeps happening, share the reference below with your manager."}
       onRetry={reset}
       reference={error?.digest}
     />
