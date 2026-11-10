@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans, Cormorant_Garamond } from "next/font/google";
 import "@/styles/globals.css";
 import "@/styles/glass.css";
 import "@/styles/kit.css";
+import "@/styles/mobile.css";
 import { PwaRegistrar } from "@/components/pwa/PwaRegistrar";
 import { KeepFieldInView } from "@/components/pwa/KeepFieldInView";
 import { NativeBridge } from "@/components/native/NativeBridge";
@@ -11,7 +12,7 @@ import { NativeBridge } from "@/components/native/NativeBridge";
 // shell (.rn-app) uses it, so the delivery staff app and sign-in keep their current type.
 // The website's heading serif, used for the large sign-in headline.
 const serif = Cormorant_Garamond({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-rn-serif", display: "swap" });
-const display = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-rn-display", display: "swap" });
+const display = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], variable: "--font-rn-display", display: "swap" });
 
 export const viewport: Viewport = {
   width: "device-width",

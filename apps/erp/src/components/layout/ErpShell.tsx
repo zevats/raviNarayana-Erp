@@ -359,13 +359,17 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
         pathname={pathname}
       />
 
-      <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} />
+      <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} onAccount={(e) => handleNavClick(e, "/account", "account")} />
 
       <div className={`relative min-w-0 transition-[padding] duration-200 ease-out ${collapsed ? "lg:pl-[116px]" : "lg:pl-[288px]"}`}>
         <div className="mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:pr-8 lg:pl-2">
           <TopBar user={user} title={shownKey === "dashboard" ? pageTitle(links, "dashboard", "/dashboard", user.fullName) : null} trail={trailFor(groups, shownKey, navPending && pendingHref ? pendingHref.split("?")[0] : pathname)} links={links} websiteUrl={websiteUrl} onLogout={handleLogout} isLoggingOut={isLoggingOut} />
           {/* While a section opens, its frame replaces the previous page at once (kept mounted, hidden). */}
-          <main ref={mainRef} className="rn-main min-w-0 pb-[calc(7.5rem+env(safe-area-inset-bottom))] lg:pb-12" data-nav-pending={navPending ? "" : undefined}>
+          <main ref={mainRef} className="rn-main min-w-0 pt-4 lg:pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12" data-nav-pending={navPending ? "" : undefined}>
+            {/* Phones: every page opens with its name, large (the dashboard greets instead). */}
+            {shownKey !== "dashboard" && (
+              <h1 className="lg:hidden rn-m-title">{navPending && pendingHref ? pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName) : title}</h1>
+            )}
             {navPending && pendingHref && <NavSkeleton href={pendingHref} title={pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName)} />}
             <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
             {(user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER") && <HandoverAlert />}

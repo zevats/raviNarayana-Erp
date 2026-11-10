@@ -495,7 +495,7 @@ export function CashbookLedger({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by party, room, reference, or description..."
+            placeholder="Search name, room or note"
             className="w-full pl-9 pr-8 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs sm:text-sm text-[#1A2E20] placeholder:text-[#6E7F70] focus:outline-hidden focus:border-[#1A2E20] focus:ring-1 focus:ring-[#1A2E20]"
           />
           {searchQuery && (

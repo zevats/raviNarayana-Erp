@@ -40,7 +40,16 @@ export interface DashboardDivisionView {
 /** Stat tile: icon circle, title, link mark, large figure, one quiet line. Same height in a row. */
 function StatTile({ icon: Icon, title, value, note, href }: { icon: React.ElementType; title: string; value: string; note: React.ReactNode; href: string }) {
   return (
-    <Link href={href} prefetch={false} className="rn-glass rn-hover-lift rounded-[20px] sm:rounded-[26px] p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-4 min-w-0 h-full sm:min-h-[156px]">
+    <Link href={href} prefetch={false} className="rn-glass rn-hover-lift rn-dash-tile rounded-[20px] sm:rounded-[26px] p-3.5 sm:p-5 flex flex-col gap-2 sm:gap-4 min-w-0 h-full sm:min-h-[156px]">
+      {/* Phones: the delivery app's tile (icon, large figure, name, one quiet line). */}
+      <span className="sm:hidden flex flex-col gap-2.5 min-w-0">
+        <span className="rn-dash-tile-icon"><Icon className="w-[18px] h-[18px]" strokeWidth={1.9} /></span>
+        <span className="rn-dash-tile-value tabular-nums">{value}</span>
+        <span className="min-w-0">
+          <span className="block rn-dash-tile-title">{title}</span>
+          <span className="block rn-dash-tile-note truncate">{note}</span>
+        </span>
+      </span>
       <span className="hidden sm:flex items-center justify-between gap-3">
         <span className="grid place-items-center w-11 h-11 rounded-full bg-[var(--rn-accent-tint)] border border-white text-[var(--rn-accent-mid)] shrink-0">
           <Icon className="w-5 h-5" strokeWidth={1.7} />
@@ -49,8 +58,8 @@ function StatTile({ icon: Icon, title, value, note, href }: { icon: React.Elemen
           <ArrowUpRight className="w-4 h-4" />
         </span>
       </span>
-      <span className="sm:-mb-2 sm:truncate leading-tight text-[12px] sm:text-[14px] font-medium leading-tight text-[var(--rn-ink-2)] sm:text-[var(--rn-ink)]">{title}</span>
-      <span className="mt-auto flex items-end gap-x-3 gap-y-1 flex-wrap">
+      <span className="hidden sm:block sm:-mb-2 sm:truncate leading-tight text-[12px] sm:text-[14px] font-medium leading-tight text-[var(--rn-ink-2)] sm:text-[var(--rn-ink)]">{title}</span>
+      <span className="mt-auto hidden sm:flex items-end gap-x-3 gap-y-1 flex-wrap">
         <span className="text-[20px] sm:text-[30px] leading-none font-semibold tracking-[-0.02em] text-[var(--rn-ink)] tabular-nums">{value}</span>
         <span className="hidden sm:inline text-[12.5px] text-[var(--rn-ink-3)] pb-0.5 truncate max-w-full">{note}</span>
       </span>
@@ -266,11 +275,11 @@ export function DashboardView({
       {/* Greeting + controls */}
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <h2 className="lg:hidden text-[26px] font-semibold tracking-[-0.02em] text-[var(--rn-ink)]">{greeting(ownerName)}</h2>
+          <h1 className="lg:hidden rn-dash-hello">{greeting(ownerName)}</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {showMoney && divisions.length > 1 && (
-            <div role="radiogroup" aria-label="Show" className="inline-flex p-1 rounded-full rn-glass text-[12.5px]">
+            <div role="radiogroup" aria-label="Show" className="flex-1 sm:flex-none inline-flex p-1 rounded-full rn-glass text-[12.5px] [&>button]:flex-1 [&>button]:justify-center sm:[&>button]:flex-none">
               {divisions.map((d) => (
                 <button
                   key={d}
@@ -292,7 +301,7 @@ export function DashboardView({
       {/* Row 1: tiles + chart (left), money + spending (right); both columns end level */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-stretch">
         <div className="flex flex-col gap-5 min-w-0">
-          <div className="grid grid-cols-3 gap-2.5 sm:gap-4 auto-rows-fr">{tiles}</div>
+          <div className="rn-dash-tiles grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-4 auto-rows-fr">{tiles}</div>
           {showMoney && ops.charts ? (
             <div className="flex-1 min-h-0 flex flex-col [&>*]:flex-1">
               <CollectionsChart daily={ops.charts.dailyCollections} monthly={monthlyData.map((m) => ({ month: m.month, label: m.label, collected: m.collected }))} />
@@ -305,7 +314,7 @@ export function DashboardView({
         {showMoney && (
           <div className="flex flex-col gap-5 min-w-0">
             {ops.money ? (
-              <section className="rounded-[28px] p-6 text-white relative overflow-hidden" style={{ background: "linear-gradient(150deg, #263B2D 0%, #1A2E20 70%)", boxShadow: "0 30px 60px -32px rgba(10,20,14,0.7)" }}>
+              <section className="rn-dash-money rounded-[28px] p-6 text-white relative overflow-hidden" style={{ background: "linear-gradient(150deg, #263B2D 0%, #1A2E20 70%)", boxShadow: "0 30px 60px -32px rgba(10,20,14,0.7)" }}>
                 <span className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-white/5" aria-hidden />
                 <div className="flex items-center gap-3 min-h-[44px]">
                   <span className="flex-1 text-[14.5px] font-medium">
@@ -315,34 +324,34 @@ export function DashboardView({
                     <ArrowUpRight className="w-4 h-4" />
                   </Link>
                 </div>
-                <p className="mt-5 text-[38px] leading-none font-semibold tracking-[-0.02em] tabular-nums">{rupees(ops.money.collectedThisMonth)}</p>
+                <p className="rn-dash-money-total mt-5 text-[38px] leading-none font-semibold tracking-[-0.02em] tabular-nums">{rupees(ops.money.collectedThisMonth)}</p>
                 <div className="mt-5 grid grid-cols-2 gap-3 text-[12.5px]">
-                  <div className="rounded-2xl bg-white/[0.07] px-3.5 py-3">
+                  <div className="rn-dash-money-cell rounded-2xl bg-white/[0.07] px-3.5 py-3">
                     <p className="text-white/55">Expenses</p>
                     <p className="mt-1 text-[15px] font-semibold tabular-nums">{rupees(ops.money.expensesThisMonth)}</p>
                   </div>
-                  <div className="rounded-2xl bg-white/[0.07] px-3.5 py-3">
+                  <div className="rn-dash-money-cell rounded-2xl bg-white/[0.07] px-3.5 py-3">
                     <p className="text-white/55">Collected − expenses</p>
                     <p className="mt-1 text-[15px] font-semibold tabular-nums">{rupees(ops.money.netCollected)}</p>
                   </div>
-                  <div className="rounded-2xl bg-white/[0.07] px-3.5 py-3">
+                  <div className="rn-dash-money-cell rounded-2xl bg-white/[0.07] px-3.5 py-3">
                     <p className="text-white/55">Cash in hand</p>
                     <p className="mt-1 text-[15px] font-semibold tabular-nums">{cashInHand === null ? "—" : rupees(cashInHand)}</p>
                   </div>
                   {division === "TIFFIN" ? (
-                    <Link href="/delivery?tab=custody" prefetch={false} className="rounded-2xl bg-white/[0.07] px-3.5 py-3 hover:bg-white/[0.12] transition-colors">
+                    <Link href="/delivery?tab=custody" prefetch={false} className="rn-dash-money-cell rounded-2xl bg-white/[0.07] px-3.5 py-3 hover:bg-white/[0.12] transition-colors">
                       <p className="text-white/55 flex items-center gap-1"><Banknote className="w-3.5 h-3.5" /> Cash with staff</p>
                       <p className="mt-1 text-[15px] font-semibold tabular-nums">{ops.custody ? rupees(ops.custody.cashWithStaff) : "—"}</p>
                     </Link>
                   ) : (
-                    <Link href="/reports?report=outstanding" prefetch={false} className="rounded-2xl bg-white/[0.07] px-3.5 py-3 hover:bg-white/[0.12] transition-colors">
+                    <Link href="/reports?report=outstanding" prefetch={false} className="rn-dash-money-cell rounded-2xl bg-white/[0.07] px-3.5 py-3 hover:bg-white/[0.12] transition-colors">
                       <p className="text-white/55">Rent owed</p>
                       <p className="mt-1 text-[15px] font-semibold tabular-nums">{metricsUnavailable ? "—" : rupees(finance.outstandingRent)}</p>
                     </Link>
                   )}
                 </div>
                 {ops.money.yesterdayUnclosed && (
-                  <Link href="/finance?tab=closing" prefetch={false} className="mt-4 flex items-center gap-2 rounded-2xl bg-[#C89F6B]/20 px-3.5 py-2.5 text-[12.5px] text-[#F3DDBB] hover:bg-[#C89F6B]/30">
+                  <Link href="/finance?tab=closing" prefetch={false} className="rn-dash-money-warn mt-4 flex items-center gap-2 rounded-2xl bg-[#C89F6B]/20 px-3.5 py-2.5 text-[12.5px] text-[#F3DDBB] hover:bg-[#C89F6B]/30">
                     <AlertTriangle className="w-4 h-4" /> Yesterday&apos;s cash is not closed yet
                   </Link>
                 )}
