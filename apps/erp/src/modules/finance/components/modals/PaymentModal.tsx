@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, AlertCircle, ArrowRight } from "lucide-react";
@@ -131,7 +132,7 @@ export function PaymentModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "An error occurred while saving payment.");
+      setError(friendlyError(err.message || "An error occurred while saving payment."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

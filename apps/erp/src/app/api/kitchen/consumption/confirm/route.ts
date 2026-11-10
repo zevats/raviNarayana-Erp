@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -36,7 +37,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof InsufficientStockError) {
       return NextResponse.json(
         {
-          error: error.message,
+          error: friendlyError(error.message),
           code: "INSUFFICIENT_STOCK",
           shortages: error.shortages,
         },
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     const authResp = handleAuthorizationError(error);
     if (authResp) return authResp;
     return NextResponse.json(
-      { error: error.message || "Failed to confirm production consumption" },
+      { error: friendlyError(error.message || "Failed to confirm production consumption") },
       { status: 400 }
     );
   }

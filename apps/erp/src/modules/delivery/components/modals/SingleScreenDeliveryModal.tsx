@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useMemo } from "react";
 import { X, CheckCircle2, AlertCircle, MapPin, Phone, Minus, Plus } from "lucide-react";
 import { DeliveryTask, DeliveryOrderLine } from "@/types";
@@ -195,7 +196,7 @@ export function SingleScreenDeliveryModal({ task, isOpen, onClose, onSuccess, cu
       onClose();
     } catch (err: any) {
       // Entered quantities and amounts stay on screen so the user can correct and retry.
-      setErrorMessage(err.message || "Could not save the delivery. Please try again.");
+      setErrorMessage(friendlyError(err.message || "Could not save the delivery. Please try again."));
     } finally {
       setIsSubmitting(false);
     }

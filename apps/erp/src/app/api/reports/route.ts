@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import { resolveUserFromRequest, unauthorizedResponse, handleAuthorizationError } from "@/server/authorization/authorize";
@@ -48,6 +49,6 @@ export async function GET(request: NextRequest) {
     if (authError) return authError;
     const dbError = databaseErrorResponse("/api/reports", error);
     if (dbError) return dbError;
-    return NextResponse.json({ error: error.message || "Could not run the report." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Could not run the report.") }, { status: 400 });
   }
 }

@@ -71,7 +71,9 @@ export async function insertStaff(db: AsyncDb, role: StaffRole, fullName: string
 }
 
 /** Far-future business date unique to this run, so reruns against one database never collide. */
+// One clock reading per run, so offsets keep their order (DAY = 400, the day before = 399).
+const RUN_SEED = Date.now() % 100000;
 export function uniqueBusinessDate(offsetDays = 0): string {
-  const base = Date.UTC(2040, 0, 1) + (Date.now() % 100000) * 86400000 + offsetDays * 86400000;
+  const base = Date.UTC(2040, 0, 1) + RUN_SEED * 86400000 + offsetDays * 86400000;
   return new Date(base).toISOString().slice(0, 10);
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
@@ -64,7 +65,7 @@ export function TiffinSubscriptionList() {
   const [resumingSubscriptionId, setResumingSubscriptionId] = useState<string | null>(null);
 
   // Feedback notifications
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [feedback, setFeedback] = useTimedMessage<{ type: "success" | "error"; message: string }>();
 
   const showFeedback = (type: "success" | "error", message: string) => {
     setFeedback({ type, message });
@@ -331,7 +332,6 @@ export function TiffinSubscriptionList() {
             <option value="BOTH">Lunch & Dinner</option>
             <option value="LUNCH">Lunch Only</option>
             <option value="DINNER">Dinner Only</option>
-            <option value="BREAKFAST">Breakfast</option>
           </AppSelect>
 
           {/* Service Days filter */}
@@ -459,7 +459,7 @@ export function TiffinSubscriptionList() {
                           {formatINR(sub.price)}
                         </div>
                         <div className="text-[10px] text-gray-500 mt-0.5">
-                          {sub.quantityPerMeal} {sub.quantityPerMeal === 1 ? "box" : "boxes"} / meal
+                          {sub.quantityPerMeal} {sub.quantityPerMeal === 1 ? "thali" : "thalis"} / meal
                         </div>
                       </td>
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useState } from "react";
 import { X, CalendarClock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -35,7 +36,7 @@ export function RentRunModal({ isOpen, onClose, onDone }: { isOpen: boolean; onC
   const [data, setData] = useState<{ label: string; lines: Line[]; total: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useTimedMessage<{ ok: boolean; text: string }>();
 
   const load = async (m: string) => {
     setLoading(true);

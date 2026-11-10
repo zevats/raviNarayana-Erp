@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -32,7 +33,7 @@ export async function GET(
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to fetch resident settlements." },
+      { error: friendlyError(error.message || "Failed to fetch resident settlements.") },
       { status: 400 }
     );
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import { StatStrip } from "@/components/ui/kit";
@@ -74,7 +75,7 @@ export function TiffinBillingView() {
       }
       setPreview(data.preview);
     } catch (err: any) {
-      setError(err.message || "Failed to load billing preview.");
+      setError(friendlyError(err.message || "Failed to load billing preview."));
     } finally {
       setLoading(false);
     }

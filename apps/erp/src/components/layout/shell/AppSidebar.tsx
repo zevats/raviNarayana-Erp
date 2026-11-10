@@ -3,7 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { PanelLeftClose, PanelLeftOpen, LogOut } from "lucide-react";
+import { PanelLeftClose, LogOut } from "lucide-react";
 import type { AuthenticatedUser } from "@/types";
 import { ROLE_LABELS } from "@/types";
 import type { NavGroup } from "./nav";
@@ -132,9 +132,9 @@ export function AppSidebar({
             onMouseLeave={hideTip}
             onFocus={(e) => showTip(e, "Expand")}
             onBlur={hideTip}
-            className="rn-side-toggle grid place-items-center w-10 h-10 rounded-full"
+            className="rn-side-toggle rn-brandmark grid place-items-center w-12 h-12 rounded-full"
           >
-            <PanelLeftOpen className="w-[18px] h-[18px]" strokeWidth={1.8} />
+            <span className="rn-brandmark-name" aria-hidden>R</span>
           </button>
         ) : (
           <>
@@ -165,15 +165,13 @@ export function AppSidebar({
           />
         )}
         {groups.map((g, gi) => (
-          <div key={g.label} className={gi === 0 ? "" : "mt-4 pt-3 border-t border-white/[0.07]"}>
-            {/* Group slot: 28px in both states (label expanded, hairline collapsed). Groups are set
-                apart by space and a hairline, and the label is small, quiet capitals that do not
-                look like a link. */}
-            <div className={`h-7 flex items-end ${collapsed ? "justify-center pb-3" : "px-3.5 pb-2"}`} aria-hidden={collapsed}>
+          <div key={g.label}>
+            {/* Group slot: 28px in both states (label expanded, a separator line collapsed) */}
+            <div className={`h-7 flex items-end ${gi === 0 ? "" : "mt-2"} ${collapsed ? "justify-center pb-3" : "px-3 pb-1.5"}`} aria-hidden={collapsed}>
               {collapsed ? (
-                <span className="block h-px w-6 bg-white/12" />
+                <span className="block h-px w-8 bg-white/20" />
               ) : (
-                <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-white/45 rn-label-fade select-none">{g.label}</span>
+                <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-white/40 select-none">{g.label}</span>
               )}
             </div>
             <ul className="space-y-0.5">
@@ -200,7 +198,7 @@ export function AppSidebar({
                       <span className="rn-nav-icon grid place-items-center w-9 h-9 rounded-full shrink-0">
                         <Icon className="w-[17px] h-[17px]" strokeWidth={1.8} />
                       </span>
-                      {!collapsed && <span className="text-[13.5px] truncate rn-label-fade">{item.label}</span>}
+                      {!collapsed && <span className="text-[13.5px] truncate">{item.label}</span>}
                     </Link>
                   </li>
                 );

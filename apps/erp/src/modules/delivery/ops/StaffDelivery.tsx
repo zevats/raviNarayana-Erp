@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Phone, Send, Info, ChevronRight, PlayCircle, PencilLine, Banknote, CloudOff } from "lucide-react";
@@ -55,7 +56,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [sheetTask, setSheetTask] = useState<DeliveryTask | null>(null);
   const [recordTask, setRecordTask] = useState<DeliveryTask | null>(null);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
   const [starting, setStarting] = useState<string | null>(null);
   const [queued, setQueued] = useState(0);
   const [wide, setWide] = useState(false);
@@ -69,7 +70,35 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const tasksQ = meal === "LUNCH" ? lunchQ : dinnerQ;
   const otherQ = meal === "LUNCH" ? dinnerQ : lunchQ;
   useManifest(today, meal); // opening the screen after 08:00 / 15:30 prepares that meal's list
-  const tasks = useMemo(() => (tasksQ.data ?? []).filter((t) => t.status !== "CANCELLED"), [tasksQ.data]);
+  // Stops just recorded on this phone: shown as done until the server's list says so too, so a
+  // refresh that arrives before the background save has landed cannot bring them back as open.
+  const [held, setHeld] = useState<Record<string, DeliveryTask>>({});
+  const stillOpen = (t: DeliveryTask) => t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "OUT_FOR_DELIVERY";
+  const tasks = useMemo(
+    () =>
+      (tasksQ.data ?? [])
+        .map((t) => (held[t.id] && stillOpen(t) ? { ...t, ...held[t.id], lines: held[t.id].lines?.length ? held[t.id].lines : t.lines } : t))
+        .filter((t) => t.status !== "CANCELLED"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tasksQ.data, held]
+  );
+  useEffect(() => {
+    const ids = Object.keys(held);
+    if (ids.length === 0) return;
+    const all = [...(lunchQ.data ?? []), ...(dinnerQ.data ?? [])];
+    const settled = ids.filter((id) => {
+      const t = all.find((x) => x.id === id);
+      return t && !stillOpen(t);
+    });
+    if (settled.length) setHeld((h) => Object.fromEntries(Object.entries(h).filter(([id]) => !settled.includes(id))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lunchQ.data, dinnerQ.data]);
+  // Safety: nothing is held for more than two minutes (the offline queue keeps the save itself).
+  useEffect(() => {
+    if (Object.keys(held).length === 0) return;
+    const t = setTimeout(() => setHeld({}), 120_000);
+    return () => clearTimeout(t);
+  }, [held]);
   const numbers = useMemo(() => stopNumbers(tasks), [tasks]);
   const countOf = (data: DeliveryTask[] | undefined) => (data ? data.filter((t) => t.status !== "CANCELLED").length : undefined);
   const mealCounts = { [meal]: countOf(tasksQ.data), [other]: countOf(otherQ.data) } as Partial<Record<MealType, number | undefined>>;
@@ -168,8 +197,10 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   // server refuses it, say why and reload the stops so it is back in the list.
   useEffect(() => {
     const failed = (e: Event) => {
-      const text = (e as CustomEvent).detail?.text || "A delivery could not be saved.";
+      const detail = (e as CustomEvent).detail || {};
+      const text = detail.text || "A delivery could not be saved.";
       setNotice({ tone: "error", text });
+      if (detail.taskId) setHeld((h) => Object.fromEntries(Object.entries(h).filter(([id]) => id !== detail.taskId)));
       void tasksQ.refetch();
     };
     window.addEventListener("erp:delivery-save-failed", failed);
@@ -179,13 +210,15 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const saved = (text: string, done?: DeliveryTask) => {
     // Put the saved stop into the list straight away (it moves to completed and the next stop comes
     // up), then refresh everything affected in the background.
+    if (done) setHeld((h) => ({ ...h, [done.id]: done }));
     if (done && tasksQ.data) {
       void tasksQ.mutate(
         tasksQ.data.map((t) => (t.id === done.id ? { ...t, ...done, lines: done.lines?.length ? done.lines : t.lines } : t)),
         false
       );
     }
-    invalidateErpCache(["delivery", "orders", "custody", "handover"]);
+    // The lists are refreshed once the save is confirmed (the background sender does it); a
+    // refresh now would only fetch the stop as it was before.
     setNotice({ tone: "ok", text });
     setSelectedId(null);
   };

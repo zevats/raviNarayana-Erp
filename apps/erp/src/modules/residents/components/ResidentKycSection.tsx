@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import {
@@ -54,7 +55,7 @@ export function ResidentKycSection({
       if (!res.ok) throw new Error(data.error || "Failed to load KYC documents.");
       setDocuments(data.documents || []);
     } catch (err: any) {
-      setError(err.message || "Failed to load documents.");
+      setError(friendlyError(err.message || "Failed to load documents."));
     } finally {
       setLoading(false);
     }

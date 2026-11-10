@@ -53,7 +53,7 @@ export function PwaRegistrar() {
         return;
       }
 
-      setShowInstallBanner(true);
+      // The install pop-up is not shown (owner decision 2026-11-10): no banner on sign-in or in the portal.
     };
 
     window.addEventListener("beforeinstallprompt", handleBeforeInstall);

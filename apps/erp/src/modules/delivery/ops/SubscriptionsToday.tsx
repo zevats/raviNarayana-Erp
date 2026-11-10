@@ -1,11 +1,12 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { SkipForward, Plus, Undo2, Home, UtensilsCrossed, ShoppingBag, UserPlus, Users, X } from "lucide-react";
 import type { MealType, SubscriptionDayRow, ResidentMealDeliveryRow, TiffinCustomer, TiffinProduct } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
-import { businessToday, businessMeal } from "@/lib/businessDate";
+import { businessToday, businessMeal, addBusinessDays } from "@/lib/businessDate";
 import { useSubscriptionDay, useResidentDay, postJson, getJson } from "./data";
 import { MealSwitch, DateStepper, Notice, btn } from "./ui";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
@@ -30,11 +31,12 @@ const STATUS_LABEL: Record<string, string> = {
 export function SubscriptionsToday({ canChange, onTakeOrder }: { canChange: boolean; onTakeOrder?: (customer: TiffinCustomer) => void }) {
   const today = businessToday();
   const [date, setDate] = useState(today);
+  const tomorrow = addBusinessDays(today, 1);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const subs = useSubscriptionDay(date, meal);
   const residents = useResidentDay(date, meal);
   const [busy, setBusy] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [msg, setMsg] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
   const [reasonFor, setReasonFor] = useState<{ key: string; run: (reason: string) => Promise<void> } | null>(null);
   const [reason, setReason] = useState("");
   const listing = subs.data;
@@ -152,7 +154,29 @@ export function SubscriptionsToday({ canChange, onTakeOrder }: { canChange: bool
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <MealSwitch value={meal} onChange={setMeal} />
-          <DateStepper value={date} today={today} onChange={setDate} />
+          <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/70 border border-[var(--rn-line)]" role="group" aria-label="Day">
+            {[
+              { v: today, l: "Today" },
+              { v: tomorrow, l: "Tomorrow" },
+            ].map((o) => (
+              <button
+                key={o.l}
+                type="button"
+                aria-pressed={date === o.v}
+                onClick={() => setDate(o.v)}
+                className={`h-9 px-3.5 rounded-full text-[13px] font-semibold transition-colors ${date === o.v ? "bg-[var(--rn-accent)] text-white" : "text-[var(--rn-ink-2)] hover:bg-[var(--rn-accent-tint)]"}`}
+              >
+                {o.l}
+              </button>
+            ))}
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+              aria-label="Pick a date"
+              className="h-9 px-3 rounded-full bg-transparent text-[13px] font-semibold text-[var(--rn-ink)] border-0"
+            />
+          </div>
           {canChange && (
             <button type="button" onClick={openNew} className="rn-btn rn-btn-primary">
               <Plus /> New subscription
@@ -189,15 +213,20 @@ export function SubscriptionsToday({ canChange, onTakeOrder }: { canChange: bool
               return (
                 <li key={r.subscriptionId} className="px-4 py-3 flex flex-wrap items-center gap-3 justify-between">
                   <div className="min-w-0">
-                    <p className="font-medium text-text-primary">{r.customerName}</p>
-                    <p className="text-xs text-text-muted">
-                      {r.productName} × {r.quantityPerMeal}
+                    <p className="text-[15px] font-semibold text-[var(--rn-ink)]">{r.customerName}</p>
+                    <p className="text-[13px] text-[var(--rn-ink-2)]">
+                      {r.productName} · {r.quantityPerMeal} thali{r.quantityPerMeal === 1 ? "" : "s"} a meal
                       {r.subscriptionStatus === "PAUSED" ? " · paused" : ""}
+                    </p>
+                    <p className="text-[12.5px] text-[var(--rn-ink-3)]">
+                      {r.customerPhone && <a href={`tel:${r.customerPhone}`} className="tabular-nums hover:text-[var(--rn-accent)]">{r.customerPhone}</a>}
+                      {r.customerPhone && r.customerAddress ? " · " : ""}
+                      {r.customerAddress}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`text-xs px-2 py-1 rounded-full border ${!r.eligible ? "bg-surface-cream border-surface-subtle text-text-muted" : r.override?.action === "SKIP" ? "bg-status-warning-bg border-status-warning-border text-status-warning-text" : "bg-status-success-bg border-status-success-border text-status-success-text"}`}>
-                      {!r.eligible ? r.ineligibleReason : r.override?.action === "SKIP" ? "Skipped" : `${r.effectiveQuantity} box${r.effectiveQuantity === 1 ? "" : "es"}${r.override?.action === "EXTRA" ? ` (+${r.override.quantity})` : ""}`}
+                      {!r.eligible ? r.ineligibleReason : r.override?.action === "SKIP" ? "Skipped" : `${r.effectiveQuantity} thali${r.effectiveQuantity === 1 ? "" : "s"}${r.override?.action === "EXTRA" ? ` (+${r.override.quantity})` : ""}`}
                       {r.override?.afterCutoff ? " · override" : ""}
                     </span>
                     {r.task && <span className="text-xs text-text-secondary">{STATUS_LABEL[r.task.status] || r.task.status}{r.task.assignedToName ? ` · ${r.task.assignedToName}` : ""}</span>}
@@ -214,14 +243,9 @@ export function SubscriptionsToday({ canChange, onTakeOrder }: { canChange: bool
                           </button>
                         ) : null}
                         {r.override?.action !== "SKIP" && (
-                          <>
-                            <button type="button" disabled={Boolean(busy)} onClick={() => subAction(r, "SKIP")} className={btn.quiet}>
-                              <SkipForward className="w-4 h-4" /> Skip
-                            </button>
-                            <button type="button" disabled={Boolean(busy)} onClick={() => subAction(r, "EXTRA", (r.override?.action === "EXTRA" ? r.override.quantity || 0 : 0) + 1)} className={btn.quiet}>
-                              <Plus className="w-4 h-4" /> Extra
-                            </button>
-                          </>
+                          <button type="button" disabled={Boolean(busy)} onClick={() => subAction(r, "EXTRA", (r.override?.action === "EXTRA" ? r.override.quantity || 0 : 0) + 1)} className={btn.quiet}>
+                            <Plus className="w-4 h-4" /> Extra thali
+                          </button>
                         )}
                       </>
                     )}

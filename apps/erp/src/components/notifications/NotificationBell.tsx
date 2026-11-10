@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -74,7 +75,7 @@ export function NotificationRows({ items, onOpen, onMarkRead }: { items: Notific
             <span className="block rn-t-meta mt-0.5 line-clamp-2">{n.description}</span>
           </button>
           {!n.isRead && (
-            <button type="button" onClick={() => onMarkRead(n)} aria-label={`Mark "${n.title}" as read`} title="Mark as read" className="mt-1 grid place-items-center w-7 h-7 rounded-full hover:bg-[var(--rn-accent-tint)] shrink-0">
+            <button type="button" onClick={() => onMarkRead(n)} aria-label={`Mark "${n.title}" as read`} title="Mark as read" className="mt-0.5 grid place-items-center w-10 h-10 sm:w-7 sm:h-7 rounded-full hover:bg-[var(--rn-accent-tint)] shrink-0">
               <span className="w-2 h-2 rounded-full bg-[var(--rn-accent)]" />
             </button>
           )}
@@ -129,7 +130,7 @@ export function NotificationBell() {
       await markNotificationRead(n.id);
       invalidateErpCache(["notifications"]);
     } catch (e: any) {
-      setActionError(e.message);
+      setActionError(friendlyError(e.message));
       feed.refetch();
     }
   };
@@ -142,7 +143,7 @@ export function NotificationBell() {
       updateFeed((cur) => ({ notifications: cur.notifications.map((n) => ({ ...n, isRead: true })), unreadCount: 0 }));
       invalidateErpCache(["notifications"]);
     } catch (e: any) {
-      setActionError(e.message);
+      setActionError(friendlyError(e.message));
     } finally {
       setBusy(false);
     }

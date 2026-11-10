@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState } from "react";
 import { X, BedDouble, Wrench, Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { RoomWithOccupancy, RoomMaintenanceRecord } from "@/types";
@@ -26,7 +27,7 @@ async function send(url: string, method: string, body?: unknown) {
  */
 export function RoomBedsPanel({ room, canManage, onClose, onChanged }: { room: RoomWithOccupancy; canManage: boolean; onClose: () => void; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [msg, setMsg] = useTimedMessage<{ ok: boolean; text: string }>();
   const [newBed, setNewBed] = useState("");
   const [reason, setReason] = useState("");
   const [startDate, setStartDate] = useState(businessToday());

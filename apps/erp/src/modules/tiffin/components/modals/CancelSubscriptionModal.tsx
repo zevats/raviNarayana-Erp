@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState } from "react";
 import { X, XCircle, AlertCircle } from "lucide-react";
 import { TiffinSubscription } from "@/types";
@@ -47,7 +48,7 @@ export function CancelSubscriptionModal({
         `Subscription for ${subscription.customerName || "customer"} cancelled successfully.`
       );
     } catch (err: any) {
-      setError(err.message || "Error cancelling subscription.");
+      setError(friendlyError(err.message || "Error cancelling subscription."));
     } finally {
       setSubmitting(false);
     }

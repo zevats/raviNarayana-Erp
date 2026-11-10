@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState } from "react";
 import { UserCheck, X, AlertTriangle } from "lucide-react";
@@ -56,7 +57,7 @@ export function BatchAssignModal({
       onSuccess(data.assignedCount || taskIds.length, assignedStaff?.fullName || "Staff");
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to assign tasks.");
+      setError(friendlyError(err.message || "Failed to assign tasks."));
     } finally {
       setSubmitting(false);
     }

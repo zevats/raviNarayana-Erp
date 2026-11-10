@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -40,7 +41,7 @@ export async function POST(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to update product status." },
+      { error: friendlyError(error.message || "Failed to update product status.") },
       { status: 400 }
     );
   }

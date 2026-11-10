@@ -1,5 +1,8 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
+import { businessMeal } from "@/lib/businessDate";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import { X, ShoppingBag, Plus, User, Phone, MapPin, Calendar, Clock, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -28,7 +31,7 @@ export function CreateTiffinOrderModal({
   const [customerPhone, setCustomerPhone] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [serviceDate, setServiceDate] = useState(() => businessToday());
-  const [mealType, setMealType] = useState<MealType>("LUNCH");
+  const [mealType, setMealType] = useState<MealType>(() => businessMeal());
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
   const [customPrice, setCustomPrice] = useState<number | null>(null);
@@ -36,7 +39,7 @@ export function CreateTiffinOrderModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useTimedMessage<string>();
 
   useEffect(() => {
     if (isOpen) {
@@ -140,7 +143,7 @@ export function CreateTiffinOrderModal({
         onClose();
       }, 1000);
     } catch (err: any) {
-      setError(err.message || "Failed to submit order.");
+      setError(friendlyError(err.message || "Failed to submit order."));
     } finally {
       setSubmitting(false);
     }
@@ -307,7 +310,6 @@ export function CreateTiffinOrderModal({
                   onChange={(e) => setMealType(e.target.value as MealType)}
                   className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-200 bg-white focus:outline-none focus:ring-2 focus:ring-[#1A2E20]/20 font-medium"
                 >
-                  <option value="BREAKFAST">BREAKFAST</option>
                   <option value="LUNCH">LUNCH</option>
                   <option value="DINNER">DINNER</option>
                 </AppSelect>

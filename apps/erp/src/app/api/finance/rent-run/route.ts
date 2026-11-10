@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import { resolveUserFromRequest, unauthorizedResponse, handleAuthorizationError } from "@/server/authorization/authorize";
@@ -11,7 +12,7 @@ function errorResponse(error: any, fallback: string) {
   if (authError) return authError;
   const dbError = databaseErrorResponse("/api/finance/rent-run", error);
   if (dbError) return dbError;
-  return NextResponse.json({ error: error.message || fallback }, { status: 400 });
+  return NextResponse.json({ error: friendlyError(error.message || fallback) }, { status: 400 });
 }
 
 /** Preview of the month's rent charges (?month=YYYY-MM, this month or last). */

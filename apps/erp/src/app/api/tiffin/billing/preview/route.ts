@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to calculate tiffin billing preview." },
+      { success: false, error: friendlyError(error.message || "Failed to calculate tiffin billing preview.") },
       { status: 400 }
     );
   }

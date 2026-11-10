@@ -37,6 +37,12 @@ interface CashbookLedgerProps {
 
 const ITEMS_PER_PAGE = 15;
 
+/** Category codes as words (TIFFIN_DELIVERY_COLLECTION -> Tiffin delivery collection). */
+const plainCategory = (c: string) => {
+  const s = String(c || "").replace(/_/g, " ").toLowerCase().trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+};
+
 export function CashbookLedger({
   transactions,
   isLoading,
@@ -244,11 +250,11 @@ export function CashbookLedger({
                     {/* Category & Payment Method */}
                     <div className="flex items-center justify-between text-[11px] text-[#5A6C5E]">
                       <span>
-                        {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.category ? `${tx.category} Expense` : "PG Operation"}
+                        {tx.roomNumber ? `Room ${tx.roomNumber}` : tx.category ? `${plainCategory(tx.category)}${tx.transactionType === "EXPENSE" ? " expense" : ""}` : "PG"}
                       </span>
                       <span className="font-sans font-medium text-[#1A2E20]">
                         {formatPaymentMethodLabel(tx.paymentMethod)}
-                        {tx.referenceNumber ? ` • ${tx.referenceNumber}` : ""}
+                        {tx.referenceNumber && !/^[a-z]+_[0-9a-f-]{6,}/i.test(tx.referenceNumber) ? ` • ${tx.referenceNumber}` : ""}
                       </span>
                     </div>
 
@@ -260,22 +266,7 @@ export function CashbookLedger({
                     )}
 
                     {/* Mobile Action Bar */}
-                    <div className="flex items-center justify-between pt-2 border-t border-[#8E9F89]/15 text-xs">
-                      <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#6E7F70]">
-                        <span>{tx.id.slice(0, 16)}...</span>
-                        <button
-                          type="button"
-                          onClick={(e) => handleCopyId(tx.id, e)}
-                          className="p-1 rounded hover:bg-stone-200/60 transition-colors"
-                          title="Copy ID"
-                        >
-                          {copiedId === tx.id ? (
-                            <Check className="w-3 h-3 text-emerald-600" />
-                          ) : (
-                            <Copy className="w-3 h-3" />
-                          )}
-                        </button>
-                      </div>
+                    <div className="flex items-center justify-end pt-2 border-t border-[#8E9F89]/15 text-xs">
 
                       <div className="flex items-center gap-2">
                         <button

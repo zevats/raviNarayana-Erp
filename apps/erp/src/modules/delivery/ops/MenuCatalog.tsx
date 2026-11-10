@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Plus, Pencil, Trash2, Eye, EyeOff, Search, Check, X } from "lucide-react";
@@ -36,7 +37,7 @@ export function MenuCatalog() {
   const [priceFor, setPriceFor] = useState<string | null>(null);
   const [priceText, setPriceText] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [notice, setNotice] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
 
   const groups = useMemo(() => {
     const s = search.trim().toLowerCase();

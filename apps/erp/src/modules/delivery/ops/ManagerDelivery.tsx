@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ClipboardList, RefreshCw, AlertTriangle, Download } from "lucide-react";
 import type { AuthenticatedUser, DeliveryTask, MealType } from "@/types";
@@ -83,10 +84,12 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
     const task = p.get("task");
     if (task) setFocusId(task);
   }, []);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error" | "warn"; text: string } | null>(null);
+  const [notice, setNotice] = useTimedMessage<{ tone: "ok" | "error" | "warn"; text: string }>();
   useEffect(() => {
     const failed = (e: Event) => {
       setNotice({ tone: "error", text: (e as CustomEvent).detail?.text || "A delivery could not be saved." } as any);
+      const id = (e as CustomEvent).detail?.taskId;
+      if (id) setHeld((h) => Object.fromEntries(Object.entries(h).filter(([k]) => k !== id)));
       invalidateErpCache(["delivery", "orders"]);
     };
     window.addEventListener("erp:delivery-save-failed", failed);
@@ -101,7 +104,32 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   // default delivery partner is unchanged).
   const assignable: StaffOption[] = [...(staffQ.data ?? []), { id: user.id, fullName: `Me — ${user.fullName}` }];
   const defaultId = (staffQ.data ?? []).find((s) => s.isDefault)?.id ?? null;
-  const tasks = useMemo(() => tasksQ.data ?? [], [tasksQ.data]);
+  // Deliveries recorded from this screen show as done at once and stay so until the server's list
+  // agrees (a refresh that arrives before the background save cannot bring them back as open).
+  const [held, setHeld] = useState<Record<string, DeliveryTask>>({});
+  const tasks = useMemo(
+    () =>
+      (tasksQ.data ?? []).map((t) =>
+        held[t.id] && (t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "OUT_FOR_DELIVERY")
+          ? { ...t, ...held[t.id], lines: held[t.id].lines?.length ? held[t.id].lines : t.lines }
+          : t
+      ),
+    [tasksQ.data, held]
+  );
+  useEffect(() => {
+    const ids = Object.keys(held);
+    if (!ids.length || !tasksQ.data) return;
+    const settled = ids.filter((id) => {
+      const t = tasksQ.data!.find((x) => x.id === id);
+      return t && !(t.status === "PENDING" || t.status === "ASSIGNED" || t.status === "OUT_FOR_DELIVERY");
+    });
+    if (settled.length) setHeld((h) => Object.fromEntries(Object.entries(h).filter(([id]) => !settled.includes(id))));
+  }, [tasksQ.data, held]);
+  useEffect(() => {
+    if (!Object.keys(held).length) return;
+    const t = setTimeout(() => setHeld({}), 120_000);
+    return () => clearTimeout(t);
+  }, [held]);
   const summary = useMemo(() => summarizeDeliveries(tasks), [tasks]);
   const changed = useChangedIds(tasks);
   const m = manifest.data;
@@ -261,7 +289,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         {figure("Delivered", summary.delivered, "DELIVERED", "text-status-success-text")}
         {figure("Partial", summary.partial, "PARTIAL", "text-status-warning-text")}
         {figure("Not delivered", summary.notDelivered, "NOT_DELIVERED", "text-status-danger-text")}
-        <div className="rn-stat">
+        <div className="rn-stat col-span-3 sm:col-span-1">
           <span className="block text-[12px] text-[var(--rn-ink-3)]">Outstanding</span>
           <span className="block mt-1 text-[22px] leading-tight font-semibold tabular-nums text-[var(--rn-accent)]"><Count value={rupees(summary.money.outstanding)} /></span>
           <span className="block text-[11.5px] text-[var(--rn-ink-3)]">{rupees(summary.money.collected)} of {rupees(summary.money.due)} in</span>
@@ -495,8 +523,9 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         task={recordTask}
         currentUserId={user.id}
         onClose={() => setRecordTask(null)}
-        onSaved={(text) => {
-          invalidateErpCache(["delivery", "orders", "custody", "handover", "dashboard"]);
+        onSaved={(text, done) => {
+          // Shown as done now; the lists refresh when the background save is confirmed.
+          if (done) setHeld((h) => ({ ...h, [done.id]: done }));
           setNotice({ tone: "ok", text });
         }}
       />

@@ -1,11 +1,11 @@
 import React from "react";
 
 /**
- * Ravinarayan monogram. An upright "R" drawn with three strokes on a rounded tile, with the small
- * sun from the Ravinarayan identity. Two editions that share the same letterform:
- *   - "standard": deep green tile, cream R, gold sun (ERP / management)
- *   - "delivery": orange tile, white R, cream sun and three speed lines (delivery app)
- * The geometry is the same as the Android launcher and splash icons (108-unit grid).
+ * Ravinarayan brand. Two editions:
+ *   - "standard": the house with a bed and a served dish (owner and managers)
+ *   - "delivery": the scooter rider with the food box (delivery app)
+ * RnMark is the earlier drawn "R" monogram, kept because the Android launcher and splash icons use
+ * the same geometry.
  */
 export type RnBrand = "standard" | "delivery";
 
@@ -36,14 +36,26 @@ export function RnMark({ brand = "standard", color, sun, speed }: { brand?: RnBr
   );
 }
 
+/** The logo pictures: the scooter for the delivery app, the house (bed and food) for everyone else. */
+export const RN_LOGO_SRC: Record<RnBrand, string> = {
+  standard: "/brand/logo-home.png",
+  delivery: "/brand/logo-delivery.png",
+};
+
+/**
+ * The Ravinarayan logo on a white rounded tile: the scooter rider for delivery staff, the house with
+ * a bed and a served dish for the owner and managers.
+ */
 export function RnLogo({ brand = "standard", size = 56, className = "", title = "Ravinarayan", outline = false }: { brand?: RnBrand; size?: number; className?: string; title?: string; outline?: boolean }) {
-  const p = PALETTE[brand];
   return (
-    <svg width={size} height={size} viewBox="0 0 108 108" role="img" aria-label={title} className={className}>
-      <rect width="108" height="108" rx="28" fill={p.tile} />
-      {/* On a background of its own colour (sign-in header), a fine light edge keeps the tile readable. */}
-      {outline && <rect x="1" y="1" width="106" height="106" rx="27" fill="none" stroke="#FFFFFF" strokeOpacity="0.22" strokeWidth="2" />}
-      <RnMark brand={brand} />
-    </svg>
+    <span
+      role="img"
+      aria-label={title}
+      className={`inline-flex items-center justify-center shrink-0 bg-white overflow-hidden ${outline ? "ring-2 ring-white/25" : ""} ${className}`}
+      style={{ width: size, height: size, borderRadius: Math.round(size * 0.26) }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={RN_LOGO_SRC[brand]} alt="" width={Math.round(size * 0.86)} height={Math.round(size * 0.86)} decoding="async" draggable={false} />
+    </span>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
@@ -123,8 +124,8 @@ export function CustomerModal({
       const data = await res.json();
 
       if (!res.ok) {
-        if (data.isDuplicate) {
-          setDuplicateWarning(data.error.replace("POTENTIAL_DUPLICATE: ", ""));
+        if (data.isDuplicate || data.duplicateWarning) {
+          setDuplicateWarning(String(data.error || "").replace("POTENTIAL_DUPLICATE: ", ""));
           inFlight.current = false;
           setSubmitting(false);
           return;
@@ -140,7 +141,7 @@ export function CustomerModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to save customer.");
+      setError(friendlyError(err.message || "Failed to save customer."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);
@@ -196,8 +197,9 @@ export function CustomerModal({
             <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-900">
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                <div className="text-xs">
-                  <strong>Potential Duplicate Phone:</strong> {duplicateWarning}
+                <div className="text-[13px] leading-snug">
+                  <strong className="block">This phone number is already saved</strong>
+                  {duplicateWarning}
                 </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer pt-1 border-t border-amber-200 text-xs font-semibold text-amber-950">
@@ -207,7 +209,7 @@ export function CustomerModal({
                   onChange={(e) => setConfirmDuplicate(e.target.checked)}
                   className="rounded border-amber-400 text-[#1A2E20] focus:ring-[#1A2E20]"
                 />
-                <span>I confirm this is a shared phone household / office contact</span>
+                <span>Add anyway: this person shares the phone (family, office)</span>
               </label>
             </div>
           )}

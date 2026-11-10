@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to list daily closings." },
+      { error: friendlyError(error.message || "Failed to list daily closings.") },
       { status: 400 }
     );
   }
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to process daily closing." },
+      { error: friendlyError(error.message || "Failed to process daily closing.") },
       { status: 400 }
     );
   }

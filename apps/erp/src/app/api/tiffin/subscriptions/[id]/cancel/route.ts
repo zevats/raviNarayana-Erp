@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -34,13 +35,13 @@ export async function POST(
     if (authError) return authError;
 
     if (error.message?.includes("not found")) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+      return NextResponse.json({ success: false, error: friendlyError(error.message) }, { status: 404 });
     }
 
     const isClientValidation = error.message?.includes("Cannot cancel");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to cancel subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to cancel subscription.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

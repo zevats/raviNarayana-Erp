@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect } from "react";
 import { X, User, CreditCard, FileText, CheckCircle2, Clock, AlertCircle, Printer, Plus } from "lucide-react";
 import { TiffinCustomerBalanceSummary, Invoice, FinancialTransaction } from "@/types";
@@ -39,7 +40,7 @@ export function TiffinCustomerBalanceModal({
         setBalance(data.balance);
       })
       .catch((err) => {
-        setError(err.message || "Failed to fetch customer balance.");
+        setError(friendlyError(err.message || "Failed to fetch customer balance."));
       })
       .finally(() => setLoading(false));
   }, [isOpen, customerId]);

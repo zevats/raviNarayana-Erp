@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -31,7 +32,7 @@ export async function GET(
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load meal plan." },
+      { error: friendlyError(error.message || "Failed to load meal plan.") },
       { status: 400 }
     );
   }
@@ -65,7 +66,7 @@ export async function PATCH(
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to update meal plan." },
+      { error: friendlyError(error.message || "Failed to update meal plan.") },
       { status: 400 }
     );
   }

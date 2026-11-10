@@ -288,9 +288,18 @@ export function maskEmail(email: string): string {
 }
 
 /**
+ * Which kind of client a session belongs to. Each user may be signed in once in the app (the
+ * Android app's web view) and once in a browser at the same time; a new sign-in replaces only the
+ * earlier session of the same kind.
+ */
+export function sessionKind(userAgent?: string | null): "app" | "browser" {
+  return /RavinarayanApp|Capacitor|; wv\)/i.test(userAgent || "") ? "app" : "browser";
+}
+
+/**
  * Creates a cryptographically random session token for the client cookie,
  * while storing only a one-way SHA-256 digest at rest in the database.
- * Enforces Single Active Session Per Account across web and mobile.
+ * Enforces one active session per account per kind of client: one in the app and one in a browser.
  */
 export async function createSession(
   staffId: string,
@@ -313,10 +322,14 @@ export async function createSession(
   await db.transaction(async (tx) => {
     if (shouldPreempt) {
       try {
-        const existing = await tx.query<{ token_hash: string; expires_at: string }>(
-          "SELECT token_hash, expires_at FROM sessions WHERE staff_id = ?",
-          [staffId]
-        );
+        // Only the earlier session of the same kind (app or browser) is replaced.
+        const kind = sessionKind(metadata?.userAgent);
+        const existing = (
+          await tx.query<{ token_hash: string; expires_at: string; user_agent: string | null }>(
+            "SELECT token_hash, expires_at, user_agent FROM sessions WHERE staff_id = ?",
+            [staffId]
+          )
+        ).filter((s) => sessionKind(s.user_agent) === kind);
 
         if (existing.length > 0) {
           await Promise.all(
@@ -335,7 +348,7 @@ export async function createSession(
               )
             )
           );
-          await tx.execute("DELETE FROM sessions WHERE staff_id = ?", [staffId]);
+          await tx.execute(`DELETE FROM sessions WHERE staff_id = ? AND token_hash IN (${existing.map(() => "?").join(", ")})`, [staffId, ...existing.map((s) => s.token_hash)]);
           invalidateSessionCache();
         }
       } catch {

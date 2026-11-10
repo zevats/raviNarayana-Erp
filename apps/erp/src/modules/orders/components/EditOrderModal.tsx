@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useEffect, useMemo, useState } from "react";
 import { X, Minus, Plus, AlertCircle, History } from "lucide-react";
 import { UnifiedOrder, TiffinProduct } from "@/types";
@@ -77,7 +78,7 @@ export function EditOrderModal({ order, mode, onClose, onDone }: { order: Unifie
       invalidateErpCache(["orders", "delivery", "dashboard"]);
       onDone(mode === "edit" ? (body.changed ? `Order for ${order.customerName} changed.` : "Nothing was changed.") : `Order for ${order.customerName} cancelled.`);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setBusy(false);
     }

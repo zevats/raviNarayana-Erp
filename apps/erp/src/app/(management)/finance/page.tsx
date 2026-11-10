@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
@@ -190,7 +191,7 @@ export default function FinancePage() {
       }
       return data.summary;
     } catch (err: any) {
-      setActionError(err.message || "Failed to load resident financial statement.");
+      setActionError(friendlyError(err.message || "Failed to load resident financial statement."));
       return null;
     }
   };

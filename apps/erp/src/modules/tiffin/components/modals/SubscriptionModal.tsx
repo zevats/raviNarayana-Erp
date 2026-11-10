@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -64,7 +65,19 @@ export function SubscriptionModal({
 
   // Filter to active customers and products for selection
   const activeCustomers = customers.filter((c) => c.status === "ACTIVE");
-  const activeProducts = products.filter((p) => p.status === "ACTIVE");
+  // Subscriptions are monthly plans from the menu (one monthly price): 1 meal a day or 2 meals a day.
+  const activeProducts = products.filter((p) => p.status === "ACTIVE" && (p.billingUnit === "PER_MONTH" || p.category === "SUBSCRIPTION_PACKAGE"));
+  // How many meals a day the plan is, read from its menu name/code ("Lunch & Dinner", "2 meals",
+  // "two time" … or "1 meal", "lunch only" …). A name that says neither leaves every choice open.
+  const planMeals = (p?: TiffinProduct): 1 | 2 | null => {
+    if (!p) return null;
+    const t = `${p.code || ""} ${p.name} ${p.description || ""}`;
+    if (/BOTH|lunch\s*(&|and|\+|\/|,)\s*dinner|dinner\s*(&|and|\+|\/|,)\s*lunch|\b(2|two)[\s-]*(meals?|times?|time)\b|double/i.test(t)) return 2;
+    if (/\b(1|one)[\s-]*(meals?|times?|time)\b|single|lunch\s*only|dinner\s*only/i.test(t)) return 1;
+    return null;
+  };
+  const twoMealPlan = (p?: TiffinProduct) => planMeals(p) === 2;
+  const oneMealPlan = (p?: TiffinProduct) => planMeals(p) === 1;
 
   const selectedProduct = products.find((p) => p.id === productId);
 
@@ -93,7 +106,7 @@ export function SubscriptionModal({
         setProductId(defaultProd?.id || "");
         setStartDate(todayStr);
         setEndDate("");
-        setMealTypes(defaultProd?.category === "STANDARD_MEAL" ? "BOTH" : "BOTH");
+        setMealTypes(twoMealPlan(defaultProd) ? "BOTH" : "LUNCH");
         setServiceDays("ALL_DAYS");
         setQuantityPerMeal("1");
         setCustomPrice(defaultProd ? String(defaultProd.price) : "");
@@ -124,11 +137,8 @@ export function SubscriptionModal({
     const prod = products.find((p) => p.id === newProdId);
     if (prod && !isEditing) {
       setCustomPrice(String(prod.price));
-      if (prod.code === "TIF-MON-SINGLE") {
-        setMealTypes("LUNCH");
-      } else if (prod.code === "TIF-MON-BOTH" || prod.code === "TIF-DAILY") {
-        setMealTypes("BOTH");
-      }
+      // A 2-meal plan is lunch and dinner; a 1-meal plan is lunch or dinner (lunch first).
+      setMealTypes(twoMealPlan(prod) ? "BOTH" : "LUNCH");
     }
   };
 
@@ -213,7 +223,7 @@ export function SubscriptionModal({
           : `Subscription created successfully for ${data.subscription.customerName || "customer"}.`
       );
     } catch (err: any) {
-      setError(err.message || "Error saving subscription.");
+      setError(friendlyError(err.message || "Error saving subscription."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);
@@ -284,7 +294,7 @@ export function SubscriptionModal({
           {/* Product / Package Selection */}
           <div>
             <label htmlFor="sub-product" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-              Meal Package / Catalog Product <span className="text-red-500">*</span>
+              Monthly plan <span className="text-red-500">*</span>
             </label>
             <AppSelect
               id="sub-product"
@@ -294,10 +304,10 @@ export function SubscriptionModal({
               required
               className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20] disabled:bg-gray-100 disabled:text-gray-500"
             >
-              <option value="">Select meal package...</option>
+              <option value="">Choose a monthly plan…</option>
               {(isEditing ? products : activeProducts).map((p) => (
                 <option key={p.id} value={p.id}>
-                  [{p.code}] {p.name} — {formatINR(p.price)} / {p.billingUnit.toLowerCase().replace("per_", "")} ({p.category})
+                  {p.name} — {formatINR(p.price)} a month{twoMealPlan(p) ? " (1 thali at lunch + 1 at dinner)" : oneMealPlan(p) ? " (1 thali a day)" : ""}
                 </option>
               ))}
             </AppSelect>
@@ -349,10 +359,10 @@ export function SubscriptionModal({
                 onChange={(e) => setMealTypes(e.target.value as SubscriptionMealTypes)}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
               >
-                <option value="BOTH">Lunch & Dinner (Both)</option>
-                <option value="LUNCH">Lunch Only</option>
-                <option value="DINNER">Dinner Only</option>
-                <option value="BREAKFAST">Breakfast Only</option>
+                {(!oneMealPlan(selectedProduct) || mealTypes === "BOTH") && <option value="BOTH">Lunch & dinner</option>}
+                {(!twoMealPlan(selectedProduct) || mealTypes === "LUNCH") && <option value="LUNCH">Lunch</option>}
+                {(!twoMealPlan(selectedProduct) || mealTypes === "DINNER") && <option value="DINNER">Dinner</option>}
+                {mealTypes === "BREAKFAST" && <option value="BREAKFAST">Breakfast (no longer offered)</option>}
               </AppSelect>
             </div>
 
@@ -373,19 +383,17 @@ export function SubscriptionModal({
             </div>
 
             <div>
-              <label htmlFor="sub-qty" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Qty / Meal
-              </label>
-              <input
-                id="sub-qty"
-                type="number"
-                min="1"
-                step="1"
-                value={quantityPerMeal}
-                onChange={(e) => setQuantityPerMeal(e.target.value)}
-                required
-                className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
-              />
+              {/* A plan is one thali per meal: a 2-meal plan is one at lunch and one at dinner. */}
+              <span className="block text-xs font-semibold text-[#1A2E20] mb-1">Thalis</span>
+              <p id="sub-qty" className="w-full px-3 py-2 bg-white/60 border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]">
+                {parseInt(quantityPerMeal, 10) > 1
+                  ? `${quantityPerMeal} a meal (older plan)`
+                  : mealTypes === "BOTH"
+                    ? "1 at lunch + 1 at dinner"
+                    : mealTypes === "DINNER"
+                      ? "1 at dinner"
+                      : "1 at lunch"}
+              </p>
             </div>
           </div>
 

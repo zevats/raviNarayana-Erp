@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -28,7 +29,7 @@ export async function POST(
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to reconcile meal plan production." },
+      { error: friendlyError(error.message || "Failed to reconcile meal plan production.") },
       { status: 400 }
     );
   }

@@ -61,35 +61,30 @@ export function BikeGraphic({ tone = "auto", width = 96 }: { tone?: Tone; width?
 
 
 /**
- * Manager ERP sections other than Orders and Delivery: a house being built brick by brick (the
- * bricks are laid row by row, then the roof and door close it), looping. Which graphic shows is
- * decided by CSS (styles/glass.css): the house inside the manager shell's green sections, the
- * scooter everywhere else, so the delivery app and Orders/Delivery keep the scooter.
+ * Manager ERP sections other than Orders and Delivery: a small house inside a turning ring, its
+ * window glowing softly (a quiet, steady loader). Which graphic shows is decided by CSS
+ * (styles/glass.css): the house inside the manager shell's green sections, the scooter everywhere
+ * else, so the delivery app and Orders/Delivery keep the scooter.
  */
 export function HouseGraphic({ width = 96 }: { width?: number }) {
-  const rows = [0, 1, 2, 3];
   return (
     <svg width={width} height={(width * 64) / 112} viewBox="0 0 112 64" aria-hidden="true" className="rn-house overflow-visible">
-      <line x1="18" y1="61" x2="94" y2="61" strokeWidth="2.4" strokeLinecap="round" style={{ stroke: "#D8CFC0" }} />
-      {rows.flatMap((r) => {
-        // Staggered courses: four bricks, then three centred over the joints.
-        const count = r % 2 ? 3 : 4;
-        const start = r % 2 ? 37.25 : 31;
-        return Array.from({ length: count }, (_, c) => (
-          <rect
-            key={`${r}-${c}`}
-            className="rn-house-brick"
-            style={{ animationDelay: `${(r * 4 + c) * 90}ms`, fill: "var(--rn-house-wall, #8E9F89)" }}
-            x={start + c * 12.5}
-            y={52 - r * 8}
-            width="11.5"
-            height="6.5"
-            rx="1.4"
-          />
-        ));
-      })}
-      <path className="rn-house-roof" d="M26 30 L56 9 L86 30" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ fill: "none", stroke: "var(--rn-house-roof, #263B2D)" }} />
-      <rect className="rn-house-door" x="51.5" y="47" width="9" height="13" rx="1.6" style={{ fill: "var(--rn-house-roof, #263B2D)" }} />
+      {/* ring and the turning arc */}
+      <circle cx="56" cy="32" r="27" strokeWidth="3.2" style={{ fill: "none", stroke: "var(--rn-house-ring, rgba(26,46,32,0.12))" }} />
+      <circle
+        className="rn-house-arc"
+        cx="56"
+        cy="32"
+        r="27"
+        strokeWidth="3.2"
+        strokeLinecap="round"
+        strokeDasharray="42 128"
+        style={{ fill: "none", stroke: "var(--rn-house-roof, #263B2D)", transformOrigin: "56px 32px" }}
+      />
+      {/* the house */}
+      <path d="M43 31 L56 20 L69 31" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" style={{ fill: "none", stroke: "var(--rn-house-roof, #263B2D)" }} />
+      <path d="M46.5 29.5 V43 a1.5 1.5 0 0 0 1.5 1.5 H64 a1.5 1.5 0 0 0 1.5 -1.5 V29.5" strokeWidth="3" strokeLinejoin="round" style={{ fill: "none", stroke: "var(--rn-house-wall, #8E9F89)" }} />
+      <rect className="rn-house-window" x="53" y="33" width="6" height="6" rx="1.2" style={{ fill: "var(--rn-house-light, #E7A23B)" }} />
     </svg>
   );
 }

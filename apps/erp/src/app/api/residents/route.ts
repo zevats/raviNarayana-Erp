@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
 
-    return NextResponse.json({ error: error.message || "Failed to load residents." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to load residents.") }, { status: 400 });
   }
 }
 
@@ -53,6 +54,6 @@ export async function POST(request: NextRequest) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
 
-    return NextResponse.json({ error: error.message || "Failed to register resident." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to register resident.") }, { status: 400 });
   }
 }

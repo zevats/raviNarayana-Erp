@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useRef } from "react";
 import { X, FileText, CheckCircle2, AlertCircle, AlertTriangle, ShieldCheck, Calendar, Info } from "lucide-react";
@@ -61,7 +62,7 @@ export function GenerateTiffinInvoicesModal({
       onSuccess(data.result);
       onClose();
     } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
+      setError(friendlyError(err.message || "An unexpected error occurred."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

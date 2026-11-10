@@ -1,5 +1,7 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -400,7 +402,7 @@ function AccountSheet({ accountKey, onClose }: { accountKey: string | null; onCl
   const canManageDelivery = useHasPermission("delivery.manage");
   const [tab, setTab] = useState<"balances" | "statement">("balances");
   const [paying, setPaying] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useTimedMessage<string>();
   useEffect(() => {
     setTab("balances");
     setNotice(null);
@@ -508,7 +510,7 @@ function BalanceRow({ line: l, canReview, onReviewed }: { line: ReceivableLine; 
       if (!res.ok) throw new Error(data.error || "Could not close the review.");
       onReviewed("Review closed. The balance stays outstanding until it is paid.");
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       inFlight.current = false;
       setBusy(false);

@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveUserFromRequest, unauthorizedResponse } from "@/server/authorization/authorize";
 import { savePushToken } from "@/server/notifications/pushService";
@@ -13,6 +14,6 @@ export async function POST(request: NextRequest) {
     const result = await savePushToken(user, String(body.token || ""), String(body.platform || "android"));
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
-    return NextResponse.json({ error: error?.message || "Could not register this phone for alerts." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error?.message || "Could not register this phone for alerts.") }, { status: 400 });
   }
 }

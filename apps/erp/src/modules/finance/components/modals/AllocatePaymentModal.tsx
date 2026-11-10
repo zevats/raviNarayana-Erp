@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, AlertCircle, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -72,7 +73,7 @@ export function AllocatePaymentModal({
         setAmount("");
       }
     } catch (err: any) {
-      setError(err.message || "Failed to load unallocated payments.");
+      setError(friendlyError(err.message || "Failed to load unallocated payments."));
     } finally {
       setLoadingPayments(false);
     }
@@ -138,7 +139,7 @@ export function AllocatePaymentModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to allocate payment.");
+      setError(friendlyError(err.message || "Failed to allocate payment."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

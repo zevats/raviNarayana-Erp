@@ -1,5 +1,8 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
+import { businessMeal } from "@/lib/businessDate";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect } from "react";
 import { X, DollarSign, Plus, Minus, User, Phone, AlertTriangle, CheckCircle2, ShoppingCart, CreditCard, Banknote } from "lucide-react";
@@ -18,13 +21,13 @@ export function RecordWalkInSaleModal({
   isOpen,
   onClose,
   serviceDate,
-  defaultMealType = "LUNCH",
+  defaultMealType,
   onSuccess,
 }: RecordWalkInSaleModalProps) {
   const [products, setProducts] = useState<TiffinProduct[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
-  const [mealType, setMealType] = useState<MealType>(defaultMealType);
+  const [mealType, setMealType] = useState<MealType>(() => defaultMealType ?? businessMeal());
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
   const [unitPrice, setUnitPrice] = useState<number>(100);
@@ -35,14 +38,14 @@ export function RecordWalkInSaleModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useTimedMessage<string>();
 
   useEffect(() => {
     if (isOpen) {
       setError(null);
       setSuccessMsg(null);
       setSubmitting(false);
-      setMealType(defaultMealType);
+      setMealType(defaultMealType ?? businessMeal());
       setQuantity(1);
       setBuyerName("");
       setBuyerPhone("");
@@ -125,7 +128,7 @@ export function RecordWalkInSaleModal({
         onClose();
       }, 1000);
     } catch (err: any) {
-      setError(err.message || "Failed to submit sale.");
+      setError(friendlyError(err.message || "Failed to submit sale."));
     } finally {
       setSubmitting(false);
     }
@@ -176,8 +179,8 @@ export function RecordWalkInSaleModal({
             <label className="block text-xs font-bold text-[#1A2E20] uppercase tracking-wider mb-1">
               Service / Meal
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(["BREAKFAST", "LUNCH", "DINNER"] as MealType[]).map((m) => (
+            <div className="grid grid-cols-2 gap-2">
+              {(["LUNCH", "DINNER"] as MealType[]).map((m) => (
                 <button
                   type="button"
                   key={m}

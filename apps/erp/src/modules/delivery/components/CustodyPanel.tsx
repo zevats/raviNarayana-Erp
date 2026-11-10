@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
+import React, { useEffect, useRef, useState } from "react";
 import { IndianRupee, ShieldCheck, AlertTriangle, X, ChevronRight } from "lucide-react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
@@ -99,7 +101,7 @@ export function MyCustody({ staffId }: { staffId: string }) {
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [message, setMessage] = useTimedMessage<{ ok: boolean; text: string }>();
   const inFlight = useRef(false);
 
   const c = q.data?.custody;
@@ -242,6 +244,12 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
     if (differs && reason.trim().length < 5) return setError("Explain the difference (at least 5 characters).");
     inFlight.current = true;
     setBusy(true);
+    // Instant: the dialog closes with the confirmation now; the request goes on in the background
+    // and a refusal is reported on the custody screen ("erp:handover-accept-failed").
+    const optimistic = differs
+      ? `${handover.driverName}: received ${inr(cashN)} cash and ${inr(upiN)} UPI; difference recorded.`
+      : `${handover.driverName}: handover accepted (${inr(cashN)} cash, ${inr(upiN)} UPI).`;
+    onClose(optimistic);
     try {
       const res = await fetch(`/api/delivery/handover/${handover.id}/accept`, {
         method: "POST",
@@ -258,13 +266,9 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Could not record the verification.");
       invalidateErpCache(["custody", "handover", "finance", "dashboard"]);
-      onClose(
-        data.handover.status === "DISCREPANCY_FLAGGED"
-          ? `${handover.driverName}: received ${inr(cashN)} cash and ${inr(upiN)} UPI; discrepancy recorded.`
-          : `${handover.driverName}: handover accepted (${inr(cashN)} cash, ${inr(upiN)} UPI).`
-      );
     } catch (err: any) {
-      setError(err.message);
+      window.dispatchEvent(new CustomEvent("erp:handover-accept-failed", { detail: { text: `${handover.driverName}: not accepted. ${err.message}` } }));
+      invalidateErpCache(["custody", "handover"]);
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -414,7 +418,13 @@ function StaffOverview() {
   const [verify, setVerify] = useState<DriverCashHandover | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [writeOff, setWriteOff] = useState<StaffCustodyRow | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useTimedMessage<string>();
+  // A verification that the server refused after the dialog closed (see VerifyHandover).
+  useEffect(() => {
+    const failed = (e: Event) => setMessage((e as CustomEvent).detail?.text || "A handover could not be accepted.");
+    window.addEventListener("erp:handover-accept-failed", failed);
+    return () => window.removeEventListener("erp:handover-accept-failed", failed);
+  }, [setMessage]);
   const rows = q.data?.staff ?? [];
   const t = q.data?.totals;
   const pending = pq.data ?? [];
@@ -567,7 +577,7 @@ function WriteOffShortage({ row, onClose }: { row: StaffCustodyRow; onClose: (ms
       invalidateErpCache(["custody", "handover"]);
       onClose(`${inr(n)} of ${row.staffName}'s shortage written off.`);
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       inFlight.current = false;
       setBusy(false);

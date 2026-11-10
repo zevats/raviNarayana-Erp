@@ -218,9 +218,15 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
          FROM financial_transactions ft
          LEFT JOIN residents r ON r.id = ft.resident_id
          LEFT JOIN tiffin_customers c ON c.id = ft.customer_id
-         WHERE ft.status = 'POSTED' AND ft.transaction_type <> 'REVERSAL'
+         WHERE ft.status = 'POSTED' AND ft.transaction_type <> 'REVERSAL' ${
+           division === "PG"
+             ? "AND (ft.transaction_type IN ('RENT_PAYMENT', 'RENT_CHARGE', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND') OR (ft.transaction_type = 'EXPENSE' AND COALESCE(ft.category, '') NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')))"
+             : division === "TIFFIN"
+             ? "AND (ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (ft.transaction_type = 'EXPENSE' AND ft.category IN ('GROCERY', 'KITCHEN_SUPPLIES')))"
+             : ""
+         }
          ORDER BY ft.created_at DESC
-         LIMIT 6`
+         LIMIT 12`
       );
       return rows.map((r) => ({
         id: r.id, date: r.transaction_date, type: r.transaction_type, category: r.category, amount: n(r.amount),

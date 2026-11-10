@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import { resolveUserFromRequest, unauthorizedResponse, handleAuthorizationError } from "@/server/authorization/authorize";
@@ -19,6 +20,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (authError) return authError;
     const dbError = databaseErrorResponse("/api/orders/[id]/cancel", error);
     if (dbError) return dbError;
-    return NextResponse.json({ error: error.message || "Could not cancel the order." }, { status: error.statusCode === 409 ? 409 : 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Could not cancel the order.") }, { status: error.statusCode === 409 ? 409 : 400 });
   }
 }

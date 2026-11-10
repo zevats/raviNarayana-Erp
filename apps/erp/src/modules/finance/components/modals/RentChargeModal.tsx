@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, Receipt, AlertCircle } from "lucide-react";
@@ -97,7 +98,7 @@ export function RentChargeModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "An error occurred while issuing rent charge.");
+      setError(friendlyError(err.message || "An error occurred while issuing rent charge."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

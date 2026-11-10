@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useRef } from "react";
 import { X, ShieldAlert, AlertCircle } from "lucide-react";
 import { FinancialTransaction } from "@/types";
@@ -56,7 +57,7 @@ export function ReversalModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "An error occurred while reversing transaction.");
+      setError(friendlyError(err.message || "An error occurred while reversing transaction."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

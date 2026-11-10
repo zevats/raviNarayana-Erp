@@ -1,5 +1,7 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Mail, KeyRound, LogOut, ChevronRight, X, Eye, EyeOff, Check, Smartphone, Monitor, CalendarDays, BadgeCheck, Truck, Banknote, Clock, WifiOff } from "lucide-react";
 import type { AuthenticatedUser, MyAccount } from "@/types";
@@ -181,7 +183,7 @@ function useResend(requestId: string | null, setError: (e: string | null) => voi
       setWait(60);
       setSentAgain(true);
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       setSending(false);
     }
@@ -239,7 +241,7 @@ function PasswordSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () 
       setStep("code");
       r.setWait(60);
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       setBusy(false);
     }
@@ -252,7 +254,7 @@ function PasswordSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () 
       const res = await post<{ otherDevicesSignedOut: number }>("/api/account/password/confirm", { requestId: request.requestId, code, newPassword: next });
       finished(res.otherDevicesSignedOut);
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
       if (/Start again/.test(e.message)) setStep("details");
     } finally {
       setBusy(false);
@@ -333,7 +335,7 @@ function EmailSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () => 
       setStep("code");
       r.setWait(60);
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       setBusy(false);
     }
@@ -347,7 +349,7 @@ function EmailSheet({ me, onClose, onDone, t }: { me: MyAccount; onClose: () => 
       onDone(`Email changed to ${res.email}. Sign-in codes go there from now on.`);
       onClose();
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
       if (/Start again/.test(e.message)) setStep("details");
     } finally {
       setBusy(false);
@@ -426,7 +428,7 @@ function DevicesCard({ me, onDone }: { me: MyAccount; onDone: (msg: string) => v
       setConfirming(false);
       onDone(r.signedOut > 0 ? `${r.signedOut} other ${r.signedOut === 1 ? "device was" : "devices were"} signed out.` : "No other device was signed in.");
     } catch (e: any) {
-      setError(e.message);
+      setError(friendlyError(e.message));
     } finally {
       setBusy(false);
     }
@@ -480,7 +482,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
     return requestJson<MyAccount>("/api/account");
   }, { ttl: 30000, tags: ["account", "delivery", "custody"] });
   const [sheet, setSheet] = useState<null | "password" | "email">(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useTimedMessage<string>();
   const [signingOut, setSigningOut] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const fill = useFillHeight<HTMLDivElement>();

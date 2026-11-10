@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -38,7 +39,7 @@ export async function GET(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load product." },
+      { error: friendlyError(error.message || "Failed to load product.") },
       { status: 400 }
     );
   }
@@ -56,7 +57,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     if (authError) return authError;
     const dbError = databaseErrorResponse("/api/tiffin/products/[id]", error);
     if (dbError) return dbError;
-    return NextResponse.json({ error: error.message || "Failed to delete the menu item." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to delete the menu item.") }, { status: 400 });
   }
 }
 
@@ -81,7 +82,7 @@ export async function PATCH(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to update product." },
+      { error: friendlyError(error.message || "Failed to update product.") },
       { status: 400 }
     );
   }

@@ -197,7 +197,7 @@ async function runTask68Tests() {
   assert(dashContent.includes('hasPermission(user?.role, "finance.read")'), "Dashboard gates money figures by role");
   assert(dashContent.includes('lg:hidden') && dashContent.includes("StatTile"), "Dashboard renders its own mobile greeting and tiles");
   assert(!dashContent.includes("ACCOUNTANT"), "Dashboard has no branch for the retired ACCOUNTANT role");
-  assert(dashContent.includes("activeDivision") && dashContent.includes('(["COMBINED", "PG", "TIFFIN"] as const)'), "Dashboard maintains 3-way business division filter");
+  assert(dashContent.includes("activeDivision") && dashContent.includes('["COMBINED", "PG", "TIFFIN"]') && dashContent.includes('role="radiogroup"'), "Dashboard maintains 3-way business division filter");
 
   // ============================================================================
   // TEST SUITE 5: Responsive Financial Card Layouts (Overflow Prevention)

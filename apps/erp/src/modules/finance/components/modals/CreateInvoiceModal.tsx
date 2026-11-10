@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, FileText, Plus, Trash2, AlertCircle, Info } from "lucide-react";
@@ -205,7 +206,7 @@ export function CreateInvoiceModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to create invoice.");
+      setError(friendlyError(err.message || "Failed to create invoice."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

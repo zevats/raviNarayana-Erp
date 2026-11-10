@@ -1241,6 +1241,8 @@ export interface CreateOrderInput {
   paymentStatus?: "PAID" | "PENDING";
   notes?: string;
   idempotencyKey?: string;
+  /** Delivery for a monthly-plan customer: the plan's thali for the meal is free. */
+  subscriptionId?: string;
 }
 
 export interface ItemReconciliationRecord {

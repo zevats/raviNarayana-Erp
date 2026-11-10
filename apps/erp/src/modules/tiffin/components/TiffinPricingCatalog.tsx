@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
@@ -53,7 +54,7 @@ export function TiffinPricingCatalog() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   // Feedback notifications
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [feedback, setFeedback] = useTimedMessage<{ type: "success" | "error"; message: string }>();
 
   const showFeedback = (type: "success" | "error", message: string) => {
     setFeedback({ type, message });

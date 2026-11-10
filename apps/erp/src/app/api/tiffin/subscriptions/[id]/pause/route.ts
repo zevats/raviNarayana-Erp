@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -39,7 +40,7 @@ export async function POST(
     if (dbError) return dbError;
 
     if (error.message?.includes("not found")) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+      return NextResponse.json({ success: false, error: friendlyError(error.message) }, { status: 404 });
     }
 
     const isClientValidation =
@@ -48,7 +49,7 @@ export async function POST(
       error.message?.includes("earlier than");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to pause subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to pause subscription.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
@@ -162,7 +163,7 @@ export function ReceivePaymentDialog({
       if (unsure) {
         setError("No clear answer from the server, so this payment may already be recorded. Press Record again without changing anything: it will not be recorded twice.");
       } else {
-        setError(e.message);
+        setError(friendlyError(e.message));
         setStep("enter");
       }
     } finally {

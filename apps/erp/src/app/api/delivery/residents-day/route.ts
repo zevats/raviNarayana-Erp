@@ -1,3 +1,4 @@
+import { businessMeal } from "@/lib/businessDate";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveUserFromRequest, unauthorizedResponse } from "@/server/authorization/authorize";
 import { listResidentMealDelivery, setResidentRoomDelivery, setResidentDaySkip } from "@/server/delivery/deliveryOps";
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest) {
     const listing = await listResidentMealDelivery(
       user,
       url.searchParams.get("serviceDate") || getBusinessDateString(),
-      (url.searchParams.get("mealType") as MealType) || "LUNCH"
+      (url.searchParams.get("mealType") as MealType) || businessMeal()
     );
     return NextResponse.json(listing);
   } catch (error: any) {

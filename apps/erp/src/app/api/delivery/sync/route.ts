@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to sync offline delivery actions." },
+      { error: friendlyError(error.message || "Failed to sync offline delivery actions.") },
       { status: 400 }
     );
   }

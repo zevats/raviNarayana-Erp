@@ -1,5 +1,7 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { businessMeal } from "@/lib/businessDate";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback } from "react";
 import {
@@ -41,7 +43,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
   const [editingRecipe, setEditingRecipe] = useState<KitchenRecipe | null>(null);
   const [formName, setFormName] = useState<string>("");
   const [formDescription, setFormDescription] = useState<string>("");
-  const [formMealType, setFormMealType] = useState<MealType | "">("LUNCH");
+  const [formMealType, setFormMealType] = useState<MealType | "">(() => businessMeal());
   const [formYieldServings, setFormYieldServings] = useState<number>(1);
   const [formIngredients, setFormIngredients] = useState<
     Array<{
@@ -80,7 +82,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
         setExpandedRecipeIds(new Set([recData.recipes[0].id]));
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -214,7 +216,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
       setIsModalOpen(false);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setSubmitting(false);
     }
@@ -248,7 +250,6 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
             className="bg-[#1A2E20] border border-[#8E9F89]/30 rounded-lg px-3 py-1.5 text-xs text-[#FAF8F5] focus:outline-none focus:border-[#B58A57]"
           >
             <option value="ALL">All Meal Types</option>
-            <option value="BREAKFAST">Breakfast</option>
             <option value="LUNCH">Lunch</option>
             <option value="DINNER">Dinner</option>
           </AppSelect>
@@ -279,7 +280,7 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
             <Utensils className="w-8 h-8 text-[#8E9F89]/40 mx-auto mb-2" />
             <p className="text-sm">No recipes defined yet.</p>
             <p className="text-xs text-[#8E9F89]/60 mt-1">
-              Add standard recipes for Breakfast, Lunch, and Dinner to automate production consumption tracking.
+              Add standard recipes for Lunch and Dinner to automate production consumption tracking.
             </p>
           </div>
         ) : (
@@ -431,7 +432,6 @@ export default function RecipeManagerView({ onNotify }: RecipeManagerViewProps) 
                     className="w-full bg-[#263B2D] border border-[#8E9F89]/30 rounded p-2 text-[#FAF8F5] focus:border-[#B58A57]"
                   >
                     <option value="">General (All)</option>
-                    <option value="BREAKFAST">Breakfast</option>
                     <option value="LUNCH">Lunch</option>
                     <option value="DINNER">Dinner</option>
                   </AppSelect>

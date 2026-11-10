@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load orders." },
+      { error: friendlyError(error.message || "Failed to load orders.") },
       { status: 400 }
     );
   }
@@ -68,6 +69,8 @@ export async function POST(request: NextRequest) {
         paymentStatus: body.paymentStatus,
         notes: body.notes,
         idempotencyKey: body.idempotencyKey,
+        // A monthly-plan customer's order: the plan's thali for the meal is free.
+        subscriptionId: typeof body.subscriptionId === "string" ? body.subscriptionId : undefined,
       },
       clientIp
     );
@@ -80,7 +83,7 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to create order." },
+      { error: friendlyError(error.message || "Failed to create order.") },
       { status: 400 }
     );
   }

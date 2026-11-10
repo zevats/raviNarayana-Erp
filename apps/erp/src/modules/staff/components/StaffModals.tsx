@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState } from "react";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
@@ -77,7 +78,7 @@ export function CreateStaffModal({
       onCreated();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -245,7 +246,7 @@ export function EditStaffModal({
       onUpdated();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -363,7 +364,7 @@ export function ChangeRoleModal({
       onRoleChanged();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -498,7 +499,7 @@ export function DeactivateStaffModal({
       onStatusChanged();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -617,7 +618,7 @@ export function DirectResetModal({
       onReset();
       onClose();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -716,7 +717,7 @@ export function StaffHistoryModal({
             setError(data.error || "Failed to load history.");
           }
         })
-        .catch((err) => setError(err.message))
+        .catch((err) => setError(friendlyError(err.message)))
         .finally(() => setLoading(false));
     }
   }, [isOpen, staff]);

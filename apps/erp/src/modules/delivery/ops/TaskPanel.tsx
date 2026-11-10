@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useRef, useState } from "react";
 import { Phone, RotateCcw, UserRoundCog, Ban, CheckCheck, IndianRupee, ClipboardCheck } from "lucide-react";
 import type { DeliveryTask, DeliveryTaskEvent } from "@/types";
@@ -66,7 +67,7 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<"CASH" | "UPI">("CASH");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [msg, setMsg] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
   // One payment identity per opened "Collect balance": a double click or a retry after a failed
   // request sends the same key, so the server records the payment once. Cleared after success.
   const collectKey = useRef<string | null>(null);

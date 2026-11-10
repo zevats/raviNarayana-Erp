@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useEffect, useState } from "react";
 import { History, X, Clock, CheckCircle2, AlertTriangle, Truck, User, RotateCcw } from "lucide-react";
 import { DeliveryTask, DeliveryTaskEvent } from "@/types";
@@ -33,7 +34,7 @@ export function TaskTimelineModal({
         if (!res.ok) throw new Error(data.error || "Failed to load task events");
         setEvents(data.events || []);
       } catch (err: any) {
-        setError(err.message || "Failed to load audit timeline");
+        setError(friendlyError(err.message || "Failed to load audit timeline"));
       } finally {
         setLoading(false);
       }

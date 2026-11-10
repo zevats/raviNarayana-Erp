@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load document." },
+      { error: friendlyError(error.message || "Failed to load document.") },
       { status: 400 }
     );
   }
@@ -53,7 +54,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to archive document." },
+      { error: friendlyError(error.message || "Failed to archive document.") },
       { status: 400 }
     );
   }

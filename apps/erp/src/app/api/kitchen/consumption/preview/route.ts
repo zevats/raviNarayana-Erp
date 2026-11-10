@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -25,6 +26,6 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const authResp = handleAuthorizationError(error);
     if (authResp) return authResp;
-    return NextResponse.json({ error: error.message || "Failed to preview consumption" }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to preview consumption") }, { status: 400 });
   }
 }

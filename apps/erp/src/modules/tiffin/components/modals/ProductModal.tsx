@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, UtensilsCrossed, AlertCircle } from "lucide-react";
@@ -117,7 +118,7 @@ export function ProductModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to save product.");
+      setError(friendlyError(err.message || "Failed to save product."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

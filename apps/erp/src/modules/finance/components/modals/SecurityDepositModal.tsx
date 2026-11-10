@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, Shield, Wallet, AlertCircle, Info } from "lucide-react";
@@ -92,7 +93,7 @@ export function SecurityDepositModal({
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "An error occurred while saving security deposit.");
+      setError(friendlyError(err.message || "An error occurred while saving security deposit."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

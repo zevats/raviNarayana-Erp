@@ -602,7 +602,7 @@ export async function syncSubscriptionDeliveriesAfterEdit(
     const changes: string[] = [];
     if (line && Number(line.quantity) !== quantity) {
       await tx.execute("UPDATE delivery_task_items SET quantity = ?, updated_at = ? WHERE task_id = ? AND line_no = 1", [quantity, at, row.id]);
-      changes.push(`${quantity} box${quantity === 1 ? "" : "es"}`);
+      changes.push(`${quantity} thali${quantity === 1 ? "" : "s"}`);
     }
     if ((row.delivery_address || "") !== (sub.delivery_address || "")) {
       await tx.execute("UPDATE delivery_tasks SET delivery_address = ?, updated_at = ? WHERE id = ?", [sub.delivery_address, at, row.id]);
@@ -719,7 +719,7 @@ export async function setSubscriptionDayOverride(
   const action = input.action;
   if (action !== "SKIP" && action !== "EXTRA" && action !== "CLEAR") throw new Error("Choose skip, extra or clear.");
   const extra = Number(input.quantity);
-  if (action === "EXTRA" && (!Number.isInteger(extra) || extra < 1 || extra > 20)) throw new Error("Extra boxes must be a whole number from 1 to 20.");
+  if (action === "EXTRA" && (!Number.isInteger(extra) || extra < 1 || extra > 20)) throw new Error("Extra thalis must be a whole number from 1 to 20.");
   const past = isPastCutoff(serviceDate, mealType, now);
   const reason = input.reason?.trim() || null;
   if (past && (!reason || reason.length < 3)) {

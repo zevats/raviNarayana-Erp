@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
     console.error("[API_TIFFIN_PRODUCTS_GET_ERROR]", error);
     const statusCode = error.statusCode || 500;
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to load products." },
+      { success: false, error: friendlyError(error.message || "Failed to load products.") },
       { status: statusCode }
     );
   }
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
       error.message?.includes("already exists");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to create product." },
+      { success: false, error: friendlyError(error.message || "Failed to create product.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

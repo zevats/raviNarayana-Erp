@@ -39,6 +39,7 @@ export function middleware(request: NextRequest) {
     pathname === "/favicon.ico" ||
     pathname === "/logo.png" ||
     pathname.startsWith("/icons/") ||
+    pathname.startsWith("/brand/") ||
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password") ||
     pathname === "/download" ||

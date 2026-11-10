@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import {
@@ -62,7 +63,7 @@ export function TiffinCustomerDirectory() {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   // Feedback notifications
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [feedback, setFeedback] = useTimedMessage<{ type: "success" | "error"; message: string }>();
 
   const showFeedback = (type: "success" | "error", message: string) => {
     setFeedback({ type, message });
@@ -422,7 +423,43 @@ export function TiffinCustomerDirectory() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* Phones: one line per customer (name, code, phone, what they owe, status); a tap opens them. */}
+          <ul className="sm:hidden divide-y divide-[var(--rn-line)]" aria-label="Customers">
+            {paginatedCustomers.map((customer) => {
+              const due = customer.balance?.due;
+              const active = customer.status === "ACTIVE";
+              return (
+                <li key={customer.id}>
+                  <button type="button" onClick={() => handleViewDetail(customer)} className="w-full min-h-[64px] px-4 py-3 flex items-center gap-3 text-left active:bg-[#FAF8F5]">
+                    <span className="w-10 h-10 rounded-full bg-[#F3EADD] text-[#8A6436] flex items-center justify-center font-semibold text-sm shrink-0">{initialsOf(customer.fullName)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-[14.5px] text-[#1A2E20] truncate">{customer.fullName}</span>
+                        {!active && <span className="shrink-0 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#EEECE8] text-[#6E6A63]">Inactive</span>}
+                      </span>
+                      <span className="block text-[12.5px] text-[#5A6C5E] truncate tabular-nums">
+                        {customer.customerCode ? `${customer.customerCode} · ` : ""}
+                        {customer.phone}
+                      </span>
+                    </span>
+                    <span className="text-right shrink-0">
+                      {due === undefined || due === null ? (
+                        <span className="text-[#9AA59C]">—</span>
+                      ) : due > 0 ? (
+                        <span className="block font-semibold tabular-nums text-[#B4440F] text-[14px]">{formatINR(due)}</span>
+                      ) : due < 0 ? (
+                        <span className="block font-semibold tabular-nums text-[#2F6B24] text-[13px]">{formatINR(-due)} ahead</span>
+                      ) : (
+                        <span className="block text-[12.5px] text-[#7A8A7C]">Settled</span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full table-fixed text-left border-collapse">
               <colgroup>
                 <col className="w-[30%]" />
@@ -522,6 +559,7 @@ export function TiffinCustomerDirectory() {
               </tbody>
             </table>
           </div>
+          </>
         )}
 
         {/* Pagination controls */}

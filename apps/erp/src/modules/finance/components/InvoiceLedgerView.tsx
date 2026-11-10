@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -145,7 +146,7 @@ export function InvoiceLedgerView({
       fetchInvoices();
       if (onRefreshParentFinance) onRefreshParentFinance();
     } catch (err: any) {
-      setError(err.message || "Failed to issue invoice.");
+      setError(friendlyError(err.message || "Failed to issue invoice."));
     }
   };
 
@@ -172,7 +173,7 @@ export function InvoiceLedgerView({
       fetchInvoices();
       if (onRefreshParentFinance) onRefreshParentFinance();
     } catch (err: any) {
-      setError(err.message || "Failed to cancel invoice.");
+      setError(friendlyError(err.message || "Failed to cancel invoice."));
     } finally {
       setCancelling(false);
     }

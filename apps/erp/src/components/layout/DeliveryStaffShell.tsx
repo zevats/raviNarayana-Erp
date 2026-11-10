@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { CookingPot, Banknote, History } from "lucide-react";
 import type { AuthenticatedUser } from "@/types";
 import { UserAvatar } from "@/components/brand/BrandMark";
+import { RnLogo } from "@/components/brand/RnLogo";
 import { ProfileMenu } from "./ProfileMenu";
 
 type View = "stops" | "cash" | "history";
@@ -99,6 +100,7 @@ export function DeliveryStaffShell({
         >
           <div className="mx-auto max-w-[1180px] flex items-center gap-4">
             <button type="button" onClick={() => open("stops")} className="flex items-center gap-2.5 shrink-0" aria-label="My stops">
+              <RnLogo brand="delivery" size={36} title="" className="shadow-[0_2px_8px_rgba(31,35,32,0.12)]" />
               <span className="text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320]">Ravinarayan</span>
             </button>
 

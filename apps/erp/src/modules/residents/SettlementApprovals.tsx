@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState } from "react";
 import { ShieldCheck, AlertCircle } from "lucide-react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -60,7 +61,7 @@ export function SettlementApprovals({ onDecided }: { onDecided: () => void }) {
       await q.refetch();
       onDecided();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setBusy(null);
     }

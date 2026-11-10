@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -28,7 +29,7 @@ const when = (iso: string | null) =>
 export function PayLaterPanel({ customerId, compact = false }: { customerId: string; compact?: boolean }) {
   const [status, setStatus] = useState<PayLaterStatus | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "unavailable" | "error">("loading");
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useTimedMessage<string>();
   const [confirm, setConfirm] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);

@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -35,7 +36,7 @@ export async function GET(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to load customer balance." },
+      { success: false, error: friendlyError(error.message || "Failed to load customer balance.") },
       { status: 400 }
     );
   }

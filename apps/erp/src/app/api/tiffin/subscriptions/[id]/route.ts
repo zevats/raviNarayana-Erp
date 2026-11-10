@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -37,7 +38,7 @@ export async function GET(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to retrieve subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to retrieve subscription.") },
       { status: error.statusCode || 500 }
     );
   }
@@ -72,7 +73,7 @@ export async function PATCH(
     if (dbError) return dbError;
 
     if (error.message?.includes("not found")) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+      return NextResponse.json({ success: false, error: friendlyError(error.message) }, { status: 404 });
     }
 
     const isClientValidation =
@@ -82,7 +83,7 @@ export async function PATCH(
       error.message?.includes("characters long");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to update subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to update subscription.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

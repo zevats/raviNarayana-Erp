@@ -1,8 +1,10 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState } from "react";
 import Link from "next/link";
-import { Banknote, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { DriverCashHandover } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 
@@ -10,7 +12,7 @@ const rupees = (n: number) => `₹${Math.round(n || 0).toLocaleString("en-IN")}`
 
 /**
  * Owner / Manager portal: when a delivery employee hands over cash, a pop-up asks to accept it.
- * Accept records exactly what was handed over; if the count is different, "Count differs" opens the
+ * Accept records exactly what was handed over; if the count is different, "Amount is different" opens the
  * full verification (Delivery → Custody), where a different amount and its reason are entered.
  * "Later" hides that handover for this visit; it stays in the custody list until verified.
  * Live updates refresh the list at once (tag "handover"); polling is the fallback.
@@ -30,32 +32,35 @@ export function HandoverAlert() {
   const [later, setLater] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<string | null>(null);
+  const [done, setDone] = useTimedMessage<string>();
 
   const open = (q.data ?? []).filter((h) => h.status === "DECLARED" && !later.includes(h.id));
   const h = open[0];
   if (!h && !done) return null;
 
-  const accept = async () => {
+  // Accept is instant: the pop-up closes and the confirmation shows at once; the request goes on in
+  // the background. If it is refused, the pop-up comes back with the reason.
+  const accept = () => {
     if (!h || busy) return;
-    setBusy(true);
+    const target = h;
     setError(null);
-    try {
-      const res = await fetch(`/api/delivery/handover/${h.id}/accept`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acceptedCash: h.declaredCash, acceptedUpi: h.declaredUpi || 0, expectedDeclaredCash: h.declaredCash }),
+    setLater((l) => [...l, target.id]);
+    setDone(`${rupees(target.declaredCash)} cash from ${target.driverName || "the employee"} accepted.`);
+    fetch(`/api/delivery/handover/${target.id}/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acceptedCash: target.declaredCash, acceptedUpi: target.declaredUpi || 0, expectedDeclaredCash: target.declaredCash }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Could not accept the handover.");
+        invalidateErpCache(["handover", "custody", "finance", "dashboard", "delivery"]);
+      })
+      .catch((e: any) => {
+        setDone(null);
+        setLater((l) => l.filter((id) => id !== target.id));
+        setError(friendlyError(e?.message || "Could not accept the handover. Try again."));
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "Could not accept the handover.");
-      setDone(`${rupees(h.declaredCash)} cash from ${h.driverName || "the employee"} accepted.`);
-      setLater((l) => [...l, h.id]);
-      invalidateErpCache(["handover", "custody", "finance", "dashboard", "delivery"]);
-    } catch (e: any) {
-      setError(e?.message || "Could not accept the handover.");
-    } finally {
-      setBusy(false);
-    }
   };
 
   if (!h && done) {
@@ -73,43 +78,43 @@ export function HandoverAlert() {
   const short = (h.recordedCash ?? h.declaredCash) - h.declaredCash;
   return (
     <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-[rgba(24,16,10,0.45)] backdrop-blur-[4px]">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="handover-alert-title" className="w-full max-w-[440px] rounded-[26px] bg-white shadow-[0_30px_80px_-30px_rgba(40,20,10,0.6)] overflow-hidden">
-        <div className="px-5 pt-5 pb-4 flex items-start gap-3">
-          <span className="w-11 h-11 rounded-2xl bg-[#E4F2E0] text-[#2F6B24] flex items-center justify-center shrink-0">
-            <Banknote className="w-5 h-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-[#8A6A4F]">Cash handover to accept</p>
-            <h2 id="handover-alert-title" className="text-[19px] leading-snug font-bold text-[#1F2320]">
-              {h.driverName || "Delivery employee"} handed over {rupees(h.declaredCash)}
-            </h2>
-            {open.length > 1 && <p className="text-[12.5px] text-[#5A5450]">{open.length - 1} more waiting after this one</p>}
-          </div>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="handover-alert-title"
+        className="w-full max-w-[420px] rounded-[26px] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.6)] overflow-hidden"
+        style={{ backgroundColor: "#FFFFFF" }}
+      >
+        <div className="px-6 pt-6 pb-4">
+          <p className="text-[12.5px] font-semibold text-[#8A6A4F]">Cash to accept{open.length > 1 ? ` · ${open.length - 1} more after this` : ""}</p>
+          <h2 id="handover-alert-title" className="mt-1 text-[21px] leading-snug font-bold text-[#1F2320]">
+            {h.driverName || "Delivery staff"} gave {rupees(h.declaredCash)} in cash
+          </h2>
         </div>
-        <dl className="mx-5 rounded-2xl border border-[#ECE6DB] text-[14px] overflow-hidden">
-          <div className="flex justify-between gap-3 px-3.5 py-2.5">
-            <dt className="text-[#3E4E42]">Cash handed over</dt>
+        <dl className="mx-6 text-[15px]">
+          <div className="flex justify-between gap-3 py-2.5">
+            <dt className="text-[#3E4E42]">Cash given</dt>
             <dd className="font-bold tabular-nums text-[#1F2320]">{rupees(h.declaredCash)}</dd>
           </div>
           {h.recordedCash !== undefined && (
-            <div className="flex justify-between gap-3 px-3.5 py-2.5 border-t border-[#F1ECE3]">
-              <dt className="text-[#3E4E42]">Cash recorded at the doors</dt>
+            <div className="flex justify-between gap-3 py-2.5 border-t border-[#EFE9E0]">
+              <dt className="text-[#3E4E42]">Collected from customers</dt>
               <dd className="font-semibold tabular-nums text-[#1F2320]">{rupees(h.recordedCash)}</dd>
             </div>
           )}
-          {short > 0 && (
-            <div className="px-3.5 py-2.5 border-t border-[#F1ECE3] bg-[#FDF0EC]">
-              <div className="flex justify-between gap-3">
-                <dt className="font-semibold text-[#8A1F12]">Short (stays owed by the employee)</dt>
-                <dd className="font-bold tabular-nums text-[#8A1F12]">{rupees(short)}</dd>
-              </div>
-              {h.shortfallReason && <p className="mt-1 text-[12.5px] text-[#6B2A1E]">Reason: {h.shortfallReason}</p>}
+          {(h.declaredUpi || 0) > 0 && (
+            <div className="flex justify-between gap-3 py-2.5 border-t border-[#EFE9E0]">
+              <dt className="text-[#3E4E42]">Paid by UPI</dt>
+              <dd className="font-semibold tabular-nums text-[#1F2320]">{rupees(h.declaredUpi || 0)}</dd>
             </div>
           )}
-          {(h.declaredUpi || 0) > 0 && (
-            <div className="flex justify-between gap-3 px-3.5 py-2.5 border-t border-[#F1ECE3]">
-              <dt className="text-[#3E4E42]">UPI (paid to the business account)</dt>
-              <dd className="font-semibold tabular-nums text-[#1F2320]">{rupees(h.declaredUpi || 0)}</dd>
+          {short > 0 && (
+            <div className="-mx-3 mt-1 px-3 py-2.5 rounded-xl bg-[#FDEFEA]">
+              <div className="flex justify-between gap-3">
+                <dt className="font-semibold text-[#8A1F12]">Not given yet</dt>
+                <dd className="font-bold tabular-nums text-[#8A1F12]">{rupees(short)}</dd>
+              </div>
+              {h.shortfallReason && <p className="mt-0.5 text-[13px] text-[#6B2A1E]">Reason: {h.shortfallReason}</p>}
             </div>
           )}
         </dl>
@@ -123,7 +128,7 @@ export function HandoverAlert() {
             onClick={() => setLater((l) => [...l, h.id])}
             className="h-12 px-4 rounded-full border border-[#D6CFC5] text-[14px] font-semibold text-[#1F2320] flex items-center hover:bg-[#F6F2EC]"
           >
-            Count differs
+            Amount is different
           </Link>
           <button type="button" onClick={() => setLater((l) => [...l, h.id])} className="h-12 px-4 rounded-full text-[14px] font-semibold text-[#5A5450] hover:bg-[#F6F2EC]">
             Later

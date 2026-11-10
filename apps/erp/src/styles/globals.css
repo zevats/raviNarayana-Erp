@@ -90,6 +90,11 @@ button, a, input, select, textarea {
 :where(.overflow-y-auto, .overflow-y-scroll, .overflow-auto) {
   scrollbar-gutter: stable;
 }
+/* The page itself always keeps the scrollbar's space, so content and cards stay in the same place
+   whether a page is long enough to scroll or not (no sideways shift when switching pages). */
+html {
+  scrollbar-gutter: stable;
+}
 @supports not selector(::-webkit-scrollbar) {
   * { scrollbar-width: thin; scrollbar-color: rgba(90, 76, 66, 0.45) transparent; }
 }
@@ -97,6 +102,12 @@ button, a, input, select, textarea {
 :focus-visible {
   outline: 2px solid #B58A57;
   outline-offset: 2px;
+}
+/* Text fields show their own rounded focus (border and soft ring on the field), never a square
+   outline around the text while typing: inputs, text areas, selects and search boxes alike. */
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select, [contenteditable="true"]):focus,
+:is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select, [contenteditable="true"]):focus-visible {
+  outline: none;
 }
 
 @media print {

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCheck } from "lucide-react";
@@ -36,7 +37,7 @@ export default function NotificationsPage() {
       await markNotificationRead(n.id);
       invalidateErpCache(["notifications"]);
     } catch (e: any) {
-      setActionError(e.message);
+      setActionError(friendlyError(e.message));
     }
   };
   const open = (n: NotificationItem) => {
@@ -50,7 +51,7 @@ export default function NotificationsPage() {
       await markAllNotificationsRead();
       invalidateErpCache(["notifications"]);
     } catch (e: any) {
-      setActionError(e.message);
+      setActionError(friendlyError(e.message));
     } finally {
       setBusy(false);
     }

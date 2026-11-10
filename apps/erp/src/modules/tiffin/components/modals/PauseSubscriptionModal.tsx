@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect } from "react";
 import { X, PauseCircle, AlertCircle } from "lucide-react";
 import { TiffinSubscription } from "@/types";
@@ -75,7 +76,7 @@ export function PauseSubscriptionModal({
         `Subscription for ${subscription.customerName || "customer"} paused successfully.`
       );
     } catch (err: any) {
-      setError(err.message || "Error pausing subscription.");
+      setError(friendlyError(err.message || "Error pausing subscription."));
     } finally {
       setSubmitting(false);
     }

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -297,7 +298,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to create room");
+      setActionError(friendlyError(err.message || "Failed to create room"));
     } finally {
       setSubmitting(false);
     }
@@ -352,7 +353,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to update room");
+      setActionError(friendlyError(err.message || "Failed to update room"));
       setShowEditConfirm(false);
     } finally {
       setSubmitting(false);
@@ -386,7 +387,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to delete room");
+      setActionError(friendlyError(err.message || "Failed to delete room"));
     } finally {
       setSubmitting(false);
     }
@@ -461,7 +462,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to update resident");
+      setActionError(friendlyError(err.message || "Failed to update resident"));
     } finally {
       setSubmitting(false);
     }
@@ -508,7 +509,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to check out resident");
+      setActionError(friendlyError(err.message || "Failed to check out resident"));
     } finally {
       setSubmitting(false);
     }
@@ -637,7 +638,7 @@ export default function RoomsPage() {
       await fetchRooms();
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to check in tenant.");
+      setActionError(friendlyError(err.message || "Failed to check in tenant."));
       setShowAssignConfirm(false); // Return to form so user can correct input
     } finally {
       setSubmitting(false);

@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -58,7 +59,7 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to record tiffin payment." },
+      { success: false, error: friendlyError(error.message || "Failed to record tiffin payment.") },
       { status: 400 }
     );
   }

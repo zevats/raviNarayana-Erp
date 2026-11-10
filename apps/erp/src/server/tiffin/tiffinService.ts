@@ -305,7 +305,7 @@ export async function createTiffinCustomer(
   if (duplicates.length > 0 && !input.confirmDuplicate) {
     const existing = duplicates[0];
     throw new Error(
-      `POTENTIAL_DUPLICATE: A customer with phone number '${normalizedPhone}' already exists: '${existing.fullName}' (${existing.status}, ID: ${existing.id}). Set confirmDuplicate to true to confirm creation for shared phone contact.`
+      `POTENTIAL_DUPLICATE: ${existing.fullName} already uses the phone number ${normalizedPhone}${existing.status === "ACTIVE" ? "" : " (inactive customer)"}. Open that customer instead, or add this person anyway if they share the phone.`
     );
   }
 
@@ -1266,8 +1266,8 @@ export async function createTiffinSubscription(
   }
 
   const mealTypes: SubscriptionMealTypes = input.mealTypes || "BOTH";
-  if (!["LUNCH", "DINNER", "BOTH", "BREAKFAST"].includes(mealTypes)) {
-    throw new Error(`Invalid mealTypes '${mealTypes}'. Allowed values: LUNCH, DINNER, BOTH, BREAKFAST.`);
+  if (!["LUNCH", "DINNER", "BOTH"].includes(mealTypes)) {
+    throw new Error(mealTypes === "BREAKFAST" ? "Breakfast is not offered. Choose lunch, dinner or both." : `Invalid mealTypes '${mealTypes}'. Allowed values: LUNCH, DINNER, BOTH.`);
   }
 
   const serviceDays: SubscriptionServiceDays = input.serviceDays || "ALL_DAYS";
@@ -1539,8 +1539,9 @@ export async function updateTiffinSubscription(
 
   let mealTypes = current.mealTypes;
   if (input.mealTypes) {
-    if (!["LUNCH", "DINNER", "BOTH", "BREAKFAST"].includes(input.mealTypes)) {
-      throw new Error(`Invalid mealTypes '${input.mealTypes}'.`);
+    // An existing breakfast plan may keep its value; nothing is changed to breakfast.
+    if (!["LUNCH", "DINNER", "BOTH"].includes(input.mealTypes) && !(input.mealTypes === "BREAKFAST" && current.mealTypes === "BREAKFAST")) {
+      throw new Error(input.mealTypes === "BREAKFAST" ? "Breakfast is not offered. Choose lunch, dinner or both." : `Invalid mealTypes '${input.mealTypes}'.`);
     }
     mealTypes = input.mealTypes;
   }

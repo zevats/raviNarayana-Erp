@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -115,7 +116,7 @@ export async function GET(request: NextRequest) {
     console.error("[API_TIFFIN_CUSTOMERS_GET_ERROR]", error);
     const statusCode = error.statusCode || 500;
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to load customers." },
+      { success: false, error: friendlyError(error.message || "Failed to load customers.") },
       { status: statusCode }
     );
   }
@@ -147,15 +148,8 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     if (error.message?.includes("POTENTIAL_DUPLICATE")) {
-      return NextResponse.json(
-        {
-          success: false,
-          duplicateWarning: true,
-          error: error.message,
-          message: error.message,
-        },
-        { status: 409 }
-      );
+      const text = String(error.message).replace("POTENTIAL_DUPLICATE: ", "");
+      return NextResponse.json({ success: false, duplicateWarning: true, isDuplicate: true, error: text, message: text }, { status: 409 });
     }
 
     const isClientValidation =
@@ -164,7 +158,7 @@ export async function POST(request: NextRequest) {
       error.message?.includes("Invalid phone");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to create customer." },
+      { success: false, error: friendlyError(error.message || "Failed to create customer.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

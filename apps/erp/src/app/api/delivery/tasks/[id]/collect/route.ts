@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -41,7 +42,7 @@ export async function POST(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to record collection." },
+      { error: friendlyError(error.message || "Failed to record collection.") },
       { status: 400 }
     );
   }

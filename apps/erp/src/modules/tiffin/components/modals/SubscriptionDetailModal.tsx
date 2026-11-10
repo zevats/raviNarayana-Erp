@@ -215,7 +215,7 @@ export function SubscriptionDetailModal({
               <div className="p-2 bg-[#FAF8F5] rounded-lg border border-[#8E9F89]/15">
                 <div className="text-[10px] text-[#5A6C5E]">Quantity Per Meal</div>
                 <div className="font-semibold text-[#1A2E20] mt-0.5">
-                  {subscription.quantityPerMeal} {subscription.quantityPerMeal === 1 ? "box" : "boxes"}
+                  {subscription.quantityPerMeal} {subscription.quantityPerMeal === 1 ? "thali" : "thalis"}
                 </div>
               </div>
 

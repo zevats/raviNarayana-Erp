@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -46,7 +47,7 @@ export function LoginForm() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useTimedMessage<string>();
 
   // Distinct granular loading states to avoid UI race conditions
   const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
@@ -348,6 +349,9 @@ export function LoginForm() {
     <div className={`min-h-[100dvh] w-full flex flex-col ${erp ? "rn-login sm:justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
       {erp ? (
         <header className="px-6 pt-[max(3rem,calc(env(safe-area-inset-top)+2rem))] sm:pt-0 pb-7 text-center">
+          <div className="rn-logo-in inline-block mb-3">
+            <RnLogo brand="standard" size={72} title="" className="shadow-[0_12px_30px_-12px_rgba(26,46,32,0.35)]" />
+          </div>
           <p className="rn-login-mark">Ravinarayan</p>
           <p className="rn-login-sub">PG &amp; Tiffin ERP</p>
         </header>

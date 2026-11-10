@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -295,7 +296,7 @@ export default function ResidentsPage() {
         notes: data.resident.notes || "",
       });
     } catch (err: any) {
-      setActionError(err.message || "Failed to fetch resident details");
+      setActionError(friendlyError(err.message || "Failed to fetch resident details"));
     }
   };
 
@@ -350,7 +351,7 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to update profile");
+      setActionError(friendlyError(err.message || "Failed to update profile"));
       setShowEditConfirm(false);
     } finally {
       setSubmitting(false);
@@ -392,7 +393,7 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to register resident");
+      setActionError(friendlyError(err.message || "Failed to register resident"));
     } finally {
       setSubmitting(false);
     }
@@ -458,7 +459,7 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to check in resident");
+      setActionError(friendlyError(err.message || "Failed to check in resident"));
       setShowCheckInConfirm(false);
     } finally {
       setSubmitting(false);
@@ -616,7 +617,7 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to finalize checkout and settlement");
+      setActionError(friendlyError(err.message || "Failed to finalize checkout and settlement"));
     } finally {
       setSubmitting(false);
     }
@@ -691,7 +692,7 @@ export default function ResidentsPage() {
       await fetchData();
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      setActionError(err.message || "Failed to transfer room.");
+      setActionError(friendlyError(err.message || "Failed to transfer room."));
     } finally {
       setSubmitting(false);
       setShowTransferConfirm(false);

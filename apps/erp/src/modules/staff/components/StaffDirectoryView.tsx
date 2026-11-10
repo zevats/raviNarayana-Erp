@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -151,7 +152,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
       setBannerNotice(data.message || `Password recovery link dispatched to ${staff.email}.`);
       setTimeout(() => setBannerNotice(null), 6000);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setIsDispatchingRecovery(null);
     }

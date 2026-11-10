@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -22,6 +23,6 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     const authResp = handleAuthorizationError(error);
     if (authResp) return authResp;
-    return NextResponse.json({ error: error.message || "Failed to record stock adjustment" }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to record stock adjustment") }, { status: 400 });
   }
 }

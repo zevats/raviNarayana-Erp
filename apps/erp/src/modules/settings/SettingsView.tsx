@@ -75,6 +75,13 @@ export function SettingsView() {
   const [draft, setDraft] = useState<SettingsPayload["settings"] | null>(null);
   const [busy, setBusy] = useState<Section | null>(null);
   const [messages, setMessages] = useState<Partial<Record<Section, { ok: boolean; text: string }>>>({});
+  // Each section message clears itself after a time limit (errors stay longer to be read).
+  useEffect(() => {
+    const list = Object.values(messages);
+    if (list.length === 0) return;
+    const t = setTimeout(() => setMessages({}), list.some((m) => m && !m.ok) ? 12000 : 6000);
+    return () => clearTimeout(t);
+  }, [messages]);
 
   useEffect(() => {
     if (q.data && !draft) setDraft(q.data.settings);

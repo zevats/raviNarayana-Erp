@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load delivery tasks." },
+      { error: friendlyError(error.message || "Failed to load delivery tasks.") },
       { status: 400 }
     );
   }
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to create external delivery task." },
+      { error: friendlyError(error.message || "Failed to create external delivery task.") },
       { status: 400 }
     );
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useMemo, useRef, useState } from "react";
 import { Clock, HandCoins, QrCode, Hourglass, CheckCircle2, AlertTriangle } from "lucide-react";
 import type { AuthenticatedUser, DriverCashHandover, StaffCustodyCollection, StaffCustodyRow } from "@/types";
@@ -27,8 +28,11 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const [note, setNote] = useState("");
   const [amountText, setAmountText] = useState("");
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [msg, setMsg] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
   const inFlight = useRef(false);
+  // Hand over is instant: the screen shows the handover as waiting for approval at once and the
+  // request goes on in the background; if it is refused, the form comes back with the reason.
+  const [sent, setSent] = useState<{ declaredCash: number; shortfallCash: number; shortfallReason: string | null } | null>(null);
   const today = businessToday();
 
   const collections = useMemo(() => [...(q.data?.collections ?? [])].sort((a, b) => (a.collectedAt < b.collectedAt ? 1 : -1)), [q.data]);
@@ -38,7 +42,12 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
 
   const c = q.data.custody;
   const handovers = q.data.handovers;
-  const waiting = handovers.find((h) => h.status === "DECLARED") || null;
+  const serverWaiting = handovers.find((h) => h.status === "DECLARED") || null;
+  const waiting = serverWaiting ?? (sent as unknown as DriverCashHandover | null);
+  // Approved in the last 10 minutes: a short note, then it goes (history keeps the record).
+  const justApproved = !waiting
+    ? handovers.find((h) => h.status !== "DECLARED" && h.acceptedAt && Date.now() - Date.parse(h.acceptedAt) < 10 * 60_000) || null
+    : null;
   const isCash = (x: StaffCustodyCollection) => x.paymentMethod === "CASH";
   const withYou = collections.filter((x) => isCash(x) && !x.handoverId);
   const waitingRows = collections.filter((x) => isCash(x) && x.handoverStatus === "DECLARED");
@@ -48,7 +57,8 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const owedEarlier = Math.max(0, c.cashShort);
   const cashWithYou = c.cashOwed ?? recordedNew + owedEarlier;
   const upiToday = collections.filter((x) => !isCash(x) && bizDate(x.collectedAt) === today).reduce((s, x) => s + x.amount, 0);
-  const pastHandovers = handovers.filter((h) => h.status !== "DECLARED");
+  // Today's handovers only (older ones are in the office records).
+  const pastHandovers = handovers.filter((h) => h.status !== "DECLARED" && bizDate(h.acceptedAt || h.createdAt || `${h.shiftDate}T12:00:00+05:30`) === today);
 
   const amount = Math.round(Number(amountText));
   const amountOk = amountText.trim() !== "" && Number.isFinite(amount) && amount >= 0;
@@ -66,24 +76,24 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const handOver = async () => {
     if (inFlight.current || !canSend) return;
     inFlight.current = true;
-    setBusy(true);
     setMsg(null);
+    const reason = note.trim() || undefined;
+    // Shown at once as given and waiting for approval.
+    setSent({ declaredCash: amount, shortfallCash: Math.max(0, Math.round(recordedNew) - amount), shortfallReason: differs ? reason ?? null : null });
+    setConfirming(false);
     try {
-      const data = await postJsonRequest<{ handover: DriverCashHandover }>("/api/delivery/handover/declare", { declaredCash: amount, notes: note.trim() || undefined });
-      const h = data.handover;
-      // The server's figures (handed over, shortage, still owed) replace the screen's: no guessing.
-      // Drop the cached custody first, so the refresh comes from the server (not the pre-handover copy).
+      await postJsonRequest<{ handover: DriverCashHandover }>("/api/delivery/handover/declare", { declaredCash: amount, notes: reason });
+      // The server's figures replace the screen's (refreshed in the background).
       invalidateErpCache(["custody", "handover"]);
-      await q.refetch();
-      const short = (h.recordedCash ?? h.declaredCash) - h.declaredCash;
-      setMsg({ tone: "ok", text: `${rupees(h.declaredCash)} sent to the manager for approval.${short > 0 ? ` ${rupees(short)} short is still recorded against you.` : ""}` });
-      setConfirming(false);
+      void q.refetch().finally(() => setSent(null));
+      setMsg({ tone: "ok", text: `${rupees(amount)} given to the manager. Waiting for approval.` });
       setNote("");
     } catch (e: any) {
+      setSent(null);
+      setConfirming(true);
       setMsg({ tone: "error", text: e.message });
     } finally {
       inFlight.current = false;
-      setBusy(false);
     }
   };
 
@@ -118,6 +128,15 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
               {(waiting.shortfallCash ?? 0) > 0 && (
                 <span className="block text-[12.5px] mt-0.5">{rupees(waiting.shortfallCash ?? 0)} less than recorded{waiting.shortfallReason ? ` — ${waiting.shortfallReason}` : ""}</span>
               )}
+            </p>
+          </div>
+        )}
+
+        {justApproved && (
+          <div className="mt-4 flex items-center gap-3 rounded-xl bg-[#DDF1D6] px-4 py-3">
+            <CheckCircle2 className="w-5 h-5 text-[#2F6B24] shrink-0" />
+            <p className="text-[14px] text-[#1D4E16]">
+              <span className="font-bold">{rupees(justApproved.acceptedCash)}</span> approved{justApproved.acceptedByName ? ` by ${justApproved.acceptedByName}` : ""}.
             </p>
           </div>
         )}
@@ -210,9 +229,9 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
 
       {/* Handover history */}
       <section className="space-y-2.5">
-        <h2 className="text-[17px] font-extrabold">Handover history</h2>
+        <h2 className="text-[17px] font-extrabold">Today&apos;s handovers</h2>
         {pastHandovers.length === 0 ? (
-          <EmptyState compact title="No handovers yet" />
+          <EmptyState compact title="No handovers today" />
         ) : (
           <ul className={`${K.card} divide-y divide-[#ECE6DB]`}>
             {pastHandovers.slice(0, 20).map((h) => {

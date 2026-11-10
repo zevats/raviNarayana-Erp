@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -27,7 +28,7 @@ export async function GET(
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
 
-    return NextResponse.json({ error: error.message || "Failed to retrieve room." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to retrieve room.") }, { status: 400 });
   }
 }
 
@@ -86,7 +87,7 @@ export async function DELETE(
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
 
-    return NextResponse.json({ error: error.message || "Failed to delete room." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to delete room.") }, { status: 400 });
   }
 }
 

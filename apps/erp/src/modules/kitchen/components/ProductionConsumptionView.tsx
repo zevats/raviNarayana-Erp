@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   UtensilsCrossed,
@@ -71,7 +72,7 @@ export default function ProductionConsumptionView({ onNotify }: ProductionConsum
       );
       setPreviews(previewMap);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -107,7 +108,7 @@ export default function ProductionConsumptionView({ onNotify }: ProductionConsum
       onNotify?.(`Production ingredient consumption posted for ${mealType}.`);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setActionLoading(false);
     }
@@ -141,7 +142,7 @@ export default function ProductionConsumptionView({ onNotify }: ProductionConsum
       setIsReverseModalOpen(false);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setActionLoading(false);
     }

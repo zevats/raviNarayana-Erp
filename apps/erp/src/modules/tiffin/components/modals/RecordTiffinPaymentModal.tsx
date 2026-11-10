@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, CreditCard, CheckCircle2, AlertCircle, ArrowRight, DollarSign } from "lucide-react";
@@ -133,7 +134,7 @@ export function RecordTiffinPaymentModal({
       onSuccess(data);
       onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to record payment.");
+      setError(friendlyError(err.message || "Failed to record payment."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

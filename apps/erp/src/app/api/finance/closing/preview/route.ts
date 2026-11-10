@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { businessToday } from "@/lib/businessDate";
 import {
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
     if (authError) return authError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to preview daily closing." },
+      { error: friendlyError(error.message || "Failed to preview daily closing.") },
       { status: 400 }
     );
   }

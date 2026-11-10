@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -15,7 +16,7 @@ import { SubscriptionStatus, SubscriptionMealTypes, SubscriptionServiceDays } fr
 export const dynamic = "force-dynamic";
 
 const VALID_STATUSES: SubscriptionStatus[] = ["ACTIVE", "PAUSED", "CANCELLED", "COMPLETED"];
-const VALID_MEAL_TYPES: SubscriptionMealTypes[] = ["LUNCH", "DINNER", "BOTH", "BREAKFAST"];
+const VALID_MEAL_TYPES: SubscriptionMealTypes[] = ["LUNCH", "DINNER", "BOTH"];
 const VALID_SERVICE_DAYS: SubscriptionServiceDays[] = ["ALL_DAYS", "MON_SAT", "MON_FRI"];
 
 export async function GET(request: NextRequest) {
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
     console.error("[API_TIFFIN_SUBSCRIPTIONS_GET_ERROR]", error);
     const statusCode = error.statusCode || 500;
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to load subscriptions." },
+      { success: false, error: friendlyError(error.message || "Failed to load subscriptions.") },
       { status: statusCode }
     );
   }
@@ -164,7 +165,7 @@ export async function POST(request: NextRequest) {
       error.message?.includes("Invalid");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to create subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to create subscription.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

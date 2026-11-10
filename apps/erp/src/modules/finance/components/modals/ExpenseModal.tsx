@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, TrendingDown, AlertCircle } from "lucide-react";
@@ -109,7 +110,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
       );
       onClose();
     } catch (err: any) {
-      setError(err.message || "An error occurred while recording expense.");
+      setError(friendlyError(err.message || "An error occurred while recording expense."));
     } finally {
       inFlight.current = false;
       setSubmitting(false);

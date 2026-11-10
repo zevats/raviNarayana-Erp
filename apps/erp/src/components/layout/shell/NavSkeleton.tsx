@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { PageHeader } from "@/components/ui/kit";
 import { SkeletonRows } from "@/components/ui/states";
 
 /**
@@ -16,7 +15,18 @@ export function NavSkeleton({ href, title }: { href: string; title: string }) {
   const shape = path === "/dashboard" ? "tiles" : ["/settings", "/account"].includes(path) ? "cards" : "list";
   return (
     <div data-nav-skeleton role="status" aria-live="polite" aria-label={`Opening ${title}`} className="space-y-5 min-w-0">
-      <PageHeader title={title} />
+      {/* No page name here: the header bar already shows where you are, and a text title that the
+          page then draws again (the dashboard greeting twice) made the switch jump. A quiet bar the
+          height of the page header keeps everything in place until the page arrives. */}
+      {shape !== "tiles" && (
+        <div className="flex items-end justify-between gap-3 min-h-[44px]" aria-hidden>
+          <span className="rn-skel hidden lg:block h-8 w-44 rounded-xl" />
+          <span className="flex gap-2 ml-auto">
+            <span className="rn-skel block h-10 w-28 rounded-full" />
+            <span className="rn-skel block h-10 w-32 rounded-full" />
+          </span>
+        </div>
+      )}
       {shape === "tiles" && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (

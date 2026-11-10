@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -26,13 +27,13 @@ export async function POST(
     if (authError) return authError;
 
     if (error.message?.includes("not found")) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 404 });
+      return NextResponse.json({ success: false, error: friendlyError(error.message) }, { status: 404 });
     }
 
     const isClientValidation = error.message?.includes("Cannot resume");
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to resume subscription." },
+      { success: false, error: friendlyError(error.message || "Failed to resume subscription.") },
       { status: isClientValidation ? 400 : (error.statusCode || 500) }
     );
   }

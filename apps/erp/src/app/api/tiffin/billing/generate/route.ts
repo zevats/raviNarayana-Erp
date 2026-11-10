@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { businessToday, addBusinessDays } from "@/lib/businessDate";
 import { databaseErrorResponse } from "@/server/database/availability";
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to generate tiffin invoices." },
+      { success: false, error: friendlyError(error.message || "Failed to generate tiffin invoices.") },
       { status: 400 }
     );
   }

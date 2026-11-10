@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -30,7 +31,7 @@ export async function GET(
     if (dbError) return dbError;
 
     return NextResponse.json(
-      { error: error.message || "Failed to load delivery task." },
+      { error: friendlyError(error.message || "Failed to load delivery task.") },
       { status: 400 }
     );
   }

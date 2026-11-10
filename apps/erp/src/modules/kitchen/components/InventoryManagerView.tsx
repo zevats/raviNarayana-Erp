@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback } from "react";
 import {
@@ -86,7 +87,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
       setMaterials(matData.materials || []);
       setMovements(movData.movements || []);
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setLoading(false);
     }
@@ -141,7 +142,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
       resetCreateForm();
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setSubmitting(false);
     }
@@ -181,7 +182,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
       setIsReceiptModalOpen(false);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setSubmitting(false);
     }
@@ -211,7 +212,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
       setIsAdjustModalOpen(false);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setSubmitting(false);
     }
@@ -240,7 +241,7 @@ export default function InventoryManagerView({ onNotify }: InventoryManagerViewP
       setIsWasteModalOpen(false);
       loadData();
     } catch (err: any) {
-      setError(err.message);
+      setError(friendlyError(err.message));
     } finally {
       setSubmitting(false);
     }

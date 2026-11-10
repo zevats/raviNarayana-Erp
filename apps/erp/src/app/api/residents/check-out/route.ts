@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   resolveUserFromRequest,
@@ -79,7 +80,7 @@ export async function POST(request: NextRequest) {
     const authError = handleAuthorizationError(error);
     if (authError) return authError;
 
-    return NextResponse.json({ error: error.message || "Failed to check out resident." }, { status: 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to check out resident.") }, { status: 400 });
   }
 }
 

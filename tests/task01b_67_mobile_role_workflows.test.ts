@@ -405,7 +405,7 @@ async function runTask67Tests() {
     "Dashboard tiles link directly to authorized operational destinations"
   );
   assert(
-    dashboardContent.includes('(["COMBINED", "PG", "TIFFIN"] as const)') && dashboardContent.includes("href={`/dashboard?division=${d}`}"),
+    dashboardContent.includes('["COMBINED", "PG", "TIFFIN"]') && dashboardContent.includes('url.searchParams.set("division", d)'),
     "Dashboard preserves canonical 3-way division filter"
   );
 

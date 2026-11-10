@@ -932,7 +932,7 @@ export async function generateDeliveryTasks(
         const eventId = `devt_${crypto.randomUUID()}`;
         const deliveryNotes = sub.deliveryInstructions
           ? (sub.quantityPerMeal > 1 ? `Qty: ${sub.quantityPerMeal} | ${sub.deliveryInstructions}` : sub.deliveryInstructions)
-          : (sub.quantityPerMeal > 1 ? `Qty: ${sub.quantityPerMeal} meal box(es)` : null);
+          : (sub.quantityPerMeal > 1 ? `Qty: ${sub.quantityPerMeal} thalis` : null);
 
         await tx.execute(`
           INSERT INTO delivery_tasks (

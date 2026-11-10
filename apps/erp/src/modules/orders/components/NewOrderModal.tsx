@@ -1,8 +1,9 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Truck, Utensils, Search, Plus, Minus, Check, AlertCircle, RotateCcw, User, MapPin, ChevronLeft, ArrowRight } from "lucide-react";
-import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType } from "@/types";
+import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType, TiffinSubscription } from "@/types";
 import { businessToday, businessMeal } from "@/lib/businessDate";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 
@@ -24,13 +25,17 @@ interface NewOrderModalProps {
 export interface PendingOrderJob {
   key: string;
   customerName: string;
+  customerPhone: string | null;
+  deliveryAddress: string | null;
   orderType: BusinessOrderType;
   mealType: MealType;
   serviceDate: string;
   total: number;
   itemsText: string;
-  /** Sends the order; resolves with the confirmation to show, rejects with a readable error. */
-  run: () => Promise<string>;
+  items: Array<{ name: string; quantity: number; lineTotal: number }>;
+  createdAt: string;
+  /** Sends the order; resolves with the confirmation and the saved order id, rejects with a readable error. */
+  run: () => Promise<{ message: string; orderId: string | null }>;
 }
 
 /** The meal being taken now (lunch until 4 pm India time, dinner after): businessMeal. */
@@ -64,8 +69,8 @@ const STEPS: Array<{ n: Step; label: string; short: string }> = [
   { n: 2, label: "Items", short: "Items" },
   { n: 3, label: "Schedule & confirm", short: "Confirm" },
 ];
+// Orders are taken for lunch or dinner (no breakfast service).
 const MEALS: Array<{ v: MealType; label: string }> = [
-  { v: "BREAKFAST", label: "Breakfast" },
   { v: "LUNCH", label: "Lunch" },
   { v: "DINNER", label: "Dinner" },
 ];
@@ -122,10 +127,18 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
 
 export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackground, defaultDate, presetCustomer }: NewOrderModalProps) {
   const [step, setStep] = useState<Step>(1);
+  // Closing after Confirm: a short fade and drop instead of disappearing at once.
+  const [leaving, setLeaving] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   // Order type
   const [orderType, setOrderType] = useState<BusinessOrderType>("DELIVERY");
+  // Subscription order: a delivery for a monthly-plan customer; the plan's thalis for the meal are
+  // free (the server checks the plan), extra thalis and other items are charged.
+  const [forPlan, setForPlan] = useState(false);
+  const [plans, setPlans] = useState<TiffinSubscription[] | null>(null);
+  const [plan, setPlan] = useState<TiffinSubscription | null>(null);
+  const [planSearch, setPlanSearch] = useState("");
 
   // Customer selection
   const [customerMode, setCustomerMode] = useState<"EXISTING" | "NEW">("EXISTING");
@@ -174,6 +187,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (!isOpen) return;
     setStep(1);
     setMealType(mealForNow());
+    setForPlan(false);
+    setPlan(null);
+    setPlanSearch("");
     setCustomerSearch("");
     setSelectedCustomer(null);
     setNewCustomerName("");
@@ -196,6 +212,23 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Active plans, searched on the server by name or phone (the list is capped at 200 a request).
+  useEffect(() => {
+    if (!isOpen || !forPlan || plan) return;
+    const q = planSearch.trim();
+    let gone = false;
+    const t = window.setTimeout(() => {
+      fetch(`/api/tiffin/subscriptions?status=ACTIVE&limit=200${q ? `&search=${encodeURIComponent(q)}` : ""}`)
+        .then((r) => (r.ok ? r.json() : { subscriptions: [] }))
+        .then((d) => !gone && setPlans(Array.isArray(d.subscriptions) ? d.subscriptions : []))
+        .catch(() => !gone && setPlans([]));
+    }, q ? 220 : 0);
+    return () => {
+      gone = true;
+      window.clearTimeout(t);
+    };
+  }, [isOpen, forPlan, plan, planSearch]);
 
   // Escape closes the form (unless an order is being saved).
   useEffect(() => {
@@ -411,7 +444,21 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   // Cart summary calculations
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const totalQuantity = useMemo(() => cartItems.reduce((s, it) => s + it.quantity, 0), [cartItems]);
-  const totalAmount = useMemo(() => cartItems.reduce((s, it) => s + it.quantity * it.product.price, 0), [cartItems]);
+  const planCovers = Boolean(forPlan && plan && (plan.mealTypes === "BOTH" || plan.mealTypes === mealType));
+  const planFreeThalis = planCovers && plan ? plan.quantityPerMeal : 0;
+  const planFreeValue = useMemo(() => {
+    let left = planFreeThalis;
+    let value = 0;
+    for (const it of cartItems) {
+      if (left <= 0) break;
+      if (it.product.category !== "STANDARD_MEAL") continue;
+      const free = Math.min(left, it.quantity);
+      left -= free;
+      value += free * it.product.price;
+    }
+    return value;
+  }, [cartItems, planFreeThalis]);
+  const totalAmount = useMemo(() => cartItems.reduce((s, it) => s + it.quantity * it.product.price, 0) - planFreeValue, [cartItems, planFreeValue]);
 
   const filteredProducts = useMemo(() => {
     if (!menuSearch.trim()) return products;
@@ -428,6 +475,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
       return null;
     }
+    if (forPlan) return plan ? null : "Choose the subscription customer.";
     if (customerMode === "EXISTING") {
       return selectedCustomer ? null : "Choose the delivery customer, or switch to New customer.";
     }
@@ -449,6 +497,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         setErrorMessage(p);
         return;
       }
+    }
+    if (target === 2 && forPlan && plan && cartItems.length === 0) {
+      const thali = products.find((p) => p.category === "STANDARD_MEAL" && p.status === "ACTIVE");
+      if (thali) setCart({ [thali.id]: { product: thali, quantity: Math.max(1, plan.quantityPerMeal) } });
     }
     if (target > 2 && cartItems.length === 0) {
       setStep(2);
@@ -519,13 +571,14 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       payLater: orderType === "DINE_IN" && paymentMethod === "PAY_LATER" ? true : undefined,
       paymentStatus: orderType === "DINE_IN" && paymentMethod !== "PAY_LATER" ? "PAID" : "PENDING",
       notes: notes.trim() || undefined,
+      subscriptionId: forPlan && plan ? plan.id : undefined,
       idempotencyKey: key,
     });
     const amount = totalAmount;
     const method = paymentMethod;
     const type = orderType;
     // Sending is safe to repeat: the key makes the server record the order once.
-    const run = async (): Promise<string> => {
+    const run = async (): Promise<{ message: string; orderId: string | null }> => {
       let res: Response;
       try {
         res = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json" }, body });
@@ -536,13 +589,15 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       if (!res.ok) throw new Error(data.error || "Failed to confirm order.");
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("erp:order_created"));
       if (customerId) lastOrderCache.delete(customerId);
-      return type === "DELIVERY"
-        ? data.order?.assignedToName
-          ? `Delivery order confirmed! Assigned to ${data.order.assignedToName} for delivery.`
-          : "Delivery order confirmed, but no active delivery staff account exists. Create or reactivate one in Staff Administration."
-        : method === "PAY_LATER"
-          ? `Dine-in order saved on Pay Later: ₹${amount} is on ${customerName}'s account.`
-          : `Dine-in counter order confirmed (₹${amount} collected via ${method}).`;
+      const message =
+        type === "DELIVERY"
+          ? data.order?.assignedToName
+            ? `Order confirmed and sent to ${data.order.assignedToName}.`
+            : "Delivery order confirmed, but no active delivery staff account exists. Create or reactivate one in Staff Administration."
+          : method === "PAY_LATER"
+            ? `Dine-in order saved on Pay Later: ₹${amount} is on ${customerName}'s account.`
+            : `Dine-in order confirmed (₹${amount} by ${method === "UPI" ? "UPI" : "cash"}).`;
+      return { message, orderId: data.order?.orderId ?? data.orderId ?? null };
     };
 
     if (onSubmitInBackground) {
@@ -550,28 +605,37 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       onSubmitInBackground({
         key,
         customerName: customerName || "Walk-in guest",
+        customerPhone: customerPhone || null,
+        deliveryAddress: orderType === "DELIVERY" ? deliveryAddress : null,
         orderType,
         mealType,
         serviceDate,
         total: amount,
         itemsText: cartItems.map((it) => `${it.quantity}× ${it.product.name}`).join(", "),
+        items: cartItems.map((it) => ({ name: it.product.name, quantity: it.quantity, lineTotal: it.quantity * it.product.price })),
+        createdAt: new Date().toISOString(),
         run,
       });
       setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
-      onClose();
+      // The form eases out (the order is already on the list, saving).
+      setLeaving(true);
+      window.setTimeout(() => {
+        setLeaving(false);
+        onClose();
+      }, 160);
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const confirmed = await run();
+      const { message: confirmed } = await run();
       // Close as soon as the server confirmed; the page shows the confirmation. (A delayed close
       // left the button active with a new draft key, so a second click created a second order.)
       setDraftKey(`ord_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
       onOrderCreated(confirmed);
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || "Failed to submit order. Please check entered information.");
+      setErrorMessage(friendlyError(err.message || "Failed to submit order. Please check entered information."));
     } finally {
       setIsSubmitting(false);
     }
@@ -594,7 +658,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     // Own scrim and panel (not the generic page-dialog styles): the panel never scrolls as a whole;
     // only its body does, between a fixed header and a fixed action bar.
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px]"
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px] transition-opacity duration-150 ${leaving ? "opacity-0" : "opacity-100"}`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) onClose();
       }}
@@ -604,7 +668,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-order-title"
-        className="w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)]"
+        className={`w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""}`}
         style={{ backgroundColor: "#FBF8F4" }}
       >
         {/* Header: title and the three steps */}
@@ -674,19 +738,90 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                 <Segmented
                   label="Order type"
                   size="lg"
-                  value={orderType}
+                  value={forPlan ? ("SUBSCRIPTION" as const) : orderType}
                   onChange={(v) => {
-                    setOrderType(v);
                     setErrorMessage(null);
+                    if (v === "SUBSCRIPTION") {
+                      setForPlan(true);
+                      setOrderType("DELIVERY");
+                      setCustomerMode("EXISTING");
+                      setSelectedCustomer(null);
+                    } else {
+                      setForPlan(false);
+                      setPlan(null);
+                      setOrderType(v);
+                    }
                   }}
                   options={[
-                    { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span>, hint: "Doorstep tiffin delivery" },
-                    { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span>, hint: "Walk-in counter sale" },
+                    { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span>, hint: "To the door" },
+                    { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span>, hint: "At the counter" },
+                    { v: "SUBSCRIPTION" as BusinessOrderType, label: <span className="flex items-center gap-2"><RotateCcw className="w-4 h-4" />Subscription</span>, hint: "Plan customer" },
                   ]}
                 />
               </section>
 
-              {orderType === "DELIVERY" ? (
+              {forPlan ? (
+                <section className="space-y-3">
+                  <h3 className={`text-[15px] font-bold ${INK}`}>Subscription customer</h3>
+                  {plan ? (
+                    <div className="rounded-[18px] border border-[var(--rn-line)] bg-white p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className={`text-[15px] font-bold truncate ${INK}`}>{plan.customerName}</p>
+                          <p className={`text-[13px] ${INK2}`}>{plan.customerPhone}</p>
+                        </div>
+                        <button type="button" onClick={() => { setPlan(null); setSelectedCustomer(null); }} className="h-10 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-accent)] hover:bg-[var(--rn-accent-tint)]">
+                          Change
+                        </button>
+                      </div>
+                      <p className={`text-[13.5px] ${INK}`}>
+                        <strong>{plan.productName}</strong> · {plan.mealTypes === "BOTH" ? "Lunch & dinner" : plan.mealTypes === "LUNCH" ? "Lunch" : "Dinner"} · {plan.quantityPerMeal} thali{plan.quantityPerMeal === 1 ? "" : "s"} a meal
+                      </p>
+                      <p className={`text-[13px] ${INK2}`}>{plan.deliveryAddress}</p>
+                      <p className="text-[12.5px] rounded-lg bg-[var(--rn-accent-tint)] px-3 py-2 text-[var(--rn-ink)]">
+                        The plan&apos;s thalis for the meal are free; extra thalis and other items are charged. The plan&apos;s usual delivery for that meal is replaced by this order.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="pointer-events-none w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--rn-ink-3)]" />
+                        <input type="text" placeholder="Search by name or phone" aria-label="Search subscription customers" value={planSearch} onChange={(e) => setPlanSearch(e.target.value)} onKeyDown={noEnter} className={`${FIELD} pl-10`} />
+                      </div>
+                      <ul className="rounded-[18px] border border-[var(--rn-line)] bg-white divide-y divide-[var(--rn-line)] overflow-hidden" aria-label="Subscription customers">
+                        {plans === null && <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>Loading plans…</li>}
+                        {(plans ?? [])
+                          .filter((s) => {
+                            const q = planSearch.trim().toLowerCase();
+                            return !q || (s.customerName || "").toLowerCase().includes(q) || (s.customerPhone || "").includes(q);
+                          })
+                          .slice(0, 40)
+                          .map((s) => (
+                            <li key={s.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPlan(s);
+                                  setSelectedCustomer({ id: s.customerId, fullName: s.customerName || "", phone: s.customerPhone || "", deliveryAddress: s.deliveryAddress, status: "ACTIVE" } as TiffinCustomer);
+                                  setNewCustomerAddress(s.deliveryAddress || "");
+                                  setErrorMessage(null);
+                                }}
+                                className="w-full min-h-[56px] px-4 py-2.5 text-left flex items-center justify-between gap-3 hover:bg-[var(--rn-accent-tint)] transition-colors"
+                              >
+                                <span className="min-w-0">
+                                  <span className={`block text-[14.5px] font-semibold truncate ${INK}`}>{s.customerName}</span>
+                                  <span className={`block text-[13px] truncate ${INK2}`}>{s.customerPhone} · {s.productName}</span>
+                                </span>
+                                <ArrowRight className="w-4 h-4 shrink-0 text-[var(--rn-ink-3)]" />
+                              </button>
+                            </li>
+                          ))}
+                        {plans !== null && plans.length === 0 && <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>{planSearch.trim() ? "No subscription customer matches." : "No active subscriptions."}</li>}
+                      </ul>
+                    </div>
+                  )}
+                </section>
+              ) : orderType === "DELIVERY" ? (
                 <section className="space-y-3">
                   <h3 className={`text-[15px] font-bold ${INK}`}>Delivery customer</h3>
                   <Segmented
@@ -914,6 +1049,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
 
           {step === 2 && (
             <section className="space-y-3">
+              {forPlan && plan && (
+                <p className={`rounded-xl px-3.5 py-2.5 text-[13.5px] ${planCovers ? "bg-[#E6F4E1] text-[#1D4E16]" : "bg-[#FFF6E5] text-[#6B4A06]"}`}>
+                  {planCovers
+                    ? `${plan.quantityPerMeal} thali${plan.quantityPerMeal === 1 ? "" : "s"} free with the plan this meal. Extra thalis and other items are charged.`
+                    : `The plan does not include ${mealType === "LUNCH" ? "lunch" : "dinner"}, so everything is charged.`}
+                </p>
+              )}
               <div className="flex items-end justify-between gap-3">
                 <h3 className={`text-[15px] font-bold ${INK}`}>Items &amp; quantities</h3>
                 <span className={`text-[13px] ${INK2}`}>

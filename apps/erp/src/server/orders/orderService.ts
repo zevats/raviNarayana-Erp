@@ -117,8 +117,8 @@ export async function resolveCatalogItems(db: AsyncDb, items: CreateOrderInput["
   if (ids.some((id) => !id)) {
     throw new Error("Every order line must be a menu item. Refresh the menu and try again.");
   }
-  const rows = await db.query<{ id: string; name: string; price: number | string; status: string; billing_unit: string }>(
-    `SELECT id, name, price, status, billing_unit FROM tiffin_products WHERE id IN (${ids.map(() => "?").join(", ")})`,
+  const rows = await db.query<{ id: string; name: string; price: number | string; status: string; billing_unit: string; category: string }>(
+    `SELECT id, name, price, status, billing_unit, category FROM tiffin_products WHERE id IN (${ids.map(() => "?").join(", ")})`,
     ids
   );
   const products = new Map(rows.map((r) => [r.id, r]));
@@ -139,8 +139,52 @@ export async function resolveCatalogItems(db: AsyncDb, items: CreateOrderInput["
       throw new Error(`Quantity for '${product.name}' must be a positive whole number.`);
     }
     const unitPrice = Number(product.price);
-    return { productId: product.id, productName: product.name, quantity, unitPrice, lineTotal: quantity * unitPrice };
+    return { productId: product.id, productName: product.name, quantity, unitPrice, lineTotal: quantity * unitPrice, category: product.category } as OrderItem & { category?: string };
   });
+}
+
+/**
+ * Subscription order: the customer's monthly plan already covers this meal's thalis. Up to the
+ * plan's thalis per meal are free (meal thali lines, oldest line first); anything more, and every
+ * other item, is charged at the menu price. Free only when the plan is active on that day and covers
+ * the meal, and its regular delivery for that meal has not gone out yet (it is replaced by the order).
+ */
+export async function planAllowance(db: AsyncDb, subscriptionId: string, customerId: string | null, serviceDate: string, mealType: string): Promise<{ included: number; reason: string | null }> {
+  const s = await db.queryOne<any>(
+    `SELECT s.id, s.customer_id, s.status, s.start_date, s.end_date, s.meal_types, s.quantity_per_meal, s.pause_start_date, s.pause_resume_date
+     FROM tiffin_subscriptions s WHERE s.id = ?`,
+    [subscriptionId]
+  );
+  if (!s) throw new Error("This subscription was not found. Refresh and choose the customer again.");
+  if (customerId && s.customer_id !== customerId) throw new Error("This subscription belongs to another customer.");
+  if (s.status !== "ACTIVE") return { included: 0, reason: "The plan is not active, so every thali is charged." };
+  if (serviceDate < s.start_date || (s.end_date && serviceDate > s.end_date)) return { included: 0, reason: "The plan does not cover this date, so every thali is charged." };
+  if (s.pause_start_date && serviceDate >= s.pause_start_date && (!s.pause_resume_date || serviceDate < s.pause_resume_date)) return { included: 0, reason: "The plan is paused on this date." };
+  const covers = s.meal_types === "BOTH" || s.meal_types === mealType;
+  if (!covers) return { included: 0, reason: `The plan does not include ${String(mealType).toLowerCase()}.` };
+  const sent = await db.queryOne<{ n: number | string }>(
+    "SELECT COUNT(*) AS n FROM delivery_tasks WHERE subscription_id = ? AND service_date = ? AND meal_type = ? AND status IN ('OUT_FOR_DELIVERY', 'DELIVERED')",
+    [subscriptionId, serviceDate, mealType]
+  );
+  if (Number(sent?.n || 0) > 0) return { included: 0, reason: "This meal of the plan has already gone out." };
+  return { included: Math.max(0, Number(s.quantity_per_meal) || 0), reason: null };
+}
+
+/** Splits meal thali lines so that up to `included` thalis cost nothing (marked "in plan"). */
+export function applyPlanAllowance(items: Array<OrderItem & { category?: string }>, included: number): OrderItem[] {
+  let left = included;
+  const out: OrderItem[] = [];
+  for (const it of items) {
+    if (left > 0 && it.category === "STANDARD_MEAL") {
+      const free = Math.min(left, it.quantity);
+      left -= free;
+      out.push({ productId: it.productId, productName: `${it.productName} (in plan)`, quantity: free, unitPrice: 0, lineTotal: 0 });
+      if (it.quantity > free) out.push({ productId: it.productId, productName: it.productName, quantity: it.quantity - free, unitPrice: it.unitPrice, lineTotal: (it.quantity - free) * it.unitPrice });
+    } else {
+      out.push({ productId: it.productId, productName: it.productName, quantity: it.quantity, unitPrice: it.unitPrice, lineTotal: it.lineTotal });
+    }
+  }
+  return out;
 }
 
 async function insertOrderRows(
@@ -365,16 +409,20 @@ export async function createUnifiedOrder(
   if (!serviceDate || !DATE_REGEX.test(serviceDate)) {
     throw new Error("Valid service date in YYYY-MM-DD format is required.");
   }
-  if (!["BREAKFAST", "LUNCH", "DINNER"].includes(mealType)) {
-    throw new Error(`Invalid meal type '${mealType}'. Must be BREAKFAST, LUNCH, or DINNER.`);
+  if (!["LUNCH", "DINNER"].includes(mealType)) {
+    throw new Error(mealType === "BREAKFAST" ? "Breakfast is not offered. Choose lunch or dinner." : `Invalid meal type '${mealType}'. Choose lunch or dinner.`);
   }
 
   const db = asyncDb || getAsyncDb();
-  // The menu prices and the replay lookup do not depend on each other: one round trip for both.
-  const [normalizedItems, priorByKey] = await Promise.all([
+  // The menu prices, the replay lookup and the plan allowance do not depend on each other.
+  const subscriptionId = orderType === "DELIVERY" ? (input as any).subscriptionId?.trim() || null : null;
+  const [catalogItems, priorByKey, allowance] = await Promise.all([
     resolveCatalogItems(db, items),
     idempotencyKey ? loadOrders(db, "o.idempotency_key = ?", [idempotencyKey]) : Promise.resolve([] as UnifiedOrder[]),
+    subscriptionId ? planAllowance(db, subscriptionId, input.customerId?.trim() || null, serviceDate, mealType) : Promise.resolve({ included: 0, reason: null }),
   ]);
+  // Subscription order: the plan's thalis for this meal are free, the rest is charged.
+  const normalizedItems = subscriptionId ? applyPlanAllowance(catalogItems, allowance.included) : catalogItems.map(({ category: _c, ...it }: any) => it as OrderItem);
   const totalQuantity = normalizedItems.reduce((acc, it) => acc + it.quantity, 0);
   const totalAmount = normalizedItems.reduce((acc, it) => acc + it.lineTotal, 0);
   const now = new Date().toISOString();
@@ -515,6 +563,16 @@ export async function createUnifiedOrder(
     // Creation response contract (unchanged since Task 01B.70): orderStatus reports the order
     // lifecycle (CONFIRMED); dispatch progress is in deliveryStatus. List views derive the
     // combined status from the delivery task.
+    if (subscriptionId && allowance.included > 0 && !raced) {
+      // The plan's own delivery for this meal would bring the same thalis again: skip it (the
+      // order brings them). A failure here never undoes the order.
+      try {
+        const { setSubscriptionDayOverride } = await import("../delivery/deliveryOps");
+        await setSubscriptionDayOverride(actor, { subscriptionId, serviceDate, mealType: mealType as "LUNCH" | "DINNER", action: "SKIP", reason: "Taken as an order instead" }, clientIp, db);
+      } catch {
+        /* the plan delivery stays; the manager can skip it on the Subscriptions screen */
+      }
+    }
     return { ...created, orderStatus: "CONFIRMED" };
   }
 

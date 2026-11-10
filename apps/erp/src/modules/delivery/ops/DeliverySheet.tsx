@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/friendlyError";
 import { UpiQr } from "./UpiQr";
 import React, { useEffect, useMemo, useState } from "react";
 import { Minus, Plus, X, Check, CheckCircle2, CircleCheck, Flag, Phone, Home, CircleSlash } from "lucide-react";
@@ -296,7 +297,7 @@ export function DeliveryForm({
         enqueueDeliveryAction("COMPLETE_DELIVERY", task.id, payload, currentUserId, key);
         setQueued(true);
       } catch (e: any) {
-        setError(e.message);
+        setError(friendlyError(e.message));
       }
     };
     try {
@@ -312,7 +313,7 @@ export function DeliveryForm({
       onSaved(nothing ? `${customer}: recorded as not delivered` : shortLines.length > 0 ? `${customer}: partly delivered` : `${customer}: delivered`, data.task as DeliveryTask | undefined);
       onClose?.();
     } catch (e: any) {
-      setError(e.message || "Could not save the delivery. Try again.");
+      setError(friendlyError(e.message || "Could not save the delivery. Try again."));
     } finally {
       setBusy(false);
     }

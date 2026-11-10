@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import {
@@ -23,6 +24,6 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     if (authError) return authError;
     const dbError = databaseErrorResponse("/api/orders/[id]/payment-review", error);
     if (dbError) return dbError;
-    return NextResponse.json({ error: error.message || "Failed to close the review." }, { status: error?.statusCode === 409 ? 409 : 400 });
+    return NextResponse.json({ error: friendlyError(error.message || "Failed to close the review.") }, { status: error?.statusCode === 409 ? 409 : 400 });
   }
 }

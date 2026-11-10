@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import {
   findStaffByIdentifier,
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
           return databaseUnavailableResponse("ERP Login API (OTP branch)", err);
         }
         return NextResponse.json(
-          { error: err.message || "Invalid or expired verification code." },
+          { error: friendlyError(err.message || "Invalid or expired verification code.") },
           { status: 401 }
         );
       }

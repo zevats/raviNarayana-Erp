@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 /**
  * JSON request with plain-language errors for the person using the app: the server's own message
  * when it sends one, otherwise a sentence for the status, and a clear line when there is no
@@ -29,7 +30,7 @@ export async function requestJson<T = any>(url: string, init?: RequestInit): Pro
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const serverMessage = (data as any)?.error;
-    throw new Error(typeof serverMessage === "string" && serverMessage.trim() ? serverMessage : messageForStatus(res.status));
+    throw new Error(typeof serverMessage === "string" && serverMessage.trim() ? friendlyError(serverMessage) : messageForStatus(res.status));
   }
   return data as T;
 }

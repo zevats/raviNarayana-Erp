@@ -33,7 +33,7 @@ import { runAutomaticRentIfDue } from "@/server/finance/rentGenerationService";
 import { getDashboardOps, DashboardOps } from "@/server/dashboard/dashboardOpsService";
 import { previewDailyClosing } from "@/server/finance/cashbookClosingService";
 import { hasPermission } from "@/server/authorization/permissions";
-import { DashboardView } from "./DashboardView";
+import { DashboardView, type DashboardDivisionView } from "./DashboardView";
 import { NotificationItem, ClosingDivision } from "@/types";
 import { getNotifications } from "@/server/notifications/notificationService";
 import { ExportReportModal } from "./ExportReportModal";
@@ -81,123 +81,77 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   const ownerName = user?.fullName || "Owner";
   const todayIsoDate = businessToday();
-  const currentMonthPrefix = todayIsoDate.slice(0, 7);
   const activeDivision: ClosingDivision = searchParams?.division === "PG" || searchParams?.division === "TIFFIN" ? searchParams.division : "COMBINED";
 
-  // Default metric containers
-  let occupancy = {
-    totalRooms: 0,
-    totalCapacity: 0,
-    occupiedBeds: 0,
-    vacantBeds: 0,
-    occupancyRate: 0,
-  };
-
-  let finance = {
-    currentMonthRent: 0,
-    currentMonthExpenses: 0,
-    totalRentCollected: 0,
-    totalRentBilled: 0,
-    totalExpensesPaid: 0,
-    totalDepositsHeld: 0,
-    outstandingRent: 0,
-    overdueCount: 0,
-    kitchenCosts: 0,
-    tiffinRevenue: 0,
-    tiffinNetResult: 0,
-  };
-
-  let mealFulfillment = {
-    serviceDate: todayIsoDate,
-    breakfast: { status: "UNPLANNED", cooked: 0, dispatched: 0, delivered: 0 },
-    lunch: { status: "UNPLANNED", cooked: 0, dispatched: 0, delivered: 0 },
-    dinner: { status: "UNPLANNED", cooked: 0, dispatched: 0, delivered: 0 },
-    totals: { cooked: 0, dispatched: 0, delivered: 0 },
-  };
-
-  let liveNotifications: { notifications: NotificationItem[]; unreadCount: number } = {
-    notifications: [],
-    unreadCount: 0,
-  };
-
-  let deliverySummary = {
-    totalTasks: 0,
-    delivered: 0,
-    exceptions: 0,
-    completionRate: 0,
-  };
-
-  let monthlyData: { month: string; label: string; collected: number; expenses: number }[] = [];
-  // When figures cannot be loaded the page says so; it never presents placeholder zeros as real data.
-  let metricsUnavailable = false;
+  // All three views (All, PG, Tiffin) are loaded together, side by side, so switching between
+  // them on the page is instant (no new request). Without finance access only "All" is shown.
+  const showMoney = hasPermission(user?.role, "finance.read");
+  const divisions: ClosingDivision[] = showMoney ? ["COMBINED", "PG", "TIFFIN"] : ["COMBINED"];
 
   // Monthly rent is generated on the first dashboard visit on or after the rent due day (Settings);
   // nothing happens when automatic rent is off or already done. Never blocks the page on failure.
   if (user) await runAutomaticRentIfDue(user);
 
-  try {
-    const [metrics, notifs] = await Promise.all([
-      getDashboardMetrics({
-        division: activeDivision,
-        viewerRole: user?.role,
-        startDate: searchParams?.startDate,
-        endDate: searchParams?.endDate,
-      }),
-      user ? getNotifications(user, { limit: 6 }) : Promise.resolve({ notifications: [], unreadCount: 0 }),
-    ]);
-
-    occupancy = metrics.occupancy;
-    finance = metrics.finance;
-    mealFulfillment = metrics.mealFulfillment;
-    deliverySummary = metrics.deliverySummary;
-    monthlyData = metrics.monthlyData;
-    liveNotifications = notifs;
-  } catch (err) {
-    console.error("Dashboard database query error:", err);
-    metricsUnavailable = true;
-  }
-
-  // Today's operations, people, money and charts (each block reports its own failure).
-  const showMoney = hasPermission(user?.role, "finance.read");
-  const [ops, cashInHand] = await Promise.all([
-    getDashboardOps(activeDivision).catch((): DashboardOps => ({ today: null, custody: null, people: null, money: null, charts: null, tiffin: null, recent: null, failed: ["all"] })),
-    showMoney && user
-      ? previewDailyClosing(user, todayIsoDate, "COMBINED").then((pv) => pv.expectedCashBalance).catch(() => null)
-      : Promise.resolve(null),
+  const emptyOps = (): DashboardOps => ({ today: null, custody: null, people: null, money: null, charts: null, tiffin: null, recent: null, failed: ["all"] });
+  const [perDivision, notifs, cashInHand] = await Promise.all([
+    Promise.all(
+      divisions.map(async (division) => {
+        const [metrics, ops] = await Promise.all([
+          getDashboardMetrics({ division, viewerRole: user?.role, startDate: searchParams?.startDate, endDate: searchParams?.endDate }).catch((err) => {
+            console.error("Dashboard database query error:", err);
+            return null;
+          }),
+          getDashboardOps(division).catch(emptyOps),
+        ]);
+        return { division, metrics, ops };
+      })
+    ),
+    user ? getNotifications(user, { limit: 12 }).catch(() => ({ notifications: [], unreadCount: 0 })) : Promise.resolve({ notifications: [] as NotificationItem[], unreadCount: 0 }),
+    showMoney && user ? previewDailyClosing(user, todayIsoDate, "COMBINED").then((pv) => pv.expectedCashBalance).catch(() => null) : Promise.resolve(null),
   ]);
 
-  // Summary object for export modal
-  const exportSummary = {
-    occupiedBeds: occupancy.occupiedBeds,
-    totalCapacity: occupancy.totalCapacity,
-    occupancyRate: occupancy.occupancyRate,
-    availableBeds: occupancy.vacantBeds,
-    currentMonthRent: finance.currentMonthRent,
-    outstandingRent: finance.outstandingRent,
-    overdueCount: finance.overdueCount,
-    tiffinNetResult: finance.tiffinNetResult,
-    kitchenCosts: finance.kitchenCosts,
-    tiffinRevenue: finance.tiffinRevenue,
-    totalExpenses: finance.totalExpensesPaid,
-    totalMeals: mealFulfillment.totals.cooked,
-    totalDeliveryTasks: deliverySummary.totalTasks,
-    deliveredCount: deliverySummary.delivered,
-    deliveryExceptions: deliverySummary.exceptions,
-  };
+  const views = {} as Record<ClosingDivision, DashboardDivisionView>;
+  for (const { division, metrics, ops } of perDivision) {
+    const occupancy = metrics?.occupancy ?? { totalRooms: 0, totalCapacity: 0, occupiedBeds: 0, vacantBeds: 0, occupancyRate: 0 };
+    const finance = metrics?.finance ?? { currentMonthRent: 0, currentMonthExpenses: 0, totalRentCollected: 0, totalRentBilled: 0, totalExpensesPaid: 0, totalDepositsHeld: 0, outstandingRent: 0, overdueCount: 0, kitchenCosts: 0, tiffinRevenue: 0, tiffinNetResult: 0 };
+    const meals = metrics?.mealFulfillment ?? { totals: { cooked: 0 } };
+    const delivery = metrics?.deliverySummary ?? { totalTasks: 0, delivered: 0, exceptions: 0, completionRate: 0 };
+    views[division] = {
+      ops,
+      occupancy,
+      finance,
+      monthlyData: metrics?.monthlyData ?? [],
+      metricsUnavailable: !metrics,
+      // Summary for the export dialog
+      exportSummary: {
+        occupiedBeds: occupancy.occupiedBeds,
+        totalCapacity: occupancy.totalCapacity,
+        occupancyRate: occupancy.occupancyRate,
+        availableBeds: occupancy.vacantBeds,
+        currentMonthRent: finance.currentMonthRent,
+        outstandingRent: finance.outstandingRent,
+        overdueCount: finance.overdueCount,
+        tiffinNetResult: finance.tiffinNetResult,
+        kitchenCosts: finance.kitchenCosts,
+        tiffinRevenue: finance.tiffinRevenue,
+        totalExpenses: finance.totalExpensesPaid,
+        totalMeals: meals.totals.cooked,
+        totalDeliveryTasks: delivery.totalTasks,
+        deliveredCount: delivery.delivered,
+        deliveryExceptions: delivery.exceptions,
+      },
+    };
+  }
 
   return (
     <DashboardView
       ownerName={ownerName}
-      division={activeDivision}
+      initialDivision={divisions.includes(activeDivision) ? activeDivision : "COMBINED"}
+      divisions={divisions}
       showMoney={showMoney}
-      ops={ops}
-      occupancy={occupancy}
-      finance={finance}
-      monthlyData={monthlyData}
-      notifications={liveNotifications.notifications}
+      views={views}
+      notifications={notifs.notifications}
       cashInHand={cashInHand}
-      metricsUnavailable={metricsUnavailable}
-      exportSummary={exportSummary}
       startDate={searchParams?.startDate}
       endDate={searchParams?.endDate}
     />

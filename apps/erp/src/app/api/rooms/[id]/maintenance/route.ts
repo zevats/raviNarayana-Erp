@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/friendlyError";
 import { NextRequest, NextResponse } from "next/server";
 import { databaseErrorResponse } from "@/server/database/availability";
 import { resolveUserFromRequest, unauthorizedResponse, handleAuthorizationError } from "@/server/authorization/authorize";
@@ -11,7 +12,7 @@ function errorResponse(error: any, fallback: string) {
   if (authError) return authError;
   const dbError = databaseErrorResponse("/api/rooms/[id]/maintenance", error);
   if (dbError) return dbError;
-  return NextResponse.json({ error: error.message || fallback }, { status: error.statusCode === 409 ? 409 : 400 });
+  return NextResponse.json({ error: friendlyError(error.message || fallback) }, { status: error.statusCode === 409 ? 409 : 400 });
 }
 
 /** Maintenance history for the room, newest first. */

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, CornerDownLeft, UserRound, ExternalLink, LogOut, Compass } from "lucide-react";
+import { Search, CornerDownLeft, UserRound, ExternalLink, LogOut } from "lucide-react";
 import type { AuthenticatedUser } from "@/types";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { ROLE_LABELS } from "@/types";
@@ -85,10 +85,7 @@ export function TopBar({
 
       <div className="flex items-center gap-3 shrink-0">
         <div ref={boxRef} className="relative">
-          {/* Page navigation, not a data search: a compass and a shortcut hint, so it does not look
-              like the search boxes that filter a page's records. */}
-          <div className="rn-glass rounded-full h-12 pl-4 pr-2 flex items-center gap-2.5 w-[340px]">
-            <Compass className="w-[18px] h-[18px] shrink-0 text-[var(--rn-ink-3)]" aria-hidden />
+          <div className="rn-glass rounded-full h-12 pl-5 pr-1.5 flex items-center gap-3 w-[340px]">
             <input
               ref={inputRef}
               value={q}
@@ -103,16 +100,16 @@ export function TopBar({
                 if (e.key === "ArrowUp") { e.preventDefault(); setCursor((c) => Math.max(0, c - 1)); }
                 if (e.key === "Enter" && results[cursor]) go(results[cursor].href);
               }}
-              placeholder="Jump to a page…"
+              placeholder="Go to a section…"
               aria-label="Go to a section"
               role="combobox"
               aria-expanded={open}
               aria-controls="rn-jump-list"
               className="flex-1 min-w-0 bg-transparent text-[13.5px] text-[var(--rn-ink)] placeholder:text-[var(--rn-ink-3)] outline-none border-0 focus:shadow-none"
             />
-            <kbd className="shrink-0 h-7 px-2 rounded-lg border border-[var(--rn-line)] bg-white/70 text-[11.5px] font-semibold text-[var(--rn-ink-3)] grid place-items-center font-sans" aria-hidden>
-              Ctrl K
-            </kbd>
+            <span className="grid place-items-center w-9 h-9 rounded-full bg-[var(--rn-accent)] text-white shrink-0" aria-hidden>
+              <Search className="w-4 h-4" />
+            </span>
           </div>
           {open && (
             <ul id="rn-jump-list" role="listbox" className="rn-pop rn-rise absolute right-0 mt-2 w-[340px] rounded-3xl p-2 z-50 max-h-[360px] overflow-y-auto">
