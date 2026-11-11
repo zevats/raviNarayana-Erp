@@ -9,6 +9,9 @@ import type { NotificationItem, ClosingDivision } from "@/types";
 import { CollectionsChart, ExpenseDonut, CompletionTrend } from "./DashboardCharts";
 import { ExportReportModal } from "./ExportReportModal";
 import { formatMoney } from "@/lib/format";
+import { useRouter } from "next/navigation";
+import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { DashboardMobile } from "./DashboardMobile";
 
 const rupees = (v: number) => formatMoney(v);
 const shortDay = (d: string) => new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
@@ -135,7 +138,9 @@ export function DashboardView({
   cashInHand,
   startDate,
   endDate,
+  renderedAt,
 }: {
+  renderedAt?: number;
   ownerName: string;
   initialDivision: ClosingDivision;
   divisions: ClosingDivision[];
@@ -168,6 +173,16 @@ export function DashboardView({
     () => notifications.filter((n) => (division === "PG" ? !TIFFIN_LINK.test(n.link || "") : division === "TIFFIN" ? !PG_LINK.test(n.link || "") : true)),
     [notifications, division]
   );
+  const phone = useIsPhone();
+  // Shown from the preloaded copy with figures over a minute old: refresh them in place (the page
+  // stays on screen; the new figures replace the old ones when they arrive).
+  const router = useRouter();
+  useEffect(() => {
+    if (!renderedAt || Date.now() - renderedAt < 60000) return;
+    router.refresh();
+    window.dispatchEvent(new Event("erp:router-refreshed"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderedAt]);
 
   // Tiles follow the view: PG shows the house, Tiffin the kitchen and deliveries, All a mix.
   const tiles =
@@ -264,7 +279,21 @@ export function DashboardView({
     ) : null;
   const completion = ops.charts && tiffin ? <CompletionTrend days={ops.charts.deliveryCompletion} /> : null;
 
-  return (
+  const mobile = (
+      <DashboardMobile
+        ownerName={ownerName}
+        division={division}
+        divisions={divisions}
+        onDivision={choose}
+        showMoney={showMoney}
+        view={v}
+        attention={attention}
+        cashInHand={cashInHand}
+        exportButton={<ExportReportModal summary={exportSummary} division={division} startDate={startDate} endDate={endDate} />}
+      />
+  );
+
+  const desktop = (
     <div className="space-y-5">
       {metricsUnavailable && (
         <div role="alert" className="rn-glass rounded-[22px] p-4 text-[13px] text-red-900">
@@ -453,6 +482,7 @@ export function DashboardView({
       )}
     </div>
   );
+  return <PhoneOrDesktop phone={phone} mobile={mobile} desktop={desktop} />;
 }
 
 /** Compact percentage columns with the value under each (labels visible; no hover needed). */

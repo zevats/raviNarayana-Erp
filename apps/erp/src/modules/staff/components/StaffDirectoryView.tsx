@@ -9,6 +9,7 @@ import { ActionMenu } from "@/components/ui/ActionMenu";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { LoadError, NoMatches, StateMessage } from "@/components/ui/states";
 import { PageHeader, StatStrip, SearchField, Segmented, Badge } from "@/components/ui/kit";
+import { MChips, MEmpty, MField, MGroup, MHero, MNotice, MRow, MSearch, MSegment, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, initials, useIsPhone } from "@/components/app/m";
 import {
   StaffUser,
   StaffRole,
@@ -63,6 +64,8 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
   const [isDirectResetOpen, setIsDirectResetOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [actionMenuStaffId, setActionMenuStaffId] = useState<string | null>(null);
+  const [sheetStaff, setSheetStaff] = useState<StaffUser | null>(null);
+  const phone = useIsPhone();
   const [isDispatchingRecovery, setIsDispatchingRecovery] = useState<string | null>(null);
 
   const isSuperAdmin = currentUser.role === "SUPER_ADMIN";
@@ -160,6 +163,99 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
 
   return (
     <div className="space-y-6">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={
+          <MStack>
+            {bannerNotice && <MNotice onClose={() => setBannerNotice(null)}>{bannerNotice}</MNotice>}
+            {error && (
+              <MNotice tone="red" onClose={() => setError(null)}>
+                {error}
+              </MNotice>
+            )}
+            <MHero
+              label="Active staff"
+              value={stats.activeStaff}
+              action={
+                isSuperAdmin ? (
+                  <button type="button" onClick={() => setIsCreateOpen(true)} className="m-hero-btn m-press">
+                    <UserPlus className="w-4 h-4" /> Add
+                  </button>
+                ) : undefined
+              }
+              items={[
+                { label: "Owners", value: stats.superAdmins },
+                { label: "Deactivated", value: stats.deactivatedStaff, onClick: () => setStatusFilter("DEACTIVATED") },
+              ]}
+            />
+            <MSegment
+              label="Status"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              options={[
+                { value: "ALL", label: "All" },
+                { value: "ACTIVE", label: "Active" },
+                { value: "DEACTIVATED", label: "Off" },
+              ]}
+            />
+            <MChips
+              label="Role"
+              value={selectedRole}
+              onChange={setSelectedRole}
+              options={[{ value: "ALL", label: "All roles" }, ...Object.keys(ROLE_LABELS).map((r) => ({ value: r, label: ROLE_LABELS[r as StaffRole] }))]}
+            />
+            <MSearch value={search} onChange={setSearch} placeholder="Search name, username or email" />
+            {loading ? (
+              <MSkeletonRows rows={4} />
+            ) : sortedStaff.length === 0 ? (
+              <MEmpty title={search || selectedRole !== "ALL" || statusFilter !== "ALL" ? "No staff match" : "No staff accounts yet"} />
+            ) : (
+              <MGroup>
+                {sortedStaff.map((member) => (
+                  <MRow
+                    key={member.id}
+                    avatar={initials(member.fullName)}
+                    tone={member.isActive ? "accent" : "neutral"}
+                    title={member.fullName}
+                    sub={[ROLE_LABELS[member.role] || member.role, member.lastLoginAt ? `seen ${new Date(member.lastLoginAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}` : "never signed in"].join(" · ")}
+                    rightSub={member.isActive ? undefined : "Off"}
+                    onClick={() => setSheetStaff(member)}
+                  />
+                ))}
+              </MGroup>
+            )}
+            <MSheet open={Boolean(sheetStaff)} onClose={() => setSheetStaff(null)} title={sheetStaff?.fullName}>
+              {sheetStaff && (
+                <>
+                  <div className="m-card py-1">
+                    <MField label="Username">@{sheetStaff.username}</MField>
+                    <MField label="Role">{ROLE_LABELS[sheetStaff.role] || sheetStaff.role}</MField>
+                    <MField label="Email">{sheetStaff.email}</MField>
+                    <MField label="Status" tone={sheetStaff.isActive ? "green" : "neutral"}>{sheetStaff.isActive ? "Active" : "Deactivated"}</MField>
+                    <MField label="Last sign-in">{sheetStaff.lastLoginAt ? new Date(sheetStaff.lastLoginAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "Never"}</MField>
+                  </div>
+                  <MGroup>
+                    <MRow icon={History} tone="accent" title="Sign-in history" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsHistoryOpen(true); }} />
+                    {isSuperAdmin && (
+                      <>
+                        <MRow icon={Edit2} tone="neutral" title="Edit profile" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsEditOpen(true); }} />
+                        <MRow icon={Shield} tone="blue" title="Change role" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsRoleOpen(true); }} />
+                        {sheetStaff.isActive && <MRow icon={Send} tone="neutral" title="Send password reset link" onClick={() => { const m = sheetStaff; setSheetStaff(null); handleSendRecovery(m); }} />}
+                        <MRow icon={KeyRound} tone="neutral" title="Set a new password" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDirectResetOpen(true); }} />
+                        <MRow icon={Power} tone={sheetStaff.isActive ? "red" : "green"} title={sheetStaff.isActive ? "Deactivate" : "Reactivate"} onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDeactivateOpen(true); }} />
+                        {sheetStaff.role !== "SUPER_ADMIN" && sheetStaff.id !== currentUser.id && (
+                          <MRow icon={Trash2} tone="red" title="Delete account" onClick={() => { const m = sheetStaff; setSheetStaff(null); setDeleteError(null); setDeleteTarget(m); }} />
+                        )}
+                      </>
+                    )}
+                  </MGroup>
+                </>
+              )}
+            </MSheet>
+          </MStack>
+        }
+        desktop={
+          <div className="space-y-6">
       {/* Top Banner Notice */}
       {bannerNotice && (
         <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium flex items-center justify-between animate-fadeIn">
@@ -327,6 +423,10 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
         )}
       </div>
       </div>
+
+          </div>
+        }
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

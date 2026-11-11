@@ -41,6 +41,8 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { PageHeader, StatStrip, Card, SearchField, EmptyState } from "@/components/ui/kit";
+import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { RoomsMobile } from "@/modules/rooms/RoomsMobile";
 import { RoomBedsPanel } from "@/modules/rooms/RoomBedsPanel";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { RefreshButton } from "@/components/ui/states";
@@ -205,6 +207,7 @@ export default function RoomsPage() {
   }, [rooms]);
 
   // Unique floors for filter
+  const phone = useIsPhone();
   const floors = useMemo(() => {
     const unique = Array.from(new Set(rooms.map((r) => r.floor))).sort((a, b) => a - b);
     return unique;
@@ -651,6 +654,36 @@ export default function RoomsPage() {
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-5 min-w-0">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={
+          <RoomsMobile
+            rooms={filteredRooms}
+            allCount={rooms.length}
+            loading={loading}
+            stats={stats}
+            search={search}
+            setSearch={setSearch}
+            floor={selectedFloor}
+            setFloor={setSelectedFloor}
+            floors={floors}
+            status={selectedStatus}
+            setStatus={setSelectedStatus}
+            floorLabel={(f) => formatFloorLabel(f ?? 0)}
+            typeLabel={(t) => ROOM_TYPE_LABELS[t as RoomType] || t}
+            success={actionSuccess}
+            error={actionError || error}
+            onAdd={handleOpenAddModal}
+            onEditRoom={handleOpenEditRoom}
+            onDeleteRoom={handleOpenDeleteRoom}
+            onBeds={(id) => setBedsRoomId(id)}
+            onAddTenant={handleOpenAddTenant}
+            onEditResident={(o, r) => handleOpenEditResident(o as any, r)}
+            onCheckOut={(o, r) => handleOpenCheckOutResident(o as any, r)}
+          />
+        }
+        desktop={
+          <div className="space-y-5 min-w-0">
       <PageHeader
         title="Rooms & beds"
         actions={
@@ -954,6 +987,9 @@ export default function RoomsPage() {
         </div>
       )}
       </Card>
+          </div>
+        }
+      />
 
       {bedsRoomId && rooms.find((r) => r.id === bedsRoomId) && (
         <RoomBedsPanel

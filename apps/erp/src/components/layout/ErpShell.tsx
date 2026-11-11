@@ -29,6 +29,9 @@ interface ErpShellProps {
   websiteUrl?: string | null;
 }
 
+const ARRIVAL_SCRIPT =
+  "try{var d=document.documentElement,t=+sessionStorage.getItem('rn-arrive');if(t&&Date.now()-t<30000&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){sessionStorage.removeItem('rn-arrive');d.setAttribute('data-rn-arrive','');setTimeout(function(){d.removeAttribute('data-rn-arrive')},2600)}else if(t){sessionStorage.removeItem('rn-arrive')}}catch(e){}";
+
 export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: ErpShellProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -332,6 +335,10 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
 
   return (
     <div className="rn-app min-h-screen" data-accent={accent === "orange" ? "orange" : undefined} data-rail={collapsed ? "collapsed" : "expanded"}>
+      {/* First paint after signing in: plays the arrival (glass.css "Sign-in blend"). Runs while the
+          page is parsed, before anything is drawn, so nothing shows first and then animates. */}
+      <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
+      <style>{"@view-transition { navigation: auto; }"}</style>
       <div className="rn-canvas" aria-hidden />
       {navPending && <div className="erp-nav-progress" role="progressbar" aria-label="Opening page" />}
 

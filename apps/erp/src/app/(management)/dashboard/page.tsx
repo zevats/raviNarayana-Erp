@@ -161,6 +161,7 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
       cashInHand={cashInHand}
       startDate={searchParams?.startDate}
       endDate={searchParams?.endDate}
+      renderedAt={Date.now()}
     />
   );
 }

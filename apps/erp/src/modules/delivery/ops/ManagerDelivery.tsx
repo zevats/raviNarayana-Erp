@@ -3,7 +3,8 @@
 import { RoomMeals } from "./RoomMeals";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Search, ClipboardList, RefreshCw, AlertTriangle, Download } from "lucide-react";
+import { Search, ClipboardList, RefreshCw, AlertTriangle, Download, LayoutList, Wallet, History as HistoryIcon, DoorOpen } from "lucide-react";
+import { MHero, MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import type { AuthenticatedUser, DeliveryTask, MealType } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
@@ -65,6 +66,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [filter, setFilter] = useState<DeliveryOutcome | "ALL">("ALL");
+  const phone = useIsPhone();
   const [search, setSearch] = useState("");
   // Person filter: "" = everyone, "__none" = unassigned, else a staff id.
   const [person, setPerson] = useState("");
@@ -240,6 +242,68 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
 
   return (
     <div className="space-y-5">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={
+          <div className="m-stack">
+            <div className="flex items-center justify-between gap-2.5 flex-wrap">
+              <MealSwitch value={meal} onChange={setMeal} />
+              <DateStepper value={date} today={today} onChange={setDate} />
+            </div>
+            <MHero
+              tone="orange"
+              label={<>Delivered · {meal === "LUNCH" ? "Lunch" : "Dinner"}</>}
+              value={`${summary.delivered}/${summary.waiting + summary.out + summary.delivered + summary.partial + summary.notDelivered}`}
+              note={
+                !m
+                  ? "Loading the list…"
+                  : !m.schemaReady
+                  ? undefined
+                  : m.prepared
+                  ? `List ready ${timeOf(m.preparedAt)}${m.lastRunAt && m.lastRunAt !== m.preparedAt ? ` · updated ${timeOf(m.lastRunAt)}` : ""} · ${m.taskCount} stops`
+                  : m.prepareAt
+                  ? m.due
+                    ? "Preparing the list now…"
+                    : `List prepares after ${m.prepareAt}`
+                  : "List not prepared yet"
+              }
+              action={
+                !readOnly && m?.schemaReady ? (
+                  <button type="button" onClick={prepare} disabled={preparing} className="m-hero-btn m-press">
+                    <RefreshCw className={`w-3.5 h-3.5 ${preparing ? "animate-spin" : ""}`} /> {m.prepared ? "Update" : "Prepare"}
+                  </button>
+                ) : undefined
+              }
+              items={[
+                { label: "Waiting", value: summary.waiting, onClick: () => { setTab("board"); setFilter(filter === "WAITING" ? "ALL" : "WAITING"); } },
+                { label: "Out now", value: summary.out, onClick: () => { setTab("board"); setFilter(filter === "OUT" ? "ALL" : "OUT"); } },
+                { label: "Problems", value: summary.partial + summary.notDelivered, onClick: () => setTab("problems") },
+                { label: "To collect", value: rupees(summary.money.outstanding) },
+              ]}
+            />
+            {m && m.prepared && m.unassignedCount > 0 && <MNotice tone="red">{m.unassignedCount} stop{m.unassignedCount === 1 ? "" : "s"} without a delivery person</MNotice>}
+            {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
+            <nav aria-label="Delivery sections" className="m-places" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
+              {([
+                { value: "board", label: "Board", icon: LayoutList },
+                { value: "problems", label: problems.length ? `Problems ${problems.length}` : "Problems", icon: AlertTriangle },
+                { value: "custody", label: "Cash", icon: Wallet },
+                { value: "history", label: "History", icon: HistoryIcon },
+                { value: "rooms", label: "Rooms", icon: DoorOpen },
+              ] as const).map((p) => {
+                const Icon = p.icon;
+                return (
+                  <button key={p.value} type="button" onClick={() => setTab(p.value as Tab)} aria-current={tab === p.value ? "page" : undefined} className="m-place m-press">
+                    <Icon strokeWidth={1.9} />
+                    <span>{p.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        }
+        desktop={
+          <div className="space-y-5">
       {/* Header: the meal being run, the day, and the list behind it */}
       <PageHeader
         title="Delivery"
@@ -308,6 +372,10 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           { value: "history", label: "History" },
           { value: "rooms", label: "Room meals" },
         ]}
+      />
+
+          </div>
+        }
       />
 
       {tab === "rooms" && <RoomMeals canChange={canManage} date={date} meal={meal} />}

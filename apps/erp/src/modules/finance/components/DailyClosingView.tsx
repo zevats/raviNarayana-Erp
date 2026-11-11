@@ -29,6 +29,8 @@ import {
 import { toLocalDateString } from "../utils/dateUtils";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { formatNumberIN, formatMoney } from "@/lib/format";
+import { useIsPhone } from "@/components/app/m";
+import { ClosingMobile } from "../mobile/FinanceMobileMore";
 
 interface DailyClosingViewProps {
   onMutationSuccess?: (message: string) => void;
@@ -41,6 +43,7 @@ export function DailyClosingView({
 }: DailyClosingViewProps) {
   // Draft, finalize and reopen require finance.manage (Owner); the server enforces this too.
   const canManageFinance = useHasPermission("finance.manage");
+  const phone = useIsPhone();
   const [selectedDate, setSelectedDate] = useState<string>(toLocalDateString());
   const [selectedDivision, setSelectedDivision] = useState<ClosingDivision>("COMBINED");
   const [preview, setPreview] = useState<DailyClosingPreview | null>(null);
@@ -229,6 +232,40 @@ export function DailyClosingView({
       setIsSubmitting(false);
     }
   };
+
+  // Phones: the app layout (same state and actions).
+  if (phone) {
+    return (
+      <ClosingMobile
+        date={selectedDate}
+        setDate={setSelectedDate}
+        division={selectedDivision}
+        setDivision={setSelectedDivision}
+        preview={preview}
+        loading={isLoadingPreview}
+        history={historicalClosings}
+        canManage={canManageFinance}
+        isFinalized={isFinalized}
+        cash={actualCashCounted}
+        setCash={setActualCashCounted}
+        bank={actualBankVerified}
+        setBank={setActualBankVerified}
+        reason={discrepancyReason}
+        setReason={setDiscrepancyReason}
+        notes={notes}
+        setNotes={setNotes}
+        difference={cashDiscrepancy}
+        submitting={isSubmitting}
+        onDraft={handleSaveDraft}
+        onFinalize={handleFinalize}
+        onReopen={handleReopen}
+        reopenOpen={isReopenModalOpen}
+        setReopenOpen={setIsReopenModalOpen}
+        reopenReason={reopenReason}
+        setReopenReason={setReopenReason}
+      />
+    );
+  }
 
   const channelList: PaymentMethod[] = ["CASH", "UPI", "BANK_TRANSFER", "CHEQUE", "OTHER"];
 

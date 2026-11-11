@@ -34,6 +34,8 @@ import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 import { RefreshButton } from "@/components/ui/states";
 import { formatDateTime } from "@/lib/format";
 import { OrderCard } from "@/modules/orders/components/OrderCard";
+import { OrdersMobile } from "@/modules/orders/components/OrdersMobile";
+import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import type { PendingOrderJob } from "@/modules/orders/components/NewOrderModal";
 
 // Dialogs and secondary views load on demand, off the navigation path.
@@ -52,6 +54,7 @@ export default function OrdersPage() {
   useEffect(() => preloadWhenIdle([loadNewOrderModal, loadEditOrderModal, loadMenuCatalog]), []);
   // Signed-in user from the server-rendered shell (no /api/auth/me round-trip).
   const currentUser = useCurrentUser();
+  const phone = useIsPhone();
   const [serviceDate, setServiceDate] = useState(businessToday());
   const [orderTypeFilter, setOrderTypeFilter] = useState<"ALL" | "DELIVERY" | "DINE_IN">("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -247,7 +250,204 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flashOrderId, flashLoaded]);
 
-  return (
+  // One order as a card (the list on wide screens, the detail sheet on phones).
+  const cardFor = (order: UnifiedOrder) => {
+    const isDelivery = order.orderType === "DELIVERY";
+    const pill = "px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1";
+    const status =
+      order.orderStatus === "CONFIRMED" ? (
+        <span className={`${pill} bg-[#DCE9FA] text-[#163F73] border-[#A9C6EE]`}><Clock className="w-3 h-3" /> Confirmed</span>
+      ) : order.orderStatus === "OUT_FOR_DELIVERY" ? (
+        <span className={`${pill} bg-[#E0E3FA] text-[#272F7A] border-[#B4BBEE]`}><Truck className="w-3 h-3" /> Out for Delivery</span>
+      ) : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL" ? (
+        <span className={`${pill} bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]`}><AlertTriangle className="w-3 h-3" /> Partly delivered</span>
+      ) : order.orderStatus === "DELIVERED" ? (
+        <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> Delivered</span>
+      ) : order.orderStatus === "COMPLETED" ? (
+        <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> {order.paymentStatus === "PAID" ? <>Paid &amp; Complete</> : "Served"}</span>
+      ) : order.orderStatus === "EXCEPTION" ? (
+        <span className={`${pill} bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]`}><AlertTriangle className="w-3 h-3" /> {order.deliveryOutcome === "NONE" ? "Not delivered" : "Shortfall / Issue"}</span>
+      ) : order.orderStatus === "CANCELLED" ? (
+        <span className={`${pill} bg-[#ECE8E2] text-[#3D3631] border-[#D6CFC5]`}>Cancelled</span>
+      ) : null;
+    // Money owed stands out: a solid red pill; paid is a calm green.
+    const payment =
+      order.orderStatus === "CANCELLED" ? null : order.deliveryOutcome === "NONE" ? (
+        <span className="text-[12px] font-semibold px-2.5 py-1 rounded-full inline-block bg-[#ECE8E2] text-[#3D3631] border border-[#D6CFC5]">Nothing due</span>
+      ) : (
+        <span
+          className={`text-[12px] font-bold px-2.5 py-1 rounded-full inline-block tabular-nums border ${
+            order.paymentStatus === "PAID"
+              ? "bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]"
+              : order.paymentStatus === "PARTIALLY_PAID"
+              ? "bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]"
+              : "bg-[#FDECE8] text-[#A3311D] border-[#F4C3B8]"
+          }`}
+        >
+          {order.paymentStatus === "PAID"
+            ? `Paid ₹${order.amountDue ?? order.totalAmount}`
+            : order.paymentStatus === "PARTIALLY_PAID"
+            ? `Part paid ₹${order.collectedAmount} · ₹${order.remainingAmount} due`
+            : `Unpaid ₹${order.remainingAmount}`}
+        </span>
+      );
+    const changeable =
+      isDelivery &&
+      order.orderStatus !== "CANCELLED" &&
+      (order.deliveryStatus === "PENDING" || order.deliveryStatus === "ASSIGNED" || order.deliveryStatus === "OUT_FOR_DELIVERY") &&
+      !(order.collectedAmount && order.collectedAmount > 0);
+    return (
+      <OrderCard
+        key={order.id}
+        dataAttrs={{ "data-order-id": order.id }}
+        highlight={savedFlashIds.has(order.orderId || "")}
+        no={orderNo.get(order.id) ?? "–"}
+        orderType={order.orderType}
+        mealType={order.mealType}
+        time={formatDateTime(order.createdAt, undefined, { hour: "2-digit", minute: "2-digit" })}
+        customerName={order.customerName}
+        customerPhone={order.customerPhone}
+        address={order.deliveryAddress}
+        driverLabel={
+          order.assignedToName
+            ? {
+                prefix:
+                  order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
+                    ? "Delivered by"
+                    : order.orderStatus === "EXCEPTION"
+                    ? "Attempted by"
+                    : order.orderStatus === "OUT_FOR_DELIVERY"
+                    ? "Out with"
+                    : "Assigned to",
+                name: order.assignedToName,
+              }
+            : null
+        }
+        edge={
+          // Theme colours: forest for done, burnt orange on the way, warm amber waiting.
+          order.orderStatus === "CANCELLED"
+            ? "#CFC6B8"
+            : order.orderStatus === "EXCEPTION"
+            ? "#9A3423"
+            : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL"
+            ? "#C89F6B"
+            : order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
+            ? "#5D7656"
+            : order.orderStatus === "OUT_FOR_DELIVERY"
+            ? "#B4461A"
+            : "#E8A57A"
+        }
+        status={status}
+        payment={payment}
+        items={order.items.map((it) => ({ quantity: it.quantity, name: it.productName, lineTotal: it.lineTotal }))}
+        total={order.totalAmount}
+        note={
+          <>
+            {(order.revision ?? 0) > 0 && <span className="text-[11.5px] text-[var(--rn-ink-3)]">Edited</span>}
+            {order.orderStatus === "CANCELLED" && order.cancelReason && <span className="text-[12px] text-[#A3261A] truncate">Cancelled: {order.cancelReason}</span>}
+          </>
+        }
+        actions={
+          <>
+            {changeable && (
+              <>
+                <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
+                  Change
+                </button>
+                <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[#A3261A] hover:bg-[#FBEDE8]">
+                  Cancel order
+                </button>
+              </>
+            )}
+            {isDelivery && (
+              <Link
+                href={`/delivery?tab=board&date=${order.serviceDate}&meal=${order.mealType}`}
+                className="ml-1 inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-[var(--rn-accent)] text-[13px] font-semibold text-[var(--rn-accent)] hover:bg-[var(--rn-accent)] hover:text-white transition-colors"
+              >
+                View delivery <span aria-hidden>&rarr;</span>
+              </Link>
+            )}
+          </>
+        }
+      />
+    );
+  };
+  const pendingCardFor = (j: (typeof shownPending)[number], i: number) => {
+    const failed = j.status === "failed";
+    const saved = j.status === "saved";
+    const pill = "px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1.5";
+    return (
+      <OrderCard
+        key={j.key}
+        dataAttrs={{ "data-pending-key": j.key }}
+        ariaLabel={failed ? `Order for ${j.customerName} not saved` : saved ? `Order for ${j.customerName} saved` : `Order for ${j.customerName} being saved`}
+        tone={failed ? "failed" : "normal"}
+        highlight={flashKey === j.key}
+        no={orders.length + i + 1}
+        orderType={j.orderType}
+        mealType={j.mealType}
+        time={formatDateTime(j.createdAt, undefined, { hour: "2-digit", minute: "2-digit" })}
+        customerName={j.customerName}
+        customerPhone={j.customerPhone}
+        address={j.deliveryAddress}
+        driverLabel={undefined}
+        edge={failed ? "#9A3423" : "#E8A57A"}
+        status={
+          failed ? (
+            <span className={`${pill} bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]`}><AlertTriangle className="w-3 h-3" /> Not saved</span>
+          ) : saved ? (
+            <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> Saved</span>
+          ) : (
+            <span className={`${pill} bg-[#DCE9FA] text-[#163F73] border-[#A9C6EE]`}><span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden /> Saving</span>
+          )
+        }
+        items={j.items.map((it) => ({ quantity: it.quantity, name: it.name, lineTotal: it.lineTotal }))}
+        total={j.total}
+        note={failed ? <span className="text-[12px] text-[#8A1F12] truncate max-w-[280px]" title={j.error}>{j.error}</span> : undefined}
+        actions={
+          failed ? (
+            <>
+              <button type="button" onClick={() => setPending((list) => list.filter((x) => x.key !== j.key))} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink-2)] hover:bg-white/70">
+                Dismiss
+              </button>
+              <button type="button" onClick={() => runPending(j)} className="h-9 px-4 rounded-full bg-[var(--rn-accent)] text-white text-[13px] font-semibold">
+                Retry
+              </button>
+            </>
+          ) : undefined
+        }
+      />
+    );
+  };
+
+  const mobile = (
+    <OrdersMobile
+      section={activeSection}
+      setSection={setActiveSection}
+      counts={counts}
+      serviceDate={serviceDate}
+      setServiceDate={setServiceDate}
+      orderType={orderTypeFilter}
+      setOrderType={setOrderTypeFilter}
+      status={statusFilter}
+      setStatus={setStatusFilter}
+      search={searchQuery}
+      setSearch={setSearchQuery}
+      loading={isLoading}
+      orders={visibleOrders}
+      allCount={filteredOrders.length}
+      onEarlier={() => setShown((n) => n + PAGE)}
+      orderNo={orderNo}
+      pending={shownPending}
+      cardFor={cardFor}
+      pendingCardFor={pendingCardFor}
+      onNewOrder={() => setIsNewOrderModalOpen(true)}
+      notice={orderNotice}
+      menu={activeSection === "MENU_CATALOG" ? <MenuCatalog /> : null}
+    />
+  );
+
+  const desktop = (
     <div className="space-y-5 min-w-0">
       <PageHeader
         title="Orders"
@@ -315,174 +515,8 @@ export default function OrdersPage() {
               </div>
             )}
             <div className="rn-order-cards p-3 sm:p-4 space-y-3">
-              {visibleOrders.map((order) => {
-                const isDelivery = order.orderType === "DELIVERY";
-                const pill = "px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1";
-                const status =
-                  order.orderStatus === "CONFIRMED" ? (
-                    <span className={`${pill} bg-[#DCE9FA] text-[#163F73] border-[#A9C6EE]`}><Clock className="w-3 h-3" /> Confirmed</span>
-                  ) : order.orderStatus === "OUT_FOR_DELIVERY" ? (
-                    <span className={`${pill} bg-[#E0E3FA] text-[#272F7A] border-[#B4BBEE]`}><Truck className="w-3 h-3" /> Out for Delivery</span>
-                  ) : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL" ? (
-                    <span className={`${pill} bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]`}><AlertTriangle className="w-3 h-3" /> Partly delivered</span>
-                  ) : order.orderStatus === "DELIVERED" ? (
-                    <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> Delivered</span>
-                  ) : order.orderStatus === "COMPLETED" ? (
-                    <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> {order.paymentStatus === "PAID" ? <>Paid &amp; Complete</> : "Served"}</span>
-                  ) : order.orderStatus === "EXCEPTION" ? (
-                    <span className={`${pill} bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]`}><AlertTriangle className="w-3 h-3" /> {order.deliveryOutcome === "NONE" ? "Not delivered" : "Shortfall / Issue"}</span>
-                  ) : order.orderStatus === "CANCELLED" ? (
-                    <span className={`${pill} bg-[#ECE8E2] text-[#3D3631] border-[#D6CFC5]`}>Cancelled</span>
-                  ) : null;
-                // Money owed stands out: a solid red pill; paid is a calm green.
-                const payment =
-                  order.orderStatus === "CANCELLED" ? null : order.deliveryOutcome === "NONE" ? (
-                    <span className="text-[12px] font-semibold px-2.5 py-1 rounded-full inline-block bg-[#ECE8E2] text-[#3D3631] border border-[#D6CFC5]">Nothing due</span>
-                  ) : (
-                    <span
-                      className={`text-[12px] font-bold px-2.5 py-1 rounded-full inline-block tabular-nums border ${
-                        order.paymentStatus === "PAID"
-                          ? "bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]"
-                          : order.paymentStatus === "PARTIALLY_PAID"
-                          ? "bg-[#FBE9C4] text-[#5E3F04] border-[#EBC777]"
-                          : "bg-[#FDECE8] text-[#A3311D] border-[#F4C3B8]"
-                      }`}
-                    >
-                      {order.paymentStatus === "PAID"
-                        ? `Paid ₹${order.amountDue ?? order.totalAmount}`
-                        : order.paymentStatus === "PARTIALLY_PAID"
-                        ? `Part paid ₹${order.collectedAmount} · ₹${order.remainingAmount} due`
-                        : `Unpaid ₹${order.remainingAmount}`}
-                    </span>
-                  );
-                const changeable =
-                  isDelivery &&
-                  order.orderStatus !== "CANCELLED" &&
-                  (order.deliveryStatus === "PENDING" || order.deliveryStatus === "ASSIGNED" || order.deliveryStatus === "OUT_FOR_DELIVERY") &&
-                  !(order.collectedAmount && order.collectedAmount > 0);
-                return (
-                  <OrderCard
-                    key={order.id}
-                    dataAttrs={{ "data-order-id": order.id }}
-                    highlight={savedFlashIds.has(order.orderId || "")}
-                    no={orderNo.get(order.id) ?? "–"}
-                    orderType={order.orderType}
-                    mealType={order.mealType}
-                    time={formatDateTime(order.createdAt, undefined, { hour: "2-digit", minute: "2-digit" })}
-                    customerName={order.customerName}
-                    customerPhone={order.customerPhone}
-                    address={order.deliveryAddress}
-                    driverLabel={
-                      order.assignedToName
-                        ? {
-                            prefix:
-                              order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
-                                ? "Delivered by"
-                                : order.orderStatus === "EXCEPTION"
-                                ? "Attempted by"
-                                : order.orderStatus === "OUT_FOR_DELIVERY"
-                                ? "Out with"
-                                : "Assigned to",
-                            name: order.assignedToName,
-                          }
-                        : null
-                    }
-                    edge={
-                      // Theme colours: forest for done, burnt orange on the way, warm amber waiting.
-                      order.orderStatus === "CANCELLED"
-                        ? "#CFC6B8"
-                        : order.orderStatus === "EXCEPTION"
-                        ? "#9A3423"
-                        : order.orderStatus === "DELIVERED" && order.deliveryOutcome === "PARTIAL"
-                        ? "#C89F6B"
-                        : order.orderStatus === "DELIVERED" || order.orderStatus === "COMPLETED"
-                        ? "#5D7656"
-                        : order.orderStatus === "OUT_FOR_DELIVERY"
-                        ? "#B4461A"
-                        : "#E8A57A"
-                    }
-                    status={status}
-                    payment={payment}
-                    items={order.items.map((it) => ({ quantity: it.quantity, name: it.productName, lineTotal: it.lineTotal }))}
-                    total={order.totalAmount}
-                    note={
-                      <>
-                        {(order.revision ?? 0) > 0 && <span className="text-[11.5px] text-[var(--rn-ink-3)]">Edited</span>}
-                        {order.orderStatus === "CANCELLED" && order.cancelReason && <span className="text-[12px] text-[#A3261A] truncate">Cancelled: {order.cancelReason}</span>}
-                      </>
-                    }
-                    actions={
-                      <>
-                        {changeable && (
-                          <>
-                            <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
-                              Change
-                            </button>
-                            <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[#A3261A] hover:bg-[#FBEDE8]">
-                              Cancel order
-                            </button>
-                          </>
-                        )}
-                        {isDelivery && (
-                          <Link
-                            href={`/delivery?tab=board&date=${order.serviceDate}&meal=${order.mealType}`}
-                            className="ml-1 inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-[var(--rn-accent)] text-[13px] font-semibold text-[var(--rn-accent)] hover:bg-[var(--rn-accent)] hover:text-white transition-colors"
-                          >
-                            View delivery <span aria-hidden>&rarr;</span>
-                          </Link>
-                        )}
-                      </>
-                    }
-                  />
-                );
-              })}
-              {shownPending.map((j, i) => {
-                const failed = j.status === "failed";
-                const saved = j.status === "saved";
-                const pill = "px-2.5 py-1 rounded-full text-[12px] font-semibold border inline-flex items-center gap-1.5";
-                return (
-                  <OrderCard
-                    key={j.key}
-                    dataAttrs={{ "data-pending-key": j.key }}
-                    ariaLabel={failed ? `Order for ${j.customerName} not saved` : saved ? `Order for ${j.customerName} saved` : `Order for ${j.customerName} being saved`}
-                    tone={failed ? "failed" : "normal"}
-                    highlight={flashKey === j.key}
-                    no={orders.length + i + 1}
-                    orderType={j.orderType}
-                    mealType={j.mealType}
-                    time={formatDateTime(j.createdAt, undefined, { hour: "2-digit", minute: "2-digit" })}
-                    customerName={j.customerName}
-                    customerPhone={j.customerPhone}
-                    address={j.deliveryAddress}
-                    driverLabel={undefined}
-                    edge={failed ? "#9A3423" : "#E8A57A"}
-                    status={
-                      failed ? (
-                        <span className={`${pill} bg-[#FAD9D2] text-[#7A1A0E] border-[#EBA597]`}><AlertTriangle className="w-3 h-3" /> Not saved</span>
-                      ) : saved ? (
-                        <span className={`${pill} bg-[#D8EFD2] text-[#1D4E16] border-[#A3D396]`}><CheckCircle2 className="w-3 h-3" /> Saved</span>
-                      ) : (
-                        <span className={`${pill} bg-[#DCE9FA] text-[#163F73] border-[#A9C6EE]`}><span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" aria-hidden /> Saving</span>
-                      )
-                    }
-                    items={j.items.map((it) => ({ quantity: it.quantity, name: it.name, lineTotal: it.lineTotal }))}
-                    total={j.total}
-                    note={failed ? <span className="text-[12px] text-[#8A1F12] truncate max-w-[280px]" title={j.error}>{j.error}</span> : undefined}
-                    actions={
-                      failed ? (
-                        <>
-                          <button type="button" onClick={() => setPending((list) => list.filter((x) => x.key !== j.key))} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink-2)] hover:bg-white/70">
-                            Dismiss
-                          </button>
-                          <button type="button" onClick={() => runPending(j)} className="h-9 px-4 rounded-full bg-[var(--rn-accent)] text-white text-[13px] font-semibold">
-                            Retry
-                          </button>
-                        </>
-                      ) : undefined
-                    }
-                  />
-                );
-              })}
+              {visibleOrders.map(cardFor)}
+              {shownPending.map(pendingCardFor)}
             </div>
             </>
           )}
@@ -496,6 +530,12 @@ export default function OrdersPage() {
         </div>
       )}
 
+    </div>
+  );
+
+  return (
+    <div className="min-w-0">
+      <PhoneOrDesktop phone={phone} mobile={mobile} desktop={desktop} />
       {editing && (
         <EditOrderModal
           order={editing.order}
@@ -507,7 +547,7 @@ export default function OrdersPage() {
           }}
         />
       )}
-      {orderNotice && (
+      {orderNotice && phone === false && (
         <div role="status" className="fixed bottom-6 left-4 z-40 px-4 py-2.5 rounded-xl bg-[#1A2E20] text-white text-sm shadow-lg">{orderNotice}</div>
       )}
 

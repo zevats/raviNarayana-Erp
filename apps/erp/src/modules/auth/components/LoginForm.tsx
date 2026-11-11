@@ -39,12 +39,19 @@ export function LoginForm() {
   const [challengeId, setChallengeId] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otp, setOtp] = useState("");
-  // Code accepted: a full-screen logo covers the switch to the app (no frozen button, no sudden page).
+  // Code accepted: the form melts away into a greeting while the app loads, then the page blends
+  // into the app (the logo and brand panel glide into the app's bar; see "Sign-in blend" in glass.css).
   const [entering, setEntering] = useState(false);
+  const [helloName, setHelloName] = useState("");
   // Signed in: a full page load of the app (never an in-app jump that could reuse a page answer
   // from before the session existed, which sent people back to the password step).
   const openApp = (href: string) => {
-    window.location.replace(href.startsWith("/") ? href : "/dashboard");
+    const target = href.startsWith("/") ? href : "/dashboard";
+    try {
+      // Read by the app's first paint: it plays the arrival (ErpShell).
+      if (!target.startsWith("/delivery")) sessionStorage.setItem("rn-arrive", String(Date.now()));
+    } catch {}
+    window.location.replace(target);
   };
   const otpFormRef = useRef<HTMLFormElement | null>(null);
   const autoSent = useRef("");
@@ -212,6 +219,7 @@ export function LoginForm() {
       // consumed code cannot be resubmitted while the next page loads. Delivery staff go straight
       // to their run sheet instead of rendering the dashboard only to be redirected from it.
       rememberBrand(data.user?.role === "DELIVERY_PERSON" ? "delivery" : "standard");
+      setHelloName(String(data.user?.fullName || "").trim().split(/\s+/)[0] || "");
       setEntering(true);
       const landing =
         !searchParams.get("next") && data.user?.role === "DELIVERY_PERSON" ? "/delivery" : nextUrl;
@@ -370,12 +378,9 @@ export function LoginForm() {
   // glass card. The delivery (orange) edition keeps its app's layout unchanged.
   const erp = brand !== "delivery";
   return (
-    <div className={`min-h-[100dvh] w-full flex flex-col lg:h-[100dvh] lg:overflow-hidden ${erp ? "rn-login justify-center" : ""}`} style={erp ? undefined : { background: t.page }}>
-      {entering && (
-        <div className="rn-login-enter" role="status" aria-label="Signing in">
-          <RnLogo brand={brand} size={96} title="" className="rn-login-enter-logo" />
-        </div>
-      )}
+    <div className={`min-h-[100dvh] w-full flex flex-col lg:h-[100dvh] lg:overflow-hidden ${erp ? "rn-login justify-center" : ""}`} style={erp ? undefined : { background: t.page }} data-leaving={entering ? "" : undefined}>
+      {/* Same-site page loads from here blend into the next page (browsers with View Transitions). */}
+      <style>{"@view-transition { navigation: auto; }"}</style>
       <div className="w-full flex flex-col lg:flex-row lg:h-full rn-login-shell">
       {/* Large screens: the brand panel (sidebar glass, the PG photo, the logo and name). */}
       <aside className={`rn-login-brand hidden lg:flex ${erp ? "" : "rn-login-brand-delivery"}`} aria-hidden="true">
@@ -431,10 +436,10 @@ export function LoginForm() {
       <div className="flex-1 min-w-0 flex flex-col justify-center rn-login-formside">
       {erp ? (
         <header className="lg:hidden px-6 pt-[max(2rem,calc(env(safe-area-inset-top)+1.5rem))] pb-7 text-center">
-          <div className="rn-logo-in inline-block mb-3">
+          <div className="rn-logo-in inline-block mb-3 rn-vt-logo">
             <RnLogo brand="standard" size={96} title="" />
           </div>
-          <p className="rn-login-mark">Ravinarayan</p>
+          <p className="rn-login-mark rn-vt-name">Ravinarayan</p>
           <p className="rn-login-sub">PG &amp; Tiffin</p>
         </header>
       ) : (
@@ -454,6 +459,12 @@ export function LoginForm() {
       {/* Form card */}
       <section className={erp ? "px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0" : "relative -mt-16 sm:-mt-20 lg:mt-0 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:p-0 flex-1 lg:flex-none"}>
         <div className={`${erp ? "rn-login-card mx-auto w-full max-w-[420px] px-5 sm:px-8 pt-7 pb-8" : "mx-auto w-full max-w-[420px] bg-white rounded-[28px] shadow-[0_18px_50px_-20px_rgba(15,42,29,0.35)] px-5 sm:px-7 pt-6 pb-7"} lg:!bg-transparent lg:!border-transparent lg:!shadow-none lg:![backdrop-filter:none] lg:!max-w-[380px] lg:!px-0`}>
+          {entering && (
+            <div className="rn-login-hello" role="status" aria-live="polite">
+              <p className="rn-login-hello-text rn-vt-hello">Namaste{helloName ? `, ${helloName}` : ""}</p>
+              <span className="rn-login-hello-line" aria-hidden />
+            </div>
+          )}
           <h1 className="text-[22px] font-extrabold tracking-[-0.01em] text-[#16241B] rn-login-title">{step === "LOGIN" ? <><span className="lg:hidden">Sign in</span><span className="hidden lg:inline">Welcome back</span></> : titles[step]}</h1>
           {step === "OTP" && (
             <p className="mt-1 text-[14px] text-[#5B6B5F]">

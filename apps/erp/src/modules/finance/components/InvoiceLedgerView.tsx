@@ -26,6 +26,8 @@ import { PrintableInvoiceModal } from "./modals/PrintableInvoiceModal";
 import { AllocatePaymentModal } from "./modals/AllocatePaymentModal";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { businessToday } from "@/lib/businessDate";
+import { useIsPhone } from "@/components/app/m";
+import { InvoicesMobile, CancelInvoiceSheet } from "../mobile/FinanceMobileMore";
 
 interface InvoiceLedgerViewProps {
   residents: ResidentListItem[];
@@ -50,6 +52,7 @@ export function InvoiceLedgerView({
   // Modals
   // Create/issue/allocate/cancel require finance.manage (Owner); the server enforces this too.
   const canManageFinance = useHasPermission("finance.manage");
+  const phone = useIsPhone();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isPrintOpen, setIsPrintOpen] = useState(false);
@@ -208,6 +211,85 @@ export function InvoiceLedgerView({
     }
     setIsAllocateOpen(true);
   };
+
+  const modals = (
+    <>
+        <CreateInvoiceModal
+          isOpen={isCreateOpen}
+          onClose={() => setIsCreateOpen(false)}
+          residents={residents}
+          onSuccess={(inv, msg) => {
+            setActionSuccess(msg);
+            fetchInvoices();
+            if (onRefreshParentFinance) onRefreshParentFinance();
+          }}
+        />
+
+        <PrintableInvoiceModal
+          isOpen={isPrintOpen}
+          onClose={() => {
+            setIsPrintOpen(false);
+            setSelectedInvoice(null);
+          }}
+          invoice={selectedInvoice}
+          onOpenAllocate={(inv) => openAllocateModal(inv)}
+          onIssueInvoice={(id) => handleIssueInvoice(id)}
+        />
+
+        <AllocatePaymentModal
+          isOpen={isAllocateOpen}
+          onClose={() => {
+            setIsAllocateOpen(false);
+            setInvoiceToAllocate(null);
+          }}
+          invoice={invoiceToAllocate}
+          onSuccess={(updatedInv, alloc, msg) => {
+            setActionSuccess(msg);
+            fetchInvoices();
+            if (onRefreshParentFinance) onRefreshParentFinance();
+          }}
+          onOpenRecordPayment={onOpenRecordPayment}
+        />
+    </>
+  );
+
+  // Phones: the app layout (same state and actions).
+  if (phone) {
+    return (
+      <>
+        <InvoicesMobile
+          invoices={filteredInvoices}
+          loading={loading}
+          error={error || (invoiceLoadError && !invoiceData ? invoiceLoadError.message || "Could not load invoices." : null)}
+          success={actionSuccess}
+          onDismiss={() => {
+            setError(null);
+            setActionSuccess(null);
+          }}
+          totals={{ billed: totalBilled, collected: totalCollected, due: totalDue }}
+          search={searchTerm}
+          setSearch={setSearchTerm}
+          status={statusFilter}
+          setStatus={setStatusFilter}
+          category={categoryFilter}
+          setCategory={setCategoryFilter}
+          type={typeFilter}
+          setType={setTypeFilter}
+          canManage={canManageFinance}
+          onCreate={() => setIsCreateOpen(true)}
+          onView={openPrintModal}
+          onIssue={handleIssueInvoice}
+          onAllocate={openAllocateModal}
+          onCancel={(id) => {
+            setCancelTargetId(id);
+            setCancelReason("");
+          }}
+        />
+        <CancelInvoiceSheet open={Boolean(cancelTargetId)} reason={cancelReason} setReason={setCancelReason} busy={cancelling} onClose={() => setCancelTargetId(null)} onConfirm={handleCancelInvoice} />
+        {modals}
+      </>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -754,43 +836,7 @@ export function InvoiceLedgerView({
         </div>
       )}
 
-      {/* Modals */}
-      <CreateInvoiceModal
-        isOpen={isCreateOpen}
-        onClose={() => setIsCreateOpen(false)}
-        residents={residents}
-        onSuccess={(inv, msg) => {
-          setActionSuccess(msg);
-          fetchInvoices();
-          if (onRefreshParentFinance) onRefreshParentFinance();
-        }}
-      />
-
-      <PrintableInvoiceModal
-        isOpen={isPrintOpen}
-        onClose={() => {
-          setIsPrintOpen(false);
-          setSelectedInvoice(null);
-        }}
-        invoice={selectedInvoice}
-        onOpenAllocate={(inv) => openAllocateModal(inv)}
-        onIssueInvoice={(id) => handleIssueInvoice(id)}
-      />
-
-      <AllocatePaymentModal
-        isOpen={isAllocateOpen}
-        onClose={() => {
-          setIsAllocateOpen(false);
-          setInvoiceToAllocate(null);
-        }}
-        invoice={invoiceToAllocate}
-        onSuccess={(updatedInv, alloc, msg) => {
-          setActionSuccess(msg);
-          fetchInvoices();
-          if (onRefreshParentFinance) onRefreshParentFinance();
-        }}
-        onOpenRecordPayment={onOpenRecordPayment}
-      />
+      {modals}
     </div>
   );
 }

@@ -94,10 +94,22 @@ export function AppSidebar({
     schedule(0);
     const onRefreshed = () => schedule(1500);
     window.addEventListener("erp:router-refreshed", onRefreshed);
+    // Keep them warm: a preload expires after a few minutes (next.config staleTimes), and a click on
+    // an expired section waited for the server. Preloading again is a no-op while an entry is still
+    // fresh, so this only re-fetches what has expired. Also on returning to the app.
+    const warm = window.setInterval(() => {
+      if (document.visibilityState === "visible") schedule(0);
+    }, 60000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") schedule(0);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearTimeout(timer);
+      window.clearInterval(warm);
       if (idle) w.cancelIdleCallback?.(idle);
       window.removeEventListener("erp:router-refreshed", onRefreshed);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [hrefs, router]);
 

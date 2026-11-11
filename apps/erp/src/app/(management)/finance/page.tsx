@@ -36,6 +36,8 @@ import {
 import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
 import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
+import { MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { FinancePlaces, CashbookMobile, ReceivablesMobile, DuesMobile } from "@/modules/finance/mobile/FinanceMobile";
 
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadPaymentModal = () => import("@/modules/finance/components/modals/PaymentModal");
@@ -85,6 +87,7 @@ export default function FinancePage() {
   useEffect(() => preloadWhenIdle([loadPaymentModal, loadRentChargeModal, loadRentRunModal, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadReceivablesView]), []);
   // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
+  const phone = useIsPhone();
   type FinanceTab = "cashbook" | "receivables" | "residents" | "invoices" | "closing";
   const SECTION_TITLE: Record<FinanceTab, string> = { cashbook: "Cashbook", receivables: "Receivables", residents: "Resident dues", invoices: "Invoices", closing: "Daily closing" };
   const [activeTab, setTabState] = useState<FinanceTab>("cashbook");
@@ -239,7 +242,102 @@ export default function FinancePage() {
     setTimeout(() => setActionSuccess(null), 5000);
   };
 
-  return (
+  const modals = (
+    <>
+        <PaymentModal
+          isOpen={isPaymentOpen}
+          onClose={() => setIsPaymentOpen(false)}
+          residents={residents}
+          initialResidentId={paymentResidentId}
+          onSuccess={handleMutationSuccess}
+        />
+
+        <RentRunModal isOpen={isRentRunOpen} onClose={() => setIsRentRunOpen(false)} onDone={fetchData} />
+
+        <RentChargeModal
+          isOpen={isChargeOpen}
+          onClose={() => setIsChargeOpen(false)}
+          residents={residents}
+          onSuccess={handleMutationSuccess}
+        />
+
+        <SecurityDepositModal
+          isOpen={isDepositOpen}
+          onClose={() => setIsDepositOpen(false)}
+          residents={residents}
+          onSuccess={handleMutationSuccess}
+        />
+
+        <ExpenseModal
+          isOpen={isExpenseOpen}
+          onClose={() => setIsExpenseOpen(false)}
+          onSuccess={handleMutationSuccess}
+        />
+
+        <ReceiptModal
+          transaction={receiptTx}
+          onClose={() => setReceiptTx(null)}
+        />
+
+        <ReversalModal
+          transaction={reversalTarget}
+          onClose={() => setReversalTarget(null)}
+          onSuccess={handleReversalSuccess}
+        />
+    </>
+  );
+
+  // Phones: the app layout (same data, dialogs and actions).
+  const mobile = (
+      <div className="m-stack">
+        {actionSuccess && <MNotice onClose={() => setActionSuccess(null)}>{actionSuccess}</MNotice>}
+        {actionError && (
+          <MNotice tone="red" onClose={() => setActionError(null)}>
+            {actionError}
+          </MNotice>
+        )}
+        {error && <MNotice tone="red">{error}</MNotice>}
+        <FinancePlaces value={activeTab} onChange={setActiveTab} />
+        {activeTab === "cashbook" ? (
+          <CashbookMobile
+            summary={cashbook}
+            transactions={transactions}
+            isLoading={loading}
+            startDate={startDate}
+            endDate={endDate}
+            onRange={handleDateRangeChange}
+            onPay={() => {
+              setPaymentResidentId(undefined);
+              setIsPaymentOpen(true);
+            }}
+            onExpense={() => setIsExpenseOpen(true)}
+            onDeposit={() => setIsDepositOpen(true)}
+            onCharge={() => setIsChargeOpen(true)}
+            onRentRun={() => setIsRentRunOpen(true)}
+            onExport={handleExportCashbook}
+            onReceipt={(tx) => setReceiptTx(tx)}
+            onReverse={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
+            onOwed={() => setActiveTab("residents")}
+          />
+        ) : activeTab === "receivables" ? (
+          <ReceivablesMobile initialReviewOnly={searchParams?.get("review") === "1"} />
+        ) : activeTab === "residents" ? (
+          <DuesMobile residents={residents} isLoading={loading} />
+        ) : activeTab === "invoices" ? (
+          <InvoiceLedgerView residents={residents} onOpenRecordPayment={handleOpenPaymentForResident} onRefreshParentFinance={fetchData} />
+        ) : (
+          <DailyClosingView
+            onMutationSuccess={(msg) => {
+              setActionSuccess(msg);
+              fetchData();
+            }}
+            onMutationError={(err) => setActionError(friendlyError(err))}
+          />
+        )}
+      </div>
+  );
+
+  const desktop = (
     <div className="space-y-5 w-full min-w-0">
       <FinanceHeader
         title={SECTION_TITLE[activeTab]}
@@ -374,47 +472,13 @@ export default function FinancePage() {
         />
       )}
 
-      {/* Modals & Dialogs */}
-      <PaymentModal
-        isOpen={isPaymentOpen}
-        onClose={() => setIsPaymentOpen(false)}
-        residents={residents}
-        initialResidentId={paymentResidentId}
-        onSuccess={handleMutationSuccess}
-      />
-
-      <RentRunModal isOpen={isRentRunOpen} onClose={() => setIsRentRunOpen(false)} onDone={fetchData} />
-
-      <RentChargeModal
-        isOpen={isChargeOpen}
-        onClose={() => setIsChargeOpen(false)}
-        residents={residents}
-        onSuccess={handleMutationSuccess}
-      />
-
-      <SecurityDepositModal
-        isOpen={isDepositOpen}
-        onClose={() => setIsDepositOpen(false)}
-        residents={residents}
-        onSuccess={handleMutationSuccess}
-      />
-
-      <ExpenseModal
-        isOpen={isExpenseOpen}
-        onClose={() => setIsExpenseOpen(false)}
-        onSuccess={handleMutationSuccess}
-      />
-
-      <ReceiptModal
-        transaction={receiptTx}
-        onClose={() => setReceiptTx(null)}
-      />
-
-      <ReversalModal
-        transaction={reversalTarget}
-        onClose={() => setReversalTarget(null)}
-        onSuccess={handleReversalSuccess}
-      />
     </div>
+  );
+
+  return (
+    <>
+      <PhoneOrDesktop phone={phone} mobile={mobile} desktop={desktop} />
+      {modals}
+    </>
   );
 }

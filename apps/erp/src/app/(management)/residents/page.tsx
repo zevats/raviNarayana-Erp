@@ -56,6 +56,8 @@ import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
 
 import { PhoneError } from "@/components/forms/PhoneError";
+import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { ResidentsMobile } from "@/modules/residents/ResidentsMobile";
 /**
  * Maps database floor integer to human-readable full label.
  */
@@ -224,6 +226,7 @@ export default function ResidentsPage() {
   // ---------------------------------------------------------------------------
   // Filtered Residents List
   // ---------------------------------------------------------------------------
+  const phone = useIsPhone();
   const filteredResidents = useMemo(() => {
     return residents.filter((r) => {
       const term = search.trim().toLowerCase();
@@ -720,6 +723,35 @@ export default function ResidentsPage() {
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-5 min-w-0">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={
+          <ResidentsMobile
+            residents={filteredResidents}
+            allCount={residents.length}
+            loading={loading}
+            stats={stats}
+            search={search}
+            setSearch={setSearch}
+            status={selectedStatus}
+            setStatus={setSelectedStatus}
+            floorLabel={formatFloorLabel}
+            success={actionSuccess}
+            error={actionError || error}
+            approvals={<SettlementApprovals onDecided={() => fetchData()} />}
+            onRegister={() => {
+              setActionError(null);
+              setIsRegisterModalOpen(true);
+            }}
+            onCheckIn={(id) => handleOpenCheckInModal(id)}
+            onCheckOut={(r) => handleOpenCheckOut(r)}
+            onProfile={(r) => handleViewDetails(r.id, r.fullName)}
+            onEdit={(r) => handleOpenEdit(r.id, r.fullName)}
+            onMove={(r) => handleOpenTransferModal(r)}
+          />
+        }
+        desktop={
+          <div className="space-y-5 min-w-0">
       <PageHeader
         title="Residents"
         actions={
@@ -916,6 +948,9 @@ export default function ResidentsPage() {
             </table>
       )}
       </Card>
+          </div>
+        }
+      />
 
       {/* ============================================================== */}
       {/* MODAL 1: RESIDENT DETAILS VIEW & STAY HISTORY (Dual Area)      */}

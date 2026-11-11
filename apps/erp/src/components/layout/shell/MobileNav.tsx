@@ -34,7 +34,7 @@ export function MobileTopBar({ title, queued, online, onAccount }: { title: stri
       <header className="lg:hidden rn-topbar-wrap rn-topbar-phone" aria-label={title} data-scrolled={scrolled ? "" : undefined}>
         <div className="rn-topbar">
           <span className="rn-topbar-logo"><RnLogo size={40} title="Ravinarayan" /></span>
-          <p className="flex-1 min-w-0 text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320] truncate">Ravinarayan</p>
+          <p className="rn-topbar-name flex-1 min-w-0 truncate">Ravinarayan</p>
           {(!online || queued > 0) && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#F6E3B8] text-[#5E3F04] whitespace-nowrap">{online ? `${queued} to send` : "Offline"}</span>}
           <span className="grid place-items-center w-10 h-10 rounded-full bg-[#EFEAE1]">
             <NotificationBell />

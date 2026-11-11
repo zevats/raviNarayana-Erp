@@ -21,7 +21,9 @@ const nextConfig = {
     // Client router cache: revisiting a server-rendered page (dashboard, staff) within 2 min reuses
     // its payload instead of re-rendering and re-querying. Mutations call router.refresh() (see
     // ErpShell), which purges this cache, so changes made in the app show on the next visit.
-    staleTimes: { dynamic: 120, static: 120 },
+    // Sections preloaded in full (AppSidebar) stay usable for 5 min and are preloaded again before
+    // that, so a click never waits for the server (the pages load their own data on arrival).
+    staleTimes: { dynamic: 120, static: 300 },
   },
   async headers() {
     const isProd = process.env.NODE_ENV === "production";

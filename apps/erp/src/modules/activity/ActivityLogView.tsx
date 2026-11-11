@@ -9,6 +9,8 @@ import { SelectMenu } from "@/components/forms/SelectMenu";
 import { SearchField, EmptyState, Badge } from "@/components/ui/kit";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { formatDateTime } from "@/lib/format";
+import { CheckCircle2, Ban, SlidersHorizontal } from "lucide-react";
+import { MButton, MChips, MEmpty, MGroup, MRow, MSearch, MSection, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, groupByDay, useIsPhone } from "@/components/app/m";
 
 interface Entry {
   id: string;
@@ -60,6 +62,8 @@ export function ActivityLogView() {
   const searchTerm = useDebouncedValue(search.trim());
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<Entry | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const phone = useIsPhone();
 
   const options = useErpQuery<{ people: Array<{ id: string; fullName: string }> }>(
     "/api/activity?options=1",
@@ -89,8 +93,75 @@ export function ActivityLogView() {
   const entries = q.data?.entries ?? [];
   const total = q.data?.total ?? 0;
 
+  const dayOf = (iso: string) => new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const filterCount = [area, actorId, from || to].filter(Boolean).length;
+  const mobile = (
+    <MStack>
+      <MSearch value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" onFilter={() => setFiltersOpen(true)} filterCount={filterCount} />
+      {q.error && !q.data ? (
+        <MEmpty title="Could not load the activity log" />
+      ) : q.isLoading && !q.data ? (
+        <MSkeletonRows rows={6} />
+      ) : entries.length === 0 ? (
+        <MEmpty title="No activity matches" />
+      ) : (
+        groupByDay(entries, (e) => dayOf(e.at)).map((d) => (
+          <MSection key={d.day} title={<span className="m-day">{d.label}</span>}>
+            <MGroup>
+              {d.items.map((e) => (
+                <MRow
+                  key={e.id}
+                  icon={e.outcome === "REFUSED" ? Ban : CheckCircle2}
+                  tone={e.outcome === "REFUSED" ? "red" : "green"}
+                  title={<span className="first-letter:uppercase inline-block">{readable(e.action)}</span>}
+                  sub={[e.actorName, recordLabel(e.targetType, e.targetId)].join(" · ")}
+                  rightSub={new Date(e.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}
+                  onClick={() => setOpen(e)}
+                  chevron={false}
+                />
+              ))}
+            </MGroup>
+          </MSection>
+        ))
+      )}
+      {total > PAGE && (
+        <div className="m-btn-row">
+          <MButton kind="soft" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Newer</MButton>
+          <MButton kind="soft" disabled={(page + 1) * PAGE >= total} onClick={() => setPage((p) => p + 1)}>Older</MButton>
+        </div>
+      )}
+      <MSheet
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        title="Filters"
+        tall
+        footer={
+          <>
+            <MButton kind="soft" onClick={() => { setArea(""); setActorId(""); setFrom(""); setTo(""); reset(); }}>Clear</MButton>
+            <MButton kind="primary" onClick={() => setFiltersOpen(false)}>Done</MButton>
+          </>
+        }
+      >
+        <p className="m-sheet-label">Area</p>
+        <MChips label="Area" value={area} onChange={(v) => { setArea(v); reset(); }} options={AREAS.map((x) => ({ value: x.value, label: x.value ? x.label : "All" }))} />
+        <p className="m-sheet-label">Person</p>
+        <MChips label="Person" value={actorId} onChange={(v) => { setActorId(v); reset(); }} options={[{ value: "", label: "Everyone" }, ...(options.data?.people ?? []).map((p) => ({ value: p.id, label: p.fullName }))]} />
+        <p className="m-sheet-label">Dates</p>
+        <div className="grid grid-cols-2 gap-2.5">
+          <input type="date" className="m-input" aria-label="From" value={from} onChange={(e) => { setFrom(e.target.value); reset(); }} />
+          <input type="date" className="m-input" aria-label="To" value={to} onChange={(e) => { setTo(e.target.value); reset(); }} />
+        </div>
+      </MSheet>
+    </MStack>
+  );
+
   return (
     <div className="space-y-4">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={mobile}
+        desktop={
+          <div className="space-y-4">
       <div className="rn-card rn-mflat">
       <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <SearchField value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" className="lg:col-span-2" />
@@ -155,6 +226,9 @@ export function ActivityLogView() {
         </div>
       )}
 
+          </div>
+        }
+      />
       {open && (
         <div role="dialog" aria-modal="true" aria-labelledby="activity-detail" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 rn-modal-scrim">
           <div className="rn-modal bg-white rounded-2xl max-w-lg w-full p-5 space-y-3 max-h-[85dvh] overflow-y-auto">
