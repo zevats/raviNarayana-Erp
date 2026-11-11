@@ -297,8 +297,8 @@ export function ResidentKycSection({
 
       {/* Upload Document Modal */}
       {isUploadOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+          <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
               <div className="flex items-center gap-2">
                 <FileCheck className="w-5 h-5 text-[#1A2E20]" />

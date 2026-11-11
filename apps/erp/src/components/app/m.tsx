@@ -10,7 +10,7 @@
 import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
+import { ChevronRight, MoreVertical, Search, SlidersHorizontal, X } from "lucide-react";
 
 export type MTone = "green" | "red" | "amber" | "blue" | "orange" | "neutral" | "accent";
 
@@ -446,7 +446,7 @@ export function MNotice({ tone = "green", children, onClose }: { tone?: "green" 
  * Bottom sheet: details, filters and short forms. Tap outside, the close button or Back (Escape)
  * closes it. The page underneath does not scroll while it is open.
  */
-export function MSheet({ open, onClose, title, children, footer, tall }: { open: boolean; onClose: () => void; title?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tall?: boolean }) {
+export function MSheet({ open, onClose, title, children, footer, tall, headerAction, rootClassName = "" }: { open: boolean; onClose: () => void; title?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tall?: boolean; headerAction?: React.ReactNode; rootClassName?: string }) {
   const [mounted, setMounted] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const labelId = useId();
@@ -478,7 +478,7 @@ export function MSheet({ open, onClose, title, children, footer, tall }: { open:
   }, [open, onClose]);
   if (!mounted || !shown) return null;
   return createPortal(
-    <div className={`m-sheet-root ${leaving && !open ? "is-leaving" : ""}`} role="dialog" aria-modal="true" aria-labelledby={title ? labelId : undefined}>
+    <div className={`m-sheet-root ${rootClassName} ${leaving && !open ? "is-leaving" : ""}`} role="dialog" aria-modal="true" aria-labelledby={title ? labelId : undefined}>
       <button type="button" aria-label="Close" className="m-sheet-scrim" onClick={onClose} />
       <div ref={panel} tabIndex={-1} className={`m-sheet ${tall ? "m-sheet-tall" : ""}`}>
         <span className="m-sheet-grip" aria-hidden />
@@ -487,9 +487,12 @@ export function MSheet({ open, onClose, title, children, footer, tall }: { open:
             <h2 id={labelId} className="m-sheet-title">
               {title}
             </h2>
-            <button type="button" onClick={onClose} aria-label="Close" className="m-sheet-x m-press">
-              <X className="w-5 h-5" />
-            </button>
+            <span className="flex items-center gap-2 shrink-0">
+              {headerAction}
+              <button type="button" onClick={onClose} aria-label="Close" className="m-sheet-x m-press">
+                <X className="w-5 h-5" />
+              </button>
+            </span>
           </div>
         )}
         <div className="m-sheet-body">{children}</div>
@@ -538,4 +541,66 @@ export function initials(name: string | null | undefined): string {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "•";
   return ((parts[0][0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "")).toUpperCase();
+}
+
+/* ------------------------------------------------------------------ three-dot menu */
+
+export interface MMenuItem {
+  label: string;
+  icon?: React.ElementType;
+  onSelect: () => void;
+  danger?: boolean;
+  hidden?: boolean;
+}
+
+/** A ⋮ button that opens a short list of actions right under it (tap outside or Escape closes it). */
+export function MMenu({ items, label = "More actions" }: { items: MMenuItem[]; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const [up, setUp] = useState(false);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    // Opens upwards when there is no room below (a sheet near the bottom of the screen).
+    const r = box.current?.getBoundingClientRect();
+    if (r) setUp(window.innerHeight - r.bottom < Math.min(360, items.filter((i) => !i.hidden).length * 52 + 24));
+    const away = (e: Event) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", away, true);
+    window.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  const shown = items.filter((i) => !i.hidden);
+  if (shown.length === 0) return null;
+  return (
+    <span ref={box} className="relative inline-flex">
+      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="m-sheet-x m-press">
+        <MoreVertical className="w-5 h-5" />
+      </button>
+      {open && (
+        <span role="menu" className={`m-menu ${up ? "is-up" : ""}`}>
+          {shown.map((it) => {
+            const Icon = it.icon;
+            return (
+              <button
+                key={it.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  it.onSelect();
+                }}
+                className={`m-menu-item ${it.danger ? "is-danger" : ""}`}
+              >
+                {Icon && <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={1.9} />}
+                <span className="truncate">{it.label}</span>
+              </button>
+            );
+          })}
+        </span>
+      )}
+    </span>
+  );
 }

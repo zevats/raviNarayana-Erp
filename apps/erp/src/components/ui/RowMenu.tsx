@@ -3,6 +3,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreHorizontal } from "lucide-react";
+import { MSheet, useIsPhone } from "@/components/app/m";
 
 export interface RowMenuItem {
   key: string;
@@ -24,6 +25,8 @@ export function RowMenu({ items, label = "More actions" }: { items: RowMenuItem[
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const shown = items.filter((i) => !i.hidden);
+  // Phones: the actions open as a sheet from the bottom (large rows) instead of a small list.
+  const phone = useIsPhone();
 
   useLayoutEffect(() => {
     if (!open || !btn.current) return;
@@ -34,7 +37,7 @@ export function RowMenu({ items, label = "More actions" }: { items: RowMenuItem[
   }, [open, shown.length]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || phone) return;
     const away = (e: Event) => {
       const t = e.target as Node;
       if (btn.current?.contains(t) || list.current?.contains(t)) return;
@@ -59,7 +62,7 @@ export function RowMenu({ items, label = "More actions" }: { items: RowMenuItem[
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", close);
     };
-  }, [open]);
+  }, [open, phone]);
 
   if (shown.length === 0) return null;
   return (
@@ -79,8 +82,30 @@ export function RowMenu({ items, label = "More actions" }: { items: RowMenuItem[
       >
         <MoreHorizontal />
       </button>
+      {phone && (
+        <MSheet open={open} onClose={() => setOpen(false)} title={label.replace(/^More for /, "")} rootClassName="rn-select-sheet">
+          <div className="m-group p-1.5" role="menu">
+            {shown.map((it) => (
+              <button
+                key={it.key}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  it.onSelect();
+                }}
+                className={`m-menu-item w-full [&>svg]:w-[18px] [&>svg]:h-[18px] ${it.danger ? "is-danger" : ""}`}
+              >
+                {it.icon}
+                {it.label}
+              </button>
+            ))}
+          </div>
+        </MSheet>
+      )}
       {open &&
         pos &&
+        !phone &&
         createPortal(
           <div
             ref={list}

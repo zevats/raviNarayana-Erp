@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
+import { MSheet, useIsPhone } from "@/components/app/m";
 
 export interface SelectOption {
   value: string;
@@ -41,11 +42,15 @@ export function SelectMenu({
   const listRef = useRef<HTMLUListElement>(null);
   const id = useId();
   const current = options.find((o) => o.value === value);
+  // Owner/manager app on phones: the choices open as a sheet (the delivery app keeps its list).
+  const phone = useIsPhone();
+  const asSheet = Boolean(phone) && tone === "forest";
   const accent = tone === "orange" ? { on: "bg-[#FCE9DD] text-[#B4440F]", ring: "focus-visible:ring-[#C9501C]/25" } : { on: "bg-[#DCE5D7] text-[#263B2D]", ring: "focus-visible:ring-[#5D7656]/25" };
 
   useEffect(() => {
     if (!open) return;
     setActive(Math.max(0, options.findIndex((o) => o.value === value)));
+    if (asSheet) return;
     const away = (e: MouseEvent | TouchEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
     window.addEventListener("mousedown", away);
     window.addEventListener("touchstart", away);
@@ -55,7 +60,7 @@ export function SelectMenu({
       window.removeEventListener("mousedown", away);
       window.removeEventListener("touchstart", away);
     };
-  }, [open, options, value]);
+  }, [open, options, value, asSheet]);
 
   const choose = (v: string) => {
     onChange(v);
@@ -89,7 +94,22 @@ export function SelectMenu({
         <span className={`flex-1 truncate ${current ? "" : "opacity-60"}`}>{current?.label ?? placeholder}</span>
         <ChevronsUpDown className="w-4 h-4 opacity-60 shrink-0" />
       </button>
-      {open && (
+      {asSheet && (
+        <MSheet open={open} onClose={() => setOpen(false)} title={label} rootClassName="rn-select-sheet">
+          <div className="m-group" role="listbox" aria-label={label}>
+            {options.map((o, i) => {
+              const on = o.value === value;
+              return (
+                <div key={o.value || `opt-${i}`} role="option" aria-selected={on} onClick={() => choose(o.value)} className={`m-option ${on ? "is-on" : ""}`}>
+                  <span className="min-w-0 flex-1">{o.label}</span>
+                  {on && <Check className="w-5 h-5 shrink-0" aria-hidden />}
+                </div>
+              );
+            })}
+          </div>
+        </MSheet>
+      )}
+      {open && !asSheet && (
         <ul
           ref={listRef}
           id={`${id}-list`}

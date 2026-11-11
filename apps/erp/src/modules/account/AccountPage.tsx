@@ -82,7 +82,7 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center rn-modal-scrim">
       <div className="rn-scrim absolute inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} {...drag.bind} style={drag.style} className="rn-modal rn-sheet relative w-full md:max-w-md max-h-[92dvh] overflow-y-auto bg-[#FBF9F3] rounded-t-[28px] md:rounded-[28px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} {...drag.bind} style={drag.style} className="rn-modal rn-own rn-sheet relative w-full md:max-w-md max-h-[92dvh] overflow-y-auto bg-[#FBF9F3] rounded-t-[28px] md:rounded-[28px] p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] space-y-4">
         <div className="md:hidden mx-auto -mt-2 mb-1 h-1 w-10 rounded-full bg-[#DAD3C6]" aria-hidden="true" />
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-[20px] font-extrabold tracking-[-0.01em] text-[#1F2320]">{title}</h2>

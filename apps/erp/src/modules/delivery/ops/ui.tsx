@@ -118,7 +118,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer, wide =
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`rn-sheet relative w-full ${wide ? "md:max-w-xl" : "md:max-w-md"} max-h-[94dvh] md:max-h-none md:h-full bg-surface-ivory rounded-t-[28px] md:rounded-none md:rounded-l-[28px] flex flex-col outline-none rn-lift`}
+        className={`rn-sheet rn-ops-sheet relative w-full ${wide ? "md:max-w-xl" : "md:max-w-md"} max-h-[94dvh] md:max-h-none md:h-full bg-surface-ivory rounded-t-[28px] md:rounded-none md:rounded-l-[28px] flex flex-col outline-none rn-lift`}
       >
         <div className="md:hidden mx-auto mt-2 h-1.5 w-10 rounded-full bg-sage-light" aria-hidden="true" />
         <header className="px-5 pt-3 pb-3 md:pt-5 flex items-start justify-between gap-3 border-b border-surface-subtle">

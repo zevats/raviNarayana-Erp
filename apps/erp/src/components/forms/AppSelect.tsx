@@ -57,7 +57,7 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
   const chosen = options.find((o) => o.value === current);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [pos, setPos] = useState<{ left: number; top: number; width: number; up: boolean; max: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; width: number; up: boolean; max: number; sheet: boolean; title: string } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const typed = useRef({ text: "", at: 0 });
@@ -81,7 +81,19 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
     const below = window.innerHeight - r.bottom - 12;
     const above = r.top - 12;
     const up = below < 220 && above > below;
-    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 168)), top: up ? r.top - 6 : r.bottom + 6, width: Math.max(r.width, 180), up, max: Math.max(160, Math.min(320, up ? above : below)) });
+    // Phones and tablets: the choices open as a sheet from the bottom (big rows, the field's name on top).
+    const sheet = window.innerWidth < 1024;
+    const labelText = (() => {
+      const own = (rest as any)["aria-label"];
+      if (own) return String(own);
+      if (id) {
+        const l = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+        if (l?.textContent) return l.textContent.trim();
+      }
+      const near = el.parentElement?.querySelector("label") || el.parentElement?.parentElement?.querySelector("label");
+      return near?.textContent?.replace(/\*/g, "").trim() || "Choose";
+    })();
+    setPos({ left: Math.max(8, Math.min(r.left, window.innerWidth - 168)), top: up ? r.top - 6 : r.bottom + 6, width: Math.max(r.width, 180), up, max: Math.max(160, Math.min(320, up ? above : below)), sheet, title: labelText });
   }, []);
 
   useLayoutEffect(() => {
@@ -204,7 +216,49 @@ export function AppSelect({ value, defaultValue, onChange, children, className =
       </button>
       {name && <input type="hidden" name={name} value={current} />}
       {open &&
+        pos?.sheet &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="m-sheet-root rn-select-sheet" role="presentation">
+            <button type="button" aria-label="Close" className="m-sheet-scrim" onClick={() => setOpen(false)} />
+            <div className="m-sheet" role="dialog" aria-label={pos.title}>
+              <span className="m-sheet-grip" aria-hidden />
+              <div className="m-sheet-head">
+                <h2 className="m-sheet-title">{pos.title}</h2>
+              </div>
+              <ul ref={list} id={listId} role="listbox" aria-label={pos.title} className="m-sheet-body !gap-0 !pt-0">
+                <li role="presentation" className="m-group !overflow-visible">
+                  <ul role="presentation">
+                    {options.map((o, i) => {
+                      const on = o.value === current;
+                      const header = o.group && (i === 0 || options[i - 1].group !== o.group);
+                      return (
+                        <React.Fragment key={`${o.group || ""}:${o.value}:${i}`}>
+                          {header && <li role="presentation" className="m-day px-4 pt-3 pb-1">{o.group}</li>}
+                          <li
+                            role="option"
+                            aria-selected={on}
+                            aria-disabled={o.disabled || undefined}
+                            data-i={i}
+                            onClick={() => choose(i)}
+                            className={`m-option ${on ? "is-on" : ""} ${o.disabled ? "opacity-40" : ""}`}
+                          >
+                            <span className="min-w-0 flex-1">{o.label || " "}</span>
+                            {on && <Check className="w-5 h-5 shrink-0 text-[var(--rn-accent,#1E3A2B)]" aria-hidden />}
+                          </li>
+                        </React.Fragment>
+                      );
+                    })}
+                  </ul>
+                </li>
+              </ul>
+            </div>
+          </div>,
+          document.querySelector(".rn-app") ?? document.body
+        )}
+      {open &&
         pos &&
+        !pos.sheet &&
         typeof document !== "undefined" &&
         createPortal(
           <ul

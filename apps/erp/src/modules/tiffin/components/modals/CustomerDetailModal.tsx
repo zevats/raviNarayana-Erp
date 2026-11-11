@@ -113,34 +113,34 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
         aria-modal="true"
         aria-labelledby="customer-detail-title"
         onClick={(e) => e.stopPropagation()}
-        style={{ backgroundColor: "#FAF8F5" }}
+        style={{ backgroundColor: "#F7F5F0" }}
         className="rn-modal rn-rise relative w-full sm:max-w-xl max-h-[94dvh] flex flex-col overflow-hidden rounded-t-[28px] sm:rounded-[28px] shadow-[0_24px_60px_-20px_rgba(26,46,32,0.45)]"
       >
         {/* Header */}
-        <header className="relative px-5 sm:px-6 pt-5 pb-4 bg-[#1A2E20] text-white">
+        <header className="relative px-5 sm:px-6 pt-4 pb-3 text-[#18211B]">
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="absolute right-4 top-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+            className="absolute right-4 top-3.5 w-[38px] h-[38px] rounded-full bg-[#ECE8DF] text-[#18211B] flex items-center justify-center transition-colors"
           >
             <X className="w-[18px] h-[18px]" />
           </button>
           <div className="flex items-center gap-3.5 pr-10">
-            <div className="w-14 h-14 rounded-full bg-[#B58A57] text-[#1A2E20] flex items-center justify-center text-lg font-bold shrink-0">{initialsOf(customer.fullName)}</div>
+            <div className="w-14 h-14 rounded-full bg-[#FCE8DB] text-[#BF521E] flex items-center justify-center text-[17px] font-semibold shrink-0">{initialsOf(customer.fullName)}</div>
             <div className="min-w-0">
-              <h2 id="customer-detail-title" style={{ color: "#FFFFFF" }} className="text-[20px] leading-tight font-bold truncate">
+              <h2 id="customer-detail-title" className="text-[20px] leading-tight font-semibold tracking-[-0.015em] text-[#18211B] truncate">
                 {customer.fullName}
               </h2>
-              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-white/70">
-                {customer.customerCode && <span className="font-semibold text-[#E4C9A4] tabular-nums">{customer.customerCode}</span>}
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[#727C74]">
+                {customer.customerCode && <span className="font-semibold text-[#BF521E] tabular-nums">{customer.customerCode}</span>}
                 <span>{TYPE_LABEL[customer.customerType] || customer.customerType}</span>
                 <span
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11.5px] font-semibold ${
-                    isActive ? "bg-[#3C8A2E]/25 text-[#BFE5B5]" : "bg-white/10 text-white/70"
+                    isActive ? "bg-[#E6F2E2] text-[#2D6A24]" : "bg-[#F1EEE7] text-[#48534B]"
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-[#7BD06A]" : "bg-white/50"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-[#3C8A2E]" : "bg-[#9AA39C]"}`} />
                   {isActive ? "Active" : "Inactive"}
                 </span>
               </div>

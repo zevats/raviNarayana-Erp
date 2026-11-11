@@ -704,7 +704,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-order-title"
-        className={`rn-modal w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""} rn-order-sheet`}
+        className={`rn-modal w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""} rn-order-sheet rn-own`}
         style={{ backgroundColor: "#F7F5F0", ["--rn-accent" as string]: "#C9501C", ["--rn-accent-strong" as string]: "#A9400F", ["--rn-accent-tint" as string]: "#FCE9DD", ["--rn-accent-soft" as string]: "#FCE9DD" } as React.CSSProperties}
       >
         {/* Header: title and the three steps */}

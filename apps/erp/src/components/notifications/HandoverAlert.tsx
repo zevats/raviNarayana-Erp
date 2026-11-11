@@ -77,7 +77,7 @@ export function HandoverAlert() {
 
   const short = (h.recordedCash ?? h.declaredCash) - h.declaredCash;
   return (
-    <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-[rgba(24,16,10,0.45)] backdrop-blur-[4px]">
+    <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-[rgba(24,16,10,0.45)] backdrop-blur-[4px] rn-handover-pop">
       <div
         role="alertdialog"
         aria-modal="true"

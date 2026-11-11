@@ -62,8 +62,8 @@ export function RoomBedsPanel({ room, canManage, onClose, onChanged }: { room: R
   const open = room.maintenance;
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="beds-title" className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
+    <div role="dialog" aria-modal="true" aria-labelledby="beds-title" className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 rn-modal-scrim">
+      <div className="rn-modal bg-white rounded-3xl border border-[#8E9F89]/30 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90dvh] overflow-y-auto">
         <div className="flex items-center justify-between pb-3 border-b border-[#8E9F89]/20">
           <h2 id="beds-title" className="text-base font-bold text-[#1A2E20] flex items-center gap-2">
             <BedDouble className="w-5 h-5 text-[#B58A57]" /> Room {room.roomNumber}: beds &amp; maintenance

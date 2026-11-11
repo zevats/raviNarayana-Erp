@@ -74,10 +74,10 @@ export function PrintableInvoiceModal({
     >
       <div className="rn-modal rn-modal-wide bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-2xl shadow-2xl max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[92dvh] print:max-h-none print:border-none print:shadow-none print:rounded-none print:w-full print:m-0">
         {/* Top Control Bar (Hidden when printing) */}
-        <div className="flex items-center justify-between p-4 bg-white border-b border-[#8E9F89]/20 print:hidden">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 p-4 bg-white border-b border-[#8E9F89]/20 print:hidden">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
             <span
-              className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider shrink-0 ${
                 isPaid
                   ? "bg-green-100 text-green-800"
                   : isPartiallyPaid
@@ -89,51 +89,50 @@ export function PrintableInvoiceModal({
                   : "bg-blue-100 text-blue-800"
               }`}
             >
-              {invoice.status}
+              {invoice.status === "PARTIALLY_PAID" ? "Part paid" : invoice.status.charAt(0) + invoice.status.slice(1).toLowerCase()}
             </span>
-            <span className="text-xs text-[#5A6C5E]">
-              {isGst ? "GST Tax Invoice" : "Regular Non-GST Bill"}
-            </span>
+            <span className="text-xs text-[#5A6C5E] truncate">{isGst ? "GST invoice" : "Regular bill"}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <button type="button" onClick={onClose} aria-label="Close" className="sm:order-last p-1.5 rounded-lg text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+
+          {/* Actions: a full row of equal buttons on phones, beside the status on wide screens. */}
+          <div className="order-last sm:order-none w-full sm:w-auto grid grid-flow-col auto-cols-fr gap-2 sm:flex sm:items-center">
             {isDraft && onIssueInvoice && (
               <button
+                type="button"
                 onClick={handleIssue}
                 disabled={issuing}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#B58A57] hover:bg-[#9E7443] text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-1.5 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-full sm:rounded-lg text-[14px] sm:text-xs font-semibold transition-colors disabled:opacity-50"
               >
-                <Send className="w-3.5 h-3.5" />
-                {issuing ? "Issuing..." : "Issue Invoice"}
+                <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                {issuing ? "Issuing…" : "Issue"}
               </button>
             )}
 
             {(invoice.status === "ISSUED" || isPartiallyPaid) && onOpenAllocate && (
               <button
+                type="button"
                 onClick={() => {
                   onClose();
                   onOpenAllocate(invoice);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs"
+                className="inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-1.5 bg-[#1A2E20] hover:bg-[#263B2D] text-white rounded-full sm:rounded-lg text-[14px] sm:text-xs font-semibold transition-colors"
               >
-                <CreditCard className="w-3.5 h-3.5" />
-                Allocate Payment
+                <CreditCard className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+                Record payment
               </button>
             )}
 
             <button
+              type="button"
               onClick={handlePrint}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] rounded-lg text-xs font-semibold transition-colors shadow-2xs"
+              className="inline-flex items-center justify-center gap-1.5 px-3 h-11 sm:h-auto sm:py-1.5 bg-[#EEEAE2] sm:bg-white sm:border sm:border-[#8E9F89]/30 hover:bg-[#FAF8F5] text-[#1A2E20] rounded-full sm:rounded-lg text-[14px] sm:text-xs font-semibold transition-colors"
             >
-              <Printer className="w-3.5 h-3.5 text-[#B58A57]" />
-              Print / Save PDF
-            </button>
-
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-[#FAF8F5] transition-colors"
-            >
-              <X className="w-5 h-5" />
+              <Printer className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
+              Print
             </button>
           </div>
         </div>

@@ -96,7 +96,7 @@
 
   /* ---- Cards: white, hairline edge, 16px corners (pills keep their shape) */
   .rn-app .rn-main :is(.rn-card, .rn-glass, .rn-glass-strong):not(.rounded-full),
-  .rn-app .rn-main :is(div, section, article, form, li, figure, a).bg-white:is(.rounded-2xl, .rounded-3xl),
+  .rn-app .rn-main :is(div, section, article, form, li, figure, a).bg-white:is(.rounded-2xl, .rounded-3xl):not(.rn-modal),
   .rn-app .rn-main :is(div, section, article, figure).bg-\[\#F7F5F0\]:is(.rounded-2xl, .rounded-3xl).border {
     background: #FFFFFF;
     border: 1px solid #ECE6DB !important;
@@ -181,7 +181,6 @@
   .rn-app .rn-rows > * + * { border-top: 1px solid #ECE6DB; }
 
   /* ---- Pop-ups: white sheets from the bottom */
-  .rn-app .rn-modal { background: #FFFFFF !important; border-radius: 24px 24px 0 0 !important; }
   .rn-app .rn-modal-scrim { background: rgba(18, 28, 22, 0.42) !important; -webkit-backdrop-filter: none; backdrop-filter: none; }
   .rn-app .rn-dialog { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
@@ -483,7 +482,6 @@
 
 /* Pop-up forms on phones: the same sheet as the app kit (grab handle, warm page). */
 @media (max-width: 639.98px) {
-  .rn-app .rn-modal::before { content: ""; display: block; flex: 0 0 auto; width: 40px; height: 5px; margin: 10px auto -2px; border-radius: 9999px; background: #DDD7CB; }
   .rn-app .rn-modal .rn-t-section { font-size: 19px; font-weight: 600; letter-spacing: -0.015em; }
 }
 .rn-topbar-name { font-size: 19px; line-height: 1.2; font-weight: 650; letter-spacing: -0.02em; color: #1F2320; }
@@ -500,3 +498,206 @@
 /* A date in a short pill (no long empty field). */
 .m-search.m-date-pill { flex: 0 0 auto; width: auto; padding: 0 12px 0 16px; gap: 0; }
 .rn-app .m-search.m-date-pill input { flex: 0 0 auto; width: 7.6rem; font-size: 14.5px; font-variant-numeric: tabular-nums; }
+
+/* Three-dot menu (app kit) */
+.m-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 5; min-width: 230px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; padding: 6px; border-radius: 18px; background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(24, 33, 27, 0.06), 0 18px 40px -12px rgba(24, 33, 27, 0.28);
+  animation: m-menu-in 180ms cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: top right;
+}
+.m-menu-item { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; border-radius: 12px; border: 0; background: transparent; text-align: left; font-size: 15px; font-weight: 500; color: var(--m-ink, #18211B); }
+.m-menu-item:active, .m-menu-item:hover { background: #F4F0E8; }
+.m-menu-item.is-danger { color: #A23A26; }
+@keyframes m-menu-in { from { opacity: 0; transform: scale(0.94) translateY(-4px); } }
+
+/* Dropdown choices on phones: a sheet with large rows (AppSelect). Above other pop-ups. */
+.rn-select-sheet { z-index: 220; }
+.rn-select-sheet .m-sheet { max-height: 72dvh; }
+.m-option { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 12px 18px; font-size: 15.5px; font-weight: 500; color: var(--m-ink, #18211B); cursor: pointer; }
+.m-option + .m-option { box-shadow: inset 0 1px 0 var(--m-line, #EFEBE3); }
+.m-option:active { background: #F6F3EC; }
+.m-option.is-on { font-weight: 600; color: var(--rn-accent, #1E3A2B); }
+
+/* =============================================================================
+   Pop-ups on phones and tablets (every .rn-modal:not(.rn-own): forms, details, confirmations).
+   One sheet for all of them, matching the app kit: it rises from the bottom, full width, a grab
+   handle, the title on the left and a round close button on the right, white fields with large
+   text, soft cards, and the actions as full-width pills in a fixed bar at the bottom.
+   ============================================================================= */
+@media (max-width: 1023.98px) {
+  .rn-app .rn-modal-scrim {
+    align-items: flex-end !important; justify-content: center !important; padding: 0 !important;
+    background: rgba(15, 22, 18, 0.42) !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    animation: m-fade 220ms linear both;
+  }
+  .rn-app .rn-modal:not(.rn-own) {
+    width: 100% !important; max-width: 640px !important; max-height: 92dvh !important; margin: 0 auto !important;
+    border-radius: 28px 28px 0 0 !important; border: 0 !important;
+    background: var(--m-page, #F7F5F0) !important; color: var(--m-ink, #18211B);
+    box-shadow: 0 -16px 40px rgba(15, 22, 18, 0.2) !important;
+    padding: 0 0 max(12px, env(safe-area-inset-bottom)) !important;
+    font-family: var(--font-rn-display), var(--font-sans);
+    animation: m-sheet-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both !important;
+    row-gap: 0 !important;
+  }
+  .rn-app .rn-modal:not(.rn-own)::before {
+    content: ""; display: block; flex: 0 0 auto; width: 40px; height: 5px; margin: 10px auto 2px; border-radius: 9999px; background: #D9D3C7;
+  }
+  /* Every block gets the same side space. */
+  .rn-app .rn-modal:not(.rn-own) > *, .rn-app .rn-modal:not(.rn-own) > form > * { padding-left: 16px !important; padding-right: 16px !important; }
+  .rn-app .rn-modal:not(.rn-own) > form { padding-left: 0 !important; padding-right: 0 !important; display: flex; flex-direction: column; gap: 14px; }
+  .rn-app .rn-modal:not(.rn-own) > * + *, .rn-app .rn-modal:not(.rn-own) > form > * + * { margin-top: 14px; }
+
+  /* Header: title and close, on the page colour, no rule under it. */
+  .rn-app .rn-modal:not(.rn-own) > :first-child {
+    position: sticky; top: 0; z-index: 3;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding-top: 6px !important; padding-bottom: 6px !important;
+    background: var(--m-page, #F7F5F0) !important; border-bottom: 0 !important; box-shadow: none !important; margin-top: 0 !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) > :first-child :is(h2, h3) {
+    font-family: inherit !important; font-size: 19px !important; line-height: 1.25 !important; font-weight: 600 !important; letter-spacing: -0.015em !important; color: var(--m-ink, #18211B) !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) > :first-child p { font-size: 13px !important; color: var(--m-ink-3, #727C74) !important; }
+  /* The decorative icon tile beside a title is left out on phones. */
+  .rn-app .rn-modal:not(.rn-own) > :first-child > div:first-child > :is(div, span):first-child:has(> svg:only-child) { display: none !important; }
+  /* The close button: round, soft. */
+  .rn-app .rn-modal:not(.rn-own) > :first-child button:has(> svg.lucide-x:only-child) {
+    width: 38px !important; height: 38px !important; min-width: 38px; min-height: 38px !important; padding: 0 !important; margin: 0 !important;
+    display: grid !important; place-items: center; border-radius: 9999px !important; border: 0 !important;
+    background: #ECE8DF !important; color: var(--m-ink, #18211B) !important;
+  }
+
+  /* Text sizes: nothing tiny in a pop-up. */
+  .rn-app .rn-modal:not(.rn-own) :is(.text-xs, .text-\[11px\], .text-\[11\.5px\], .text-\[12px\]) { font-size: 13.5px !important; line-height: 1.45; }
+  .rn-app .rn-modal:not(.rn-own) :is(.text-\[10px\], .text-\[10\.5px\], .text-\[9px\]) { font-size: 12px !important; }
+  .rn-app .rn-modal:not(.rn-own) :is(h3, h4):not(:first-child h3) { font-family: inherit !important; font-weight: 600 !important; letter-spacing: -0.01em; }
+  .rn-app .rn-modal:not(.rn-own) .font-serif { font-family: inherit !important; }
+  .rn-app .rn-modal:not(.rn-own) :is(.font-bold, .font-extrabold) { font-weight: 600 !important; }
+
+  /* Labels */
+  .rn-app .rn-modal:not(.rn-own) label:not(:has(input[type="checkbox"], input[type="radio"])) {
+    font-size: 13px !important; font-weight: 600 !important; color: var(--m-ink-2, #48534B) !important; text-transform: none !important; letter-spacing: 0 !important;
+  }
+
+  /* Fields: white, 48px, rounded, 15px text. */
+  .rn-app .rn-modal:not(.rn-own) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, .rn-app-select) {
+    min-height: 48px !important; border-radius: 14px !important; border: 1px solid #E3DED3 !important; background-color: #FFFFFF !important;
+    font-size: 15px !important; color: var(--m-ink, #18211B) !important; box-shadow: none;
+  }
+  .rn-app .rn-modal:not(.rn-own) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, .rn-app-select):not([class*="pl-"]) { padding-left: 14px !important; }
+  .rn-app .rn-modal:not(.rn-own) textarea {
+    min-height: 88px; border-radius: 14px !important; border: 1px solid #E3DED3 !important; background-color: #FFFFFF !important;
+    font-size: 15px !important; padding: 12px 14px !important; color: var(--m-ink, #18211B) !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) :is(input, select, textarea, .rn-app-select):focus,
+  .rn-app .rn-modal:not(.rn-own) :is(input, select, textarea, .rn-app-select):focus-visible {
+    border-color: var(--rn-accent, #1E3A2B) !important; outline: none !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--rn-accent, #1E3A2B) 16%, transparent) !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) input[type="checkbox"], .rn-app .rn-modal:not(.rn-own) input[type="radio"] { width: 20px; height: 20px; accent-color: var(--rn-accent, #1E3A2B); }
+
+  /* Soft panels and cards inside a pop-up: white cards with a soft shadow, no hard borders. */
+  .rn-app .rn-modal:not(.rn-own) :is(div, section, ul, ol, dl):is([class*="bg-[#FAF8F5]"], [class*="bg-[#FBF8F4]"], [class*="bg-white"], [class*="bg-stone-50"], [class*="bg-neutral-50"], [class*="bg-gray-50"]):is([class*="rounded"]):not(:has(> input)) {
+    background: #FFFFFF !important; border-color: transparent !important; border-radius: 16px !important;
+    box-shadow: 0 1px 1px rgba(24, 33, 27, 0.03), 0 8px 24px -14px rgba(24, 33, 27, 0.14) !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) [class*="border-[#8E9F89]"]:not(input):not(select):not(textarea):not(button):not(.rn-app-select) { border-color: #EFEBE3 !important; }
+
+  /* Action bar: the block with the main button stays at the bottom; its buttons share the width. */
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(button[type="submit"], .rn-btn-primary):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])),
+  .rn-app .rn-modal:not(.rn-own) form > :last-child:has(button[type="submit"]):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])),
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(> button:only-child):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) {
+    position: sticky; bottom: calc(-1 * max(12px, env(safe-area-inset-bottom))); z-index: 3;
+    display: grid !important; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 10px; align-items: stretch;
+    margin-top: 6px !important; padding-top: 12px !important; padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+    background: var(--m-page, #F7F5F0) !important; border-top: 1px solid var(--m-line, #EFEBE3) !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(button[type="submit"], .rn-btn-primary):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) > :is(button, a),
+  .rn-app .rn-modal:not(.rn-own) form > :last-child:has(button[type="submit"]):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) > :is(button, a),
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(> button:only-child):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) > button {
+    width: 100%; min-height: 50px !important; height: auto !important; padding: 0 16px !important; border-radius: 9999px !important;
+    font-size: 15px !important; font-weight: 600 !important; justify-content: center; display: inline-flex; align-items: center; gap: 8px;
+  }
+  /* Main action: the accent, solid. Secondary: soft grey, no border. */
+  .rn-app .rn-modal:not(.rn-own) :is(button[type="submit"], .rn-btn-primary):not([class*="bg-red"]):not([class*="bg-rose"]):not([class*="bg-amber"]) {
+    background: var(--rn-accent, #1E3A2B) !important; color: #FFFFFF !important; border: 0 !important;
+    box-shadow: 0 8px 18px -10px color-mix(in srgb, var(--rn-accent, #1E3A2B) 70%, transparent) !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(button[type="submit"], .rn-btn-primary):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) > button:not([type="submit"]):not(.rn-btn-primary):not([class*="bg-red"]):not([class*="bg-rose"]),
+  .rn-app .rn-modal:not(.rn-own) form > :last-child:has(button[type="submit"]):not(form):not(:has(input:not([type="hidden"]), select, textarea, .rn-app-select, [role="radiogroup"])) > button:not([type="submit"]):not([class*="bg-red"]):not([class*="bg-rose"]) {
+    background: #EEEAE2 !important; color: var(--m-ink, #18211B) !important; border: 0 !important; box-shadow: none !important;
+  }
+  .rn-app .rn-modal:not(.rn-own) :is(button, a)[class*="bg-red-"], .rn-app .rn-modal:not(.rn-own) :is(button, a)[class*="bg-rose-6"], .rn-app .rn-modal:not(.rn-own) :is(button, a)[class*="bg-rose-7"] {
+    border-radius: 9999px !important; min-height: 48px; font-weight: 600 !important;
+  }
+  /* Other buttons in a pop-up: 44px pills. */
+  .rn-app .rn-modal:not(.rn-own) .rn-btn { min-height: 44px; border-radius: 9999px; font-weight: 600; }
+  .rn-app .rn-modal:not(.rn-own) .rn-btn:not(.rn-btn-primary):not(.rn-btn-danger):not(.rn-btn-danger-solid) { background: #EEEAE2; border-color: transparent; color: var(--m-ink, #18211B); }
+
+  /* Notices inside pop-ups */
+  .rn-app .rn-modal:not(.rn-own) [role="alert"] { border-radius: 14px !important; font-size: 14px !important; }
+
+  /* Inner lists that scroll on their own keep plain edges. */
+  .rn-app .rn-modal:not(.rn-own) :is(.overflow-y-auto, .overflow-auto) { padding-right: inherit; }
+}
+@media (max-width: 1023.98px) and (prefers-reduced-motion: reduce) {
+  .rn-app .rn-modal:not(.rn-own), .rn-app .rn-modal-scrim { animation: none !important; }
+}
+
+@media (max-width: 1023.98px) {
+  /* A form inside a pop-up is the body, not a bar: it scrolls with the page colour behind it. */
+  .rn-app .rn-modal:not(.rn-own) > :is(form, div:has(input:not([type="hidden"]), select, textarea, .rn-app-select)):not(:first-child) {
+    position: static !important; background: transparent !important; border-top: 0 !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important; box-shadow: none !important; padding-top: 4px !important;
+  }
+  /* The header never shows a rule or a white band under it. */
+  .rn-app .rn-modal:not(.rn-own) > :first-child + * { border-top: 0 !important; }
+}
+
+@media (max-width: 1023.98px) {
+  /* Headers that were dark banners on wide screens: dark text on the page colour on phones. */
+  .rn-app .rn-modal:not(.rn-own) > :first-child:not([class*="bg-[#1A2E20]"]):not([class*="bg-forest"]) { color: var(--m-ink, #18211B) !important; }
+  .rn-app .rn-modal:not(.rn-own) > :first-child:is([class*="bg-[#1A2E20]"], [class*="bg-forest"]) > :not(button) { color: var(--m-ink, #18211B) !important; }
+  .rn-app .rn-modal:not(.rn-own) > :first-child :is([class*="text-white"], [class*="text-[#FAF8F5]"], [class*="text-[#B58A57]"], [class*="text-[#E4C9A4]"], [class*="text-[#D4A24E]"]):not(button):not(button *) { color: var(--m-ink-3, #727C74) !important; }
+  .rn-app .rn-modal:not(.rn-own) > :first-child :is(h2, h3)[class*="text-white"] { color: var(--m-ink, #18211B) !important; }
+}
+
+@media (max-width: 1023.98px) {
+  /* Beats the "pop-ups are solid white" rule (same strength, loaded later): one warm sheet colour. */
+  .rn-app .rn-modal.rn-modal:not(.rn-own), .rn-app .rn-main .rn-modal.rn-modal:not(.rn-own) { background: var(--m-page, #F7F5F0) !important; }
+}
+
+@media (max-width: 1023.98px) {
+  /* A card placed straight in a pop-up keeps the side margin (it never runs to the screen edge). */
+  .rn-app .rn-modal:not(.rn-own) > :is(div, section, ul, form):not(:first-child):is([class*="rounded-"]):is([class*="bg-"], [class*="border"]):not(:has(> button[type="submit"])) {
+    margin-left: 16px !important; margin-right: 16px !important; padding-left: 16px !important; padding-right: 16px !important;
+  }
+}
+
+.m-menu.is-up { top: auto; bottom: calc(100% + 8px); transform-origin: bottom right; }
+
+/* Manager delivery panels (stop details): the app's sheet on phones. */
+@media (max-width: 1023.98px) {
+  .rn-app .rn-ops-sheet { background: var(--m-page, #F7F5F0) !important; font-family: var(--font-rn-display), var(--font-sans); animation: m-sheet-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  .rn-app .rn-ops-sheet > header { border-bottom: 0 !important; align-items: center; }
+  .rn-app .rn-ops-sheet > header h2 { font-family: inherit !important; font-size: 19px !important; font-weight: 600 !important; letter-spacing: -0.015em; color: var(--m-ink, #18211B) !important; }
+  .rn-app .rn-ops-sheet > header button[aria-label="Close"] { width: 38px !important; height: 38px !important; margin: 0 !important; background: #ECE8DF; color: var(--m-ink, #18211B) !important; }
+  .rn-app .rn-ops-sheet > div:last-child:not(.overflow-y-auto) { background: var(--m-page, #F7F5F0) !important; border-top: 1px solid var(--m-line, #EFEBE3) !important; }
+  .rn-app .rn-ops-sheet .font-serif { font-family: inherit !important; font-weight: 600; }
+  .rn-app .rn-ops-sheet :is(button, a):is([class*="rounded-xl"], [class*="rounded-2xl"], [class*="rounded-full"]):not([aria-label="Close"]) { min-height: 46px; border-radius: 9999px !important; font-weight: 600; }
+}
+
+/* Cash to accept: a sheet from the bottom on phones, like every other pop-up. */
+@media (max-width: 1023.98px) {
+  .rn-app .rn-handover-pop { align-items: flex-end !important; padding: 0 !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+  .rn-app .rn-handover-pop > :last-child { max-width: 640px !important; border-radius: 28px 28px 0 0 !important; padding-bottom: env(safe-area-inset-bottom); animation: m-sheet-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+}
+
+@media (max-width: 1023.98px) {
+  /* Stronger than the orange-section tint for ivory surfaces (glass.css). */
+  .rn-app .rn-main .rn-ops-sheet.rn-ops-sheet.rn-ops-sheet,
+  .rn-app .rn-main .rn-ops-sheet.rn-ops-sheet > div:last-child:not(.overflow-y-auto) { background-color: var(--m-page, #F7F5F0) !important; }
+}

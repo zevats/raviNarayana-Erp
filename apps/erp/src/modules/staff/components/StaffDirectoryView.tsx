@@ -9,7 +9,7 @@ import { ActionMenu } from "@/components/ui/ActionMenu";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { LoadError, NoMatches, StateMessage } from "@/components/ui/states";
 import { PageHeader, StatStrip, SearchField, Segmented, Badge } from "@/components/ui/kit";
-import { MButton, MChips, MEmpty, MField, MGroup, MHero, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, initials, useIsPhone } from "@/components/app/m";
+import { MButton, MChips, MEmpty, MField, MGroup, MHero, MMenu, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, initials, useIsPhone } from "@/components/app/m";
 import {
   StaffUser,
   StaffRole,
@@ -227,30 +227,33 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
                 ))}
               </MGroup>
             )}
-            <MSheet open={Boolean(sheetStaff)} onClose={() => setSheetStaff(null)} title={sheetStaff?.fullName}>
+            <MSheet
+              open={Boolean(sheetStaff)}
+              onClose={() => setSheetStaff(null)}
+              title={sheetStaff?.fullName}
+              headerAction={
+                sheetStaff ? (
+                  <MMenu
+                    label={`Actions for ${sheetStaff.fullName}`}
+                    items={[
+                      { label: "Sign-in history", icon: History, onSelect: () => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsHistoryOpen(true); } },
+                      { label: "Edit profile", icon: Edit2, hidden: !isSuperAdmin, onSelect: () => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsEditOpen(true); } },
+                      { label: "Change role", icon: Shield, hidden: !isSuperAdmin, onSelect: () => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsRoleOpen(true); } },
+                      { label: "Send password reset link", icon: Send, hidden: !isSuperAdmin || !sheetStaff.isActive, onSelect: () => { const m = sheetStaff; setSheetStaff(null); handleSendRecovery(m); } },
+                      { label: "Set a new password", icon: KeyRound, hidden: !isSuperAdmin, onSelect: () => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDirectResetOpen(true); } },
+                      { label: "Delete account", icon: Trash2, danger: true, hidden: !isSuperAdmin || sheetStaff.role === "SUPER_ADMIN" || sheetStaff.id === currentUser.id, onSelect: () => { const m = sheetStaff; setSheetStaff(null); setDeleteError(null); setDeleteTarget(m); } },
+                    ]}
+                  />
+                ) : null
+              }
+            >
               {sheetStaff && (
-                <>
-                  <div className="m-card py-1">
-                    <MField label="Username">@{sheetStaff.username}</MField>
-                    <MField label="Role">{ROLE_LABELS[sheetStaff.role] || sheetStaff.role}</MField>
-                    <MField label="Email">{sheetStaff.email}</MField>
-                    <MField label="Last sign-in">{sheetStaff.lastLoginAt ? new Date(sheetStaff.lastLoginAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "Never"}</MField>
-                  </div>
-                  <MGroup>
-                    <MRow icon={History} tone="accent" title="Sign-in history" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsHistoryOpen(true); }} />
-                    {isSuperAdmin && (
-                      <>
-                        <MRow icon={Edit2} tone="neutral" title="Edit profile" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsEditOpen(true); }} />
-                        <MRow icon={Shield} tone="blue" title="Change role" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsRoleOpen(true); }} />
-                        {sheetStaff.isActive && <MRow icon={Send} tone="neutral" title="Send password reset link" onClick={() => { const m = sheetStaff; setSheetStaff(null); handleSendRecovery(m); }} />}
-                        <MRow icon={KeyRound} tone="neutral" title="Set a new password" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDirectResetOpen(true); }} />
-                        {sheetStaff.role !== "SUPER_ADMIN" && sheetStaff.id !== currentUser.id && (
-                          <MRow icon={Trash2} tone="red" title="Delete account" onClick={() => { const m = sheetStaff; setSheetStaff(null); setDeleteError(null); setDeleteTarget(m); }} />
-                        )}
-                      </>
-                    )}
-                  </MGroup>
-                </>
+                <div className="m-card py-1">
+                  <MField label="Username">@{sheetStaff.username}</MField>
+                  <MField label="Role">{ROLE_LABELS[sheetStaff.role] || sheetStaff.role}</MField>
+                  <MField label="Email">{sheetStaff.email}</MField>
+                  <MField label="Last sign-in">{sheetStaff.lastLoginAt ? new Date(sheetStaff.lastLoginAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "Never"}</MField>
+                </div>
               )}
             </MSheet>
           </MStack>
