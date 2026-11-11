@@ -48,6 +48,8 @@
   transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 200ms linear, background-color 300ms linear;
   will-change: transform;
 }
+/* The owner/manager top bar belongs to the phone app only; the website keeps its own header. */
+@media (min-width: 1024px) { .rn-topbar-phone { display: none; } }
 .rn-tab-pill-orange { background: #C9501C; box-shadow: 0 2px 10px rgba(201, 80, 28, 0.28); }
 @media (prefers-reduced-motion: reduce) {
   .rn-topbar-wrap, .rn-topbar, .rn-topbar-logo, .rn-tab-pill { transition: none; }

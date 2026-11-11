@@ -31,7 +31,7 @@ export function MobileTopBar({ title, queued, online, onAccount }: { title: stri
     <>
       {/* The bar floats above the page; this keeps the page's place under it. */}
       <div aria-hidden className="lg:hidden h-[calc(64px+env(safe-area-inset-top))]" />
-      <header className="lg:hidden rn-topbar-wrap" aria-label={title} data-scrolled={scrolled ? "" : undefined}>
+      <header className="lg:hidden rn-topbar-wrap rn-topbar-phone" aria-label={title} data-scrolled={scrolled ? "" : undefined}>
         <div className="rn-topbar">
           <span className="rn-topbar-logo"><RnLogo size={40} title="Ravinarayan" /></span>
           <p className="flex-1 min-w-0 text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320] truncate">Ravinarayan</p>
