@@ -51,6 +51,7 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { SettlementApprovals } from "@/modules/residents/SettlementApprovals";
 import { businessToday } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { PageHeader, StatStrip, Card, SearchField, EmptyState, Badge } from "@/components/ui/kit";
 import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
@@ -837,7 +838,7 @@ export default function ResidentsPage() {
           </div>
         </div>
       {loading ? (
-        <BikeLoader tone="forest" label="Loading residents…" className="py-12" />
+        <FullPageLoader tone="forest" label="Loading residents…" size="md" />
       ) : filteredResidents.length === 0 ? (
         <EmptyState title={residents.length === 0 ? "No residents yet" : "No residents match"} />
       ) : (

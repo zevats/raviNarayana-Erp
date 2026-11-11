@@ -9,7 +9,7 @@ import type { NotificationItem } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { PageHeader, Card, Segmented } from "@/components/ui/kit";
 import { StateMessage, LoadError, RefreshButton } from "@/components/ui/states";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { NotificationRows, markNotificationRead, markAllNotificationsRead, type NotificationFeed } from "@/components/notifications/NotificationBell";
 
 /** Notification centre: every notification for this role, newest first, with read state. */
@@ -80,7 +80,7 @@ export default function NotificationsPage() {
         {feed.error && !feed.data ? (
           <LoadError message={feed.error.message} onRetry={() => feed.refetch()} title="Notifications could not be loaded" />
         ) : feed.isLoading && !feed.data ? (
-          <BikeLoader label="Loading notifications" className="py-12" />
+          <FullPageLoader label="Loading notifications" size="md" />
         ) : items.length === 0 ? (
           show === "unread" ? (
             <StateMessage kind="empty" title="No unread notifications" action={<button type="button" className="rn-btn rn-btn-sm" onClick={() => setShow("all")}>Show all</button>} />

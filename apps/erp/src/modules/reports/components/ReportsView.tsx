@@ -7,6 +7,7 @@ import { useErpQuery } from "@/lib/cache/erpDataCache";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { businessToday, businessMonthStart } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { Segmented, SearchField, EmptyState } from "@/components/ui/kit";
 import { formatNumberIN } from "@/lib/format";
 import { MSkeletonRows, useIsPhone } from "@/components/app/m";
@@ -84,7 +85,7 @@ export function ReportsView() {
   }, [params]);
   const reset = () => setPage(0);
 
-  if (list.isLoading && !list.data) return phone ? <MSkeletonRows rows={6} /> : <div className="py-16 flex justify-center"><BikeLoader label="Loading reports" /></div>;
+  if (list.isLoading && !list.data) return phone ? <MSkeletonRows rows={6} /> : <FullPageLoader label="Loading reports" size="md" />;
 
   const mobile = (
     <ReportsMobile

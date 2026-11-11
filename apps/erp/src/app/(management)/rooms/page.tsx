@@ -40,6 +40,7 @@ import {
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { PageHeader, StatStrip, Card, SearchField, EmptyState } from "@/components/ui/kit";
 import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import { RoomsMobile } from "@/modules/rooms/RoomsMobile";
@@ -750,7 +751,7 @@ export default function RoomsPage() {
           </div>
         </div>
       {loading ? (
-        <BikeLoader tone="forest" label="Loading rooms…" className="py-12" />
+        <FullPageLoader tone="forest" label="Loading rooms…" size="md" />
       ) : filteredRooms.length === 0 ? (
         <EmptyState
           title={rooms.length === 0 ? "No rooms yet" : "No rooms match"}

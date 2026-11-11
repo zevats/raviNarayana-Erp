@@ -7,7 +7,7 @@ import { useErpQuery } from "@/lib/cache/erpDataCache";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { SearchField, EmptyState, Badge } from "@/components/ui/kit";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { formatDateTime } from "@/lib/format";
 import { CheckCircle2, Ban, SlidersHorizontal } from "lucide-react";
 import { MButton, MChips, MEmpty, MGroup, MRow, MSearch, MSection, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, groupByDay, useIsPhone } from "@/components/app/m";
@@ -185,7 +185,7 @@ export function ActivityLogView() {
       {q.error && !q.data ? (
         <div role="alert" className="p-5 text-sm text-rose-900">{q.error.message}</div>
       ) : q.isLoading && !q.data ? (
-        <div className="py-16 flex justify-center"><BikeLoader label="Loading activity" /></div>
+        <FullPageLoader label="Loading activity" size="md" />
       ) : entries.length === 0 ? (
         <EmptyState title="No activity matches these filters" />
       ) : (

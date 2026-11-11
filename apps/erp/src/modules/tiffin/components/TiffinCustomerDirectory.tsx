@@ -29,7 +29,7 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { CustomerModal } from "./modals/CustomerModal";
 import { CustomerDetailModal } from "./modals/CustomerDetailModal";
 import { AccountSheet } from "@/modules/billing/AccountSheet";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { MButton, MChips, MEmpty, MGroup, MHero, MMore, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 
 const ITEMS_PER_PAGE = 10;
@@ -436,7 +436,7 @@ export function TiffinCustomerDirectory() {
       {/* Directory Table */}
       <div>
         {isLoading ? (
-          <BikeLoader tone="forest" label="Loading customers…" className="p-12" />
+          <FullPageLoader tone="forest" label="Loading customers…" size="md" />
         ) : customersError ? (
           <div className="p-8 text-center text-red-600">
             <AlertCircle className="w-8 h-8 mx-auto mb-2" />
@@ -730,10 +730,6 @@ export function TiffinCustomerDirectory() {
         onEdit={(customer) => {
           setIsDetailModalOpen(false);
           handleOpenEdit(customer);
-        }}
-        onToggleStatus={(customer) => {
-          setIsDetailModalOpen(false);
-          setStatusTarget(customer);
         }}
         onViewAccount={(customer) => {
           setIsDetailModalOpen(false);

@@ -43,6 +43,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password") ||
     pathname.startsWith("/bill/") ||
+    pathname.startsWith("/receipt/") ||
     pathname === "/download" ||
     pathname.startsWith("/download/")
   ) {

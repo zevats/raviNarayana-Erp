@@ -1,28 +1,32 @@
-import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
-import { requirePermission, AuthorizationError } from "../authorization/authorize";
-import { hasPermission } from "../authorization/permissions";
+import { requirePermission } from "../authorization/authorize";
 import { recordAuditEventAsync } from "../audit/audit";
-import { assertClosingDateNotFinalized, getBusinessDateString } from "./financeService";
+import { hasBillsSchema } from "../database/schemaFeatures";
+import { acquireLedgerKeyLock, assertClosingDateNotFinalized, getBusinessDateString } from "./financeService";
 import { AuthenticatedUser, normalizePaymentMethod } from "@/types";
 import { OTHER_RECEIPT_CATEGORY } from "./otherReceiptService";
 
 /**
- * Editing a cashbook entry (money received or spent).
+ * Editing a cashbook entry: money received or spent is corrected in place, every detail that was
+ * recorded (amount, date, how it was paid, who, what for, reference, category). Owner and Manager.
  *
- *   - Details (the note, who it was paid to / received from, the reference, an expense's category)
- *     are changed on the entry itself. Owner and Manager.
- *   - The amount, date or payment method of an expense or an Other receipt is corrected the way
- *     books are corrected: the entry is reversed and a corrected entry is recorded, in one step, so
- *     every total stays exact and the history shows what changed. Owner only (as reversals).
- *   - Dues payments (rent, tiffin, deliveries) settle what people owe; their amount is not edited
- *     here (reverse the payment and receive it again), only their details.
- *   - Nothing on a day whose cashbook is closed can change.
+ * Every figure that depends on the entry follows it at once, because they are all read from the
+ * entries themselves: dues, rent balances, deposits held, the cashbook. Two things are kept in step
+ * here:
+ *   - a tiffin payment that paid bills: if its amount goes below what it paid, the most recent
+ *     bill payments are taken back (those bills show as due again); a higher amount becomes credit;
+ *   - the bill a payment was made against keeps the new amount.
+ * Entries tied to other records are corrected where they come from: a delivery staff handover
+ * (accepted on the Cash screen), a dine-in order paid at the counter, a deposit used for rent.
+ * Nothing on a day whose cashbook is closed can change, and every change is in the activity log
+ * with the values before and after.
  */
 
 const KITCHEN = new Set(["GROCERY", "KITCHEN_SUPPLIES", "LPG"]);
 const EXPENSE_CATEGORIES = new Set(["GROCERY", "UTILITIES", "MAINTENANCE", "STAFF_SALARY", "KITCHEN_SUPPLIES", "LPG", "INTERNET", "MARKETING", "OTHER"]);
 const EDITABLE = new Set(["EXPENSE", "RENT_PAYMENT", "SECURITY_DEPOSIT", "TIFFIN_PAYMENT"]);
+/** Entries whose amount, date and method belong to another record. */
+const LINKED = new Set(["TIFFIN_DELIVERY_COLLECTION", "TIFFIN_WALKIN_SALE", "DEPOSIT_APPLICATION"]);
 
 export interface EditEntryInput {
   description?: string;
@@ -32,7 +36,6 @@ export interface EditEntryInput {
   amount?: number;
   transactionDate?: string;
   paymentMethod?: string;
-  reason?: string;
 }
 
 const divisionOf = (row: any): "PG" | "TIFFIN" =>
@@ -45,12 +48,10 @@ export async function editTransaction(actor: AuthenticatedUser, id: string, inpu
   if (!row) throw new Error("Entry not found.");
   if (!EDITABLE.has(row.transaction_type)) throw new Error("This entry cannot be edited.");
   if (row.status !== "POSTED") throw new Error("This entry was reversed, so it can no longer be edited.");
-  if (row.transaction_type === "TIFFIN_PAYMENT" && row.category === "TIFFIN_DELIVERY_COLLECTION") {
-    throw new Error("This entry is a delivery staff handover. Correct it where the handover was accepted.");
-  }
 
-  const isOther = row.transaction_type === "TIFFIN_PAYMENT" && row.category === OTHER_RECEIPT_CATEGORY;
   const isExpense = row.transaction_type === "EXPENSE";
+  const isOther = row.transaction_type === "TIFFIN_PAYMENT" && row.category === OTHER_RECEIPT_CATEGORY;
+  const linked = LINKED.has(String(row.category || ""));
   const clean = (v: unknown) => (typeof v === "string" ? v.trim() : undefined);
 
   const next = {
@@ -68,73 +69,91 @@ export async function editTransaction(actor: AuthenticatedUser, id: string, inpu
   if (!Number.isInteger(next.amount) || next.amount <= 0) throw new Error("The amount must be a whole number of rupees above ₹0.");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(next.transaction_date) || next.transaction_date > getBusinessDateString(new Date())) throw new Error("Choose a valid date, not in the future.");
 
-  const money = next.amount !== Number(row.amount) || next.transaction_date !== row.transaction_date || next.payment_method !== row.payment_method;
-  const details = next.description !== row.description || next.payee_vendor !== row.payee_vendor || next.reference_number !== row.reference_number || next.category !== row.category;
-  if (!money && !details) return { id, changed: false, corrected: false };
+  const amountChanged = next.amount !== Number(row.amount);
+  const moneyChanged = amountChanged || next.transaction_date !== row.transaction_date || next.payment_method !== row.payment_method;
+  const detailsChanged = next.description !== row.description || next.payee_vendor !== row.payee_vendor || next.reference_number !== row.reference_number || next.category !== row.category;
+  if (!moneyChanged && !detailsChanged) return { id, changed: false };
+  if (moneyChanged && linked) {
+    throw new Error(
+      row.category === "TIFFIN_DELIVERY_COLLECTION"
+        ? "This is a delivery staff handover. Its amount is corrected on the Cash screen where it was accepted."
+        : row.category === "TIFFIN_WALKIN_SALE"
+          ? "This is a counter sale tied to its order. Change the order instead."
+          : "This is a deposit used for rent. Correct it from the resident's check-out."
+    );
+  }
 
-  if (money && !(isExpense || isOther)) {
-    throw new Error("The amount, date or method of a dues payment is not changed here. Reverse the payment and receive it again.");
-  }
-  if (money && !hasPermission(actor.role, "finance.manage")) {
-    throw new AuthorizationError(403, "Only the owner can change the amount, date or method of an entry.");
-  }
-  const reason = clean(input.reason) || "Corrected from the cashbook";
   const now = new Date().toISOString();
   const before = { amount: Number(row.amount), date: row.transaction_date, method: row.payment_method, description: row.description, payee: row.payee_vendor, reference: row.reference_number, category: row.category };
   const after = { amount: next.amount, date: next.transaction_date, method: next.payment_method, description: next.description, payee: next.payee_vendor, reference: next.reference_number, category: next.category };
   const oldDivision = divisionOf(row);
   const newDivision = divisionOf({ ...row, category: next.category });
+  let billsReopened = 0;
 
-  let resultId = id;
   await db.transaction(async (tx) => {
-    const locked = await tx.queryOne<any>(`SELECT status FROM financial_transactions WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`, [id]);
-    if (locked?.status !== "POSTED") throw new Error("This entry was changed by someone else just now. Reload and try again.");
+    if (row.resident_id) await acquireLedgerKeyLock(tx, `resident:${row.resident_id}`);
+    if (row.customer_id) await acquireLedgerKeyLock(tx, `customer:${row.customer_id}`);
+    const locked = await tx.queryOne<any>(`SELECT status, amount FROM financial_transactions WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`, [id]);
+    if (locked?.status !== "POSTED" || Number(locked.amount) !== Number(row.amount)) throw new Error("This entry was changed by someone else just now. Reload and try again.");
     await assertClosingDateNotFinalized(tx, row.transaction_date, oldDivision);
-    if (newDivision !== oldDivision) await assertClosingDateNotFinalized(tx, row.transaction_date, newDivision);
+    if (newDivision !== oldDivision || next.transaction_date !== row.transaction_date) await assertClosingDateNotFinalized(tx, next.transaction_date, newDivision);
 
-    if (!money) {
-      await tx.execute(
-        "UPDATE financial_transactions SET description = ?, payee_vendor = ?, reference_number = ?, category = ?, updated_at = ? WHERE id = ?",
-        [next.description, next.payee_vendor, next.reference_number, next.category, now, id]
+    // A deposit cannot drop below what was already refunded or used for rent.
+    if (row.transaction_type === "SECURITY_DEPOSIT" && next.amount < Number(row.amount)) {
+      const held = await tx.queryOne<{ n: number | string }>(
+        `SELECT COALESCE(SUM(CASE WHEN transaction_type = 'SECURITY_DEPOSIT' THEN amount ELSE 0 END), 0)
+              - COALESCE(SUM(CASE WHEN transaction_type = 'DEPOSIT_REFUND' THEN amount ELSE 0 END), 0)
+              - COALESCE(SUM(CASE WHEN transaction_type = 'RENT_PAYMENT' AND COALESCE(category, '') = 'DEPOSIT_APPLICATION' THEN amount ELSE 0 END), 0) AS n
+         FROM financial_transactions WHERE resident_id = ? AND status = 'POSTED'`,
+        [row.resident_id]
       );
-    } else {
-      // Reverse the original and record the corrected entry.
-      const today = getBusinessDateString(new Date());
-      await assertClosingDateNotFinalized(tx, today, oldDivision);
-      await assertClosingDateNotFinalized(tx, next.transaction_date, newDivision);
-      const reversalId = `txn_${crypto.randomUUID()}`;
-      await tx.execute("UPDATE financial_transactions SET status = 'REVERSED', updated_at = ? WHERE id = ?", [now, id]);
+      if (Number(held?.n ?? 0) - (Number(row.amount) - next.amount) < 0) {
+        throw new Error("Part of this deposit was already refunded or used for rent, so it cannot be lowered that far.");
+      }
+    }
+
+    // A payment that paid invoices: take back the most recent bill payments it no longer covers.
+    if ((row.transaction_type === "TIFFIN_PAYMENT" || row.transaction_type === "RENT_PAYMENT") && amountChanged && next.amount < Number(row.amount)) {
+      const allocs = await tx.query<any>("SELECT id, invoice_id, amount FROM invoice_payment_allocations WHERE payment_transaction_id = ? ORDER BY allocated_at DESC, created_at DESC", [id]);
+      let over = allocs.reduce((s, a) => s + Number(a.amount), 0) - next.amount;
+      for (const a of allocs) {
+        if (over <= 0) break;
+        const back = Math.min(over, Number(a.amount));
+        const inv = await tx.queryOne<any>(`SELECT id, amount_paid, balance_due FROM invoices WHERE id = ?${tx.isPostgres ? " FOR UPDATE" : ""}`, [a.invoice_id]);
+        if (back === Number(a.amount)) await tx.execute("DELETE FROM invoice_payment_allocations WHERE id = ?", [a.id]);
+        else await tx.execute("UPDATE invoice_payment_allocations SET amount = ? WHERE id = ?", [Number(a.amount) - back, a.id]);
+        const paid = Number(inv.amount_paid) - back;
+        await tx.execute("UPDATE invoices SET amount_paid = ?, balance_due = ?, status = ?, updated_at = ? WHERE id = ?", [paid, Number(inv.balance_due) + back, paid > 0 ? "PARTIALLY_PAID" : "ISSUED", now, inv.id]);
+        billsReopened++;
+        over -= back;
+      }
+    }
+
+    await tx.execute(
+      `UPDATE financial_transactions SET amount = ?, transaction_date = ?, payment_method = ?, description = ?, payee_vendor = ?, reference_number = ?, category = ?, updated_at = ? WHERE id = ?`,
+      [next.amount, next.transaction_date, next.payment_method, next.description, next.payee_vendor, next.reference_number, next.category, now, id]
+    );
+
+    // The bill this payment was made against keeps the corrected amount.
+    if (amountChanged && row.idempotency_key && (await hasBillsSchema(tx))) {
       await tx.execute(
-        `INSERT INTO financial_transactions (
-           id, transaction_type, amount, transaction_date, payment_method, reference_number, resident_id, customer_id, stay_id, category,
-           description, billing_period, payee_vendor, idempotency_key, status, reversal_of_id, created_by, created_at, updated_at
-         ) VALUES (?, 'REVERSAL', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL, 'POSTED', ?, ?, ?, ?)`,
-        [reversalId, Number(row.amount), today, row.payment_method, row.reference_number, row.resident_id, row.customer_id, row.stay_id, row.category, `Reversal: corrected (${reason})`, row.payee_vendor, id, actor.id, now, now]
-      );
-      resultId = `txn_${crypto.randomUUID()}`;
-      await tx.execute(
-        `INSERT INTO financial_transactions (
-           id, transaction_type, amount, transaction_date, payment_method, reference_number, resident_id, customer_id, stay_id, category,
-           description, billing_period, payee_vendor, idempotency_key, status, reversal_of_id, created_by, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'POSTED', NULL, ?, ?, ?)`,
-        [
-          resultId, row.transaction_type, next.amount, next.transaction_date, next.payment_method, next.reference_number, row.resident_id, row.customer_id, row.stay_id,
-          next.category, next.description, row.billing_period, next.payee_vendor, actor.id, now, now,
-        ]
+        "UPDATE bill_payments SET amount = amount + ? WHERE ? LIKE payment_key || ':%' AND amount + ? > 0",
+        [next.amount - Number(row.amount), row.idempotency_key, next.amount - Number(row.amount)]
       );
     }
+
     await recordAuditEventAsync(
       {
         actorId: actor.id,
         actorUsername: actor.username,
-        action: money ? "finance.transaction_corrected" : "finance.transaction_edited",
+        action: "finance.transaction_edited",
         targetType: "transaction",
         targetId: id,
-        metadata: { before, after, reason: money ? reason : null, correctedEntryId: money ? resultId : null },
+        metadata: { before, after, billsReopened },
         ipAddress: clientIp,
       },
       tx
     );
   });
-  return { id: resultId, changed: true, corrected: money };
+  return { id, changed: true, billsReopened };
 }

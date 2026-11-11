@@ -1,3 +1,5 @@
+import { archiveIdleCustomersSoon } from "@/server/tiffin/customerArchive";
+import { getAsyncDb } from "@/server/database/db";
 import { friendlyError } from "@/lib/friendlyError";
 import { syncResidentCustomers } from "@/server/tiffin/residentCustomers";
 import { NextRequest, NextResponse } from "next/server";
@@ -73,12 +75,15 @@ export async function GET(request: NextRequest) {
 
     // Validate pagination parameters
     const limitRaw = url.searchParams.get("limit");
+    // The order form's picker asks for everyone at once (up to 2,000, light rows).
+    const picker = url.searchParams.get("picker") === "1";
+    const maxLimit = picker ? 2000 : 200;
     let limit: number | undefined = undefined;
     if (limitRaw !== null && limitRaw !== undefined && limitRaw.trim().length > 0) {
       const parsedLimit = Number(limitRaw);
-      if (isNaN(parsedLimit) || !Number.isInteger(parsedLimit) || parsedLimit <= 0 || parsedLimit > 200) {
+      if (isNaN(parsedLimit) || !Number.isInteger(parsedLimit) || parsedLimit <= 0 || parsedLimit > maxLimit) {
         return NextResponse.json(
-          { success: false, error: "Invalid limit parameter. Must be an integer between 1 and 200." },
+          { success: false, error: `Invalid limit parameter. Must be an integer between 1 and ${maxLimit}.` },
           { status: 400 }
         );
       }
@@ -100,6 +105,8 @@ export async function GET(request: NextRequest) {
 
     // PG residents who are not yet tiffin customers are added first (only missing ones).
     await syncResidentCustomers(user);
+    // Customers with no order for three months leave the list (set inactive, never deleted).
+    await archiveIdleCustomersSoon(getAsyncDb(), user);
     const result = await listTiffinCustomers(user, {
       search,
       status,
@@ -107,7 +114,7 @@ export async function GET(request: NextRequest) {
       dietaryPreference,
       limit,
       offset,
-      picker: request.nextUrl.searchParams.get("picker") === "1",
+      picker,
     });
 
     return NextResponse.json({ success: true, ...result });

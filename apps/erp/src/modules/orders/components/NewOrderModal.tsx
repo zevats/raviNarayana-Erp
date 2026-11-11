@@ -299,9 +299,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   // Every active customer, by name, in one light request (no balances): the list shows them all at
   // once and the search filters it on the phone, with no wait.
   const customersQuery = useErpQuery<TiffinCustomer[]>(
-    "/api/tiffin/customers?status=ACTIVE&picker=1&limit=2000",
+    "/api/tiffin/customers?picker=1&limit=2000",
     async () => {
-      const res = await fetch("/api/tiffin/customers?status=ACTIVE&picker=1&limit=2000");
+      const res = await fetch("/api/tiffin/customers?picker=1&limit=2000");
       if (!res.ok) throw new Error("Could not load customers.");
       const data = await res.json();
       return Array.isArray(data.customers) ? data.customers : [];
@@ -322,7 +322,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (!isOpen || customerMode !== "EXISTING" || customerSearch.trim().length < 2) return;
     let gone = false;
     const t = setTimeout(() => {
-      fetch(`/api/tiffin/customers?status=ACTIVE&picker=1&limit=30&search=${encodeURIComponent(customerSearch.trim())}`)
+      fetch(`/api/tiffin/customers?picker=1&limit=30&search=${encodeURIComponent(customerSearch.trim())}`)
         .then((res) => (res.ok ? res.json() : { customers: [] }))
         .then((data) => {
           if (gone || !Array.isArray(data.customers) || data.customers.length === 0) return;
@@ -524,7 +524,6 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (orderType !== "DELIVERY") {
       // Pay Later at the counter: the guest must be identifiable to be asked for the money later.
       if (paymentMethod !== "PAY_LATER") return null;
-      if (newCustomerName.trim().length < 2) return "For Pay Later, enter the guest name.";
       if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
       return null;
     }
@@ -534,7 +533,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (duplicateCustomer) {
       return `This phone number already belongs to ${duplicateCustomer.fullName}. Use that customer or change the phone number.`;
     }
-    if (newCustomerName.trim().length < 2) return "Customer name must be at least 2 characters.";
+    // The name is optional: without one the order is for a one-time customer (not saved as a customer).
+    if (newCustomerName.trim().length === 1) return "Enter the full name, or leave the name empty for a one-time customer.";
     if (newCustomerPhone.trim().length < 7) return "Enter the customer's phone number.";
     if (newCustomerAddress.trim().length < 5) return "Enter the delivery address (at least 5 characters).";
     return null;
@@ -1076,8 +1076,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                       )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label htmlFor="no-name" className={LABEL}>Customer name *</label>
-                          <input id="no-name" type="text" autoComplete="off" placeholder="Full name" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className={FIELD} />
+                          <label htmlFor="no-name" className={LABEL}>Customer name</label>
+                          <input id="no-name" type="text" autoComplete="off" placeholder="Optional" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className={FIELD} />
                         </div>
                         <div>
                           <label htmlFor="no-phone" className={LABEL}>
@@ -1105,7 +1105,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
               ) : (
                 <section className="space-y-3">
                   <h3 className={`text-[15px] font-bold ${INK}`}>
-                    Guest <span className={`font-normal text-[13.5px] ${INK2}`}>(needed for Pay Later)</span>
+                    Guest
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -1273,9 +1273,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                     {paymentMethod === "PAY_LATER" && (
                       <p className={`mt-2 text-[13px] ${INK2}`}>
                         Nothing is collected now: {rupees(totalAmount)} goes on {(forPlan ? selectedCustomer?.fullName : newCustomerName.trim()) || "the guest"}&apos;s account (Finance → Receivables).
-                        {!forPlan && (newCustomerName.trim().length < 2 || newCustomerPhone.replace(/\D/g, "").length < 7) && (
+                        {!forPlan && newCustomerPhone.replace(/\D/g, "").length < 7 && (
                           <button type="button" onClick={() => goTo(1)} className="ml-1 font-semibold text-[var(--rn-accent)] underline underline-offset-2">
-                            Add the guest name and phone
+                            Add the guest phone
                           </button>
                         )}
                       </p>

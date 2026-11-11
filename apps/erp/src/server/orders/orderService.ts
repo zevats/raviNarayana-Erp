@@ -471,13 +471,14 @@ export async function createUnifiedOrder(
   const orderId = `ord_${crypto.randomUUID()}`;
 
   if (orderType === "DELIVERY") {
-    const customerName = input.customerName?.trim();
+    // A name is not required (owner, 2026-11-11): an order without one is a one-time customer, kept
+    // on the order only and never added to Customers (unless the phone already is a customer).
+    const givenName = input.customerName?.trim() || "";
+    const oneTime = givenName.length < 2 && !input.customerId?.trim();
+    let customerName = givenName.length >= 2 ? givenName : "Guest";
     const rawCustomerPhone = input.customerPhone?.trim();
     const deliveryAddress = input.deliveryAddress?.trim();
 
-    if (!customerName || customerName.length < 2) {
-      throw new Error("Customer name must be at least 2 characters for delivery orders.");
-    }
     if (!rawCustomerPhone || rawCustomerPhone.length < 7) {
       throw new Error("Valid customer phone number is required for delivery orders.");
     }
@@ -499,7 +500,16 @@ export async function createUnifiedOrder(
 
       // Customer creation or lookup in tiffin_customers
       let customerId = input.customerId?.trim() || null;
-      if (!customerId) {
+      if (!customerId && oneTime) {
+        // No name: the order belongs to the customer with this phone if there is one; otherwise it
+        // stays a one-time order with no customer record.
+        const known = await tx.queryOne<{ id: string; full_name: string }>("SELECT id, full_name FROM tiffin_customers WHERE phone = ? LIMIT 1", [customerPhone]);
+        if (known) {
+          customerId = known.id;
+          customerName = known.full_name;
+          await tx.execute("UPDATE tiffin_customers SET status = 'ACTIVE', updated_at = ? WHERE id = ? AND status <> 'ACTIVE'", [now, known.id]);
+        }
+      } else if (!customerId) {
         const existingCustomer = await tx.queryOne<{ id: string; full_name: string }>(`
           SELECT id, full_name FROM tiffin_customers WHERE phone = ? LIMIT 1
         `, [customerPhone]);
@@ -519,7 +529,7 @@ export async function createUnifiedOrder(
       } else {
         // One statement: the update tells whether the customer exists.
         const updated = await tx.execute(`
-          UPDATE tiffin_customers SET delivery_address = ?, updated_at = ? WHERE id = ?
+          UPDATE tiffin_customers SET delivery_address = ?, status = 'ACTIVE', updated_at = ? WHERE id = ?
         `, [deliveryAddress, now, customerId]);
         if (updated.changes === 0) {
           throw new Error(`Customer '${customerId}' not found.`);
@@ -606,7 +616,6 @@ export async function createUnifiedOrder(
   const payLater = !inPlanFree && ((input as any).payLater === true || String(input.paymentMethod || "").toUpperCase() === "PAY_LATER");
   if (payLater) {
     if (!(await hasDineInPayLaterSchema(db))) throw new Error("Pay Later for dine-in needs the latest database update, which is not installed yet.");
-    if (!input.customerName?.trim() || input.customerName.trim().length < 2) throw new Error("Enter the guest name for a Pay Later order.");
     if (!customerPhone || customerPhone.replace(/\D/g, "").length < 7) throw new Error("Enter the guest phone number for a Pay Later order.");
   }
   const paymentMethod: PaymentMethod = normalizePaymentMethod(payLater ? "CASH" : input.paymentMethod || "CASH");

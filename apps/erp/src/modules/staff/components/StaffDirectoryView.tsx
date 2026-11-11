@@ -4,7 +4,7 @@ import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useMemo } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { ActionMenu } from "@/components/ui/ActionMenu";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { LoadError, NoMatches, StateMessage } from "@/components/ui/states";
@@ -322,7 +322,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
       {/* Staff list: Owner, Manager, Delivery; active before deactivated; then by name */}
       <div>
         {loading ? (
-          <BikeLoader label="Loading staff…" className="py-16" />
+          <FullPageLoader label="Loading staff…" size="md" />
         ) : staffQuery.error && !staffQuery.data ? (
           <LoadError message={staffQuery.error.message} onRetry={() => staffQuery.refetch()} title="Staff could not be loaded" />
         ) : sortedStaff.length === 0 ? (

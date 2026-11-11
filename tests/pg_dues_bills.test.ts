@@ -27,6 +27,8 @@ import { ensurePlanCharges, planMonthStart, planMonthEnd } from "../apps/erp/src
 import { createBill, listBills, getBill, getBillByToken, BUSINESS_GSTIN } from "../apps/erp/src/server/finance/billService";
 import { loadCustomerBalancesById } from "../apps/erp/src/server/tiffin/customerBalance";
 import { rupeesInWords, splitInclusiveGst, financialYear } from "../apps/erp/src/lib/bills";
+import { getOrCreateReceipt, getReceiptByToken } from "../apps/erp/src/server/finance/receiptService";
+import { archiveIdleCustomers } from "../apps/erp/src/server/tiffin/customerArchive";
 import { useVerifyDatabase, migrateVerifyDatabase, createAsserter, insertStaff } from "./helpers/pgVerifyTarget";
 
 const verifyUrl = useVerifyDatabase();
@@ -290,32 +292,130 @@ async function main() {
   assert(re.assignedTo === driver.id, "A taken order can be reassigned to someone else");
 
   // ---------------------------------------------------------------------------
-  console.log("\n--- 9. Editing cashbook entries ---");
+  console.log("\n--- 9. Editing cashbook entries (a real edit, in place) ---");
   const pgBefore9 = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "PG" }, db);
   const exp: any = await recordExpense(manager, { category: "MAINTENANCE", amount: 900, transactionDate: today, paymentMethod: "CASH", payeeVendor: "Plumber", description: "Tap repair" } as any, IP, db);
-  const d1 = await editTransaction(manager, exp.id, { description: "Bathroom tap repair", payeeVendor: "Raju plumber", referenceNumber: "BILL-77" }, IP, db);
-  const e1 = await db.queryOne<any>("SELECT description, payee_vendor, reference_number, amount, status FROM financial_transactions WHERE id = ?", [exp.id]);
-  assert(d1.changed && !d1.corrected && e1.description === "Bathroom tap repair" && e1.payee_vendor === "Raju plumber" && e1.reference_number === "BILL-77" && Number(e1.amount) === 900 && e1.status === "POSTED", "Manager edits an expense's details in place");
-  assert((await refused(() => editTransaction(manager, exp.id, { amount: 950 }, IP, db)))?.includes("Only the owner") === true, "A Manager cannot change the amount");
-  assert((await refused(() => editTransaction(driver, exp.id, { description: "x" }, IP, db))) !== null, "Delivery staff cannot edit entries");
-  const c1 = await editTransaction(owner, exp.id, { amount: 950, reason: "Bill was ₹950" }, IP, db);
-  const oldRow = await db.queryOne<any>("SELECT status FROM financial_transactions WHERE id = ?", [exp.id]);
-  const rev = await db.queryOne<any>("SELECT amount FROM financial_transactions WHERE reversal_of_id = ? AND transaction_type = 'REVERSAL'", [exp.id]);
-  const fresh = await db.queryOne<any>("SELECT amount, description, payee_vendor, category, status FROM financial_transactions WHERE id = ?", [c1.id]);
-  assert(c1.corrected && oldRow.status === "REVERSED" && Number(rev?.amount) === 900 && Number(fresh.amount) === 950 && fresh.description === "Bathroom tap repair" && fresh.category === "MAINTENANCE" && fresh.status === "POSTED", "Owner corrects the amount: the old entry is reversed and a corrected one recorded");
+  const rowsBefore = await num(db, "SELECT COUNT(*) AS n FROM financial_transactions");
+  const d1 = await editTransaction(manager, exp.id, { description: "Bathroom tap repair", payeeVendor: "Raju plumber", referenceNumber: "BILL-77", amount: 950, paymentMethod: "UPI" }, IP, db);
+  const e1 = await db.queryOne<any>("SELECT description, payee_vendor, reference_number, amount, payment_method, status FROM financial_transactions WHERE id = ?", [exp.id]);
+  assert(d1.changed && d1.id === exp.id && e1.description === "Bathroom tap repair" && e1.payee_vendor === "Raju plumber" && e1.reference_number === "BILL-77" && Number(e1.amount) === 950 && e1.payment_method === "UPI" && e1.status === "POSTED", "A Manager edits an expense in place: amount, method, who and what for all change on the same entry");
+  assert((await num(db, "SELECT COUNT(*) AS n FROM financial_transactions")) === rowsBefore && (await num(db, "SELECT COUNT(*) AS n FROM financial_transactions WHERE reversal_of_id = ?", [exp.id])) === 0, "Nothing is reversed and no new entry is added");
   const pgAfter9 = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "PG" }, db);
-  assert((pgAfter9.netCashMovementExact ?? 0) - (pgBefore9.netCashMovementExact ?? 0) === -950, `Net cash moves by exactly −₹950 after the correction (₹${(pgAfter9.netCashMovementExact ?? 0) - (pgBefore9.netCashMovementExact ?? 0)})`);
-  assert((await refused(() => editTransaction(owner, exp.id, { description: "again" }, IP, db)))?.includes("reversed") === true, "A reversed entry cannot be edited");
+  const moved = Number(pgAfter9.netCashMovementExact ?? 0) - Number(pgBefore9.netCashMovementExact ?? 0);
+  assert(moved === -950, `Net cash moves by exactly −₹950 (the edited amount, not ₹900 + ₹950): ₹${moved}`);
+  const again9 = await editTransaction(owner, exp.id, { amount: 875, description: "Tap repair (final bill)" }, IP, db);
+  const e2 = await db.queryOne<any>("SELECT amount, description FROM financial_transactions WHERE id = ?", [exp.id]);
+  assert(again9.changed && Number(e2.amount) === 875 && e2.description === "Tap repair (final bill)", "The same entry can be edited again");
+  const pgAfter9b = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "PG" }, db);
+  assert(Number(pgAfter9b.netCashMovementExact ?? 0) - Number(pgBefore9.netCashMovementExact ?? 0) === -875, "Totals follow the latest edit (−₹875)");
+  const audit = await num(db, "SELECT COUNT(*) AS n FROM audit_logs WHERE action = 'finance.transaction_edited' AND target_id = ?", [exp.id]);
+  assert(audit === 2, "Each edit is in the activity log with what it was before");
+  assert((await editTransaction(manager, exp.id, { description: "Tap repair (final bill)" }, IP, db)).changed === false, "Saving with nothing changed changes nothing");
+  assert((await refused(() => editTransaction(driver, exp.id, { description: "x" }, IP, db))) !== null, "Delivery staff cannot edit entries");
+  assert((await refused(() => editTransaction(manager, exp.id, { amount: 0 }, IP, db))) !== null && (await refused(() => editTransaction(manager, exp.id, { transactionDate: addDays(today, 3) }, IP, db))) !== null, "An amount of ₹0 or a future date is refused");
   const lpg: any = await recordExpense(owner, { category: "GROCERY", amount: 300, transactionDate: today, paymentMethod: "CASH", description: "Gas" } as any, IP, db);
   await editTransaction(manager, lpg.id, { category: "LPG" }, IP, db);
   assert((await db.queryOne<any>("SELECT category FROM financial_transactions WHERE id = ?", [lpg.id])).category === "LPG", "An expense's category can be corrected");
-  const otherEdit = await editTransaction(owner, other.id, { payeeVendor: "Party guest", amount: 800 }, IP, db);
-  const otherNew = await db.queryOne<any>("SELECT amount, payee_vendor, category, transaction_type FROM financial_transactions WHERE id = ?", [otherEdit.id]);
-  assert(otherEdit.corrected && Number(otherNew.amount) === 800 && otherNew.payee_vendor === "Party guest" && otherNew.category === "OTHER_RECEIPT" && otherNew.transaction_type === "TIFFIN_PAYMENT", "An Other receipt can be corrected (amount and who paid)");
-  const rentPay = await db.queryOne<any>("SELECT id FROM financial_transactions WHERE resident_id = ? AND transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' LIMIT 1", [res.id]);
-  assert((await refused(() => editTransaction(owner, rentPay.id, { amount: 1 }, IP, db)))?.includes("dues payment") === true, "A dues payment's amount is not edited here (reverse and receive again)");
+  const otherEdit = await editTransaction(manager, other.id, { payeeVendor: "Party guest", amount: 800 }, IP, db);
+  const otherNew = await db.queryOne<any>("SELECT amount, payee_vendor, category, transaction_type, status FROM financial_transactions WHERE id = ?", [other.id]);
+  assert(otherEdit.changed && Number(otherNew.amount) === 800 && otherNew.payee_vendor === "Party guest" && otherNew.category === "OTHER_RECEIPT" && otherNew.transaction_type === "TIFFIN_PAYMENT" && otherNew.status === "POSTED", "An Other receipt is edited in place (amount and who paid)");
+
+  // A dues payment: lowering it puts the difference back on what the resident owes.
+  const rentPay = await db.queryOne<any>("SELECT id, amount FROM financial_transactions WHERE resident_id = ? AND transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' LIMIT 1", [res.id]);
   const rentNote = await editTransaction(manager, rentPay.id, { description: "Paid at the office", referenceNumber: "R-1" }, IP, db);
-  assert(rentNote.changed && !rentNote.corrected && (await getResidentRentBalance(res.id, db)) === 4500, "A dues payment's note can be edited; the resident still owes exactly ₹4,500");
+  assert(rentNote.changed && (await getResidentRentBalance(res.id, db)) === 4500 && (await total(R)) === 4500, "A dues payment's note is edited; the resident still owes exactly ₹4,500");
+  const lowered = await editTransaction(manager, rentPay.id, { amount: Number(rentPay.amount) - 1000 }, IP, db);
+  assert(lowered.changed && (await getResidentRentBalance(res.id, db)) === 5500 && (await total(R)) === 5500, `Lowering the ₹${Number(rentPay.amount)} payment by ₹1,000: the resident owes ₹5,500 again (rent ledger and dues agree)`);
+  assert((await getBill(owner, billR.id, db)).received[0]?.amount === Number(rentPay.amount) - 1000, "The bill it was paid against shows the corrected amount");
+  await editTransaction(manager, rentPay.id, { amount: Number(rentPay.amount) }, IP, db);
+  assert((await getResidentRentBalance(res.id, db)) === 4500 && (await total(R)) === 4500, "Raising it back: ₹4,500 owed again");
+  // A tiffin payment that paid plan months: lowering it opens the month it no longer covers.
+  const upiB = await db.queryOne<any>("SELECT id, amount FROM financial_transactions WHERE customer_id = ? AND transaction_type = 'TIFFIN_PAYMENT' AND status = 'POSTED' AND payment_method = 'UPI' LIMIT 1", [b.id]);
+  const lowB = await editTransaction(manager, upiB.id, { amount: Number(upiB.amount) - 500 }, IP, db);
+  assert(lowB.billsReopened >= 1 && (await total(B)) === 500 && (await ledger(b.id)) === 500, `Lowering a plan payment by ₹500: ₹500 is due again and the plan month is open (${lowB.billsReopened} reopened)`);
+  assert((await num(db, "SELECT COUNT(*) AS n FROM invoices WHERE customer_id = ? AND status <> 'PAID'", [b.id])) >= 1, "The month it no longer covers is not marked paid");
+  await editTransaction(manager, upiB.id, { amount: Number(upiB.amount) }, IP, db);
+  assert((await total(B)) === 0 && (await ledger(b.id)) === 0, "Raising it back: nothing is due");
+
+  // A deposit cannot be lowered below what was already refunded or used.
+  const depRow = await db.queryOne<any>("SELECT id FROM financial_transactions WHERE transaction_type = 'SECURITY_DEPOSIT' AND status = 'POSTED' AND resident_id = ? LIMIT 1", [res.id]);
+  if (depRow) {
+    assert((await editTransaction(manager, depRow.id, { description: "Deposit (edited)" }, IP, db)).changed, "A deposit's details can be edited");
+  }
+  // An entry tied to another record keeps its money; its details can still be edited.
+  const handover = await db.queryOne<any>("SELECT id, amount FROM financial_transactions WHERE category = 'TIFFIN_DELIVERY_COLLECTION' AND status = 'POSTED' LIMIT 1");
+  if (handover) {
+    assert((await refused(() => editTransaction(owner, handover.id, { amount: Number(handover.amount) + 10 }, IP, db)))?.includes("handover") === true, "A delivery handover's amount is corrected on the Cash screen, not here");
+  }
+
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 10. Receipts for money received ---");
+  const payRow = await db.queryOne<any>("SELECT id, amount FROM financial_transactions WHERE resident_id = ? AND transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' LIMIT 1", [res.id]);
+  const r1 = await getOrCreateReceipt(manager, payRow.id, db);
+  assert(r1.receiptNumber.startsWith(`RCPT/${financialYear(r1.receiptDate)}/`) && r1.amount === Number(payRow.amount) && r1.accountName === res.fullName && r1.snapshot.purpose.length > 0, `Receipt ${r1.receiptNumber}: ₹${r1.amount} from ${r1.accountName}`);
+  assert(r1.snapshot.amountInWords === rupeesInWords(r1.amount) && r1.snapshot.payer.place === `Room ${room.roomNumber}` && r1.snapshot.dueAfter === 4500, `The receipt carries the amount in words, the room and what is still due (₹${r1.snapshot.dueAfter})`);
+  const r1b = await getOrCreateReceipt(owner, payRow.id, db);
+  assert(r1b.receiptNumber === r1.receiptNumber && r1b.token === r1.token, "Opening it again shows the same saved receipt (same number)");
+  const both = await Promise.all([getOrCreateReceipt(owner, other.id, db), getOrCreateReceipt(manager, other.id, db)]);
+  assert(both[0].receiptNumber === both[1].receiptNumber && (await num(db, "SELECT COUNT(*) AS n FROM receipts WHERE transaction_id = ?", [other.id])) === 1, "Two people opening the same receipt at once get one receipt");
+  assert(both[0].receiptNumber !== r1.receiptNumber, "Each payment has its own receipt number");
+  assert(both[0].accountName === "Party guest" && both[0].amount === 800, "An Other receipt's receipt names who paid and the edited amount");
+  const viaToken = await getReceiptByToken(r1.token, db);
+  assert(viaToken?.receiptNumber === r1.receiptNumber && (await getReceiptByToken("not-a-real-token-000000000", db)) === null, "The share link opens exactly that receipt; a wrong link opens nothing");
+  assert((await refused(() => getOrCreateReceipt(owner, exp.id, db)))?.includes("money received only") === true, "Expenses have no receipt");
+  await editTransaction(manager, other.id, { amount: 850 }, IP, db);
+  const edited = await getOrCreateReceipt(owner, other.id, db);
+  assert(edited.receiptNumber === both[0].receiptNumber && edited.amount === 850 && edited.snapshot.amountInWords === rupeesInWords(850), "After the payment is edited its receipt shows the new amount under the same number");
+  assert((await refused(() => getOrCreateReceipt(driver, payRow.id, db))) !== null, "Delivery staff cannot open receipts");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 11. Orders without a name are one-time customers ---");
+  const meal = (extra: Record<string, any>) =>
+    createUnifiedOrder(manager, { orderType: "DELIVERY", deliveryAddress: "D4 Lane, Sector 4", serviceDate: today, mealType: "DINNER", items: [{ productId: thali.id, productName: "D4 Thali", quantity: 1, unitPrice: 100 }], idempotencyKey: `d4g_${rnd()}`, ...extra } as any, IP, db) as Promise<any>;
+  const customersBefore = await num(db, "SELECT COUNT(*) AS n FROM tiffin_customers");
+  const guestPhone = phone();
+  const g1 = await meal({ customerName: "", customerPhone: guestPhone });
+  const g1row = await db.queryOne<any>("SELECT customer_id, customer_name FROM orders WHERE id = ?", [g1.orderId]);
+  assert(g1row.customer_id === null && g1row.customer_name === "Guest" && (await num(db, "SELECT COUNT(*) AS n FROM tiffin_customers")) === customersBefore, "No name: the order is taken and nobody is added to Customers");
+  assert((await num(db, "SELECT COUNT(*) AS n FROM tiffin_customers WHERE phone = ?", [guestPhone])) === 0, "The one-time customer's phone stays on the order only");
+  const known = await customer("D4 Known");
+  const g2 = await meal({ customerName: "", customerPhone: known.phone });
+  const g2row = await db.queryOne<any>("SELECT customer_id, customer_name FROM orders WHERE id = ?", [g2.orderId]);
+  assert(g2row.customer_id === known.id && g2row.customer_name === known.fullName, "No name but a known phone: the order goes to that customer");
+  const named = await meal({ customerName: `D4 New Named ${rnd()}`, customerPhone: phone() });
+  assert((await db.queryOne<any>("SELECT customer_id FROM orders WHERE id = ?", [named.orderId])).customer_id !== null, "With a name the customer is saved as before");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 12. Customers with no order for three months leave the list ---");
+  const longAgo = new Date(Date.now() - 120 * 86400000).toISOString();
+  const idle = await customer("D4 Idle");
+  const owes = await customer("D4 Idle Owes");
+  const recent = await customer("D4 Recent Order");
+  const inHouse = await customer("D4 Idle Resident", { phone: res.phone, confirmDuplicate: true });
+  const justAdded = await customer("D4 Just Added");
+  // Owes money: a plan month that was charged, then the plan ended (no running plan protects it).
+  const subOwes: any = await createTiffinSubscription(manager, { customerId: owes.id, productId: plan1.id, startDate: today, mealTypes: "ANY", serviceDays: "ALL_DAYS", quantityPerMeal: 1, deliveryAddress: "D4 Lane, Sector 4" } as any, IP, db);
+  await cancelTiffinSubscription(manager, subOwes.id, { cancellationReason: "D4 test: left owing" } as any, IP, db);
+  // On a running plan, fully paid (so only the plan keeps them).
+  const onPlan = await customer("D4 Idle On Plan");
+  await createTiffinSubscription(manager, { customerId: onPlan.id, productId: plan1.id, startDate: today, mealTypes: "ANY", serviceDays: "ALL_DAYS", quantityPerMeal: 1, deliveryAddress: "D4 Lane, Sector 4" } as any, IP, db);
+  await receiveAccountPayment(manager, { accountKey: `C:${onPlan.id}`, paymentMethod: "CASH", amountReceived: 2000, idempotencyKey: `d4_${crypto.randomUUID()}` } as any, IP, db);
+  assert((await total(`C:${onPlan.id}`)) === 0, "The plan customer has paid in full");
+  for (const x of [idle, owes, recent, inHouse, onPlan]) await db.execute("UPDATE tiffin_customers SET created_at = ? WHERE id = ?", [longAgo, x.id]);
+  await meal({ customerId: recent.id, customerName: recent.fullName, customerPhone: recent.phone });
+  const status = async (id: string) => (await db.queryOne<any>("SELECT status FROM tiffin_customers WHERE id = ?", [id])).status;
+  const archived = await archiveIdleCustomers(db, owner);
+  assert(archived >= 1 && (await status(idle.id)) === "INACTIVE", `A customer with no order for three months is set inactive (${archived} in this database)`);
+  assert((await num(db, "SELECT COUNT(*) AS n FROM tiffin_customers WHERE id = ?", [idle.id])) === 1, "Nothing is deleted: the customer and their history stay on record");
+  assert((await status(owes.id)) === "ACTIVE", "A customer who owes money stays");
+  assert((await status(recent.id)) === "ACTIVE" && (await status(justAdded.id)) === "ACTIVE", "A customer with a recent order, or added recently, stays");
+  assert((await status(inHouse.id)) === "ACTIVE", "A current PG resident stays");
+  assert((await status(onPlan.id)) === "ACTIVE", "A customer on a running monthly plan stays (nothing owed)");
+  await meal({ customerId: idle.id, customerName: idle.fullName, customerPhone: idle.phone });
+  assert((await status(idle.id)) === "ACTIVE", "Their next order brings them back to the list");
+  await archiveIdleCustomers(db, owner);
+  assert((await status(idle.id)) === "ACTIVE", "Running the check again leaves them in");
 
   console.log("\n================================================================================");
   console.log(`DUES & BILLS RESULTS: ${state.passed} PASSED, ${state.failed} FAILED`);

@@ -26,7 +26,7 @@ export function PublicBill({ bill, print, inApp }: { bill: Bill; print: boolean;
   };
 
   return (
-    <div className="min-h-screen bg-[#EEF1EA] print:bg-white">
+    <div className="rn-public-doc min-h-screen bg-[#EEF1EA] print:bg-white">
       <div className="mx-auto w-full max-w-[760px] px-3 sm:px-0 py-4 sm:py-8 print:p-0 print:max-w-none">
         <div className="mb-3 flex items-center justify-between gap-2 print:hidden">
           {inApp ? (

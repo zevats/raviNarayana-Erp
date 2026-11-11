@@ -34,17 +34,14 @@ export function shareOnWhatsApp(bill: Pick<Bill, "accountName" | "accountPhone" 
 
 /**
  * Share choices for a device without its own share list (most computers): WhatsApp, SMS, email,
- * copy the link, or download the PDF.
+ * copy the link, or download the PDF. Used for bills and receipts.
  */
-function ShareSheet({ bill, open, onClose }: { bill: Bill; open: boolean; onClose: () => void }) {
-  const company = bill.snapshot.company.name;
-  const link = billLink(bill.token);
-  const text = billShareText(bill, company, link);
-  const phone = String(bill.accountPhone || "").replace(/\D/g, "").slice(-10);
+export function DocShareSheet({ open, onClose, title, subtitle, link, text, phone, onPdf }: { open: boolean; onClose: () => void; title: string; subtitle: string; link: string; text: string; phone: string | null; onPdf: () => void }) {
+  const digits = String(phone || "").replace(/\D/g, "").slice(-10);
   const items: Array<{ key: string; label: string; icon: React.ReactNode; tone: string; run: () => void }> = [
-    { key: "wa", label: "WhatsApp", icon: <WhatsAppIcon className="w-6 h-6" />, tone: "bg-[#25D366] text-white", run: () => shareOnWhatsApp(bill, company) },
-    { key: "sms", label: "Message", icon: <MessageSquare className="w-6 h-6" />, tone: "bg-[#E8F0FE] text-[#1A56DB]", run: () => openOutside(`sms:${phone}?body=${encodeURIComponent(text)}`) },
-    { key: "mail", label: "Email", icon: <Mail className="w-6 h-6" />, tone: "bg-[#FDECE8] text-[#B4441D]", run: () => openOutside(`mailto:?subject=${encodeURIComponent(`Bill ${bill.billNumber} from ${company}`)}&body=${encodeURIComponent(text)}`) },
+    { key: "wa", label: "WhatsApp", icon: <WhatsAppIcon className="w-6 h-6" />, tone: "bg-[#25D366] text-white", run: () => openOutside(whatsappLink(phone, text)) },
+    { key: "sms", label: "Message", icon: <MessageSquare className="w-6 h-6" />, tone: "bg-[#E8F0FE] text-[#1A56DB]", run: () => openOutside(`sms:${digits}?body=${encodeURIComponent(text)}`) },
+    { key: "mail", label: "Email", icon: <Mail className="w-6 h-6" />, tone: "bg-[#FDECE8] text-[#B4441D]", run: () => openOutside(`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(text)}`) },
     {
       key: "copy",
       label: "Copy link",
@@ -59,10 +56,10 @@ function ShareSheet({ bill, open, onClose }: { bill: Bill; open: boolean; onClos
         }
       },
     },
-    { key: "pdf", label: "PDF", icon: <Download className="w-6 h-6" />, tone: "bg-[#E4F2E0] text-[#1D4E16]", run: () => saveBillPdf(bill) },
+    { key: "pdf", label: "PDF", icon: <Download className="w-6 h-6" />, tone: "bg-[#E4F2E0] text-[#1D4E16]", run: onPdf },
   ];
   return (
-    <Dialog open={open} onClose={onClose} title="Share bill" description={`${bill.billNumber} · ${money(bill.total)}`} size="sm">
+    <Dialog open={open} onClose={onClose} title={`Share ${title.split(" ")[0].toLowerCase()}`} description={subtitle} size="sm">
       <div className="grid grid-cols-5 gap-2 pb-1" role="list">
         {items.map((it) => (
           <button
@@ -163,7 +160,18 @@ export function BillViewer({ bill: given, billId, onClose }: { bill?: Bill | nul
           </div>
         )}
       </Dialog>
-      {bill && <ShareSheet bill={bill} open={sheet} onClose={() => setSheet(false)} />}
+      {bill && (
+        <DocShareSheet
+          open={sheet}
+          onClose={() => setSheet(false)}
+          title={`Bill ${bill.billNumber}`}
+          subtitle={`${bill.billNumber} · ${money(bill.total)}`}
+          link={billLink(bill.token)}
+          text={billShareText(bill, company, billLink(bill.token))}
+          phone={bill.accountPhone}
+          onPdf={() => saveBillPdf(bill)}
+        />
+      )}
     </>
   );
 }

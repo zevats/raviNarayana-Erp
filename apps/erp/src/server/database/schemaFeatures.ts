@@ -84,3 +84,6 @@ export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_cust
 
 /** Migration 0027 is installed: bills kept as documents, and the bill a payment was made against. */
 export const hasBillsSchema = (db: AsyncDb) => hasColumn(db, "bills", "share_token");
+
+/** Migration 0028 is installed: receipts kept as documents with a share link. */
+export const hasReceiptsSchema = (db: AsyncDb) => hasColumn(db, "receipts", "share_token");

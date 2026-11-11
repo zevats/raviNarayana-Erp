@@ -43,8 +43,9 @@ const loadEntryForms = () => import("@/modules/finance/components/EntryForms");
 const SecurityDepositModal = dynamic(() => loadEntryForms().then((m) => m.DepositDialog), { ssr: false });
 const ExpenseModal = dynamic(() => loadEntryForms().then((m) => m.ExpenseDialog), { ssr: false });
 const EditEntryDialog = dynamic(() => loadEntryForms().then((m) => m.EditEntryDialog), { ssr: false });
-const loadReceiptModal = () => import("@/modules/finance/components/modals/ReceiptModal");
-const ReceiptModal = dynamic(() => loadReceiptModal().then((m) => m.ReceiptModal), { ssr: false });
+const loadReceiptModal = () => import("@/modules/billing/ReceiptViewer");
+const ReceiptViewer = dynamic(() => loadReceiptModal().then((m) => m.ReceiptViewer), { ssr: false });
+import { hasReceipt } from "@/modules/billing/ReceiptViewer";
 const loadReversalModal = () => import("@/modules/finance/components/modals/ReversalModal");
 const ReversalModal = dynamic(() => loadReversalModal().then((m) => m.ReversalModal), { ssr: false });
 // Dues and Bills are their own tabs: the code loads when a tab opens (preloaded when idle).
@@ -195,7 +196,8 @@ export default function FinancePage() {
   const handleMutationSuccess = (tx: FinancialTransaction, message: string) => {
     setActionSuccess(message);
     fetchData();
-    setReceiptTx(tx);
+    // Money received opens its receipt (ready to share); an expense has none.
+    if (tx && hasReceipt(tx)) setReceiptTx(tx);
     setTimeout(() => setActionSuccess(null), 5000);
   };
 
@@ -231,8 +233,8 @@ export default function FinancePage() {
           onSuccess={handleMutationSuccess}
         />
 
-        <ReceiptModal
-          transaction={receiptTx}
+        <ReceiptViewer
+          transactionId={receiptTx?.id ?? null}
           onClose={() => setReceiptTx(null)}
         />
 

@@ -118,7 +118,7 @@ export function BillDocument({ bill }: { bill: Bill }) {
           </div>
           {qr && (
             <div className="flex items-center gap-3">
-              <span className="block w-[96px] h-[96px] shrink-0 rounded-lg border border-[#E6E9E3] p-1.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: qr }} aria-label="UPI payment code" />
+              <span data-qr className="block w-[96px] h-[96px] shrink-0 rounded-lg border border-[#E6E9E3] p-1.5 [&>svg]:w-full [&>svg]:h-full" dangerouslySetInnerHTML={{ __html: qr }} aria-label="UPI payment code" />
               <div className="min-w-0">
                 <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#6B716C]">Pay by UPI</p>
                 <p className="mt-0.5 font-semibold break-all">{s.company.upiId}</p>

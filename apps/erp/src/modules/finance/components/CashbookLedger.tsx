@@ -1,5 +1,6 @@
 "use client";
 
+import { hasReceipt } from "@/modules/billing/ReceiptViewer";
 import { Pencil } from "lucide-react";
 import { Segmented } from "@/components/ui/kit";
 import { canEditEntry } from "./EntryForms";
@@ -25,7 +26,7 @@ import {
   tryNormalizePaymentMethod,
 } from "@/types";
 import { formatINRWithSign } from "../utils/formatUtils";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 
 interface CashbookLedgerProps {
   transactions: FinancialTransaction[];
@@ -278,6 +279,7 @@ export function CashbookLedger({
                     <div className="flex items-center justify-end pt-2 border-t border-[#8E9F89]/15 text-xs">
 
                       <div className="flex items-center gap-2">
+                        {hasReceipt(tx) && (
                         <button
                           type="button"
                           onClick={() => onViewReceipt(tx)}
@@ -286,6 +288,7 @@ export function CashbookLedger({
                           <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
                           <span>Receipt</span>
                         </button>
+                        )}
                         {onEdit && canEditEntry(tx) && (
                           <button
                             type="button"
@@ -473,14 +476,17 @@ export function CashbookLedger({
                         {/* 7. Actions */}
                         <td className="py-3 px-4 text-center whitespace-nowrap">
                           <div className="flex items-center justify-center gap-1.5">
+                            {hasReceipt(tx) && (
                             <button
                               type="button"
                               onClick={() => onViewReceipt(tx)}
                               className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs"
-                              title="View voucher receipt"
+                              title="Receipt"
+                              aria-label="Receipt"
                             >
                               <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
                             </button>
+                            )}
                             {onEdit && canEditEntry(tx) && (
                               <button
                                 type="button"
@@ -590,18 +596,6 @@ export function CashbookLedger({
             <option value="CHEQUE">Cheque</option>
             <option value="OTHER">Card / Other</option>
           </AppSelect>
-
-          <span className="text-xs text-[#5A6C5E] font-medium hidden sm:inline">Status:</span>
-          <AppSelect
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/30 rounded-xl text-xs text-[#1A2E20] font-medium focus:outline-hidden focus:border-[#1A2E20]"
-          >
-            <option value="ALL">All Status</option>
-            <option value="POSTED">Posted</option>
-            <option value="REVERSED">Reversed</option>
-          </AppSelect>
-
           <span className="text-xs text-[#6E7F70] pl-1 font-sans font-medium tabular-nums whitespace-nowrap">
             {filtered.length} record{filtered.length !== 1 ? "s" : ""}
           </span>
@@ -612,7 +606,7 @@ export function CashbookLedger({
       <div>
         {/* Loading State */}
         {isLoading ? (
-          <BikeLoader tone="forest" label="Loading transactions…" className="p-12" />
+          <FullPageLoader tone="forest" label="Loading transactions…" size="md" />
         ) : filtered.length === 0 ? (
           /* Empty State */
           <div className="p-12 text-center space-y-3">

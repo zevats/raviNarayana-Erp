@@ -7,7 +7,6 @@ import { SearchField } from "@/components/ui/kit";
 import { AppSelect } from "@/components/forms/AppSelect";
 import { toast } from "@/components/ui/toast";
 import { businessToday } from "@/lib/businessDate";
-import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { Choice } from "@/modules/billing/BillDialogs";
 import { METHODS, Method, methodLabel, money, refreshMoney, send } from "@/modules/billing/api";
 
@@ -67,12 +66,14 @@ export function ExpenseDialog({ isOpen, onClose, onSuccess }: { isOpen: boolean;
   const [note, setNote] = useState("");
   const [date, setDate] = useState(businessToday());
   const [reference, setReference] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const key = useRef("");
   useEffect(() => {
     if (!isOpen) return;
     key.current = `exp_${crypto.randomUUID()}`;
+    setFile(null);
     setAmount("");
     setPayee("");
     setNote("");
@@ -100,6 +101,13 @@ export function ExpenseDialog({ isOpen, onClose, onSuccess }: { isOpen: boolean;
         description: note.trim(),
         idempotencyKey: key.current,
       });
+      if (file && data.transaction?.id) {
+        try {
+          await uploadEntryFile(data.transaction.id, file, `Bill for ${note.trim()}`);
+        } catch (err: any) {
+          toast.error(err.message);
+        }
+      }
       const msg = `${money(value)} spent on ${categoryLabel(category).toLowerCase()} recorded.`;
       toast.ok(msg);
       refreshMoney();
@@ -146,6 +154,7 @@ export function ExpenseDialog({ isOpen, onClose, onSuccess }: { isOpen: boolean;
           </label>
         </div>
         <MethodDateRef method={method} setMethod={setMethod} date={date} setDate={setDate} reference={reference} setReference={setReference} />
+        <FileField file={file} setFile={setFile} />
         {error && <p role="alert" className={ERR}>{error}</p>}
         <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
       </form>
@@ -267,21 +276,46 @@ export function DepositDialog({ isOpen, onClose, residents, onSuccess }: { isOpe
 }
 
 const RECEIVED = new Set(["RENT_PAYMENT", "SECURITY_DEPOSIT", "TIFFIN_PAYMENT"]);
+const LINKED = new Set(["TIFFIN_DELIVERY_COLLECTION", "TIFFIN_WALKIN_SALE", "DEPOSIT_APPLICATION"]);
 
 /** Whether an entry can be edited from the cashbook (money received or spent, still posted). */
 export function canEditEntry(tx: FinancialTransaction): boolean {
-  return tx.status === "POSTED" && (tx.transactionType === "EXPENSE" || RECEIVED.has(tx.transactionType)) && tx.category !== "TIFFIN_DELIVERY_COLLECTION";
+  return tx.status === "POSTED" && (tx.transactionType === "EXPENSE" || RECEIVED.has(tx.transactionType));
+}
+
+/** Adds a photo or PDF of a bill to an entry (kept in the entry's documents). */
+export async function uploadEntryFile(transactionId: string, file: File, note: string) {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("category", "EXPENSE_RECEIPT");
+  fd.append("transactionId", transactionId);
+  fd.append("notes", note);
+  const r = await fetch("/api/documents", { method: "POST", headers: { "X-RN-Quiet": "1" }, body: fd });
+  if (!r.ok) throw new Error("The entry was saved, but the bill photo could not be uploaded. Try again from Edit.");
+}
+
+function FileField({ file, setFile }: { file: File | null; setFile: (f: File | null) => void }) {
+  return (
+    <label className="block">
+      <span className="rn-t-label block mb-1.5">Bill photo</span>
+      <span className="rn-file">
+        <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Bill photo" />
+        <span className="truncate">{file ? file.name : "Add a photo or PDF (optional)"}</span>
+      </span>
+    </label>
+  );
 }
 
 /**
- * Edit an entry. Details change in place; for an expense or an Other receipt the Owner can also
- * correct the amount, date or method (the entry is reversed and recorded again, so totals stay right).
+ * Edit an entry: everything that was recorded can be changed and saved again (amount, date, how it
+ * was paid, who, what for, reference, category, bill photo). Balances follow at once. An entry tied
+ * to another record (a delivery handover, a counter sale, a deposit used for rent) keeps its amount,
+ * date and method; its details can still be edited.
  */
 export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransaction | null; onClose: () => void; onSaved: (message: string) => void }) {
-  const canCorrect = useHasPermission("finance.manage");
   const isExpense = tx?.transactionType === "EXPENSE";
   const isOther = tx?.transactionType === "TIFFIN_PAYMENT" && tx?.category === "OTHER_RECEIPT";
-  const moneyEditable = Boolean(tx) && (isExpense || isOther) && canCorrect;
+  const moneyEditable = Boolean(tx) && !LINKED.has(String(tx?.category || ""));
   const [note, setNote] = useState("");
   const [payee, setPayee] = useState("");
   const [reference, setReference] = useState("");
@@ -289,6 +323,7 @@ export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransac
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState("");
   const [method, setMethod] = useState<Method>("CASH");
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -300,19 +335,23 @@ export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransac
     setAmount(String(tx.amount));
     setDate(tx.transactionDate);
     setMethod(((METHODS.find((m) => m.value === tx.paymentMethod)?.value) || "CASH") as Method);
+    setFile(null);
     setError(null);
   }, [tx]);
   const submit = async () => {
     if (!tx || busy) return;
+    const value = Number(amount);
+    if (moneyEditable && (!Number.isInteger(value) || value <= 0)) return setError("Enter the amount in whole rupees.");
     setBusy(true);
     setError(null);
     try {
       const body: Record<string, unknown> = { description: note, referenceNumber: reference };
       if (isExpense || isOther) body.payeeVendor = payee;
       if (isExpense) body.category = category;
-      if (moneyEditable) Object.assign(body, { amount: Number(amount), transactionDate: date, paymentMethod: method });
-      const { data } = await send<{ changed: boolean; corrected: boolean }>(`/api/finance/transactions/${encodeURIComponent(tx.id)}`, body, "PATCH");
-      const msg = !data.changed ? "Nothing was changed." : data.corrected ? "Entry corrected. The old entry is kept as reversed." : "Changes saved.";
+      if (moneyEditable) Object.assign(body, { amount: value, transactionDate: date, paymentMethod: method });
+      const { data } = await send<{ changed: boolean; billsReopened?: number }>(`/api/finance/transactions/${encodeURIComponent(tx.id)}`, body, "PATCH");
+      if (file) await uploadEntryFile(tx.id, file, `Bill for ${note || categoryLabel(category)}`);
+      const msg = !data.changed && !file ? "Nothing was changed." : `Entry updated${data.billsReopened ? `; ${data.billsReopened} bill${data.billsReopened === 1 ? " is" : "s are"} due again` : ""}.`;
       toast.ok(msg);
       refreshMoney();
       onSaved(msg);
@@ -329,8 +368,7 @@ export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransac
       open={Boolean(tx)}
       onClose={onClose}
       busy={busy}
-      title="Edit entry"
-      description={tx ? `${money(tx.amount)} · ${tx.transactionDate}` : undefined}
+      title={isExpense ? "Edit expense" : "Edit payment"}
       size="sm"
       footer={
         <button type="button" className="rn-btn rn-btn-primary w-full sm:w-auto" disabled={busy} onClick={submit}>
@@ -350,7 +388,14 @@ export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransac
               </AppSelect>
             </label>
           )}
-          {moneyEditable && <AmountField id="edit-amount" value={amount} onChange={setAmount} />}
+          {moneyEditable ? (
+            <AmountField id="edit-amount" value={amount} onChange={setAmount} />
+          ) : (
+            <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--rn-accent-tint,#EEF3EA)] px-4 py-3 text-[14.5px]">
+              <span className="text-[var(--rn-ink-2)]">Amount</span>
+              <span className="tabular-nums font-semibold">{money(tx.amount)}</span>
+            </div>
+          )}
           {(isExpense || isOther) && (
             <label className="block">
               <span className="rn-t-label block mb-1.5">{isExpense ? "Paid to" : "From"}</span>
@@ -369,6 +414,7 @@ export function EditEntryDialog({ tx, onClose, onSaved }: { tx: FinancialTransac
               <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" className="rn-input w-full" aria-label="Reference" />
             </label>
           )}
+          {isExpense && <FileField file={file} setFile={setFile} />}
           {error && <p role="alert" className={ERR}>{error}</p>}
           <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
         </form>

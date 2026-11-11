@@ -15,6 +15,7 @@ import { TaskPanel } from "./TaskPanel";
 import { DeliverySheet } from "./DeliverySheet";
 import { HistoryView } from "./HistoryView";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
 
@@ -457,7 +458,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           </MSheet>
 
           {tasksQ.isLoading && !tasksQ.data ? (
-            <BikeLoader label="Loading deliveries…" className="py-16" />
+            <FullPageLoader label="Loading deliveries…" size="md" />
           ) : groups.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-surface-subtle p-8 text-center text-sm text-text-muted">
               {tasks.length === 0 ? `No deliveries for ${meal.toLowerCase()} on this day.` : "Nothing matches this filter."}

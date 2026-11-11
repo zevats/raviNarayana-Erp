@@ -5,6 +5,9 @@ import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
+import android.app.ActivityManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.ComponentName;
@@ -72,6 +75,7 @@ public class MainActivity extends BridgeActivity {
         boolean delivery = "delivery".equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString("brand", "standard"));
         if (delivery) setTheme(R.style.AppTheme_NoActionBarLaunch_Delivery);
         super.onCreate(savedInstanceState);
+        applyTaskDescription(delivery);
         createChannels();
         if (savedInstanceState == null) {
             webReady = false;
@@ -80,6 +84,32 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable ignored) {
                 removeOverlay();
             }
+        }
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // The edition can change after sign-in (setBrand): the recent-apps card follows it.
+        applyTaskDescription("delivery".equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString("brand", "standard")));
+    }
+
+    /**
+     * The recent-apps card: the app's name, its logo and a brand colour, set explicitly for both
+     * editions (without this some phones showed no name or logo for the Owner/Manager app).
+     */
+    private void applyTaskDescription(boolean delivery) {
+        try {
+            int iconRes = delivery ? R.drawable.anim_logo_delivery : R.drawable.anim_logo_home;
+            int color = delivery ? Color.parseColor("#C9501C") : Color.parseColor("#173A29");
+            if (Build.VERSION.SDK_INT >= 28) {
+                setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", iconRes, color));
+            } else {
+                Bitmap icon = BitmapFactory.decodeResource(getResources(), iconRes);
+                setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", icon, color));
+            }
+        } catch (Throwable ignored) {
+            // The system's default card is kept.
         }
     }
 

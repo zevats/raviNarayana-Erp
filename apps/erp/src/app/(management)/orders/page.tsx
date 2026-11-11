@@ -29,7 +29,7 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import Link from "next/link";
 import { businessToday } from "@/lib/businessDate";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { PageHeader, Segmented, StatStrip, SearchField, EmptyState } from "@/components/ui/kit";
 import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
@@ -514,7 +514,7 @@ export default function OrdersPage() {
 
           {/* ORDER CARDS LIST */}
           {isLoading ? (
-            <BikeLoader label="Loading orders" className="py-12" />
+            <FullPageLoader label="Loading orders" size="md" />
           ) : filteredOrders.length === 0 && shownPending.length === 0 ? (
             <EmptyState title="No orders for this date" />
           ) : (

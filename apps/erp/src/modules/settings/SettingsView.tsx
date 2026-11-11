@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Building2, Clock, Truck, CalendarClock, Bell, CheckCircle2, AlertCircle } from "lucide-react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { SelectMenu } from "@/components/forms/SelectMenu";
-import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 
 interface SettingsPayload {
   settings: {
@@ -89,7 +89,7 @@ export function SettingsView() {
   if (q.error && !q.data) {
     return <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm">{q.error.message}</div>;
   }
-  if (!q.data || !draft) return <div className="py-16 flex justify-center"><BikeLoader label="Loading settings" /></div>;
+  if (!q.data || !draft) return <FullPageLoader label="Loading settings" size="md" />;
 
   const set = <S extends Section>(section: S, patch: Partial<SettingsPayload["settings"][S]>) =>
     setDraft((d) => (d ? { ...d, [section]: { ...d[section], ...patch } } : d));

@@ -39,7 +39,7 @@ export function FilterMenu<T extends string>({
   const changed = defaultValue !== undefined && value !== defaultValue;
   const current = options.find((o) => o.value === value)?.label ?? "";
   const list = (
-    <div role="menu" aria-label={label} className={phone ? "m-group p-1.5" : ""}>
+    <div role="menu" aria-label={label} className={phone ? "rn-filter-tiles" : ""}>
       {options.map((o) => (
         <button
           key={o.value}
@@ -50,7 +50,7 @@ export function FilterMenu<T extends string>({
             onChange(o.value);
             setOpen(false);
           }}
-          className="w-full min-h-[44px] px-3 rounded-xl flex items-center gap-2.5 text-left text-[14.5px] text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]"
+          className={phone ? "rn-filter-tile" : "w-full min-h-[42px] px-3 rounded-xl flex items-center gap-2.5 text-left text-[14px] text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)] aria-checked:bg-[var(--rn-accent-tint)] aria-checked:font-semibold"}
         >
           <span className="flex-1 min-w-0 truncate">{o.label}</span>
           {o.count !== undefined && <span className="text-[13px] tabular-nums text-[var(--rn-ink-3)]">{o.count}</span>}
@@ -70,7 +70,12 @@ export function FilterMenu<T extends string>({
           {list}
         </MSheet>
       ) : (
-        open && <div className="rn-pop absolute right-0 top-full mt-2 z-50 w-56 rounded-2xl p-1.5">{list}</div>
+        open && (
+          <div className="rn-pop absolute right-0 top-full mt-2 z-50 w-60 rounded-2xl p-1.5">
+            <p className="px-3 pt-2 pb-1.5 text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--rn-ink-3)]">{label}</p>
+            {list}
+          </div>
+        )
       )}
     </div>
   );

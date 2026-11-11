@@ -5,6 +5,7 @@
  * on the app kit (components/app/m.tsx). Same data and actions as the desktop views.
  */
 
+import { hasReceipt } from "@/modules/billing/ReceiptViewer";
 import { Pencil } from "lucide-react";
 import { canEditEntry } from "../components/EntryForms";
 import React, { useMemo, useState } from "react";
@@ -195,6 +196,8 @@ export function CashbookMobile({
   const [search, setSearch] = useState("");
   const q = React.useDeferredValue(search.trim().toLowerCase());
   const [kind, setKind] = useState<Kind>("ALL");
+  // All / Received / Expenses: the row under the search (money in and money out on their own).
+  const [flow, setFlow] = useState<"ALL" | "IN" | "OUT">("ALL");
   const [division, setDivision] = useState<Division>("ALL");
   const [method, setMethod] = useState<Method>("ALL");
   const [status, setStatus] = useState<TxStatus>("ALL");
@@ -202,13 +205,15 @@ export function CashbookMobile({
   const [moreOpen, setMoreOpen] = useState(false);
   const [shown, setShown] = useState(40);
   const [openTx, setOpenTx] = useState<FinancialTransaction | null>(null);
-  const filterCount = [kind !== "ALL", division !== "ALL", method !== "ALL", status !== "ALL"].filter(Boolean).length;
+  const filterCount = [kind !== "ALL", division !== "ALL", method !== "ALL"].filter(Boolean).length;
 
   const filtered = useMemo(
     () =>
       transactions.filter((tx) => {
         if (division === "PG" && !isPgTx(tx)) return false;
         if (division === "TIFFIN" && !isTiffinTx(tx)) return false;
+        if (flow === "IN" && !MONEY_IN.has(tx.transactionType)) return false;
+        if (flow === "OUT" && !MONEY_OUT.has(tx.transactionType)) return false;
         if (kind === "IN" && !MONEY_IN.has(tx.transactionType)) return false;
         if (kind === "OUT" && !MONEY_OUT.has(tx.transactionType)) return false;
         if (kind === "CHARGE" && !CHARGES.has(tx.transactionType)) return false;
@@ -221,9 +226,9 @@ export function CashbookMobile({
         }
         return true;
       }),
-    [transactions, division, kind, method, status, q]
+    [transactions, division, kind, flow, method, status, q]
   );
-  React.useEffect(() => setShown(40), [division, kind, method, status, q, startDate, endDate]);
+  React.useEffect(() => setShown(40), [division, kind, flow, method, status, q, startDate, endDate]);
   const days = useMemo(() => groupByDay(filtered.slice(0, shown), (t) => t.transactionDate), [filtered, shown]);
 
   const b = summary?.breakdown;
@@ -257,21 +262,23 @@ export function CashbookMobile({
           { label: "Receive", icon: CreditCard, onClick: onPay, tone: "green" },
           { label: "Expense", icon: TrendingDown, onClick: onExpense, tone: "red" },
           { label: "Deposit", icon: Wallet, onClick: onDeposit, tone: "amber" },
-          { label: "More", icon: MoreHorizontal, onClick: () => setMoreOpen(true), tone: "neutral" },
+          { label: "CSV", icon: Download, onClick: onExport, tone: "blue" },
         ]}
       />
 
       <MSearch value={search} onChange={setSearch} placeholder="Search name, room or note" onFilter={() => setFiltersOpen(true)} filterCount={filterCount} />
-      <MChips
-        label="Show"
-        value={kind === "IN" || kind === "OUT" ? kind : "ALL"}
-        onChange={(v) => setKind(v as Kind)}
-        options={[
-          { value: "ALL", label: "All" },
-          { value: "IN", label: "Received" },
-          { value: "OUT", label: "Expenses" },
-        ]}
-      />
+      <div className="m-chips-fill">
+        <MChips
+          label="Show"
+          value={flow}
+          onChange={setFlow}
+          options={[
+            { value: "ALL", label: "All" },
+            { value: "IN", label: "Received" },
+            { value: "OUT", label: "Expenses" },
+          ]}
+        />
+      </div>
 
       {isLoading && transactions.length === 0 ? (
         <MSkeletonRows rows={6} />
@@ -289,7 +296,6 @@ export function CashbookMobile({
                 setKind("ALL");
                 setDivision("ALL");
                 setMethod("ALL");
-                setStatus("ALL");
               }}
             >
               Clear filters
@@ -365,17 +371,19 @@ export function CashbookMobile({
                   Reverse
                 </MButton>
               )}
-              <MButton
-                kind="primary"
-                icon={Receipt}
-                onClick={() => {
-                  const t = openTx;
-                  setOpenTx(null);
-                  onReceipt(t);
-                }}
-              >
-                Receipt
-              </MButton>
+              {hasReceipt(openTx) && (
+                <MButton
+                  kind="primary"
+                  icon={Receipt}
+                  onClick={() => {
+                    const t = openTx;
+                    setOpenTx(null);
+                    onReceipt(t);
+                  }}
+                >
+                  Receipt
+                </MButton>
+              )}
             </>
           ) : null
         }
@@ -418,7 +426,6 @@ export function CashbookMobile({
                 setKind("ALL");
                 setDivision("ALL");
                 setMethod("ALL");
-                setStatus("ALL");
               }}
             >
               Clear
@@ -438,8 +445,6 @@ export function CashbookMobile({
           onChange={setKind}
           options={[
             { value: "ALL", label: "All" },
-            { value: "IN", label: "Money in" },
-            { value: "OUT", label: "Money out" },
             { value: "CHARGE", label: "Charges" },
             { value: "REVERSAL", label: "Reversals" },
           ]}
@@ -458,23 +463,6 @@ export function CashbookMobile({
             { value: "OTHER", label: "Other" },
           ]}
         />
-        <p className="m-sheet-label">Status</p>
-        <MChips label="Status" value={status} onChange={setStatus} options={[{ value: "ALL", label: "All" }, { value: "POSTED", label: "Posted" }, { value: "REVERSED", label: "Reversed" }]} />
-      </MSheet>
-
-      {/* Other entries */}
-      <MSheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Add or export">
-        <MGroup>
-          <MRow
-            icon={Download}
-            tone="blue"
-            title="Export (CSV)"
-            onClick={() => {
-              setMoreOpen(false);
-              onExport();
-            }}
-          />
-        </MGroup>
       </MSheet>
 
       {/* Period */}
