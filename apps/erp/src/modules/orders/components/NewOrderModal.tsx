@@ -73,8 +73,9 @@ const STEPS: Array<{ n: Step; label: string; short: string }> = [
   { n: 2, label: "Items", short: "Items" },
   { n: 3, label: "Schedule & confirm", short: "Confirm" },
 ];
-// Orders are taken for lunch or dinner (no breakfast service).
+// Orders are taken for breakfast, lunch or dinner.
 const MEALS: Array<{ v: MealType; label: string }> = [
+  { v: "BREAKFAST", label: "Breakfast" },
   { v: "LUNCH", label: "Lunch" },
   { v: "DINNER", label: "Dinner" },
 ];
@@ -93,17 +94,18 @@ const LABEL = "block text-[13px] font-semibold text-[var(--rn-ink-2)] mb-1.5";
 /** Segmented control: a quiet track; the chosen option gets a white surface and a 2px accent edge. */
 function Segmented<T extends string>({ value, options, onChange, label, size = "md" }: {
   value: T;
-  options: Array<{ v: T; label: React.ReactNode; hint?: string }>;
+  options: Array<{ v: T; label: React.ReactNode; hint?: string; icon?: React.ElementType }>;
   onChange: (v: T) => void;
   label: string;
   size?: "md" | "lg";
 }) {
+  // The app's switch: a soft track, the chosen option white; with icons, the icon sits over the
+  // name so three choices always fit side by side.
   return (
-    // Neutral track; the chosen option is white with a 2px accent edge, accent text and a check, so
-    // the selection reads at a glance (also in bright light) while the others stay quiet.
-    <div role="radiogroup" aria-label={label} className="grid gap-1.5 p-1.5 rounded-[18px] bg-[#EFEAE4] border border-[#E2DBD2]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+    <div role="radiogroup" aria-label={label} data-size={size} className="grid gap-1 p-1 rounded-[20px] bg-[#ECE8DF]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => {
         const on = o.v === value;
+        const Icon = o.icon;
         return (
           <button
             key={o.v}
@@ -111,17 +113,13 @@ function Segmented<T extends string>({ value, options, onChange, label, size = "
             role="radio"
             aria-checked={on}
             onClick={() => onChange(o.v)}
-            className={`relative min-w-0 rounded-xl text-left transition-[background-color,box-shadow] ${size === "lg" ? "px-3.5 py-3 pr-9" : "px-3 py-2.5 text-center"} ${
-              on ? "bg-white shadow-[0_0_0_2px_var(--rn-accent),0_6px_14px_-8px_rgba(60,30,10,0.45)]" : "hover:bg-white/60"
+            className={`min-w-0 rounded-2xl flex flex-col items-center justify-center text-center transition-[background-color,box-shadow,color] duration-200 ${Icon ? "gap-1.5 py-3 px-1.5" : "py-2.5 px-2 min-h-[44px]"} ${
+              on ? "bg-white text-[var(--rn-accent)] shadow-[0_1px_2px_rgba(24,33,27,0.08),0_4px_12px_-4px_rgba(24,33,27,0.16)]" : "text-[#4A403A] hover:bg-white/60"
             }`}
           >
-            <span className={`block text-[14px] font-bold ${on ? "text-[var(--rn-accent)]" : "text-[#4A403A]"}`}>{o.label}</span>
-            {o.hint && <span className={`block text-[12.5px] mt-0.5 ${on ? INK2 : "text-[#5F554E]"}`}>{o.hint}</span>}
-            {on && size === "lg" && (
-              <span className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-[var(--rn-accent)] text-white flex items-center justify-center" aria-hidden>
-                <Check className="w-3 h-3" strokeWidth={3} />
-              </span>
-            )}
+            {Icon && <Icon className="w-5 h-5" strokeWidth={1.9} />}
+            <span className="block max-w-full truncate text-[13.5px] font-semibold">{o.label}</span>
+            {o.hint && <span className="block text-[12px] text-[#6B625B]">{o.hint}</span>}
           </button>
         );
       })}
@@ -696,7 +694,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     // Own scrim and panel (not the generic page-dialog styles): the panel never scrolls as a whole;
     // only its body does, between a fixed header and a fixed action bar.
     <div
-      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px] transition-opacity duration-150 ${leaving ? "opacity-0" : "opacity-100"} rn-modal-scrim`}
+      className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-[rgba(24,16,10,0.42)] backdrop-blur-[6px] transition-opacity duration-150 ${leaving ? "opacity-0" : "opacity-100"} rn-modal-scrim rn-order-scrim`}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) onClose();
       }}
@@ -706,8 +704,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         role="dialog"
         aria-modal="true"
         aria-labelledby="new-order-title"
-        className={`rn-modal w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""}`}
-        style={{ backgroundColor: "#FBF8F4" }}
+        className={`rn-modal w-full sm:max-w-[640px] h-[94dvh] sm:h-auto sm:max-h-[min(860px,92dvh)] flex flex-col overflow-hidden rounded-t-[26px] sm:rounded-[26px] border border-[var(--rn-line)] shadow-[0_30px_80px_-30px_rgba(40,20,10,0.55)] transition-[transform,opacity] duration-150 ease-out ${leaving ? "translate-y-3 scale-[0.98] opacity-0" : ""} rn-order-sheet`}
+        style={{ backgroundColor: "#F7F5F0", ["--rn-accent" as string]: "#C9501C", ["--rn-accent-strong" as string]: "#A9400F", ["--rn-accent-tint" as string]: "#FCE9DD", ["--rn-accent-soft" as string]: "#FCE9DD" } as React.CSSProperties}
       >
         {/* Header: title and the three steps */}
         <header className="shrink-0 px-5 sm:px-6 pt-5 pb-4 bg-white border-b border-[var(--rn-line)]">
@@ -760,7 +758,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         </header>
 
         {/* Body: the only part that scrolls, with room kept for the scrollbar */}
-        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] px-5 sm:px-6 py-5 space-y-5">
+        <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-6 py-5 space-y-5">
           {errorMessage && (
             <div role="alert" className="p-3.5 bg-[#FDECEA] border border-[#F2B8B0] text-[#8A1F12] text-[13.5px] rounded-[18px] flex items-start gap-2">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -790,9 +788,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                     }
                   }}
                   options={[
-                    { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span> },
-                    { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span> },
-                    { v: "SUBSCRIPTION" as BusinessOrderType, label: <span className="flex items-center gap-2"><RotateCcw className="w-4 h-4" />Subscription</span> },
+                    { v: "DELIVERY", label: "Delivery", icon: Truck },
+                    { v: "DINE_IN", label: "Dine in", icon: Utensils },
+                    { v: "SUBSCRIPTION" as BusinessOrderType, label: "Subscription", icon: RotateCcw },
                   ]}
                 />
               </section>
@@ -825,8 +823,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                             setErrorMessage(null);
                           }}
                           options={[
-                            { v: "DELIVERY", label: <span className="flex items-center gap-2"><Truck className="w-4 h-4" />Delivery</span> },
-                            { v: "DINE_IN", label: <span className="flex items-center gap-2"><Utensils className="w-4 h-4" />Dine in</span> },
+                            { v: "DELIVERY", label: "Delivery", icon: Truck },
+                            { v: "DINE_IN", label: "Dine in", icon: Utensils },
                           ]}
                         />
                       </div>
@@ -895,7 +893,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                           <Search className="pointer-events-none w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--rn-ink-3)]" />
                           <input
                             type="text"
-                            placeholder="Search by name, phone or code"
+                            placeholder="Search name, phone or address"
                             aria-label="Search customers"
                             value={customerSearch}
                             onChange={(e) => setCustomerSearch(e.target.value)}
@@ -903,8 +901,15 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                             className={`${FIELD} pl-10`}
                           />
                         </div>
+                        {customerSearch.trim().length > 0 && (
                         <ul className="rounded-[18px] border border-[var(--rn-line)] bg-white divide-y divide-[var(--rn-line)] overflow-hidden" aria-label="Customers">
-                          {customers.map((c) => (
+                          {customers
+                            .filter((c) => {
+                              const q = customerSearch.trim().toLowerCase();
+                              return [c.fullName, c.phone, c.alternatePhone, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q));
+                            })
+                            .slice(0, 12)
+                            .map((c) => (
                             <li key={c.id}>
                               <button
                                 type="button"
@@ -930,10 +935,14 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                               </button>
                             </li>
                           ))}
-                          {customers.length === 0 && (
-                            <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>No customer found. Try another search or add a new customer.</li>
+                          {customers.filter((c) => {
+                              const q = customerSearch.trim().toLowerCase();
+                              return [c.fullName, c.phone, c.alternatePhone, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q));
+                            }).length === 0 && (
+                            <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>No customer found</li>
                           )}
                         </ul>
+                        )}
                       </div>
                     ) : (
                       <div className="rounded-[18px] border border-[var(--rn-line)] bg-white p-4 space-y-3.5">
@@ -1306,43 +1315,45 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
         </div>
 
         {/* Action bar: always visible */}
-        <footer className="shrink-0 px-5 sm:px-6 py-3.5 bg-white border-t border-[var(--rn-line)] shadow-[0_-10px_24px_-18px_rgba(40,20,10,0.35)] pb-[max(0.875rem,env(safe-area-inset-bottom))] flex items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className={`text-[12.5px] font-medium whitespace-nowrap ${INK2}`}>
+        <footer className="shrink-0 px-5 sm:px-6 pt-3 sm:py-3.5 bg-white border-t border-[var(--rn-line)] shadow-[0_-10px_24px_-18px_rgba(40,20,10,0.35)] pb-[max(0.875rem,env(safe-area-inset-bottom))] flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="min-w-0 sm:flex-1 flex items-baseline justify-between sm:block">
+            <p className={`text-[13px] font-medium whitespace-nowrap ${INK2}`}>
               Total · {totalQuantity} portion{totalQuantity === 1 ? "" : "s"}
             </p>
-            <p className={`text-[20px] leading-tight font-bold tabular-nums whitespace-nowrap ${INK}`}>{rupees(totalAmount)}</p>
+            <p className={`text-[20px] leading-tight font-semibold tabular-nums whitespace-nowrap ${INK}`}>{rupees(totalAmount)}</p>
           </div>
-          {step > 1 && (
-            <button
-              type="button"
-              onClick={() => goTo((step - 1) as Step)}
-              disabled={isSubmitting}
-              className={`h-12 pl-3 pr-4 rounded-full text-[14px] font-semibold flex items-center gap-1 ${INK2} hover:bg-[var(--rn-accent-tint)] disabled:opacity-50`}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Back
-            </button>
-          )}
-          <button
-            type="submit"
-            disabled={isSubmitting || (step === 3 && cartItems.length === 0)}
-            className="h-12 px-6 rounded-full bg-[var(--rn-accent)] hover:bg-[var(--rn-accent-strong)] text-white text-[15px] font-bold flex items-center gap-2 shadow-[0_10px_20px_-12px_var(--rn-accent)] disabled:opacity-50"
-          >
-            {step < 3 ? (
-              <>
-                Continue
-                <ArrowRight className="w-4 h-4" />
-              </>
-            ) : isSubmitting ? (
-              "Confirming…"
-            ) : (
-              <>
-                <Check className="w-4 h-4" />
-                Confirm order
-              </>
+          <div className={`grid gap-2.5 sm:flex sm:items-center ${step > 1 ? "grid-cols-[1fr_2fr]" : "grid-cols-1"}`}>
+            {step > 1 && (
+              <button
+                type="button"
+                onClick={() => goTo((step - 1) as Step)}
+                disabled={isSubmitting}
+                className={`h-12 px-4 rounded-full bg-[#EEEAE2] sm:bg-transparent text-[14.5px] font-semibold flex items-center justify-center gap-1 ${INK2} hover:bg-[var(--rn-accent-tint)] disabled:opacity-50`}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+              </button>
             )}
-          </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || (step === 3 && cartItems.length === 0)}
+              className="h-12 px-6 rounded-full bg-[var(--rn-accent)] hover:bg-[var(--rn-accent-strong)] text-white text-[15px] font-semibold flex items-center justify-center gap-2 shadow-[0_10px_20px_-12px_var(--rn-accent)] disabled:opacity-50"
+            >
+              {step < 3 ? (
+                <>
+                  Continue
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              ) : isSubmitting ? (
+                "Confirming…"
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  Confirm order
+                </>
+              )}
+            </button>
+          </div>
         </footer>
       </form>
     </div>

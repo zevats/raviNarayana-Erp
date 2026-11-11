@@ -57,12 +57,12 @@ export const two = (n: number | undefined) => (n === undefined ? "—" : String(
  * phones, a pill switch with stop counts on wider screens. A count shows only once it has loaded.
  */
 export function MealToggle({ value, onChange, counts, compact = false, stretch = false }: { value: MealType; onChange: (m: MealType) => void; counts?: Partial<Record<MealType, number | undefined>>; compact?: boolean; stretch?: boolean }) {
-  const meals: Array<"LUNCH" | "DINNER"> = ["LUNCH", "DINNER"];
-  const label = (m: "LUNCH" | "DINNER") => (m === "LUNCH" ? "Lunch" : "Dinner");
+  const meals: MealType[] = ["BREAKFAST", "LUNCH", "DINNER"];
+  const label = (m: MealType) => (m === "BREAKFAST" ? "Breakfast" : m === "LUNCH" ? "Lunch" : "Dinner");
   if (compact) {
     // Same look as the full switch, sized to share one row with other controls.
     return (
-      <div role="radiogroup" aria-label="Meal" className={`${stretch ? "grid grid-cols-2 w-full sm:inline-flex sm:w-auto" : "inline-flex"} items-center p-1 rounded-full bg-[#EFEAE1]/80 shrink-0`}>
+      <div role="radiogroup" aria-label="Meal" className={`${stretch ? "grid grid-cols-3 w-full sm:inline-flex sm:w-auto" : "inline-flex"} items-center p-1 rounded-full bg-[#EFEAE1]/80 shrink-0`}>
         {meals.map((m) => (
           <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-9 px-3 sm:px-4 rounded-full flex items-center justify-center text-[13px] font-semibold transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4540]"}`}>
             {label(m)}
@@ -75,9 +75,9 @@ export function MealToggle({ value, onChange, counts, compact = false, stretch =
   return (
     <>
       {/* Phones: full-width pill track, chosen meal in solid orange, stop count as a round badge. */}
-      <div role="radiogroup" aria-label="Meal" className="md:hidden grid grid-cols-2 w-full p-1 rounded-full bg-[#EFEAE1]">
+      <div role="radiogroup" aria-label="Meal" className="md:hidden grid grid-cols-3 w-full p-1 rounded-full bg-[#EFEAE1]">
         {meals.map((m) => (
-          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-11 rounded-full text-[15px] font-semibold flex items-center justify-center gap-2 transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-[0_2px_8px_rgba(201,80,28,0.28)]" : "text-[#3E4540]"}`}>
+          <button key={m} type="button" role="radio" aria-checked={value === m} onClick={() => onChange(m)} className={`rn-press h-11 min-w-0 px-1 rounded-full text-[14px] font-semibold flex items-center justify-center gap-1.5 transition-colors ${value === m ? "bg-[#C9501C] text-white shadow-[0_2px_8px_rgba(201,80,28,0.28)]" : "text-[#3E4540]"}`}>
             {label(m)}
             {counts && <CountBadge on={value === m} n={counts[m]} />}
           </button>

@@ -19,7 +19,7 @@ const BAR_LABEL: Record<string, string> = { dashboard: "Home", orders: "Orders",
  * logo and name that becomes a floating pill once the page scrolls, a floating pill tab bar at the
  * bottom (Home, Orders, Delivery, Residents, More) and a full list of sections behind More.
  */
-export function MobileTopBar({ title, queued, online, onAccount }: { title: string; queued: number; online: boolean; onAccount?: (e: React.MouseEvent<HTMLAnchorElement>) => void }) {
+export function MobileTopBar({ title, queued, online, onAccount, onHome }: { title: string; queued: number; online: boolean; onAccount?: (e: React.MouseEvent<HTMLAnchorElement>) => void; onHome?: (e: React.MouseEvent<HTMLAnchorElement>) => void }) {
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -33,8 +33,10 @@ export function MobileTopBar({ title, queued, online, onAccount }: { title: stri
       <div aria-hidden className="lg:hidden h-[calc(64px+env(safe-area-inset-top))]" />
       <header className="lg:hidden rn-topbar-wrap rn-topbar-phone" aria-label={title} data-scrolled={scrolled ? "" : undefined}>
         <div className="rn-topbar">
-          <span className="rn-topbar-logo"><RnLogo size={40} title="Ravinarayan" /></span>
-          <p className="rn-topbar-name flex-1 min-w-0 truncate">Ravinarayan</p>
+          <Link href="/dashboard" prefetch={false} onClick={onHome} aria-label="Dashboard" className="rn-press flex-1 min-w-0 flex items-center gap-3">
+            <span className="rn-topbar-logo"><RnLogo size={40} title="" /></span>
+            <span className="rn-topbar-name min-w-0 truncate">Ravinarayan</span>
+          </Link>
           {(!online || queued > 0) && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#F6E3B8] text-[#5E3F04] whitespace-nowrap">{online ? `${queued} to send` : "Offline"}</span>}
           <span className="grid place-items-center w-10 h-10 rounded-full bg-[#EFEAE1]">
             <NotificationBell />

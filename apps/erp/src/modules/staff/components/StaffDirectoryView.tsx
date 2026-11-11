@@ -9,7 +9,7 @@ import { ActionMenu } from "@/components/ui/ActionMenu";
 import { ConfirmDialog } from "@/components/ui/Dialog";
 import { LoadError, NoMatches, StateMessage } from "@/components/ui/states";
 import { PageHeader, StatStrip, SearchField, Segmented, Badge } from "@/components/ui/kit";
-import { MChips, MEmpty, MField, MGroup, MHero, MNotice, MRow, MSearch, MSegment, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, initials, useIsPhone } from "@/components/app/m";
+import { MButton, MChips, MEmpty, MField, MGroup, MHero, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, initials, useIsPhone } from "@/components/app/m";
 import {
   StaffUser,
   StaffRole,
@@ -53,7 +53,9 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
   // Filter States
   const [search, setSearch] = useState("");
   const [selectedRole, setSelectedRole] = useState<string>("ALL");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "DEACTIVATED">("ALL");
+  // Only active accounts are listed (a deleted account with work history is kept, switched off).
+  const statusFilter = "ACTIVE" as const;
+  const [rolesOpen, setRolesOpen] = useState(false);
 
   // Modal States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -79,7 +81,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
 
   const staffParams = new URLSearchParams();
   if (selectedRole !== "ALL") staffParams.append("role", selectedRole);
-  if (statusFilter !== "ALL") staffParams.append("status", statusFilter);
+  staffParams.append("status", statusFilter);
   if (debouncedSearch) staffParams.append("search", debouncedSearch);
   const staffKey = `/api/staff?${staffParams.toString()}`;
 
@@ -185,40 +187,41 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
               }
               items={[
                 { label: "Owners", value: stats.superAdmins },
-                { label: "Deactivated", value: stats.deactivatedStaff, onClick: () => setStatusFilter("DEACTIVATED") },
+                { label: "Others", value: Math.max(0, stats.activeStaff - stats.superAdmins) },
               ]}
             />
-            <MSegment
-              label="Status"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "ALL", label: "All" },
-                { value: "ACTIVE", label: "Active" },
-                { value: "DEACTIVATED", label: "Off" },
-              ]}
-            />
-            <MChips
-              label="Role"
-              value={selectedRole}
-              onChange={setSelectedRole}
-              options={[{ value: "ALL", label: "All roles" }, ...Object.keys(ROLE_LABELS).map((r) => ({ value: r, label: ROLE_LABELS[r as StaffRole] }))]}
-            />
-            <MSearch value={search} onChange={setSearch} placeholder="Search name, username or email" />
+            <MSearch value={search} onChange={setSearch} placeholder="Search name, username or email" onFilter={() => setRolesOpen(true)} filterCount={selectedRole !== "ALL" ? 1 : 0} />
+            <MSheet
+              open={rolesOpen}
+              onClose={() => setRolesOpen(false)}
+              title="Role"
+              footer={
+                <>
+                  <MButton kind="soft" onClick={() => setSelectedRole("ALL")}>All roles</MButton>
+                  <MButton kind="primary" onClick={() => setRolesOpen(false)}>Show {sortedStaff.length}</MButton>
+                </>
+              }
+            >
+              <MChips
+                label="Role"
+                value={selectedRole}
+                onChange={setSelectedRole}
+                options={[{ value: "ALL", label: "All roles" }, ...Object.keys(ROLE_LABELS).map((r) => ({ value: r, label: ROLE_LABELS[r as StaffRole] }))]}
+              />
+            </MSheet>
             {loading ? (
               <MSkeletonRows rows={4} />
             ) : sortedStaff.length === 0 ? (
-              <MEmpty title={search || selectedRole !== "ALL" || statusFilter !== "ALL" ? "No staff match" : "No staff accounts yet"} />
+              <MEmpty title={search || selectedRole !== "ALL" ? "No staff match" : "No staff accounts yet"} />
             ) : (
               <MGroup>
                 {sortedStaff.map((member) => (
                   <MRow
                     key={member.id}
                     avatar={initials(member.fullName)}
-                    tone={member.isActive ? "accent" : "neutral"}
+                    tone="accent"
                     title={member.fullName}
                     sub={[ROLE_LABELS[member.role] || member.role, member.lastLoginAt ? `seen ${new Date(member.lastLoginAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" })}` : "never signed in"].join(" · ")}
-                    rightSub={member.isActive ? undefined : "Off"}
                     onClick={() => setSheetStaff(member)}
                   />
                 ))}
@@ -231,7 +234,6 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
                     <MField label="Username">@{sheetStaff.username}</MField>
                     <MField label="Role">{ROLE_LABELS[sheetStaff.role] || sheetStaff.role}</MField>
                     <MField label="Email">{sheetStaff.email}</MField>
-                    <MField label="Status" tone={sheetStaff.isActive ? "green" : "neutral"}>{sheetStaff.isActive ? "Active" : "Deactivated"}</MField>
                     <MField label="Last sign-in">{sheetStaff.lastLoginAt ? new Date(sheetStaff.lastLoginAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "Never"}</MField>
                   </div>
                   <MGroup>
@@ -242,7 +244,6 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
                         <MRow icon={Shield} tone="blue" title="Change role" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsRoleOpen(true); }} />
                         {sheetStaff.isActive && <MRow icon={Send} tone="neutral" title="Send password reset link" onClick={() => { const m = sheetStaff; setSheetStaff(null); handleSendRecovery(m); }} />}
                         <MRow icon={KeyRound} tone="neutral" title="Set a new password" onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDirectResetOpen(true); }} />
-                        <MRow icon={Power} tone={sheetStaff.isActive ? "red" : "green"} title={sheetStaff.isActive ? "Deactivate" : "Reactivate"} onClick={() => { const m = sheetStaff; setSheetStaff(null); setSelectedStaff(m); setIsDeactivateOpen(true); }} />
                         {sheetStaff.role !== "SUPER_ADMIN" && sheetStaff.id !== currentUser.id && (
                           <MRow icon={Trash2} tone="red" title="Delete account" onClick={() => { const m = sheetStaff; setSheetStaff(null); setDeleteError(null); setDeleteTarget(m); }} />
                         )}
@@ -294,10 +295,8 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
 
       <StatStrip
         items={[
-          { label: "Active", value: stats.activeStaff, tone: "good" },
-          { label: "Deactivated", value: stats.deactivatedStaff, tone: stats.deactivatedStaff > 0 ? "bad" : "default" },
+          { label: "Active staff", value: stats.activeStaff, tone: "good" },
           { label: "Owners", value: stats.superAdmins },
-          { label: "All accounts", value: stats.totalStaff },
         ]}
       />
 
@@ -313,17 +312,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
               </option>
             ))}
           </AppSelect>
-          <Segmented
-            size="sm"
-            label="Status"
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { value: "ALL", label: "All" },
-              { value: "ACTIVE", label: "Active" },
-              { value: "DEACTIVATED", label: "Deactivated" },
-            ]}
-          />
+
         </div>
       </div>
 
@@ -334,8 +323,8 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
         ) : staffQuery.error && !staffQuery.data ? (
           <LoadError message={staffQuery.error.message} onRetry={() => staffQuery.refetch()} title="Staff could not be loaded" />
         ) : sortedStaff.length === 0 ? (
-          search || selectedRole !== "ALL" || statusFilter !== "ALL" ? (
-            <NoMatches title="No staff match these filters" onClear={() => { setSearch(""); setSelectedRole("ALL"); setStatusFilter("ALL"); }} />
+          search || selectedRole !== "ALL" ? (
+            <NoMatches title="No staff match these filters" onClear={() => { setSearch(""); setSelectedRole("ALL"); }} />
           ) : (
             <StateMessage title="No staff accounts yet" action={isSuperAdmin ? <button type="button" className="rn-btn rn-btn-primary" onClick={() => setIsCreateOpen(true)}><UserPlus /> Add staff</button> : undefined} />
           )
@@ -397,12 +386,6 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
                               onSelect: () => handleSendRecovery(member),
                             },
                             { label: "Set a new password", icon: KeyRound, onSelect: () => { setSelectedStaff(member); setIsDirectResetOpen(true); } },
-                            {
-                              label: member.isActive ? "Deactivate" : "Reactivate",
-                              icon: Power,
-                              tone: member.isActive ? "danger" : "default",
-                              onSelect: () => { setSelectedStaff(member); setIsDeactivateOpen(true); },
-                            },
                             {
                               label: "Delete account",
                               icon: Trash2,

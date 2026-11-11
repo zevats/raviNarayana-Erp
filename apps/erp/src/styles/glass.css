@@ -482,18 +482,16 @@
     min-height: 40px;
   }
   .rn-main :is(button, a):has(> svg:only-child) { min-width: 40px; min-height: 40px; }
+  /* Switches fill the width in equal parts: nothing slides sideways, no faded edge. */
   .rn-main :is(.rn-seg, [role="tablist"]) {
-    display: flex;
-    flex-wrap: nowrap !important;
+    display: grid !important;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    width: 100%;
     max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
-            mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+    overflow: visible;
   }
-  .rn-main :is(.rn-seg, [role="tablist"])::-webkit-scrollbar { display: none; }
-  .rn-main :is(.rn-seg, [role="tablist"]) > * { flex-shrink: 0; white-space: nowrap; }
+  .rn-main :is(.rn-seg, [role="tablist"]) > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; justify-content: center; padding-left: 8px !important; padding-right: 8px !important; }
   .rn-main .rn-stats .tabular-nums { font-size: clamp(15px, 4.8vw, 22px); overflow-wrap: anywhere; }
   .rn-main h1 { font-size: 22px; }
 }
@@ -556,7 +554,14 @@
 }
 .rn-modal form { display: flex; flex-direction: column; min-height: 0; }
 /* Inner scrolling areas keep the scrollbar off the content. */
-.rn-modal :is(.overflow-y-auto, .overflow-auto) { padding-right: 24px; scrollbar-gutter: stable; }
+/* Inner scrolling areas keep the same space on both sides, so their content stays centred. */
+.rn-modal :is(.overflow-y-auto, .overflow-auto) { scrollbar-gutter: stable both-edges; }
+/* The order form opens smoothly: it rises from the bottom on phones, eases in on wide screens. */
+.rn-order-scrim { animation: m-fade 220ms linear both; }
+.rn-order-sheet { animation: rn-order-in 340ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes rn-order-in { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+@media (max-width: 639.98px) { .rn-order-sheet { animation-name: m-sheet-in; } }
+@media (prefers-reduced-motion: reduce) { .rn-order-scrim, .rn-order-sheet { animation: none; } }
 /* One palette: no stray brown / terracotta buttons or headers inside modals. */
 .rn-modal :is([class~="bg-[#C85223]"], [class~="bg-[#C9501C]"], [class~="bg-[#B4461A]"], [class~="bg-[#A9400F]"], [class~="bg-[#B58A57]"], .bg-orange-600, .bg-amber-700) { background-color: #1E3A2B !important; }
 .rn-modal :is([class~="bg-[#C85223]"], [class~="bg-[#C9501C]"], [class~="bg-[#B4461A]"]):hover { background-color: #16301F !important; }
@@ -710,87 +715,63 @@ input[aria-invalid="true"], textarea[aria-invalid="true"] {
 @media (prefers-reduced-motion: reduce) { .rn-draw path { animation: none; stroke-dashoffset: 0; } }
 
 /* Sign-in accepted: the logo covers the switch to the app, then the app fades in. */
-/* ---------------------------------------------------------------- Sign-in blend
-   Code accepted: the form melts away and a greeting takes its place while the app loads. Then the
-   page blends into the app (cross-document View Transition, both pages opt in): the logo and the
-   name glide into the phone bar, the brand panel becomes the sidebar, the greeting becomes the
-   dashboard's, and the rest cross-fades. The app plays its arrival either way (html[data-rn-arrive]). */
-.rn-login-card { position: relative; }
-.rn-login[data-leaving] .rn-login-card > :not(.rn-login-hello) {
-  animation: rn-leave-out 420ms cubic-bezier(0.4, 0, 0.2, 1) both;
-  pointer-events: none;
+/* ---------------------------------------------------------------- Sign-in → app
+   Code accepted: the form dims and a thin line runs along the top while the app loads; then the
+   sign-in page cross-fades into the app (cross-document View Transition, both pages opt in). The app
+   fades in on its first paint either way (html[data-rn-arrive]). Short and smooth, nothing more. */
+.rn-login[data-leaving] .rn-login-card > *, .rn-login[data-leaving] .rn-login-formside > header {
+  opacity: 0.45; transition: opacity 240ms ease; pointer-events: none;
 }
-.rn-login[data-leaving] .rn-login-card > :nth-child(3) { animation-delay: 40ms; }
-.rn-login[data-leaving] .rn-login-card > :nth-child(n + 4) { animation-delay: 80ms; }
-.rn-login[data-leaving] .rn-login-card {
-  transition: background-color 600ms ease, box-shadow 600ms ease, border-color 600ms ease;
+.rn-login-progress {
+  position: fixed; z-index: 90; top: 0; left: 0; right: 0; height: 3px; overflow: hidden; background: rgba(26, 46, 32, 0.08);
 }
-@keyframes rn-leave-out { to { opacity: 0; transform: translateY(-10px) scale(0.985); filter: blur(6px); } }
-.rn-login-hello {
-  position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
-  text-align: center; pointer-events: none;
+.rn-login-progress::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+  background: linear-gradient(90deg, rgba(181, 138, 87, 0), #B58A57 45%, #1E3A2B 100%);
+  animation: rn-login-progress 1.05s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
-.rn-login-hello-text {
-  font-family: var(--font-rn-serif), Georgia, serif; font-weight: 500; font-size: 38px; line-height: 1.1; letter-spacing: -0.01em; color: #16241B;
-  animation: rn-hello-in 700ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
-}
-.rn-login-hello-line {
-  display: block; width: 132px; height: 2px; border-radius: 2px; overflow: hidden; background: rgba(26, 46, 32, 0.1); position: relative;
-  animation: rn-hello-in 500ms ease 420ms both;
-}
-.rn-login-hello-line::after {
-  content: ""; position: absolute; inset: 0; width: 40%; border-radius: inherit;
-  background: linear-gradient(90deg, transparent, #B58A57, transparent);
-  animation: rn-hello-sweep 1.3s cubic-bezier(0.45, 0, 0.2, 1) 600ms infinite;
-}
-@keyframes rn-hello-in { from { opacity: 0; transform: translateY(12px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
-@keyframes rn-hello-sweep { from { transform: translateX(-110%); } to { transform: translateX(260%); } }
-/* Phones: the logo settles a little while the greeting appears. */
-.rn-login[data-leaving] .rn-vt-logo { animation: rn-logo-settle 900ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-@keyframes rn-logo-settle { 40% { transform: scale(1.06); } to { transform: scale(1); } }
+@keyframes rn-login-progress { from { transform: translateX(-100%); } to { transform: translateX(270%); } }
 
-/* Shared names: these glide from the sign-in page into the app. */
-.rn-vt-logo { view-transition-name: rn-logo; }
-.rn-vt-name { view-transition-name: rn-name; }
-.rn-vt-hello { view-transition-name: rn-hello; }
-@media (min-width: 1024px) {
-  .rn-login-brand { view-transition-name: rn-side; }
-  .rn-vt-logo, .rn-vt-name { view-transition-name: none; }
-}
-html[data-rn-arrive] .rn-topbar-phone .rn-topbar-logo { view-transition-name: rn-logo; }
-html[data-rn-arrive] .rn-topbar-phone .rn-topbar-name { view-transition-name: rn-name; }
-html[data-rn-arrive] .rn-dash-hello { view-transition-name: rn-hello; }
-@media (min-width: 1024px) { html[data-rn-arrive] .rn-sidebar { view-transition-name: rn-side; } }
-
-html[data-rn-arrive]::view-transition-group(*) { animation-duration: 760ms; animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
-html[data-rn-arrive]::view-transition-old(root) { animation: rn-vt-old 420ms cubic-bezier(0.4, 0, 1, 1) both; }
-html[data-rn-arrive]::view-transition-new(root) { animation: rn-vt-new 700ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both; }
-html[data-rn-arrive]::view-transition-image-pair(rn-side), html[data-rn-arrive]::view-transition-image-pair(rn-hello) { isolation: auto; }
-@keyframes rn-vt-old { to { opacity: 0; transform: scale(1.015); filter: blur(4px); } }
-@keyframes rn-vt-new { from { opacity: 0; transform: scale(0.99); } }
-@keyframes rn-vt-fade-out { to { opacity: 0; } }
-
-/* Arrival (with or without View Transitions): the app rises in, piece by piece. */
-html[data-rn-arrive] .rn-main .rn-page > * > * { animation: rn-arrive-up 640ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-html[data-rn-arrive] .rn-main .rn-page > * > :nth-child(1) { animation-delay: 160ms; }
-html[data-rn-arrive] .rn-main .rn-page > * > :nth-child(2) { animation-delay: 230ms; }
-html[data-rn-arrive] .rn-main .rn-page > * > :nth-child(3) { animation-delay: 300ms; }
-html[data-rn-arrive] .rn-main .rn-page > * > :nth-child(4) { animation-delay: 370ms; }
-html[data-rn-arrive] .rn-main .rn-page > * > :nth-child(n + 5) { animation-delay: 440ms; }
-html[data-rn-arrive] .rn-dash-tile { animation: rn-arrive-up 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
-html[data-rn-arrive] .rn-dash-tile:nth-child(2) { animation-delay: 300ms; }
-html[data-rn-arrive] .rn-dash-tile:nth-child(3) { animation-delay: 360ms; }
-html[data-rn-arrive] .rn-dash-tile:nth-child(4) { animation-delay: 420ms; }
-html[data-rn-arrive] [data-nav-skeleton] > * { animation: rn-arrive-up 600ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both; }
-html[data-rn-arrive] [data-bottom-bar] { animation: rn-arrive-bar 720ms cubic-bezier(0.22, 1, 0.36, 1) 260ms both; }
-html[data-rn-arrive] .rn-sidebar nav { animation: rn-arrive-up 600ms cubic-bezier(0.22, 1, 0.36, 1) 380ms both; }
-@keyframes rn-arrive-up { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
-@keyframes rn-arrive-bar { from { opacity: 0; transform: translateY(140%); } to { opacity: 1; transform: none; } }
+html[data-rn-arrive]::view-transition-old(root) { animation: rn-vt-out 200ms ease-out both; }
+html[data-rn-arrive]::view-transition-new(root) { animation: rn-vt-in 320ms ease-out both; }
+@keyframes rn-vt-out { to { opacity: 0; } }
+@keyframes rn-vt-in { from { opacity: 0; } }
+html[data-rn-arrive] .rn-app { animation: rn-arrive-fade 360ms ease-out both; }
+@keyframes rn-arrive-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .rn-login[data-leaving] .rn-login-card > :not(.rn-login-hello), .rn-login-hello-text, .rn-login-hello-line, .rn-login-hello-line::after, .rn-login[data-leaving] .rn-vt-logo { animation: none; }
-  .rn-login[data-leaving] .rn-login-card > :not(.rn-login-hello) { opacity: 0; }
+  .rn-login-progress::after { animation-duration: 2.4s; }
+  html[data-rn-arrive] .rn-app { animation: none; }
 }
 
 /* The sign-in page never scrolls: no reserved scrollbar strip. */
 html:has(.rn-login-shell) { scrollbar-gutter: auto; }
+/* Sign-in: the app's type, light weights, and truly centred marks (the dot and the letter-spacing
+   no longer push the words off centre). */
+.rn-login, .rn-login-enter { font-family: var(--font-rn-display), var(--font-sans); }
+.rn-login .rn-login-mark { position: relative; display: inline-block; font-weight: 650; }
+.rn-login .rn-login-mark::after { position: absolute; left: 100%; bottom: 0.32em; margin-left: 3px; }
+.rn-login .rn-login-sub { padding-left: 0.18em; }
+@media (max-width: 1023.98px) {
+  .rn-login .rn-login-title { font-weight: 650; letter-spacing: -0.015em; }
+  .rn-login .rn-login-card > h1, .rn-login .rn-login-card > h1 + p { text-align: center; }
+  .rn-login .rn-login-card button[type="submit"] { font-weight: 600; }
+}
 @media (min-width: 1024px) { html:has(.rn-login-shell), html:has(.rn-login-shell) body { overflow: hidden; } }
+
+/* Signing out (Owner and Manager): a soft blur over the app, the logo, one line of text and a thin
+   moving line; it fades in and stays until the sign-in page replaces it. */
+.rn-signout {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: radial-gradient(900px 520px at 50% 40%, rgba(255, 255, 255, 0.72), rgba(247, 245, 240, 0.9));
+  -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%);
+  animation: rn-signout-in 260ms ease-out both;
+  font-family: var(--font-rn-display), var(--font-sans);
+}
+.rn-signout-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; animation: rn-signout-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both; }
+.rn-signout-logo { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 30px; background: #FFFFFF; box-shadow: 0 1px 2px rgba(24, 33, 27, 0.06), 0 18px 40px -18px rgba(24, 33, 27, 0.35); }
+.rn-signout-title { font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: #18211B; }
+.rn-signout-line { position: relative; display: block; width: 120px; height: 3px; border-radius: 3px; overflow: hidden; background: rgba(26, 46, 32, 0.1); }
+.rn-signout-line::after { content: ""; position: absolute; inset: 0; width: 40%; border-radius: inherit; background: linear-gradient(90deg, rgba(181, 138, 87, 0), #B58A57, #1E3A2B); animation: rn-login-progress 1.05s cubic-bezier(0.45, 0, 0.2, 1) infinite; }
+@keyframes rn-signout-in { from { opacity: 0; } }
+@keyframes rn-signout-rise { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+@media (prefers-reduced-motion: reduce) { .rn-signout, .rn-signout-inner { animation: none; } }

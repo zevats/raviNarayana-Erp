@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { TiffinCustomerDirectory } from "@/modules/tiffin/components/TiffinCustomerDirectory";
 import { PageHeader, Segmented } from "@/components/ui/kit";
+import { MSegment } from "@/components/app/m";
 import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 
@@ -39,7 +40,12 @@ export default function TiffinPage() {
 
   return (
     <div className="space-y-5 min-w-0">
-      <PageHeader title="Tiffin customers" actions={<Segmented label="Tiffin sections" value={tab} onChange={setTab} options={tabs} />} />
+      <div className="lg:hidden">
+        <MSegment label="Tiffin sections" value={tab} onChange={setTab} options={tabs} />
+      </div>
+      <div className="hidden lg:block">
+        <PageHeader title="Tiffin customers" actions={<Segmented label="Tiffin sections" value={tab} onChange={setTab} options={tabs} />} />
+      </div>
 
       {tab === "customers" && <TiffinCustomerDirectory />}
       {tab === "subscriptions" && <SubscriptionsView />}

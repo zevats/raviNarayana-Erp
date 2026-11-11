@@ -3,6 +3,7 @@
 import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import { announceNavigation } from "@/lib/navStart";
 import { useRouter } from "next/navigation";
 import { Bell, CheckCheck, AlertTriangle, Info, CheckCircle2 } from "lucide-react";
 import { NotificationItem } from "@/types";
@@ -152,7 +153,10 @@ export function NotificationBell() {
   const open = (n: NotificationItem) => {
     if (!n.isRead) void markOne(n);
     setIsOpen(false);
-    if (n.link) router.push(n.link);
+    if (n.link) {
+      announceNavigation(n.link);
+      router.push(n.link);
+    }
   };
 
   return (
@@ -175,7 +179,7 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div role="dialog" aria-label="Notifications" className="rn-pop rn-menu absolute right-0 mt-3 w-[min(380px,calc(100vw-1.5rem))] rounded-3xl z-50 overflow-hidden">
+        <div role="dialog" aria-label="Notifications" className="rn-pop rn-menu rn-bell-pop rounded-3xl z-50 overflow-hidden">
           <div className="px-5 py-4 border-b border-[var(--rn-line)] flex items-center justify-between gap-3">
             <p className="rn-t-card">Notifications{unreadCount > 0 && <span className="rn-t-meta font-normal"> · {unreadCount} unread</span>}</p>
             {unreadCount > 0 && (

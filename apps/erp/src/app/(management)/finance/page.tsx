@@ -2,7 +2,7 @@
 
 import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Receipt,
   Users,
@@ -94,6 +94,7 @@ export default function FinancePage() {
   // The tab follows the address (/finance?tab=closing), so the sidebar's Cashbook, Resident Dues,
   // Invoices and Daily Closing links, notifications and reports all open the right view.
   const searchParams = useSearchParams();
+  const router = useRouter();
   const urlTab = searchParams?.get("tab");
   useEffect(() => {
     if (urlTab === "cashbook" || urlTab === "receivables" || urlTab === "residents" || urlTab === "invoices" || urlTab === "closing") setTabState(urlTab);
@@ -101,9 +102,10 @@ export default function FinancePage() {
   }, [urlTab]);
   const setActiveTab = (t: FinanceTab) => {
     setTabState(t);
-    // Update the address only: the tabs share this page's data, so a router navigation (server
-    // render and remount of the page) is not needed. useSearchParams follows replaceState.
-    window.history.replaceState(window.history.state, "", `/finance?tab=${t}`);
+    // A real page change (title, menu and address follow); the page itself stays mounted, so the
+    // shared data is reused and the switch is instant.
+    router.replace(`/finance?tab=${t}`, { scroll: false });
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
   };
 
   // Local calendar date filters (defaults to current calendar month)

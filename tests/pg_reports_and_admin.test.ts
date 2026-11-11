@@ -143,10 +143,13 @@ async function main() {
       "INSERT INTO audit_logs (id, actor_id, actor_username, action, target_type, target_id, metadata, ip_address, created_at) VALUES (?, ?, ?, 'auth.login', 'staff_user', ?, '{}', ?, ?)",
       [`aud_${crypto.randomUUID()}`, worked.id, worked.username, worked.id, IP, new Date().toISOString()]
     );
+    // Owner decision (2026-11-11): deleting an account with work history removes it from the staff
+    // list (switched off, signed out) but keeps the row, so its history stays attributable.
     let refused: any = null;
     try { await deleteStaffUser(owner, worked.id, IP, db); } catch (e) { refused = e; }
-    const kept = await db.queryOne<any>("SELECT id FROM staff_users WHERE id = ?", [worked.id]);
-    assert(refused !== null && /has history/.test(refused.message) && !!kept, "An account with recorded activity is refused and kept");
+    const kept = await db.queryOne<any>("SELECT id, is_active FROM staff_users WHERE id = ?", [worked.id]);
+    const historyKept = await db.queryOne<any>("SELECT id FROM audit_logs WHERE actor_id = ? AND action = 'auth.login'", [worked.id]);
+    assert(refused === null && !!kept && Number(kept.is_active) === 0 && !!historyKept, "An account with recorded activity is switched off and kept with its history");
 
     const otherOwner = await insertStaff(db, "SUPER_ADMIN", "Second Owner");
     let ownerRefused: any = null;

@@ -1,5 +1,6 @@
 "use client";
 
+import { SignOutScreen } from "./shell/SignOutScreen";
 import { HandoverAlert } from "@/components/notifications/HandoverAlert";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -30,7 +31,7 @@ interface ErpShellProps {
 }
 
 const ARRIVAL_SCRIPT =
-  "try{var d=document.documentElement,t=+sessionStorage.getItem('rn-arrive');if(t&&Date.now()-t<30000&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){sessionStorage.removeItem('rn-arrive');d.setAttribute('data-rn-arrive','');setTimeout(function(){d.removeAttribute('data-rn-arrive')},2600)}else if(t){sessionStorage.removeItem('rn-arrive')}}catch(e){}";
+  "try{var d=document.documentElement,t=+sessionStorage.getItem('rn-arrive');if(t&&Date.now()-t<30000&&!(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)){sessionStorage.removeItem('rn-arrive');d.setAttribute('data-rn-arrive','');setTimeout(function(){d.removeAttribute('data-rn-arrive')},900)}else if(t){sessionStorage.removeItem('rn-arrive')}}catch(e){}";
 
 export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: ErpShellProps) {
   const pathname = usePathname();
@@ -153,6 +154,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
 
   const groups = useMemo(() => visibleGroups(user.role), [user.role]);
   const links = useMemo(() => allLinks(user.role), [user.role]);
+  const linksRef = useRef(links);
+  linksRef.current = links;
   const currentKey = activeKey(links, pathname, tab);
   // A navigation is pending only until its destination is the current address. Derived on every
   // render: the green/orange switch sets the pending state inside a View Transition callback, which
@@ -189,6 +192,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
     setIsMobileMenuOpen(false);
     setPendingHref(null);
     setPendingKey(null);
+    // A new page always opens at its top, never at the previous page's scroll position.
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
   }, [pathname, tab]);
   // Also clear a pending state that was set after its destination had already arrived.
   useEffect(() => {
@@ -198,6 +203,36 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingHref, pathname, tab]);
+
+  // Any in-app link (dashboard tiles, list rows, notifications) shows the destination's frame at
+  // once, like the menu links do; navigations made in code announce themselves (lib/navStart).
+  useEffect(() => {
+    const begin = (href: string) => {
+      const url = new URL(href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      const target = url.pathname + url.search;
+      const here = window.location.pathname + window.location.search;
+      if (url.pathname === window.location.pathname || target === here) return;
+      setPendingHref(target);
+      setPendingKey(activeKey(linksRef.current, url.pathname, url.searchParams.get("tab")));
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
+    };
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const href = a.getAttribute("href") || "";
+      if (!href.startsWith("/") || href.startsWith("//") || href.startsWith("/api/")) return;
+      begin(href);
+    };
+    const onAnnounce = (e: Event) => begin(String((e as CustomEvent).detail || ""));
+    document.addEventListener("click", onClick);
+    window.addEventListener("erp:nav-start", onAnnounce);
+    return () => {
+      document.removeEventListener("click", onClick);
+      window.removeEventListener("erp:nav-start", onAnnounce);
+    };
+  }, []);
 
   // Safety net: if a navigation is abandoned (e.g. a redirect back to the same page), stop the bar.
   useEffect(() => {
@@ -275,6 +310,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
       e.preventDefault();
       return;
     }
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
     // Green <-> orange: the new section colour flows out from where the person clicked
     // (View Transitions where supported; otherwise the registered colour tokens cross-fade).
     const nextAccent = sectionAccent(href.split("?")[0]);
@@ -342,17 +378,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
       <div className="rn-canvas" aria-hidden />
       {navPending && <div className="erp-nav-progress" role="progressbar" aria-label="Opening page" />}
 
-      {isLoggingOut && (
-        <div className="fixed inset-0 z-[70] bg-[rgba(18,28,22,0.35)] backdrop-blur-[6px] flex items-center justify-center rn-scrim">
-          <div className="rn-dialog rounded-3xl p-6 flex items-center gap-4 max-w-sm mx-4">
-            <BikeLoader inline tone="forest" label="Signing out" className="shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-[var(--rn-ink)]">Signing out…</p>
-              <p className="text-xs text-[var(--rn-ink-3)]">Ending this session</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {isLoggingOut && <SignOutScreen />}
 
       <AppSidebar
         user={user}
@@ -366,7 +392,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
         pathname={pathname}
       />
 
-      <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} onAccount={(e) => handleNavClick(e, "/account", "account")} />
+      <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} onAccount={(e) => handleNavClick(e, "/account", "account")} onHome={(e) => handleNavClick(e, "/dashboard", "dashboard")} />
 
       <div className={`relative min-w-0 transition-[padding] duration-200 ease-out ${collapsed ? "lg:pl-[116px]" : "lg:pl-[288px]"}`}>
         <div className="mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:pr-8 lg:pl-2">

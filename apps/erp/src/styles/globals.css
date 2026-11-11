@@ -88,12 +88,27 @@ button, a, input, select, textarea {
   background: transparent;
 }
 :where(.overflow-y-auto, .overflow-y-scroll, .overflow-auto) {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
 }
-/* The page itself always keeps the scrollbar's space, so content and cards stay in the same place
-   whether a page is long enough to scroll or not (no sideways shift when switching pages). */
+/* Phones and tablets: no visible scrollbars and no reserved strips (touch scrolling shows its own). */
+@media (pointer: coarse), (max-width: 1023.98px) {
+  * { scrollbar-width: none; }
+  *::-webkit-scrollbar { width: 0; height: 0; }
+  :where(.overflow-y-auto, .overflow-y-scroll, .overflow-auto) { scrollbar-gutter: auto; }
+  .rn-modal :is(.overflow-y-auto, .overflow-auto) { scrollbar-gutter: auto; }
+}
+/* The page itself scrolls without a visible bar and without a reserved strip, so every page and
+   every pop-up is centred on the whole window whether the page is long enough to scroll or not
+   (and nothing shifts sideways between pages). Inner lists keep their slim bars. */
 html {
-  scrollbar-gutter: stable;
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 @supports not selector(::-webkit-scrollbar) {
   * { scrollbar-width: thin; scrollbar-color: rgba(90, 76, 66, 0.45) transparent; }

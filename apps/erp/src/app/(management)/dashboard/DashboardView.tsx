@@ -195,13 +195,13 @@ export function DashboardView({
       : division === "TIFFIN"
       ? [
           <StatTile key="del" icon={Truck} title="Deliveries" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
-          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
+          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String((t.boxes.breakfast ?? 0) + t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `${t.boxes.breakfast ? `Breakfast ${t.boxes.breakfast} · ` : ""}Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
           <StatTile key="cust" icon={Users} title="Customers" value={ops.tiffin ? String(ops.tiffin.activeCustomers) : "—"} note={ops.tiffin ? `${ops.tiffin.activeSubscriptions} active plans` : "not loaded"} href="/tiffin" />,
         ]
       : [
           <StatTile key="res" icon={Users} title="Residents" value={ops.people ? String(ops.people.activeResidents) : "—"} note={<>{occupancy.occupancyRate}% of {occupancy.totalCapacity} beds</>} href="/residents" />,
           <StatTile key="del" icon={Truck} title="Deliveries" value={t ? `${t.delivered}/${t.total}` : "—"} note={t ? (t.problems > 0 ? <span className="text-amber-700">{t.problems} problem{t.problems === 1 ? "" : "s"}</span> : `${t.waiting} waiting · ${t.out} out`) : "not loaded"} href="/delivery?tab=board" />,
-          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String(t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
+          <StatTile key="box" icon={UtensilsCrossed} title="Thalis out" value={t ? String((t.boxes.breakfast ?? 0) + t.boxes.lunch + t.boxes.dinner) : "—"} note={t ? `${t.boxes.breakfast ? `Breakfast ${t.boxes.breakfast} · ` : ""}Lunch ${t.boxes.lunch} · Dinner ${t.boxes.dinner}` : "not loaded"} href="/orders" />,
         ];
 
   const roomsCard = (

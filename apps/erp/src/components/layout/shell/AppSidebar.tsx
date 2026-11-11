@@ -69,7 +69,7 @@ export function AppSidebar({
   // link refreshes its prefetch again before the click. No effect in `next dev`.
   // router.refresh() (after a save that changes server-rendered pages) empties the prefetch cache,
   // so the shell announces it and the sections are prefetched again, once per burst of saves.
-  const hrefs = groups.flatMap((g) => g.items.map((i) => i.href)).concat("/account").join("|");
+  const hrefs = groups.flatMap((g) => g.items.map((i) => i.href)).concat("/account", "/notifications").join("|");
   useEffect(() => {
     const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
     let idle = 0;

@@ -3,6 +3,7 @@
 import { friendlyError } from "@/lib/friendlyError";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { announceNavigation } from "@/lib/navStart";
 import { CheckCheck } from "lucide-react";
 import type { NotificationItem } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -42,7 +43,10 @@ export default function NotificationsPage() {
   };
   const open = (n: NotificationItem) => {
     if (!n.isRead) void markOne(n);
-    if (n.link) router.push(n.link);
+    if (n.link) {
+      announceNavigation(n.link);
+      router.push(n.link);
+    }
   };
   const markAll = async () => {
     setBusy(true);

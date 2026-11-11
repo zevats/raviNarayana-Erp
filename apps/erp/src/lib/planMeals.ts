@@ -15,13 +15,13 @@ export function planMealsLabel(m: SubscriptionMealTypes | string | null | undefi
     case "DINNER":
       return "Dinner";
     case "BREAKFAST":
-      return "Breakfast (no longer offered)";
+      return "Breakfast";
     default:
       return String(m || "—");
   }
 }
 
-/** Whether a plan includes this meal (an any-meal plan includes both). */
+/** Whether a plan includes this meal (an any-meal plan includes every meal). */
 export function planCoversMeal(m: SubscriptionMealTypes | string | null | undefined, meal: string): boolean {
-  return m === "BOTH" || m === "ANY" || m === meal;
+  return m === "ANY" || (m === "BOTH" && meal !== "BREAKFAST") || m === meal;
 }

@@ -740,7 +740,19 @@ export async function deleteStaffUser(
 
   const history = await staffHistoryReferences(db, targetUserId);
   if (history.length > 0) {
-    throw new Error(`This account has history (${history.join(", ")}) and is kept so those records stay attributable. Deactivate it instead.`);
+    // Work history stays attributable: the account is switched off (signed out everywhere, hidden
+    // from the staff list) instead of removed.
+    await setStaffActiveStatus(actor, targetUserId, false, clientIp, db);
+    await recordAuditEventAsync({
+      actorId: actor.id,
+      actorUsername: actor.username,
+      action: "staff.deleted",
+      targetType: "staff_user",
+      targetId: targetUserId,
+      metadata: { username: target.username, fullName: target.fullName, role: target.role, keptForHistory: history },
+      ipAddress: clientIp,
+    }, db);
+    return;
   }
 
   await db.transaction(async (tx) => {

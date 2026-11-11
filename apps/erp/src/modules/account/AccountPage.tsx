@@ -1,5 +1,7 @@
 "use client";
 
+import { SignOutScreen } from "@/components/layout/shell/SignOutScreen";
+import { AccountSkeleton } from "@/components/layout/shell/AccountSkeleton";
 import { friendlyError } from "@/lib/friendlyError";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -59,7 +61,7 @@ function AccountRow({ label, value, action, onAction }: { label: string; value: 
     <div className="flex items-center gap-4 px-5 sm:px-6 py-3.5">
       <span className="min-w-0 flex-1">
         <span className="block rn-t-label">{label}</span>
-        <span className="block text-[14px] text-[var(--rn-ink)] break-words">{value}</span>
+        <span className="block text-[14px] text-[var(--rn-ink)] truncate" title={typeof value === "string" ? value : undefined}>{value}</span>
       </span>
       {action && onAction && (
         <button type="button" onClick={onAction} className="rn-btn rn-btn-sm shrink-0">{action}</button>
@@ -548,17 +550,21 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
           <Busy busy={retrying} idle="Try again" label="Trying again" />
         </button>
       </div>
+    ) : user.role !== "DELIVERY_PERSON" ? (
+      <AccountSkeleton />
     ) : (
       <FullPageLoader tone={tone} label="Opening your account…" size="md" />
     );
   }
 
   const s = me.summary;
+  const signOutScreen = signingOut && me.role !== "DELIVERY_PERSON" ? <SignOutScreen /> : null;
   // Owner and Manager: the ERP's shared card layout. Delivery staff keep their app's layout below.
   if (me.role !== "DELIVERY_PERSON") {
     const initial = (me.fullName.replace(/^(dr|mr|mrs|ms|shri|smt|prof)\.?\s+/i, "").trim()[0] || "?").toUpperCase();
     return (
       <div className="space-y-5 min-w-0">
+        {signOutScreen}
         <PageHeader title="My account" />
         {notice && (
           <p role="status" className="rn-notice rn-notice-good"><BadgeCheck className="w-4 h-4 shrink-0" /> {notice}</p>
@@ -596,7 +602,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
             <section className="rn-card">
               <h2 className="rn-t-card px-5 sm:px-6 pt-5 pb-2">Security</h2>
               <div className="rn-rows">
-                <AccountRow label="Password" value="Set" action="Change password" onAction={() => setSheet("password")} />
+                <AccountRow label="Password" value={<span aria-label="Password set" className="tracking-[0.18em]">••••••••</span>} action="Change password" onAction={() => setSheet("password")} />
                 {me.lastSignIn && <AccountRow label="Last sign-in" value={dateTime(me.lastSignIn)} />}
               </div>
               <div className="px-5 sm:px-6 py-4 border-t border-[var(--rn-line)]">

@@ -155,11 +155,14 @@ export async function getManifestStatus(
  */
 export async function prepareDeliveryManifest(
   actor: AuthenticatedUser,
-  input: { serviceDate: string; mealType: MealType; trigger?: "AUTO" | "MANUAL" },
+  input: { serviceDate: string; mealType: MealType; trigger?: "AUTO" | "MANUAL" | "TOPUP" },
   clientIp?: string,
   asyncDb?: AsyncDb,
   clock?: OpsClock
 ): Promise<DeliveryManifestRunResult> {
+  // TOPUP: the delivery page keeps a prepared list current by itself (Manager or Owner). It adds
+  // only what is new, and records nothing when there was nothing to add.
+  const topUp = input.trigger === "TOPUP";
   const trigger = input.trigger === "AUTO" ? "AUTO" : "MANUAL";
   if (trigger === "MANUAL") {
     requirePermission(actor, "delivery.manage", { ip: clientIp, action: "delivery.manifest_prepared" });
@@ -189,6 +192,11 @@ export async function prepareDeliveryManifest(
     // everything already created (the unique indexes back this up).
     await acquireLedgerKeyLock(tx, `delivery-manifest:${serviceDate}:${mealType}`);
     const plan = await ensurePlan(tx, serviceDate, mealType, actor, at);
+    if (topUp && !plan.manifest_prepared_at) {
+      result.ran = false;
+      result.reason = "NOT_PREPARED";
+      return;
+    }
     if (trigger === "AUTO" && plan.manifest_prepared_at) {
       result.ran = false;
       result.reason = "ALREADY_PREPARED";
@@ -369,6 +377,7 @@ export async function prepareDeliveryManifest(
       );
     }
 
+    if (topUp && result.created === 0) return;
     await tx.execute(
       `UPDATE daily_meal_plans
        SET manifest_prepared_at = COALESCE(manifest_prepared_at, ?), manifest_prepared_by = COALESCE(manifest_prepared_by, ?),

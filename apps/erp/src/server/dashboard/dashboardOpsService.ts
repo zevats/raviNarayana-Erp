@@ -19,7 +19,7 @@ export interface DashboardOps {
     total: number;
     completionRate: number;
     problems: number;
-    boxes: { lunch: number; dinner: number };
+    boxes: { breakfast: number; lunch: number; dinner: number };
   } | null;
   custody: { cashWithStaff: number; awaitingAcceptance: number } | null;
   people: { activeResidents: number } | null;
@@ -125,7 +125,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
       return {
         date: today, waiting: n(row?.waiting), out: n(row?.out_now), delivered, total,
         completionRate: total > 0 ? Math.round((delivered / total) * 100) : 0, problems: n(row?.problems),
-        boxes: { lunch: by("LUNCH"), dinner: by("DINNER") },
+        boxes: { breakfast: by("BREAKFAST"), lunch: by("LUNCH"), dinner: by("DINNER") },
       };
     })),
     block("Cash with staff", failed, () => shared(db, "custody", async () => {

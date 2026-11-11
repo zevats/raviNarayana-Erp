@@ -104,20 +104,7 @@ export function InvoicesMobile({
           { value: "TIFFIN", label: "Tiffin" },
         ]}
       />
-      <MChips
-        label="Status"
-        value={status}
-        onChange={setStatus}
-        options={[
-          { value: "ALL", label: "All" },
-          { value: "ISSUED", label: "Unpaid" },
-          { value: "PARTIALLY_PAID", label: "Part paid" },
-          { value: "PAID", label: "Paid" },
-          { value: "DRAFT", label: "Draft" },
-          { value: "CANCELLED", label: "Cancelled" },
-        ]}
-      />
-      <MSearch value={search} onChange={setSearch} placeholder="Search number, name or room" onFilter={() => setFiltersOpen(true)} filterCount={type !== "ALL" ? 1 : 0} />
+      <MSearch value={search} onChange={setSearch} placeholder="Search number, name or room" onFilter={() => setFiltersOpen(true)} filterCount={(type !== "ALL" ? 1 : 0) + (status !== "ALL" ? 1 : 0)} />
       {loading ? (
         <MSkeletonRows rows={5} />
       ) : invoices.length === 0 ? (
@@ -191,11 +178,36 @@ export function InvoicesMobile({
         onClose={() => setFiltersOpen(false)}
         title="Filters"
         footer={
-          <MButton kind="primary" onClick={() => setFiltersOpen(false)}>
-            Done
-          </MButton>
+          <>
+            <MButton
+              kind="soft"
+              onClick={() => {
+                setStatus("ALL");
+                setType("ALL");
+              }}
+            >
+              Clear
+            </MButton>
+            <MButton kind="primary" onClick={() => setFiltersOpen(false)}>
+              Show {invoices.length}
+            </MButton>
+          </>
         }
       >
+        <p className="m-sheet-label">Status</p>
+    <MChips
+      label="Status"
+      value={status}
+      onChange={setStatus}
+      options={[
+        { value: "ALL", label: "All" },
+        { value: "ISSUED", label: "Unpaid" },
+        { value: "PARTIALLY_PAID", label: "Part paid" },
+        { value: "PAID", label: "Paid" },
+        { value: "DRAFT", label: "Draft" },
+        { value: "CANCELLED", label: "Cancelled" },
+      ]}
+    />
         <p className="m-sheet-label">Kind of bill</p>
         <MChips
           label="Kind of bill"
@@ -303,38 +315,41 @@ export function ClosingMobile({
   const fig = (v: number | undefined) => (preview ? formatMoney(v ?? 0) : "—");
   return (
     <MStack>
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5 items-center">
-        <label className="m-search !pl-3.5">
-          <CalendarDays className="w-[18px] h-[18px] shrink-0 text-[#7C877F]" aria-hidden />
+      <div className="flex items-center gap-2.5 min-w-0">
+        <label className="m-search m-date-pill">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label="Day" />
         </label>
-        <MPill tone={st === "FINALIZED" ? "green" : st === "REOPENED" ? "amber" : st === "DRAFT" ? "blue" : "neutral"}>
-          {st === "FINALIZED" ? (
-            <>
-              <Lock className="w-3 h-3" /> Closed
-            </>
-          ) : st === "REOPENED" ? (
-            "Reopened"
-          ) : st === "DRAFT" ? (
-            "Draft saved"
-          ) : (
-            "Not closed"
-          )}
-        </MPill>
+        <div className="flex-1 min-w-0">
+          <MSegment
+            label="Part of the business"
+            value={division}
+            onChange={setDivision}
+            options={[
+              { value: "COMBINED", label: "All" },
+              { value: "PG", label: "PG" },
+              { value: "TIFFIN", label: "Tiffin" },
+            ]}
+          />
+        </div>
       </div>
-      <MSegment
-        label="Part of the business"
-        value={division}
-        onChange={setDivision}
-        options={[
-          { value: "COMBINED", label: "All" },
-          { value: "PG", label: "PG" },
-          { value: "TIFFIN", label: "Tiffin" },
-        ]}
-      />
 
       <MHero
         label="Cash that should be in hand"
+        action={
+          <span className="m-hero-btn">
+            {st === "FINALIZED" ? (
+              <>
+                <Lock className="w-3.5 h-3.5" /> Closed
+              </>
+            ) : st === "REOPENED" ? (
+              "Reopened"
+            ) : st === "DRAFT" ? (
+              "Draft saved"
+            ) : (
+              "Not closed"
+            )}
+          </span>
+        }
         value={loading && !preview ? "—" : fig(preview?.expectedCashBalance)}
         items={[
           { label: "Opening cash", value: fig(preview?.openingCashBalance) },

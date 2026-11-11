@@ -13,6 +13,7 @@ import { greeting } from "@/lib/names";
 import { formatMoney } from "@/lib/format";
 import { MEmpty, MGroup, MHero, MQuick, MRow, MSection, MSegment, MStack, MStats, dayLabel } from "@/components/app/m";
 import type { DashboardDivisionView } from "./DashboardView";
+import { useQuickOrder } from "@/modules/orders/components/QuickOrder";
 
 const TYPE_LABEL: Record<string, string> = {
   RENT_PAYMENT: "Rent received",
@@ -48,13 +49,14 @@ export function DashboardMobile({
   exportButton: React.ReactNode;
 }) {
   const { ops, occupancy, finance, metricsUnavailable } = view;
+  const quick = useQuickOrder();
   const t = ops.today;
   const free = Math.max(0, occupancy.totalCapacity - occupancy.occupiedBeds);
   const tiles: Array<React.ComponentProps<typeof MStats>["items"][number]> = [];
   if (division !== "TIFFIN") tiles.push({ icon: Users, label: `Residents · ${occupancy.occupancyRate}% full`, value: ops.people ? ops.people.activeResidents : "—", href: "/residents" });
   if (division !== "TIFFIN") tiles.push({ icon: BedDouble, label: `Free beds of ${occupancy.totalCapacity}`, value: free, href: "/rooms" });
   if (division !== "PG") tiles.push({ icon: Truck, tone: t && t.problems > 0 ? "red" : "orange", label: t ? (t.problems > 0 ? `Delivered · ${t.problems} problem${t.problems === 1 ? "" : "s"}` : `Delivered · ${t.waiting} waiting`) : "Delivered", value: t ? `${t.delivered}/${t.total}` : "—", href: "/delivery" });
-  if (division !== "PG") tiles.push({ icon: UtensilsCrossed, tone: "orange", label: t ? `Thalis · L ${t.boxes.lunch} · D ${t.boxes.dinner}` : "Thalis today", value: t ? t.boxes.lunch + t.boxes.dinner : "—", href: "/orders" });
+  if (division !== "PG") tiles.push({ icon: UtensilsCrossed, tone: "orange", label: t ? `Thalis · ${t.boxes.breakfast ? `B ${t.boxes.breakfast} · ` : ""}L ${t.boxes.lunch} · D ${t.boxes.dinner}` : "Thalis today", value: t ? (t.boxes.breakfast ?? 0) + t.boxes.lunch + t.boxes.dinner : "—", href: "/orders" });
   if (division === "TIFFIN") tiles.push({ icon: Users, label: `Customers · ${ops.tiffin?.activeSubscriptions ?? 0} plans`, value: ops.tiffin ? ops.tiffin.activeCustomers : "—", href: "/tiffin" });
   if (division === "PG") tiles.push({ icon: Wallet, tone: finance.overdueCount > 0 ? "amber" : "accent", label: `Rent owed · ${finance.overdueCount} owing`, value: metricsUnavailable ? "—" : formatMoney(finance.outstandingRent), href: "/finance?tab=residents" });
 
@@ -103,7 +105,7 @@ export function DashboardMobile({
 
       <MQuick
         items={[
-          { label: "New order", icon: Plus, href: "/orders?new=1", tone: "orange" },
+          { label: "New order", icon: Plus, onClick: quick.open, tone: "orange" },
           { label: "Deliveries", icon: Truck, href: "/delivery", tone: "orange" },
           { label: "Collect", icon: Wallet, href: "/finance?tab=receivables", tone: "green" },
           { label: "Residents", icon: Users, href: "/residents", tone: "green" },
@@ -171,7 +173,7 @@ export function DashboardMobile({
         </MSection>
       )}
 
-      {showMoney && <div className="flex justify-center">{exportButton}</div>}
+      {quick.element}
     </MStack>
   );
 }

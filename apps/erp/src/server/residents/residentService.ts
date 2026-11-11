@@ -85,7 +85,8 @@ export async function listResidents(
       rm.floor as "currentFloor",
       s.check_in_date as "checkInDate",
       COALESCE(sc.total_stays, 0) as "totalStayCount",
-      COALESCE(sc.completed_stays, 0) as "completedStayCount"
+      COALESCE(sc.completed_stays, 0) as "completedStayCount",
+      sc.last_check_out as "lastCheckOutDate"
     FROM residents res
     LEFT JOIN resident_stays s ON s.resident_id = res.id AND s.status = 'ACTIVE'
     LEFT JOIN rooms rm ON rm.id = s.room_id
@@ -93,7 +94,8 @@ export async function listResidents(
       SELECT 
         resident_id,
         COUNT(*) as total_stays,
-        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_stays
+        SUM(CASE WHEN status = 'COMPLETED' THEN 1 ELSE 0 END) as completed_stays,
+        MAX(check_out_date) as last_check_out
       FROM resident_stays
       GROUP BY resident_id
     ) sc ON sc.resident_id = res.id
@@ -114,6 +116,7 @@ export async function listResidents(
     checkInDate: r.checkInDate,
     totalStayCount: Number(r.totalStayCount || 0),
     completedStayCount: Number(r.completedStayCount || 0),
+    lastCheckOutDate: r.lastCheckOutDate ? String(r.lastCheckOutDate).slice(0, 10) : null,
   }));
 }
 

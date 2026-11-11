@@ -25,6 +25,8 @@ export interface BusinessSettings {
   };
   meals: {
     /** Delivery list preparation time (HH:MM, IST) and cancellation cutoff, per meal. */
+    breakfastPrepareAt: string;
+    breakfastCutoffAt: string;
     lunchPrepareAt: string;
     lunchCutoffAt: string;
     dinnerPrepareAt: string;
@@ -57,7 +59,7 @@ export function defaultSettings(): BusinessSettings {
       address: (process.env.ERP_COMPANY_ADDRESS || "").trim(),
       websiteUrl: (process.env.NEXT_PUBLIC_WEBSITE_URL || "").trim(),
     },
-    meals: { lunchPrepareAt: "08:00", lunchCutoffAt: "07:30", dinnerPrepareAt: "15:30", dinnerCutoffAt: "15:00" },
+    meals: { breakfastPrepareAt: "06:30", breakfastCutoffAt: "06:00", lunchPrepareAt: "08:00", lunchCutoffAt: "07:30", dinnerPrepareAt: "15:30", dinnerCutoffAt: "15:00" },
     delivery: { defaultDriverId: null },
     finance: { rentDueDay: null },
     notifications: { subscriptionExpiry: true, pendingHandover: true, closingReminder: true },
@@ -151,11 +153,14 @@ async function validateSection(db: AsyncDb, section: SettingsSection, input: any
     }
     case "meals": {
       const out: Record<string, string> = {};
-      for (const k of ["lunchPrepareAt", "lunchCutoffAt", "dinnerPrepareAt", "dinnerCutoffAt"]) {
-        const v = String(input[k] ?? "").trim();
+      const fallback = defaultSettings().meals as Record<string, string>;
+      for (const k of ["breakfastPrepareAt", "breakfastCutoffAt", "lunchPrepareAt", "lunchCutoffAt", "dinnerPrepareAt", "dinnerCutoffAt"]) {
+        const v = String(input[k] ?? (k.startsWith("breakfast") ? fallback[k] : "")).trim();
         if (!HHMM.test(v)) throw new Error("Times must be in 24-hour HH:MM format, like 07:30.");
         out[k] = v;
       }
+      if (minutes(out.breakfastCutoffAt) > minutes(out.breakfastPrepareAt)) throw new Error("The breakfast cutoff must be at or before the breakfast list time.");
+      if (minutes(out.lunchPrepareAt) <= minutes(out.breakfastPrepareAt)) throw new Error("The lunch list time must be after the breakfast list time.");
       if (minutes(out.lunchCutoffAt) > minutes(out.lunchPrepareAt)) throw new Error("The lunch cutoff must be at or before the lunch list time.");
       if (minutes(out.dinnerCutoffAt) > minutes(out.dinnerPrepareAt)) throw new Error("The dinner cutoff must be at or before the dinner list time.");
       if (minutes(out.dinnerPrepareAt) <= minutes(out.lunchPrepareAt)) throw new Error("The dinner list time must be after the lunch list time.");

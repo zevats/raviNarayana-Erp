@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const result = await prepareDeliveryManifest(
       user,
-      { serviceDate: body.serviceDate, mealType: body.mealType, trigger: body.trigger === "AUTO" ? "AUTO" : "MANUAL" },
+      { serviceDate: body.serviceDate, mealType: body.mealType, trigger: body.trigger === "AUTO" ? "AUTO" : body.trigger === "TOPUP" ? "TOPUP" : "MANUAL" },
       getClientIp(request)
     );
     return NextResponse.json(result);

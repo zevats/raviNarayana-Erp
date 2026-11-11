@@ -62,13 +62,13 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const [wide, setWide] = useState(false);
 
   // The selected meal loads first; the other meal's count is fetched once it is on screen.
-  const other: MealType = meal === "LUNCH" ? "DINNER" : "LUNCH";
   // One fixed list per meal (never "selected" vs "other"): switching meals only swaps which list is
   // shown, so the lists never mix and a stop is announced only when it really is new.
+  const breakfastQ = useDeliveryTasks(today, "BREAKFAST");
   const lunchQ = useDeliveryTasks(today, "LUNCH");
   const dinnerQ = useDeliveryTasks(today, "DINNER");
-  const tasksQ = meal === "LUNCH" ? lunchQ : dinnerQ;
-  const otherQ = meal === "LUNCH" ? dinnerQ : lunchQ;
+  const byMeal = { BREAKFAST: breakfastQ, LUNCH: lunchQ, DINNER: dinnerQ } as const;
+  const tasksQ = byMeal[meal];
   useManifest(today, meal); // opening the screen after 08:00 / 15:30 prepares that meal's list
   // Stops just recorded on this phone: shown as done until the server's list says so too, so a
   // refresh that arrives before the background save has landed cannot bring them back as open.
@@ -85,14 +85,14 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   useEffect(() => {
     const ids = Object.keys(held);
     if (ids.length === 0) return;
-    const all = [...(lunchQ.data ?? []), ...(dinnerQ.data ?? [])];
+    const all = [...(breakfastQ.data ?? []), ...(lunchQ.data ?? []), ...(dinnerQ.data ?? [])];
     const settled = ids.filter((id) => {
       const t = all.find((x) => x.id === id);
       return t && !stillOpen(t);
     });
     if (settled.length) setHeld((h) => Object.fromEntries(Object.entries(h).filter(([id]) => !settled.includes(id))));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lunchQ.data, dinnerQ.data]);
+  }, [breakfastQ.data, lunchQ.data, dinnerQ.data]);
   // Safety: nothing is held for more than two minutes (the offline queue keeps the save itself).
   useEffect(() => {
     if (Object.keys(held).length === 0) return;
@@ -101,20 +101,20 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   }, [held]);
   const numbers = useMemo(() => stopNumbers(tasks), [tasks]);
   const countOf = (data: DeliveryTask[] | undefined) => (data ? data.filter((t) => t.status !== "CANCELLED").length : undefined);
-  const mealCounts = { [meal]: countOf(tasksQ.data), [other]: countOf(otherQ.data) } as Partial<Record<MealType, number | undefined>>;
+  const mealCounts = { BREAKFAST: countOf(breakfastQ.data), LUNCH: countOf(lunchQ.data), DINNER: countOf(dinnerQ.data) } as Partial<Record<MealType, number | undefined>>;
 
   // A delivery assigned while the screen is open (for example an order placed by the Manager) is
   // announced at once: live updates refetch the list and the new stop is called out.
   const known = useRef<Map<MealType, Set<string>>>(new Map());
   useEffect(() => {
-    for (const [m, data] of [["LUNCH", lunchQ.data], ["DINNER", dinnerQ.data]] as Array<[MealType, DeliveryTask[] | undefined]>) {
+    for (const [m, data] of [["BREAKFAST", breakfastQ.data], ["LUNCH", lunchQ.data], ["DINNER", dinnerQ.data]] as Array<[MealType, DeliveryTask[] | undefined]>) {
       if (!data) continue;
       const ids = new Set(data.filter((t) => t.status !== "CANCELLED").map((t) => t.id));
       const before = known.current.get(m);
       if (before) {
         const added = data.filter((t) => ids.has(t.id) && !before.has(t.id) && ["WAITING", "OUT"].includes(deliveryOutcome(t)));
         if (added.length > 0) {
-          setArrival(added.length === 1 ? `New ${m === "LUNCH" ? "lunch" : "dinner"} delivery: ${displayName(added[0])}` : `${added.length} new ${m === "LUNCH" ? "lunch" : "dinner"} deliveries added`);
+          setArrival(added.length === 1 ? `New ${m.toLowerCase()} delivery: ${displayName(added[0])}` : `${added.length} new ${m.toLowerCase()} deliveries added`);
           // Browsers only allow vibration after the person has interacted with the page.
           if ((navigator as any).userActivation?.hasBeenActive) {
             try {
@@ -162,7 +162,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   const selected = tasks.find((t) => t.id === selectedId) ?? next;
   const completed = done.length;
   const pct = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
-  const mealWord = meal === "LUNCH" ? "Lunch" : "Dinner";
+  const mealWord = meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner";
 
   const start = async (t: DeliveryTask) => {
     if (starting) return;

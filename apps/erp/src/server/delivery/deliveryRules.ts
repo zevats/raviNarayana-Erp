@@ -9,7 +9,7 @@ import { getSettings } from "../settings/settingsService";
 
 /** Owner decisions (round 11): list preparation time and cancellation cutoff per meal, IST. */
 export const MEAL_SCHEDULE: Record<MealType, { prepareAt: string | null; cutoffAt: string | null }> = {
-  BREAKFAST: { prepareAt: null, cutoffAt: null },
+  BREAKFAST: { prepareAt: "06:30", cutoffAt: "06:00" },
   LUNCH: { prepareAt: "08:00", cutoffAt: "07:30" },
   DINNER: { prepareAt: "15:30", cutoffAt: "15:00" },
 };
@@ -28,7 +28,7 @@ export function mealSchedule(): Record<MealType, { prepareAt: string | null; cut
 export async function refreshMealSchedule(db: AsyncDb): Promise<void> {
   const m = (await getSettings(db)).meals;
   activeSchedule = {
-    BREAKFAST: MEAL_SCHEDULE.BREAKFAST,
+    BREAKFAST: { prepareAt: m.breakfastPrepareAt || MEAL_SCHEDULE.BREAKFAST.prepareAt, cutoffAt: m.breakfastCutoffAt || MEAL_SCHEDULE.BREAKFAST.cutoffAt },
     LUNCH: { prepareAt: m.lunchPrepareAt, cutoffAt: m.lunchCutoffAt },
     DINNER: { prepareAt: m.dinnerPrepareAt, cutoffAt: m.dinnerCutoffAt },
   };

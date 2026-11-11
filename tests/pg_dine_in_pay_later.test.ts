@@ -97,7 +97,7 @@ async function main() {
   assert(isPastCutoff("2041-06-09", "LUNCH", at(9)) === true, "A day that has passed still needs a Manager override");
 
   console.log("\n--- 6. Meal by time of day ---");
-  assert(businessMeal(at(11)) === "LUNCH" && businessMeal(at(15)) === "LUNCH" && businessMeal(at(16)) === "DINNER" && businessMeal(at(20)) === "DINNER", "Lunch until 4 pm, dinner from 4 pm (India time)");
+  assert(businessMeal(at(8)) === "BREAKFAST" && businessMeal(at(11)) === "LUNCH" && businessMeal(at(15)) === "LUNCH" && businessMeal(at(16)) === "DINNER" && businessMeal(at(20)) === "DINNER", "Breakfast until 11 am, lunch until 4 pm, dinner from 4 pm (India time)");
 
   console.log("\n--- 7. Repeat: only the most recent order ---");
   const rc: any = await createTiffinCustomer(manager, { fullName: `Repeat ${rnd()}`, phone: phone(), deliveryAddress: "Repeat Lane 1" } as any, IP, db);

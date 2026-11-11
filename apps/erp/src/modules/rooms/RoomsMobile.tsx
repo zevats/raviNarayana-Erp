@@ -83,6 +83,7 @@ export function RoomsMobile<R extends MobileRoom>({
   onCheckOut: (o: Occupant, r: R) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [floorsOpen, setFloorsOpen] = useState(false);
   const open = openId ? rooms.find((r) => r.id === openId) ?? null : null;
   const act = (fn: () => void) => {
     setOpenId(null);
@@ -117,15 +118,24 @@ export function RoomsMobile<R extends MobileRoom>({
           { value: "OCCUPIED", label: "Occupied" },
         ]}
       />
-      {floors.length > 1 && (
-        <MChips
-          label="Floor"
-          value={floor}
-          onChange={setFloor}
-          options={[{ value: "ALL", label: "All floors" }, ...floors.map((f) => ({ value: String(f), label: floorLabel(f) }))]}
-        />
-      )}
-      <MSearch value={search} onChange={setSearch} placeholder="Search room or resident" />
+      <MSearch value={search} onChange={setSearch} placeholder="Search room or resident" onFilter={floors.length > 1 ? () => setFloorsOpen(true) : undefined} filterCount={floor !== "ALL" ? 1 : 0} />
+      <MSheet
+        open={floorsOpen}
+        onClose={() => setFloorsOpen(false)}
+        title="Floor"
+        footer={
+          <>
+            <MButton kind="soft" onClick={() => setFloor("ALL")}>
+              All floors
+            </MButton>
+            <MButton kind="primary" onClick={() => setFloorsOpen(false)}>
+              Show {rooms.length}
+            </MButton>
+          </>
+        }
+      >
+        <MChips label="Floor" value={floor} onChange={setFloor} options={[{ value: "ALL", label: "All floors" }, ...floors.map((f) => ({ value: String(f), label: floorLabel(f) }))]} />
+      </MSheet>
 
       {loading ? (
         <MSkeletonRows rows={6} />

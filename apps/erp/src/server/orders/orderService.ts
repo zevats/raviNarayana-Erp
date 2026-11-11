@@ -162,7 +162,8 @@ export async function planAllowance(db: AsyncDb, subscriptionId: string, custome
   if (serviceDate < s.start_date || (s.end_date && serviceDate > s.end_date)) return { included: 0, reason: "The plan does not cover this date, so every thali is charged." };
   if (s.pause_start_date && serviceDate >= s.pause_start_date && (!s.pause_resume_date || serviceDate < s.pause_resume_date)) return { included: 0, reason: "The plan is paused on this date." };
   const anyMeal = s.meal_types === "ANY";
-  const covers = anyMeal || s.meal_types === "BOTH" || s.meal_types === mealType;
+  // A 2-meal plan is lunch and dinner; an any-meal plan covers breakfast too.
+  const covers = anyMeal || (s.meal_types === "BOTH" && mealType !== "BREAKFAST") || s.meal_types === mealType;
   if (!covers) return { included: 0, reason: `The plan does not include ${String(mealType).toLowerCase()}.` };
   // Thalis of the plan already taken as orders: per meal, or per day for an any-meal plan.
   const used = await db.queryOne<{ n: number | string | null }>(
@@ -420,8 +421,8 @@ export async function createUnifiedOrder(
   if (!serviceDate || !DATE_REGEX.test(serviceDate)) {
     throw new Error("Valid service date in YYYY-MM-DD format is required.");
   }
-  if (!["LUNCH", "DINNER"].includes(mealType)) {
-    throw new Error(mealType === "BREAKFAST" ? "Breakfast is not offered. Choose lunch or dinner." : `Invalid meal type '${mealType}'. Choose lunch or dinner.`);
+  if (!["BREAKFAST", "LUNCH", "DINNER"].includes(mealType)) {
+    throw new Error(`Invalid meal type '${mealType}'. Choose breakfast, lunch or dinner.`);
   }
 
   const db = asyncDb || getAsyncDb();

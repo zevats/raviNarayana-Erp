@@ -30,6 +30,7 @@ import { CustomerModal } from "./modals/CustomerModal";
 import { CustomerDetailModal } from "./modals/CustomerDetailModal";
 import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
+import { MButton, MChips, MEmpty, MGroup, MHero, MMore, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 
 const ITEMS_PER_PAGE = 10;
 
@@ -48,6 +49,9 @@ export function TiffinCustomerDirectory() {
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [currentPage, setCurrentPage] = useState(1);
+  const phone = useIsPhone();
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [shownMobile, setShownMobile] = useState(40);
 
   // Modal states
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
@@ -119,7 +123,7 @@ export function TiffinCustomerDirectory() {
         }
       }
       return true;
-    });
+    }).sort((a, b) => (b.balance?.due ?? 0) - (a.balance?.due ?? 0) || a.fullName.localeCompare(b.fullName));
   }, [customers, typeFilter, statusFilter, searchQuery]);
 
   // Pagination
@@ -245,6 +249,81 @@ export function TiffinCustomerDirectory() {
 
   return (
     <div className="space-y-4">
+      <PhoneOrDesktop
+        phone={phone}
+        mobile={
+          <MStack>
+            {feedback && (
+              <MNotice tone={feedback.type === "success" ? "green" : "red"} onClose={() => setFeedback(null)}>
+                {feedback.message}
+              </MNotice>
+            )}
+            <MHero
+              label="Customers owe"
+              value={formatINR(customers.reduce((n, c) => n + Math.max(0, c.balance?.due ?? 0), 0))}
+              action={
+                <button type="button" onClick={handleOpenAdd} className="m-hero-btn m-press">
+                  <Plus className="w-4 h-4" /> Customer
+                </button>
+              }
+              items={[
+                { label: "Owing", value: customers.filter((c) => (c.balance?.due ?? 0) > 0).length },
+                { label: "Active", value: customers.filter((c) => c.status === "ACTIVE").length, onClick: () => setStatusFilter("ACTIVE") },
+              ]}
+            />
+            <MSearch value={searchQuery} onChange={setSearchQuery} placeholder="Search name, phone or address" onFilter={() => setFiltersOpen(true)} filterCount={(typeFilter !== "ALL" ? 1 : 0) + (statusFilter !== "ALL" ? 1 : 0)} />
+            {isLoading ? (
+              <MSkeletonRows rows={6} />
+            ) : customersError ? (
+              <MEmpty title="Could not load customers">
+                <MButton kind="soft" onClick={() => refetch()}>Try again</MButton>
+              </MEmpty>
+            ) : filteredCustomers.length === 0 ? (
+              <MEmpty title={searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL" ? "No customers match" : "No customers yet"} />
+            ) : (
+              <>
+                <MGroup>
+                  {filteredCustomers.slice(0, shownMobile).map((c) => {
+                    const due = c.balance?.due ?? 0;
+                    return (
+                      <MRow
+                        key={c.id}
+                        avatar={initialsOf(c.fullName)}
+                        tone={c.status !== "ACTIVE" ? "neutral" : due > 0 ? "orange" : "accent"}
+                        title={c.fullName}
+                        sub={[c.customerCode, c.phone, c.status !== "ACTIVE" ? "inactive" : ""].filter(Boolean).join(" · ")}
+                        right={due > 0 ? formatINR(due) : due < 0 ? formatINR(due) : undefined}
+                        rightTone={due > 0 ? "red" : due < 0 ? "green" : undefined}
+                        rightSub={due > 0 ? `${c.balance?.unpaidOrders ? `${c.balance.unpaidOrders} unpaid` : "due"}` : due < 0 ? "advance" : "settled"}
+                        onClick={() => handleViewDetail(c)}
+                        chevron={false}
+                      />
+                    );
+                  })}
+                </MGroup>
+                <MMore shown={shownMobile} total={filteredCustomers.length} onMore={() => setShownMobile((n) => n + 40)} step={40} />
+              </>
+            )}
+            <MSheet
+              open={filtersOpen}
+              onClose={() => setFiltersOpen(false)}
+              title="Filters"
+              footer={
+                <>
+                  <MButton kind="soft" onClick={() => { setTypeFilter("ALL"); setStatusFilter("ALL"); }}>Clear</MButton>
+                  <MButton kind="primary" onClick={() => setFiltersOpen(false)}>Show {filteredCustomers.length}</MButton>
+                </>
+              }
+            >
+              <p className="m-sheet-label">Kind</p>
+              <MChips label="Kind" value={typeFilter} onChange={setTypeFilter} options={[{ value: "ALL", label: "All" }, { value: "INDIVIDUAL", label: "Individual" }, { value: "CORPORATE", label: "Corporate" }, { value: "RESIDENTIAL_PG", label: "PG resident" }]} />
+              <p className="m-sheet-label">Status</p>
+              <MChips label="Status" value={statusFilter} onChange={setStatusFilter} options={[{ value: "ALL", label: "All" }, { value: "ACTIVE", label: "Active" }, { value: "INACTIVE", label: "Inactive" }]} />
+            </MSheet>
+          </MStack>
+        }
+        desktop={
+          <div className="space-y-4">
       {/* Feedback banner */}
       {feedback && (
         <div
@@ -292,18 +371,7 @@ export function TiffinCustomerDirectory() {
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 shrink-0 [&>button:last-child]:flex-1 md:[&>button:last-child]:flex-none [&>button:last-child]:justify-center">
-            <button
-              onClick={() => {
-                invalidateErpCache(["tiffin_customers"]);
-                refetch();
-              }}
-              disabled={isRevalidating}
-              className="p-2 border border-[#8E9F89]/40 text-[#1A2E20] rounded-xl hover:bg-[#FAF8F5] transition-colors disabled:opacity-50"
-              title="Refresh Customer List"
-              aria-label="Refresh customer list"
-            >
-              <RefreshCw className={`w-4 h-4 ${isRevalidating ? "animate-spin" : ""}`} />
-            </button>
+
 
             <button
               onClick={handleOpenAdd}
@@ -568,6 +636,10 @@ export function TiffinCustomerDirectory() {
         )}
       </div>
 </div>
+
+          </div>
+        }
+      />
 
       {/* Status Toggle Confirmation Modal */}
       {statusTarget && (

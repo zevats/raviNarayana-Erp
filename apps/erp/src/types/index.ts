@@ -248,6 +248,8 @@ export interface ResidentListItem {
   checkInDate: string | null;
   totalStayCount?: number;
   completedStayCount?: number;
+  /** Day of the latest check-out (any stay), for "checked out in the last 30 days". */
+  lastCheckOutDate?: string | null;
   createdAt: string;
 }
 
@@ -2302,7 +2304,7 @@ export interface DeliveryManifestStatus {
 export interface DeliveryManifestRunResult {
   ran: boolean;
   /** Why an automatic run did nothing. */
-  reason?: "NOT_DUE" | "ALREADY_PREPARED";
+  reason?: "NOT_DUE" | "ALREADY_PREPARED" | "NOT_PREPARED";
   created: number;
   alreadyExisted: number;
   /** Skipped for today (subscription skip, resident opted out). */

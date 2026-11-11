@@ -174,6 +174,7 @@ export function CashbookMobile({
   const period: Period =
     startDate === firstOfMonth && endDate === today ? "MONTH" : startDate === thirty && endDate === today ? "30" : startDate === "2026-01-01" && endDate === today ? "ALL" : "CUSTOM";
   const [datesOpen, setDatesOpen] = useState(false);
+  const [periodOpen, setPeriodOpen] = useState(false);
   const [from, setFrom] = useState(startDate);
   const [to, setTo] = useState(endDate);
   const choosePeriod = (p: Period) => {
@@ -231,20 +232,13 @@ export function CashbookMobile({
 
   return (
     <MStack>
-      <MSegment
-        label="Period"
-        value={period}
-        onChange={choosePeriod}
-        options={[
-          { value: "MONTH", label: "Month" },
-          { value: "30", label: "30 days" },
-          { value: "ALL", label: "All" },
-          { value: "CUSTOM", label: period === "CUSTOM" ? "Dates ✓" : "Dates" },
-        ]}
-      />
-
       <MHero
         label={<>Net cash · {periodName}</>}
+        action={
+          <button type="button" onClick={() => setPeriodOpen(true)} aria-label="Choose the period" className="m-hero-icon m-press">
+            <CalendarDays className="w-[18px] h-[18px]" />
+          </button>
+        }
         value={figure(net, net !== 0)}
         items={[
           { label: "Money in", value: figure(moneyIn) },
@@ -473,6 +467,31 @@ export function CashbookMobile({
         </MGroup>
       </MSheet>
 
+      {/* Period */}
+      <MSheet open={periodOpen} onClose={() => setPeriodOpen(false)} title="Period">
+        <MGroup>
+          {([
+            ["MONTH", "This month"],
+            ["30", "Last 30 days"],
+            ["ALL", "All time"],
+            ["CUSTOM", "Choose dates"],
+          ] as Array<[Period, string]>).map(([p, label]) => (
+            <MRow
+              key={p}
+              icon={CalendarDays}
+              tone={period === p ? "accent" : "neutral"}
+              title={label}
+              rightSub={period === p ? "Showing" : undefined}
+              chevron={false}
+              onClick={() => {
+                setPeriodOpen(false);
+                choosePeriod(p);
+              }}
+            />
+          ))}
+        </MGroup>
+      </MSheet>
+
       {/* Own dates */}
       <MSheet
         open={datesOpen}
@@ -569,7 +588,7 @@ export function ReceivablesMobile({ initialReviewOnly = false }: { initialReview
   const list = useErpQuery<RecList>(url, () => getJson<RecList>(url), { tags: ["finance", "receivables", "delivery", "tiffin"], ttl: 15000 });
   const d = list.data;
   const s = d?.summary;
-  const filterCount = [status !== "ALL", reviewOnly, Boolean(from || to)].filter(Boolean).length;
+  const filterCount = [status !== "ALL", reviewOnly].filter(Boolean).length;
   const clear = () => {
     setSource("ALL");
     setBucket("ALL");
@@ -610,18 +629,6 @@ export function ReceivablesMobile({ initialReviewOnly = false }: { initialReview
           { value: "PG", label: "PG" },
           { value: "TIFFIN", label: "Tiffin" },
           { value: "DELIVERY", label: "Delivery" },
-        ]}
-      />
-      <MSegment
-        label="Owed for"
-        value={bucket}
-        onChange={setBucket}
-        options={[
-          { value: "ALL", label: "Any" },
-          { value: "0_7", label: "0–7" },
-          { value: "8_30", label: "8–30" },
-          { value: "31_60", label: "31–60" },
-          { value: "61_PLUS", label: "60+" },
         ]}
       />
       <MSearch value={search} onChange={setSearch} placeholder="Search name, phone or room" onFilter={() => setFiltersOpen(true)} filterCount={filterCount} />
@@ -689,11 +696,6 @@ export function ReceivablesMobile({ initialReviewOnly = false }: { initialReview
         <MChips label="Payment" value={status} onChange={setStatus} options={[{ value: "ALL", label: "All" }, { value: "UNPAID", label: "Unpaid" }, { value: "PARTIALLY_PAID", label: "Partly paid" }]} />
         <p className="m-sheet-label">Unpaid deliveries</p>
         <MChips label="Unpaid deliveries" value={reviewOnly ? "YES" : "NO"} onChange={(v) => setReviewOnly(v === "YES")} options={[{ value: "NO", label: "All" }, { value: "YES", label: "Only to review" }]} />
-        <p className="m-sheet-label">Owed since</p>
-        <div className="grid grid-cols-2 gap-2.5">
-          <input type="date" className="m-input" aria-label="From" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
-          <input type="date" className="m-input" aria-label="To" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
-        </div>
       </MSheet>
 
       <AccountSheet accountKey={open} onClose={() => setOpen(null)} />

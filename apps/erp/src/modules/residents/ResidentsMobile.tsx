@@ -10,7 +10,7 @@ import { ArrowRightLeft, BedDouble, DoorOpen, History, LogOut, Phone, Plus, User
 import type { ResidentListItem } from "@/types";
 import { MButton, MEmpty, MField, MGroup, MHero, MNotice, MPill, MQuick, MRow, MSearch, MSegment, MSheet, MSkeletonRows, MStack, initials } from "@/components/app/m";
 
-type Status = "ALL" | "ACTIVE" | "CHECKED_OUT" | "UNASSIGNED";
+type Status = "ALL" | "ACTIVE" | "CHECKED_OUT";
 
 export function ResidentsMobile({
   residents,
@@ -35,7 +35,7 @@ export function ResidentsMobile({
   residents: ResidentListItem[];
   allCount: number;
   loading: boolean;
-  stats: { total: number; active: number; checkedOutCount: number; unassignedCount: number };
+  stats: { total: number; active: number; checkedOutCount: number };
   search: string;
   setSearch: (v: string) => void;
   status: Status;
@@ -76,9 +76,8 @@ export function ResidentsMobile({
         label="In house"
         value={loading ? "—" : stats.active}
         items={[
-          { label: "Registered", value: stats.total, onClick: () => setStatus("ALL") },
-          { label: "Checked out", value: stats.checkedOutCount, onClick: () => setStatus("CHECKED_OUT") },
-          { label: "No room yet", value: stats.unassignedCount, onClick: () => setStatus("UNASSIGNED") },
+          { label: "Checked out · 30 days", value: stats.checkedOutCount, onClick: () => setStatus("CHECKED_OUT") },
+          { label: "Listed", value: stats.total, onClick: () => setStatus("ALL") },
         ]}
       />
 
@@ -88,8 +87,7 @@ export function ResidentsMobile({
         onChange={setStatus}
         options={[
           { value: "ACTIVE", label: "In house" },
-          { value: "CHECKED_OUT", label: "Left" },
-          { value: "UNASSIGNED", label: "No room" },
+          { value: "CHECKED_OUT", label: "Checked out" },
           { value: "ALL", label: "All" },
         ]}
       />
@@ -114,10 +112,10 @@ export function ResidentsMobile({
               <MRow
                 key={r.id}
                 avatar={initials(r.fullName)}
-                tone={here ? "accent" : left ? "neutral" : "amber"}
+                tone={here ? "accent" : "neutral"}
                 title={r.fullName}
                 sub={here ? [`Room ${r.currentRoomNumber}`, r.checkInDate ? `since ${r.checkInDate}` : ""].filter(Boolean).join(" · ") : r.phone}
-                rightSub={here ? undefined : left ? "Left" : "No room"}
+                rightSub={here ? undefined : r.lastCheckOutDate ? `Left ${r.lastCheckOutDate.slice(8, 10)}/${r.lastCheckOutDate.slice(5, 7)}` : "Left"}
                 onClick={() => setOpenId(r.id)}
               />
             );
@@ -147,7 +145,7 @@ export function ResidentsMobile({
           <>
             <div className="m-card py-1">
               <MField label="Status">
-                <MPill tone={inHouse(open) ? "green" : (open.totalStayCount ?? 0) > 0 ? "neutral" : "amber"}>{inHouse(open) ? "In house" : (open.totalStayCount ?? 0) > 0 ? "Checked out" : "No room yet"}</MPill>
+                <MPill tone={inHouse(open) ? "green" : "neutral"}>{inHouse(open) ? "In house" : "Checked out"}</MPill>
               </MField>
               {inHouse(open) && <MField label="Room">{`${open.currentRoomNumber} · ${floorLabel(open.currentFloor)}`}</MField>}
               {inHouse(open) && open.checkInDate && <MField label="Since">{open.checkInDate}</MField>}

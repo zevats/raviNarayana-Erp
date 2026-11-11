@@ -36,9 +36,10 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [filter, setFilter] = useState<Filter>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const other: MealType = meal === "LUNCH" ? "DINNER" : "LUNCH";
-  const q = useDeliveryTasks(date, meal);
-  const otherQ = useDeliveryTasks(date, other);
+  const bq = useDeliveryTasks(date, "BREAKFAST");
+  const lq = useDeliveryTasks(date, "LUNCH");
+  const dq = useDeliveryTasks(date, "DINNER");
+  const q = meal === "BREAKFAST" ? bq : meal === "LUNCH" ? lq : dq;
   const all = useMemo(() => (q.data ?? []).filter((t) => t.status !== "CANCELLED"), [q.data]);
   const numbers = useMemo(() => stopNumbers(all), [all]);
   const isRecorded = (t: DeliveryTask) => ["DELIVERED", "PARTIAL", "NOT_DELIVERED"].includes(deliveryOutcome(t));
@@ -58,7 +59,7 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
 
       {/* One row: meal first, then the day (custom calendar), then what to show (custom menu). */}
       <div className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex">
-        <MealToggle compact stretch value={meal} onChange={setMeal} counts={{ [meal]: countOf(q.data), [other]: countOf(otherQ.data) }} />
+        <MealToggle compact stretch value={meal} onChange={setMeal} counts={{ BREAKFAST: countOf(bq.data), LUNCH: countOf(lq.data), DINNER: countOf(dq.data) }} />
         <DayPicker value={date} today={today} onChange={setDate} />
         <OptionMenu
           label="Show"
@@ -93,7 +94,7 @@ export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
               {visible.length === 0 ? (
                 <EmptyState
                   title={recorded.length === 0 ? "No deliveries yet" : "None in this filter"}
-                  detail={`${meal === "LUNCH" ? "Lunch" : "Dinner"} · ${date === today ? "Today" : new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`))}`}
+                  detail={`${meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner"} · ${date === today ? "Today" : new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`))}`}
                 />
               ) : (
                 <ul className="space-y-3">

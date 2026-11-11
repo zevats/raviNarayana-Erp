@@ -9,7 +9,7 @@ import { BikeLoader } from "@/components/feedback/BikeLoader";
 interface SettingsPayload {
   settings: {
     business: { name: string; phone: string; email: string; address: string; websiteUrl: string };
-    meals: { lunchPrepareAt: string; lunchCutoffAt: string; dinnerPrepareAt: string; dinnerCutoffAt: string };
+    meals: { breakfastPrepareAt: string; breakfastCutoffAt: string; lunchPrepareAt: string; lunchCutoffAt: string; dinnerPrepareAt: string; dinnerCutoffAt: string };
     delivery: { defaultDriverId: string | null };
     finance: { rentDueDay: number | null };
     notifications: { subscriptionExpiry: boolean; pendingHandover: boolean; closingReminder: boolean };
@@ -151,8 +151,10 @@ export function SettingsView() {
       </Card>
 
       <Card icon={Clock} title="Meal times" changed={lastChanged.meals}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {([
+            ["breakfastPrepareAt", "Breakfast list at"],
+            ["breakfastCutoffAt", "Breakfast cutoff"],
             ["lunchPrepareAt", "Lunch list at"],
             ["lunchCutoffAt", "Lunch cutoff"],
             ["dinnerPrepareAt", "Dinner list at"],

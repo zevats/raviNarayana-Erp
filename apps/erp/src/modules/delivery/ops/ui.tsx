@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { DeliveryTask, MealType } from "@/types";
 import { addBusinessDays } from "@/lib/businessDate";
+import { MSegment } from "@/components/app/m";
 import { DeliveryOutcome, OUTCOME_LABEL, deliveryOutcome } from "@/lib/delivery/outcome";
 
 /* Brand tokens only (tailwind theme from @ravinarayan/brand): forest, sage, brass, surface, status. */
@@ -51,38 +52,26 @@ export function OutcomeBadge({ task, outcome }: { task?: DeliveryTask; outcome?:
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-medium whitespace-nowrap ${OUTCOME_TONE[o]}`}>{OUTCOME_LABEL[o]}</span>;
 }
 
-export function MealSwitch({ value, onChange }: { value: MealType; onChange: (m: MealType) => void }) {
+/** Meal switch (Owner/Manager delivery page): the app's pill switch, round inside and out. */
+export function MealSwitch({ value, onChange, meals = ["LUNCH", "DINNER"] }: { value: MealType; onChange: (m: MealType) => void; meals?: MealType[] }) {
   return (
-    <div role="radiogroup" aria-label="Meal" className="inline-flex p-1 rounded-2xl bg-white border border-surface-subtle">
-      {(["LUNCH", "DINNER"] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          role="radio"
-          aria-checked={value === m}
-          onClick={() => onChange(m)}
-          className={`rn-press min-h-[40px] px-4 rounded-xl text-sm font-serif tracking-wide ${
-            value === m ? "bg-forest-deepest text-text-light shadow-sm" : "text-forest hover:text-forest-deepest"
-          }`}
-        >
-          {m === "LUNCH" ? "Lunch" : "Dinner"}
-        </button>
-      ))}
+    <div className="min-w-0" style={{ width: `${meals.length * 92 + 8}px`, maxWidth: "100%" }}>
+      <MSegment label="Meal" value={value} onChange={onChange} options={meals.map((m) => ({ value: m, label: m === "BREAKFAST" ? "Breakfast" : m === "LUNCH" ? "Lunch" : "Dinner" }))} />
     </div>
   );
 }
 
 export function DateStepper({ value, today, onChange }: { value: string; today: string; onChange: (d: string) => void }) {
   return (
-    <div className="inline-flex items-center rounded-2xl bg-white border border-surface-subtle">
-      <button type="button" aria-label="Previous day" onClick={() => onChange(addBusinessDays(value, -1))} className="rn-press w-10 h-10 flex items-center justify-center text-forest rounded-l-2xl hover:bg-surface-canvas">
+    <div className="inline-flex items-center h-[46px] p-1 rounded-full bg-white border border-[#E5E0D5]">
+      <button type="button" aria-label="Previous day" onClick={() => onChange(addBusinessDays(value, -1))} className="rn-press w-9 h-9 flex items-center justify-center text-forest rounded-full hover:bg-surface-canvas">
         <ChevronLeft className="w-4 h-4" />
       </button>
       <label className="relative px-1 min-w-[92px] text-center text-sm font-medium text-text-primary cursor-pointer">
         {dayLabel(value, today)}
         <input type="date" value={value} onChange={(e) => e.target.value && onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" aria-label="Choose date" />
       </label>
-      <button type="button" aria-label="Next day" onClick={() => onChange(addBusinessDays(value, 1))} className="rn-press w-10 h-10 flex items-center justify-center text-forest rounded-r-2xl hover:bg-surface-canvas">
+      <button type="button" aria-label="Next day" onClick={() => onChange(addBusinessDays(value, 1))} className="rn-press w-9 h-9 flex items-center justify-center text-forest rounded-full hover:bg-surface-canvas">
         <ChevronRight className="w-4 h-4" />
       </button>
     </div>
@@ -168,3 +157,21 @@ export const btn = {
   quiet: "rn-press inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-2xl bg-white border border-surface-subtle text-text-primary hover:bg-surface-canvas disabled:opacity-50",
   danger: "rn-press inline-flex items-center justify-center gap-2 min-h-[44px] px-4 rounded-2xl bg-white border border-status-danger-border text-status-danger-text hover:bg-status-danger-bg disabled:opacity-50",
 };
+
+/** The day on the delivery card (phones): ‹ Today › in the card's corner; tap the day to pick a date. */
+export function HeroDayStepper({ value, today, onChange }: { value: string; today: string; onChange: (d: string) => void }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-white/15 p-1">
+      <button type="button" aria-label="Previous day" onClick={() => onChange(addBusinessDays(value, -1))} className="m-press grid place-items-center w-8 h-8 rounded-full text-white">
+        <ChevronLeft className="w-4 h-4" />
+      </button>
+      <label className="relative px-1 min-w-[70px] text-center text-[13px] font-semibold text-white cursor-pointer">
+        {dayLabel(value, today)}
+        <input type="date" value={value} onChange={(e) => e.target.value && onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" aria-label="Choose date" />
+      </label>
+      <button type="button" aria-label="Next day" onClick={() => onChange(addBusinessDays(value, 1))} className="m-press grid place-items-center w-8 h-8 rounded-full text-white">
+        <ChevronRight className="w-4 h-4" />
+      </button>
+    </span>
+  );
+}

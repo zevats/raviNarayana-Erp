@@ -9,6 +9,8 @@ import { businessToday, businessMonthStart } from "@/lib/businessDate";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { Segmented, SearchField, EmptyState } from "@/components/ui/kit";
 import { formatNumberIN } from "@/lib/format";
+import { MSkeletonRows, useIsPhone } from "@/components/app/m";
+import { ReportsMobile } from "./ReportsMobile";
 
 interface ReportInfo { key: string; title: string; description: string; divisions: boolean }
 interface Column { key: string; label: string; type: "text" | "date" | "money" | "number" | "percent" }
@@ -44,6 +46,7 @@ export function ReportsView() {
   // One request once typing pauses, not one per keystroke.
   const searchTerm = useDebouncedValue(search.trim());
   const [page, setPage] = useState(0);
+  const phone = useIsPhone();
 
   useEffect(() => {
     const k = new URLSearchParams(window.location.search).get("report");
@@ -81,7 +84,31 @@ export function ReportsView() {
   }, [params]);
   const reset = () => setPage(0);
 
-  if (list.isLoading && !list.data) return <div className="py-16 flex justify-center"><BikeLoader label="Loading reports" /></div>;
+  if (list.isLoading && !list.data) return phone ? <MSkeletonRows rows={6} /> : <div className="py-16 flex justify-center"><BikeLoader label="Loading reports" /></div>;
+
+  const mobile = (
+    <ReportsMobile
+      reports={reports}
+      current={info}
+      onPick={(k) => { setKey(k); reset(); }}
+      report={r}
+      loading={q.isLoading}
+      error={q.error ? q.error.message : null}
+      from={from}
+      to={to}
+      setRange={(a, b) => { setFrom(a); setTo(b); reset(); }}
+      division={division}
+      setDivision={(d) => { setDivision(d); reset(); }}
+      search={search}
+      setSearch={(v) => { setSearch(v); reset(); }}
+      csvUrl={csvUrl}
+      page={page}
+      pageSize={PAGE}
+      setPage={setPage}
+      fmt={fmt}
+    />
+  );
+  if (phone) return mobile;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">

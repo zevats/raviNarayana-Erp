@@ -102,7 +102,7 @@ export default function ResidentsPage() {
   const error = errorOverride || (residentsQueryError ? residentsQueryError.message : null);
   const [search, setSearch] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<
-    "ALL" | "ACTIVE" | "CHECKED_OUT" | "UNASSIGNED"
+    "ALL" | "ACTIVE" | "CHECKED_OUT"
   >("ALL");
 
   // Notifications
@@ -200,54 +200,41 @@ export default function ResidentsPage() {
   // ---------------------------------------------------------------------------
   // Computed KPI Metrics (Accurate, Distinct Database Definitions)
   // ---------------------------------------------------------------------------
+  // Residents shown: everyone in house, and those who checked out in the last 30 days. People who
+  // were registered but never given a room are not listed (Check in still finds them).
+  const cutoff30 = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const isInHouse = (r: ResidentListItem) => r.status === "ACTIVE" && Boolean(r.currentRoomNumber);
+  const isRecentlyOut = (r: ResidentListItem) => !isInHouse(r) && (r.totalStayCount ?? 0) > 0 && Boolean(r.lastCheckOutDate) && String(r.lastCheckOutDate) >= cutoff30;
   const stats = useMemo(() => {
-    const total = residents.length;
-    // In-house: distinct residents with active room assignment
-    const active = residents.filter(
-      (r) => r.status === "ACTIVE" && Boolean(r.currentRoomNumber)
-    ).length;
-    // Checked out: unassigned residents with at least 1 completed stay
-    const checkedOutCount = residents.filter(
-      (r) =>
-        (!r.currentRoomNumber || r.status === "CHECKED_OUT") &&
-        (r.totalStayCount ?? 0) > 0
-    ).length;
-    // Never assigned / pending: unassigned residents with 0 stays
-    const unassignedCount = residents.filter(
-      (r) =>
-        !r.currentRoomNumber &&
-        (r.totalStayCount ?? 0) === 0
-    ).length;
-
-    const checkedOutTotal = total - active;
-    return { total, active, checkedOutTotal, checkedOutCount, unassignedCount };
-  }, [residents]);
+    const active = residents.filter(isInHouse).length;
+    const checkedOutCount = residents.filter(isRecentlyOut).length;
+    return { total: active + checkedOutCount, active, checkedOutCount };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [residents, cutoff30]);
 
   // ---------------------------------------------------------------------------
   // Filtered Residents List
   // ---------------------------------------------------------------------------
   const phone = useIsPhone();
   const filteredResidents = useMemo(() => {
+    const term = search.trim().toLowerCase();
     return residents.filter((r) => {
-      const term = search.trim().toLowerCase();
+      const inHouse = isInHouse(r);
+      const out = isRecentlyOut(r);
+      if (!inHouse && !out) return false;
       const matchesSearch =
         term === "" ||
         r.fullName.toLowerCase().includes(term) ||
         r.phone.includes(term) ||
         (r.currentRoomNumber && r.currentRoomNumber.toLowerCase().includes(term));
-
-      const isInHouse = r.status === "ACTIVE" && Boolean(r.currentRoomNumber);
-      const isCheckedOut = !isInHouse && (r.totalStayCount ?? 0) > 0;
-      const isUnassigned = !isInHouse && (r.totalStayCount ?? 0) === 0;
-
-      const matchesStatus =
-        selectedStatus === "ALL" ||
-        (selectedStatus === "ACTIVE" && isInHouse) ||
-        (selectedStatus === "CHECKED_OUT" && isCheckedOut) ||
-        (selectedStatus === "UNASSIGNED" && isUnassigned);
-
+      const matchesStatus = selectedStatus === "ALL" || (selectedStatus === "ACTIVE" && inHouse) || (selectedStatus === "CHECKED_OUT" && out);
       return matchesSearch && matchesStatus;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [residents, search, selectedStatus]);
 
   // Available rooms with vacant capacity
@@ -801,9 +788,8 @@ export default function ResidentsPage() {
       <StatStrip
         items={[
           { label: "In house", value: stats.active, tone: "good" },
-          { label: "Registered", value: stats.total },
-          { label: "Checked out", value: stats.checkedOutCount },
-          { label: "Not assigned", value: stats.unassignedCount, tone: stats.unassignedCount > 0 ? "warn" : "default" },
+          { label: "Checked out", value: stats.checkedOutCount, note: "last 30 days" },
+          { label: "Listed", value: stats.total },
         ]}
       />
 
@@ -815,9 +801,8 @@ export default function ResidentsPage() {
               <option value="ALL">All residents</option>
               <option value="ACTIVE">In house</option>
               <option value="CHECKED_OUT">Checked out</option>
-              <option value="UNASSIGNED">Not assigned</option>
             </AppSelect>
-            <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length}/{residents.length}</span>
+            <span className="text-[12.5px] text-[var(--rn-ink-3)] tabular-nums whitespace-nowrap">{filteredResidents.length}/{stats.total}</span>
           </div>
         </div>
       {loading ? (

@@ -109,20 +109,23 @@ export function OrdersMobile({
               { label: "To collect", value: formatMoney(toCollect) },
             ]}
           />
-          <label className="m-search !pl-3.5 !pr-2">
-            <CalendarDays className="w-[18px] h-[18px] shrink-0 text-[#7C877F]" aria-hidden />
-            <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Day" />
-          </label>
-          <MSegment
-              label="Order type"
-              value={orderType}
-              onChange={setOrderType}
-              options={[
-                { value: "ALL", label: "All" },
-                { value: "DELIVERY", label: "Delivery" },
-                { value: "DINE_IN", label: "Dine in" },
-              ]}
-            />
+          <div className="flex items-center gap-2.5 min-w-0">
+            <label className="m-search m-date-pill">
+              <input type="date" value={serviceDate} onChange={(e) => setServiceDate(e.target.value)} aria-label="Day" />
+            </label>
+            <div className="flex-1 min-w-0">
+              <MSegment
+                label="Order type"
+                value={orderType}
+                onChange={setOrderType}
+                options={[
+                  { value: "ALL", label: "All" },
+                  { value: "DELIVERY", label: "Delivery" },
+                  { value: "DINE_IN", label: "Dine in" },
+                ]}
+              />
+            </div>
+          </div>
           {status !== "ALL" && (
             <div className="m-chips">
               <button type="button" role="radio" aria-checked="true" onClick={() => setStatus("ALL")} className="m-chip m-press">

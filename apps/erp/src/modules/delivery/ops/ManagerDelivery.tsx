@@ -1,21 +1,19 @@
 "use client";
 
-import { RoomMeals } from "./RoomMeals";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Search, ClipboardList, RefreshCw, AlertTriangle, Download, LayoutList, Wallet, History as HistoryIcon, DoorOpen } from "lucide-react";
-import { MHero, MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { MButton, MChips, MHero, MNotice, MSearch, MSegment, MSheet, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import type { AuthenticatedUser, DeliveryTask, MealType } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
 import { summarizeDeliveries, deliveryOutcome, needsFollowUp, DeliveryOutcome, DISPOSITION_LABEL, undeliveredOf, OUTCOME_LABEL } from "@/lib/delivery/outcome";
 import { CustodyPanel } from "../components/CustodyPanel";
 import { useDeliveryTasks, useManifest, useDeliveryStaff, postJson, StaffOption } from "./data";
-import { MealSwitch, DateStepper, OutcomeBadge, Notice, Count, btn, rupees, timeOf, displayName, placeLine, itemSummary } from "./ui";
+import { MealSwitch, DateStepper, HeroDayStepper, OutcomeBadge, Notice, Count, btn, rupees, timeOf, displayName, placeLine, itemSummary } from "./ui";
 import { TaskPanel } from "./TaskPanel";
 import { DeliverySheet } from "./DeliverySheet";
 import { HistoryView } from "./HistoryView";
-import { exportDeliveryDay } from "./exportDay";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
@@ -67,6 +65,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [filter, setFilter] = useState<DeliveryOutcome | "ALL">("ALL");
   const phone = useIsPhone();
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
   // Person filter: "" = everyone, "__none" = unassigned, else a staff id.
   const [person, setPerson] = useState("");
@@ -205,6 +204,33 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
     }
   };
 
+  // The prepared list keeps itself current: new subscriptions and room meals since it was prepared
+  // are added on open and every few minutes (only what is new; nothing is recorded when nothing was
+  // added). Orders add their own stops when they are taken.
+  const preparedNow = Boolean(m?.prepared);
+  useEffect(() => {
+    if (readOnly || !preparedNow) return;
+    let stopped = false;
+    const run = async () => {
+      if (stopped || document.visibilityState !== "visible") return;
+      try {
+        const r = await postJson<any>("/api/delivery/manifest", { serviceDate: date, mealType: meal, trigger: "TOPUP" });
+        if (!stopped && r?.created > 0) {
+          invalidateErpCache(["delivery"]);
+          setNotice({ tone: "ok", text: `${r.created} new stop${r.created === 1 ? "" : "s"} added to the list.` });
+        }
+      } catch {
+        // The next run tries again.
+      }
+    };
+    void run();
+    const timer = window.setInterval(run, 4 * 60 * 1000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [readOnly, preparedNow, date, meal]);
+
   const bulkAssign = async () => {
     if (!bulkStaff || selected.size === 0) return;
     try {
@@ -246,13 +272,19 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         phone={phone}
         mobile={
           <div className="m-stack">
-            <div className="flex items-center justify-between gap-2.5 flex-wrap">
-              <MealSwitch value={meal} onChange={setMeal} />
-              <DateStepper value={date} today={today} onChange={setDate} />
-            </div>
+            <MSegment
+              label="Meal"
+              value={meal}
+              onChange={setMeal}
+              options={[
+                { value: "BREAKFAST", label: "Breakfast" },
+                { value: "LUNCH", label: "Lunch" },
+                { value: "DINNER", label: "Dinner" },
+              ]}
+            />
             <MHero
               tone="orange"
-              label={<>Delivered · {meal === "LUNCH" ? "Lunch" : "Dinner"}</>}
+              label={<>Delivered · {meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner"}</>}
               value={`${summary.delivered}/${summary.waiting + summary.out + summary.delivered + summary.partial + summary.notDelivered}`}
               note={
                 !m
@@ -267,13 +299,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                     : `List prepares after ${m.prepareAt}`
                   : "List not prepared yet"
               }
-              action={
-                !readOnly && m?.schemaReady ? (
-                  <button type="button" onClick={prepare} disabled={preparing} className="m-hero-btn m-press">
-                    <RefreshCw className={`w-3.5 h-3.5 ${preparing ? "animate-spin" : ""}`} /> {m.prepared ? "Update" : "Prepare"}
-                  </button>
-                ) : undefined
-              }
+              action={<HeroDayStepper value={date} today={today} onChange={setDate} />}
               items={[
                 { label: "Waiting", value: summary.waiting, onClick: () => { setTab("board"); setFilter(filter === "WAITING" ? "ALL" : "WAITING"); } },
                 { label: "Out now", value: summary.out, onClick: () => { setTab("board"); setFilter(filter === "OUT" ? "ALL" : "OUT"); } },
@@ -281,15 +307,19 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                 { label: "To collect", value: rupees(summary.money.outstanding) },
               ]}
             />
+            {!readOnly && m?.schemaReady && !m.prepared && !m.prepareAt && (
+              <MButton kind="primary" icon={RefreshCw} onClick={prepare} disabled={preparing} className="w-full">
+                Prepare the list
+              </MButton>
+            )}
             {m && m.prepared && m.unassignedCount > 0 && <MNotice tone="red">{m.unassignedCount} stop{m.unassignedCount === 1 ? "" : "s"} without a delivery person</MNotice>}
             {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-            <nav aria-label="Delivery sections" className="m-places" style={{ gridTemplateColumns: "repeat(5, minmax(0, 1fr))" }}>
+            <nav aria-label="Delivery sections" className="m-places" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
               {([
                 { value: "board", label: "Board", icon: LayoutList },
                 { value: "problems", label: problems.length ? `Problems ${problems.length}` : "Problems", icon: AlertTriangle },
                 { value: "custody", label: "Cash", icon: Wallet },
                 { value: "history", label: "History", icon: HistoryIcon },
-                { value: "rooms", label: "Rooms", icon: DoorOpen },
               ] as const).map((p) => {
                 const Icon = p.icon;
                 return (
@@ -309,7 +339,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         title="Delivery"
         actions={
           <>
-            <MealSwitch value={meal} onChange={setMeal} />
+            <MealSwitch value={meal} onChange={setMeal} meals={["BREAKFAST", "LUNCH", "DINNER"]} />
             <DateStepper value={date} today={today} onChange={setDate} />
           </>
         }
@@ -325,7 +355,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
               <span className="rn-t-meta">Automatic list preparation is not available until the latest database update is installed. Orders still appear below.</span>
             ) : m.prepared ? (
               <>
-                <span className="font-medium text-[var(--rn-ink)]">{meal === "LUNCH" ? "Lunch" : "Dinner"} list prepared {timeOf(m.preparedAt)}</span>
+                <span className="font-medium text-[var(--rn-ink)]">{meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner"} list prepared {timeOf(m.preparedAt)}</span>
                 <span className="rn-t-meta"> · {m.trigger === "AUTO" ? "automatically" : `by ${m.preparedByName || "—"}`}{m.lastRunAt && m.lastRunAt !== m.preparedAt ? ` · updated ${timeOf(m.lastRunAt)}` : ""} · {m.taskCount} stops</span>
                 {m.unassignedCount > 0 && <> <Badge tone="warn">{m.unassignedCount} unassigned</Badge></>}
               </>
@@ -336,10 +366,10 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
               </>
             )}
           </p>
-          {!readOnly && m?.schemaReady && (
+          {!readOnly && m?.schemaReady && !m.prepared && !m.prepareAt && (
             <button type="button" onClick={prepare} disabled={preparing} className={`rn-btn rn-btn-sm rn-refresh ${preparing ? "is-spinning" : ""}`}>
               <RefreshCw />
-              {m.prepared ? "Update list" : "Prepare list"}
+              Prepare list
             </button>
           )}
         </section>
@@ -370,7 +400,6 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           { value: "problems", label: "Problems", count: problems.length || undefined },
           { value: "custody", label: "Custody" },
           { value: "history", label: "History" },
-          { value: "rooms", label: "Room meals" },
         ]}
       />
 
@@ -378,69 +407,54 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         }
       />
 
-      {tab === "rooms" && <RoomMeals canChange={canManage} date={date} meal={meal} />}
-
       {tab === "board" && (
         <section className="rn-enter space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="relative flex-1 min-w-[200px]">
-              <Search className="pointer-events-none w-4 h-4 text-text-subdued absolute left-3 top-1/2 -translate-y-1/2" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, room, address, phone" className="w-full min-h-[44px] pl-9 pr-3 rounded-2xl border border-surface-subtle bg-white text-sm" />
-            </label>
+          <MSearch
+            value={search}
+            onChange={setSearch}
+            placeholder="Search name, room, address, phone"
+            onFilter={() => setFiltersOpen(true)}
+            filterCount={(filter !== "ALL" ? 1 : 0) + (person ? 1 : 0)}
+          />
+          <MSheet
+            open={filtersOpen}
+            onClose={() => setFiltersOpen(false)}
+            title="Filters"
+            footer={
+              <>
+                <MButton
+                  kind="soft"
+                  onClick={() => {
+                    setFilter("ALL");
+                    setPerson("");
+                  }}
+                >
+                  Clear
+                </MButton>
+                <MButton kind="primary" onClick={() => setFiltersOpen(false)}>
+                  Done
+                </MButton>
+              </>
+            }
+          >
+            <p className="m-sheet-label">Status</p>
+            <MChips
+              label="Status"
+              value={filter}
+              onChange={setFilter}
+              options={FILTERS.map((x) => ({
+                value: x,
+                label: x === "ALL" ? "All" : x === "CANCELLED" ? "Cancelled" : OUTCOME_LABEL[x],
+                count: x === "ALL" ? summary.total : x === "CANCELLED" ? summary.cancelled : undefined,
+              }))}
+            />
             {byPerson.length > 1 && (
-              <div className="min-w-[180px]">
-                <SelectMenu
-                  label="Person"
-                  tone="forest"
-                  value={person}
-                  onChange={setPerson}
-                  options={[{ value: "", label: "Everyone" }, ...byPerson.map((r) => ({ value: r.key, label: r.name }))]}
-                  triggerClassName="bg-white border border-surface-subtle text-text-primary"
-                />
-              </div>
+              <>
+                <p className="m-sheet-label">Delivery person</p>
+                <MChips label="Delivery person" value={person} onChange={setPerson} options={[{ value: "", label: "Everyone" }, ...byPerson.map((r) => ({ value: r.key, label: r.name }))]} />
+              </>
             )}
-            <div className="flex flex-wrap gap-1">
-              {FILTERS.map((f) => (
-                <button key={f} type="button" onClick={() => setFilter(f)} aria-pressed={filter === f} className={`rn-press px-3 min-h-[36px] rounded-xl text-xs border whitespace-nowrap ${filter === f ? "bg-forest-deepest text-text-light border-forest-deepest" : "bg-white text-text-secondary border-surface-subtle"}`}>
-                  {f === "ALL" ? `All · ${summary.total}` : f === "CANCELLED" ? `Cancelled · ${summary.cancelled}` : OUTCOME_LABEL[f]}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {byPerson.length > 0 && (
-            <div className="rounded-3xl border border-surface-subtle bg-white overflow-x-auto rn-mflat">
-              <table className="w-full text-sm rn-mcards">
-                <caption className="sr-only">Deliveries by person for this meal</caption>
-                <thead>
-                  <tr className="text-[11px] uppercase tracking-wide text-text-muted text-left">
-                    <th className="px-4 py-2 font-medium">Person</th>
-                    <th className="px-2 py-2 font-medium text-right">Stops</th>
-                    <th className="px-2 py-2 font-medium text-right">Delivered</th>
-                    <th className="px-2 py-2 font-medium text-right">Partly</th>
-                    <th className="px-2 py-2 font-medium text-right">Not delivered</th>
-                    <th className="px-2 py-2 font-medium text-right">Still open</th>
-                    <th className="px-2 py-2 font-medium text-right">Cancelled</th>
-                    <th className="px-4 py-2 font-medium text-right">Collected</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {byPerson.map((r) => (
-                    <tr key={r.key} className="border-t border-surface-subtle tabular-nums">
-                      <td data-m="title" className="px-4 py-2 text-text-primary">{r.name}</td>
-                      <td data-m="kv" className="px-2 py-2 text-right">{r.assigned}</td>
-                      <td data-m="kv" className="px-2 py-2 text-right">{r.delivered}</td>
-                      <td data-m="kv" className="px-2 py-2 text-right">{r.partial}</td>
-                      <td data-m="kv" className="px-2 py-2 text-right">{r.failed}</td>
-                      <td data-m="kv" className="px-2 py-2 text-right">{r.open}</td>
-                      <td data-m="hide" className="px-2 py-2 text-right text-text-muted">{r.cancelled}</td>
-                      <td data-m="badge" className="px-4 py-2 text-right">{rupees(r.collected)}{r.due > r.collected ? <span className="text-text-muted"> / {rupees(r.due)}</span> : null}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          </MSheet>
 
           {tasksQ.isLoading && !tasksQ.data ? (
             <BikeLoader label="Loading deliveries…" className="py-16" />
@@ -555,11 +569,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
 
       {tab === "history" && (
         <section className="rn-enter space-y-4">
-          <div className="flex justify-end">
-            <button type="button" disabled={tasks.length === 0} onClick={() => exportDeliveryDay(tasks, date, meal)} className="rn-btn">
-              <Download /> Export {meal === "LUNCH" ? "lunch" : "dinner"} (CSV)
-            </button>
-          </div>
+
           <HistoryView date={date} meal={meal} onDate={setDate} onOpen={(id) => setFocusId(id)} />
         </section>
       )}

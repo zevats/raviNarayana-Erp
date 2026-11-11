@@ -1,5 +1,6 @@
 "use client";
 
+import { MSegment } from "@/components/app/m";
 import React, { useState } from "react";
 import type { MealType } from "@/types";
 import { addBusinessDays, businessToday } from "@/lib/businessDate";
@@ -20,7 +21,7 @@ const mealName = (m: string) => (m === "LUNCH" ? "Lunch" : m === "DINNER" ? "Din
 const quiet = (n: number) => (n ? n : <span className="text-[var(--rn-ink-3)]">0</span>);
 
 /**
- * Day close-out for the Owner and Manager, then the last two weeks:
+ * Day close-out for the Owner and Manager:
  * 1. the day in three figures (stops, items, doorstep money),
  * 2. item lines and shortfalls (what was not delivered and where it went),
  * 3. money: who collected what, and the handovers accepted that day,
@@ -30,20 +31,20 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
   const [scope, setScope] = useState<MealType | "ALL">(meal);
   const today = businessToday();
   const close = useCloseout(date, scope);
-  const hist = useHistory(addBusinessDays(today, -13), today);
   const c = close.data;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <h2 className="rn-t-section">Close-out · {dayLabel(date, today)}</h2>
-        <Segmented
-          size="sm"
-          label="Meal"
-          value={scope}
-          onChange={setScope}
-          options={[{ value: "LUNCH", label: "Lunch" }, { value: "DINNER", label: "Dinner" }, { value: "ALL", label: "Whole day" }]}
-        />
+        <div className="w-full lg:w-[440px]">
+          <MSegment
+            label="Meal"
+            value={scope}
+            onChange={setScope}
+            options={[{ value: "BREAKFAST", label: "Breakfast" }, { value: "LUNCH", label: "Lunch" }, { value: "DINNER", label: "Dinner" }, { value: "ALL", label: "Day" }]}
+          />
+        </div>
       </div>
 
       {!c ? (
@@ -209,47 +210,6 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
         </>
       )}
 
-      <section className="rn-card">
-        <div className="px-5 sm:px-6 pt-5 pb-3">
-          <h3 className="rn-t-card">Last two weeks</h3>
-        </div>
-        {hist.error && !hist.data ? (
-          <LoadError message={hist.error.message} onRetry={() => hist.refetch()} title="History could not be loaded" />
-        ) : !hist.data ? (
-          <BikeLoader size="sm" label="Loading…" className="py-6" />
-        ) : hist.data.length === 0 ? (
-          <StateMessage compact title="No deliveries in the last two weeks" />
-        ) : (
-          <table className="rn-table rn-mcards rn-mcards-soft">
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Meal</th>
-                <th className="text-right">Stops</th>
-                <th className="text-right">Delivered</th>
-                <th className="text-right">Partial</th>
-                <th className="text-right">Not delivered</th>
-                <th className="text-right">Open</th>
-                <th className="text-right">Cancelled</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hist.data.map((h) => (
-                <tr key={`${h.serviceDate}-${h.mealType}`} onClick={() => onDate(h.serviceDate)} className={`cursor-pointer ${h.serviceDate === date ? "bg-[var(--rn-accent-tint)]" : ""}`}>
-                  <td data-m="title" className="text-[var(--rn-ink)] whitespace-nowrap">{shortDay(h.serviceDate, today)}</td>
-                  <td data-m="line" className="rn-t-meta">{mealName(h.mealType)}</td>
-                  <td data-m="kv" className="num">{h.total}</td>
-                  <td data-m="kv" className="num">{quiet(h.delivered)}</td>
-                  <td data-m="kv" className={`num ${h.partial ? "text-[#8F6710] font-medium" : ""}`}>{quiet(h.partial)}</td>
-                  <td data-m="kv" className={`num ${h.notDelivered ? "text-[#9A3423] font-medium" : ""}`}>{quiet(h.notDelivered)}</td>
-                  <td data-m="hide" className="num">{quiet(h.open)}</td>
-                  <td data-m="hide" className="num">{quiet(h.cancelled)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
     </div>
   );
 }
