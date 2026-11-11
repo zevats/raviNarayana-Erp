@@ -39,10 +39,10 @@ import { FinancePlaces, CashbookMobile } from "@/modules/finance/mobile/FinanceM
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadReceive = () => import("@/modules/billing/CashbookReceive");
 const CashbookReceiveDialog = dynamic(() => loadReceive().then((m) => m.CashbookReceiveDialog), { ssr: false });
-const loadSecurityDepositModal = () => import("@/modules/finance/components/modals/SecurityDepositModal");
-const SecurityDepositModal = dynamic(() => loadSecurityDepositModal().then((m) => m.SecurityDepositModal), { ssr: false });
-const loadExpenseModal = () => import("@/modules/finance/components/modals/ExpenseModal");
-const ExpenseModal = dynamic(() => loadExpenseModal().then((m) => m.ExpenseModal), { ssr: false });
+const loadEntryForms = () => import("@/modules/finance/components/EntryForms");
+const SecurityDepositModal = dynamic(() => loadEntryForms().then((m) => m.DepositDialog), { ssr: false });
+const ExpenseModal = dynamic(() => loadEntryForms().then((m) => m.ExpenseDialog), { ssr: false });
+const EditEntryDialog = dynamic(() => loadEntryForms().then((m) => m.EditEntryDialog), { ssr: false });
 const loadReceiptModal = () => import("@/modules/finance/components/modals/ReceiptModal");
 const ReceiptModal = dynamic(() => loadReceiptModal().then((m) => m.ReceiptModal), { ssr: false });
 const loadReversalModal = () => import("@/modules/finance/components/modals/ReversalModal");
@@ -63,7 +63,7 @@ const BillsList = dynamic(() => loadDues().then((m) => m.BillsList), { ssr: fals
 
 export default function FinancePage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadReceive, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadDues]), []);
+  useEffect(() => preloadWhenIdle([loadReceive, loadEntryForms, loadReceiptModal, loadReversalModal, loadDues]), []);
   // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
   const phone = useIsPhone();
@@ -147,6 +147,7 @@ export default function FinancePage() {
 
   // Modal dialog states
   const [isReceiveOpen, setIsReceiveOpen] = useState(false);
+  const [editingTx, setEditingTx] = useState<FinancialTransaction | null>(null);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
 
@@ -206,6 +207,8 @@ export default function FinancePage() {
 
   const modals = (
     <>
+        <EditEntryDialog tx={editingTx} onClose={() => setEditingTx(null)} onSaved={() => fetchData()} />
+
         <CashbookReceiveDialog
           open={isReceiveOpen}
           onClose={() => setIsReceiveOpen(false)}
@@ -266,6 +269,7 @@ export default function FinancePage() {
             onExport={handleExportCashbook}
             onReceipt={(tx) => setReceiptTx(tx)}
             onReverse={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
+            onEdit={(tx) => setEditingTx(tx)}
             onOwed={() => setActiveTab("receivables")}
           />
         ) : activeTab === "receivables" ? (
@@ -376,6 +380,7 @@ export default function FinancePage() {
             isLoading={loading}
             onViewReceipt={(tx) => setReceiptTx(tx)}
             onInitiateReversal={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
+            onEdit={(tx) => setEditingTx(tx)}
             onOpenPayment={openReceive}
             onOpenDeposit={() => setIsDepositOpen(true)}
             onOpenExpense={() => setIsExpenseOpen(true)}

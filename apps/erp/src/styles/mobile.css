@@ -586,7 +586,7 @@
     min-height: 48px !important; border-radius: 14px !important; border: 1px solid #E3DED3 !important; background-color: #FFFFFF !important;
     font-size: 15px !important; color: var(--m-ink, #18211B) !important; box-shadow: none;
   }
-  .rn-app .rn-modal:not(.rn-own) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, .rn-app-select):not([class*="pl-"]):not(.rn-money) { padding-left: 14px !important; }
+  .rn-app .rn-modal:not(.rn-own) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="hidden"]), select, .rn-app-select):not([class*="pl-"]):not(.rn-money):not(.rn-input-search) { padding-left: 14px !important; }
   .rn-app .rn-modal:not(.rn-own) textarea {
     min-height: 88px; border-radius: 14px !important; border: 1px solid #E3DED3 !important; background-color: #FFFFFF !important;
     font-size: 15px !important; padding: 12px 14px !important; color: var(--m-ink, #18211B) !important;
@@ -721,4 +721,12 @@
   .rn-app .rn-main .rn-stats:has(> .rn-stat:nth-child(3):last-child) > .rn-stat { grid-column: auto; padding: 10px 12px; }
   .rn-app .rn-main .rn-stats:has(> .rn-stat:nth-child(3):last-child) > .rn-stat > span:first-child { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rn-app .rn-main .rn-stats:has(> .rn-stat:nth-child(3):last-child) > .rn-stat > span:nth-child(2) { margin-top: 4px; font-size: clamp(15px, 4.4vw, 19px); }
+}
+
+/* Pop-ups on phones end right below their buttons: the button bar carries the bottom space (and the
+   phone's safe area), so the sheet and the form around it add none. */
+@media (max-width: 1023.98px) {
+  .rn-app .rn-modal:not(.rn-own):has(> :last-child :is(button[type="submit"], .rn-btn-primary), > form > :last-child button[type="submit"]) { padding-bottom: 0 !important; }
+  .rn-app .rn-modal:not(.rn-own) > form:has(> :last-child button[type="submit"]) { padding-bottom: 0 !important; margin-bottom: 0 !important; }
+  .rn-app .rn-modal:not(.rn-own) > :last-child:has(:is(button[type="submit"], .rn-btn-primary)):not(form) { margin-bottom: 0 !important; }
 }

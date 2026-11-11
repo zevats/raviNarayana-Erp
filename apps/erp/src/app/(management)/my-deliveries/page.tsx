@@ -7,7 +7,7 @@ import { MSegment } from "@/components/app/m";
 import { Segmented } from "@/components/ui/kit";
 
 type View = "stops" | "cash" | "history";
-const VIEWS: Array<{ value: View; label: string }> = [
+const ALL_VIEWS: Array<{ value: View; label: string }> = [
   { value: "stops", label: "My stops" },
   { value: "cash", label: "My cash" },
   { value: "history", label: "History" },
@@ -32,6 +32,9 @@ export default function MyDeliveriesPage() {
     window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
   };
   if (!user) return null;
+  // The Owner keeps the cash they collect (there is no one to hand it to): no My cash for them; it
+  // stays on record in their stops and history and in Delivery → Cash.
+  const VIEWS = user.role === "SUPER_ADMIN" ? ALL_VIEWS.filter((v) => v.value !== "cash") : ALL_VIEWS;
   return (
     <div className="space-y-4 min-w-0">
       <div className="lg:hidden">
@@ -41,7 +44,7 @@ export default function MyDeliveriesPage() {
         <h1 className="rn-t-page">My deliveries</h1>
         <Segmented label="My deliveries" value={view} onChange={go} options={VIEWS} />
       </div>
-      <StaffDelivery user={user} basePath="/my-deliveries" />
+      <StaffDelivery user={user} basePath="/my-deliveries" allowCash={user.role !== "SUPER_ADMIN"} />
     </div>
   );
 }

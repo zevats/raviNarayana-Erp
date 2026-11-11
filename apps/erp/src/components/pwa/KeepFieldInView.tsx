@@ -19,13 +19,23 @@ export function KeepFieldInView() {
       const covered = Math.round(window.innerHeight - vv.height - vv.offsetTop);
       return covered > 120 ? covered : 0;
     };
+    // A field counts as hidden when it is outside the visible area, or when something else (a
+    // pop-up's sticky button bar, the bottom tab bar) sits on top of it.
+    const covered = (el: HTMLElement, r: DOMRect) => {
+      const x = Math.min(window.innerWidth - 2, Math.max(2, r.left + Math.min(24, r.width / 2)));
+      for (const y of [r.top + 4, r.bottom - 4]) {
+        const hit = document.elementFromPoint(x, y);
+        if (hit && hit !== el && !el.contains(hit) && !hit.contains(el)) return true;
+      }
+      return false;
+    };
     const reveal = () => {
       const el = document.activeElement as HTMLElement | null;
       if (!el || !el.matches?.(FIELD)) return;
       const r = el.getBoundingClientRect();
       const top = vv ? vv.offsetTop : 0;
       const bottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
-      if (r.bottom > bottom - 16 || r.top < top + 8) el.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (r.bottom > bottom - 16 || r.top < top + 8 || covered(el, r)) el.scrollIntoView({ block: "center", behavior: "smooth" });
     };
     const onResize = () => {
       document.documentElement.style.setProperty("--rn-kb", `${keyboard()}px`);

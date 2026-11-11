@@ -24,12 +24,15 @@ type Filter = "ALL" | "REMAINING" | "SUBSCRIPTION" | "COLLECT" | "COMPLETED";
  * The delivery partner's screens: My Stops (this file), My Cash and History. The shell's navbar
  * switches the view; the URL (?view=) opens one directly.
  */
-export function StaffDelivery({ user, basePath = "/delivery" }: { user: AuthenticatedUser; basePath?: string }) {
+export function StaffDelivery({ user, basePath = "/delivery", allowCash = true }: { user: AuthenticatedUser; basePath?: string; allowCash?: boolean }) {
   const [view, setView] = useState<StaffView>("stops");
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("view");
-    if (fromUrl === "cash" || fromUrl === "history") setView(fromUrl);
-    const on = (e: Event) => setView((e as CustomEvent<StaffView>).detail);
+    if ((fromUrl === "cash" && allowCash) || fromUrl === "history") setView(fromUrl);
+    const on = (e: Event) => {
+      const v = (e as CustomEvent<StaffView>).detail;
+      if (v !== "cash" || allowCash) setView(v);
+    };
     window.addEventListener("erp:delivery-view", on);
     return () => window.removeEventListener("erp:delivery-view", on);
   }, []);
@@ -41,14 +44,14 @@ export function StaffDelivery({ user, basePath = "/delivery" }: { user: Authenti
 
   return (
     <div key={view} className="rn-enter">
-      {view === "stops" && <StopsView user={user} />}
-      {view === "cash" && <StaffCash user={user} />}
+      {view === "stops" && <StopsView user={user} greet={basePath === "/delivery"} />}
+      {view === "cash" && allowCash && <StaffCash user={user} />}
       {view === "history" && <StaffHistory user={user} />}
     </div>
   );
 }
 
-function StopsView({ user }: { user: AuthenticatedUser }) {
+function StopsView({ user, greet = true }: { user: AuthenticatedUser; greet?: boolean }) {
   const today = businessToday();
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [arrival, setArrival] = useState<string | null>(null);
@@ -239,7 +242,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       )}
       {/* Phone header (screenshot 1) */}
       <section className="md:hidden space-y-4">
-        <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>
+        {greet && <h1 className="text-[28px] font-extrabold tracking-[-0.02em] leading-tight">Namaste, {firstName(user.fullName)}</h1>}
         <MealToggle value={meal} onChange={setMeal} counts={mealCounts} />
         {tasks.length > 0 && <ProgressCard done={completed} total={tasks.length} remaining={open.length} pct={pct} />}
       </section>
@@ -248,7 +251,7 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
       <section className="hidden md:flex items-center gap-6 rounded-2xl bg-[#F4F0E8] px-6 lg:px-7 py-6">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3">
-            <h1 className="text-[28px] font-extrabold tracking-[-0.02em]">Namaste, {firstName(user.fullName)}</h1>
+            {greet && <h1 className="text-[28px] font-extrabold tracking-[-0.02em]">Namaste, {firstName(user.fullName)}</h1>}
             <Pill tone="success">{open.length > 0 ? "Active Route" : tasks.length ? "Route Complete" : "No Route Yet"}</Pill>
           </div>
         </div>

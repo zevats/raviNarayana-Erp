@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
       dietaryPreference,
       limit,
       offset,
+      picker: request.nextUrl.searchParams.get("picker") === "1",
     });
 
     return NextResponse.json({ success: true, ...result });

@@ -1,5 +1,6 @@
 "use client";
 
+import { greetingName } from "@/lib/names";
 import React from "react";
 import { WifiOff } from "lucide-react";
 import type { DeliveryTask, MealType } from "@/types";
@@ -187,7 +188,8 @@ export const initials = (n: string) =>
     .map((p) => p[0]?.toUpperCase())
     .join("") || "—";
 
-export const firstName = (n: string) => n.split(/\s+/)[0] || n;
+/** The name to greet by: titles (Dr., Mr., Shri…) and initials are skipped. */
+export const firstName = (n: string) => greetingName(n) || n.split(/\s+/)[0] || n;
 
 export const fullDate = (d: string) => new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));
 export const dayMonth = (d: string) => new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" }).format(new Date(`${d}T00:00:00Z`));

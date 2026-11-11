@@ -25,6 +25,8 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const key = `/api/delivery/custody?staffId=${user.id}`;
   const q = useErpQuery<Detail>(key, () => getJson<Detail>(key), { ttl: LIVE_MS, tags: ["custody", "handover", "delivery"], pollIntervalMs: LIVE_MS });
   const [confirming, setConfirming] = useState(false);
+  // Handing over everything is one tap; a different amount is a choice of its own.
+  const [custom, setCustom] = useState(false);
   const [note, setNote] = useState("");
   const [amountText, setAmountText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -70,6 +72,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
   const startHandover = () => {
     setAmountText(String(Math.round(cashWithYou)));
     setNote("");
+    setCustom(false);
     setConfirming(true);
   };
 
@@ -145,32 +148,55 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
           <div className="mt-5">
             {confirming ? (
               <div className="rn-enter space-y-3">
-                <label className="block">
-                  <span className="block text-[13px] font-semibold text-[#3E4540] mb-1.5">Cash you are handing over</span>
-                  <span className={`${K.soft} flex items-center h-14 px-4 focus-within:ring-4 focus-within:ring-[#C9501C]/20`}>
-                    <span className="text-[22px] font-extrabold text-[#6E7F70] mr-1">₹</span>
-                    <input
-                      value={amountText}
-                      onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
-                      inputMode="numeric"
-                      aria-label="Cash you are handing over"
-                      className="flex-1 min-w-0 bg-transparent text-[22px] font-extrabold tabular-nums outline-none"
-                    />
-                  </span>
-                </label>
-                {differs && (
-                  <p className="text-[13px] font-semibold text-[#9A3423]">
-                    Recorded cash is {rupees(recordedNew)}. {rupees(recordedNew - amount)} less: add a reason. It stays recorded against you until handed over.
-                  </p>
+                {!custom ? (
+                  <>
+                    <div className={`${K.soft} flex items-center justify-between gap-3 px-4 py-4`}>
+                      <span className="text-[14px] font-semibold text-[#3E4540]">Handing over</span>
+                      <span className="text-[28px] leading-none font-extrabold tabular-nums text-[#1F2320]">{rupees(cashWithYou)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCustom(true);
+                        setAmountText("");
+                      }}
+                      className="text-[14px] font-semibold text-[#C9501C] hover:underline underline-offset-2"
+                    >
+                      Giving a different amount?
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label className="block">
+                      <span className="block text-[13px] font-semibold text-[#3E4540] mb-1.5">Amount you are giving</span>
+                      <span className={`${K.soft} flex items-center h-14 px-4 focus-within:ring-4 focus-within:ring-[#C9501C]/20`}>
+                        <span className="text-[22px] font-extrabold text-[#6E7F70] mr-1.5">₹</span>
+                        <input
+                          value={amountText}
+                          onChange={(e) => setAmountText(e.target.value.replace(/[^\d]/g, "").slice(0, 7))}
+                          inputMode="numeric"
+                          placeholder="0"
+                          autoFocus
+                          aria-label="Cash you are handing over"
+                          className="flex-1 min-w-0 bg-transparent text-[22px] font-extrabold tabular-nums outline-none placeholder:text-[#B9B2A6]"
+                        />
+                      </span>
+                    </label>
+                    {differs && (
+                      <>
+                        <p className="text-[13px] font-semibold text-[#9A3423]">{rupees(recordedNew - amount)} less than collected. Say why; it stays with you until given.</p>
+                        <input
+                          value={note}
+                          onChange={(e) => setNote(e.target.value)}
+                          placeholder="Reason (needed)"
+                          aria-label="Reason"
+                          className={`${K.soft} w-full h-12 px-4 text-[14px] outline-none ${note.trim().length < 5 ? "ring-2 ring-[#9A3423]/40" : ""}`}
+                        />
+                      </>
+                    )}
+                    {tooMuch && <p className="text-[13px] font-semibold text-[#9A3423]">You have {rupees(cashWithYou)} in total; you can't give more.</p>}
+                  </>
                 )}
-                {tooMuch && <p className="text-[13px] font-semibold text-[#9A3423]">You owe {rupees(cashWithYou)} in total; you can't hand over more.</p>}
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder={differs ? "Reason for the shortfall (needed)" : "Note for the owner (optional)"}
-                  aria-label={differs ? "Reason" : "Note for the owner"}
-                  className={`${K.soft} w-full h-12 px-4 text-[14px] outline-none ${differs && note.trim().length < 5 ? "ring-2 ring-[#9A3423]/40" : ""}`}
-                />
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setConfirming(false)} className={`${K.greyBtn} h-12`}>
                     Back

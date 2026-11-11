@@ -1,5 +1,7 @@
 "use client";
 
+import { Pencil } from "lucide-react";
+import { toast } from "@/components/ui/toast";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useCallback, useMemo, useDeferredValue } from "react";
@@ -78,6 +80,7 @@ export default function OrdersPage() {
   const runPending = useCallback((job: PendingOrderJob) => {
     setPending((list) => [...list.filter((j) => j.key !== job.key), { ...job, status: "saving" as const }]);
     setFlashKey(job.key);
+    toast.ok(`Saving ${job.customerName}'s order…`);
     job
       .run()
       .then(({ message, orderId }) => {
@@ -85,20 +88,20 @@ export default function OrdersPage() {
         // nothing disappears and pops back.
         setPending((list) => list.map((j) => (j.key === job.key ? { ...j, status: "saved" as const, orderId } : j)));
         if (orderId) setFlashOrderId(orderId);
-        setOrderNotice(message);
+        toast.ok(message);
         invalidateErpCache(["orders", "delivery", "tiffin_customers", "finance", "dashboard"]);
         window.setTimeout(() => setPending((list) => list.filter((j) => j.key !== job.key)), 12000);
       })
       .catch((e: any) => {
         setPending((list) => list.map((j) => (j.key === job.key ? { ...j, status: "failed" as const, error: e?.message || "Could not save the order." } : j)));
-        setOrderNotice(`Order for ${job.customerName} was not saved: ${e?.message || "try again"}. Open Today to retry.`);
+        toast.error(`Order for ${job.customerName} was not saved: ${e?.message || "try again"}. Tap it in the list to retry.`);
       });
   }, []);
   useEffect(() => {
     if (!flashKey) return;
     // Once the form has eased out, bring the new order (the last card) into view.
     const s = setTimeout(() => {
-      const el = document.querySelector(`[data-pending-key="${flashKey}"]`) || document.querySelector(".rn-order-cards > div:last-of-type");
+      const el = document.querySelector(`[data-pending-key="${flashKey}"]`) || document.querySelector(".rn-pending-row") || document.querySelector(".rn-order-cards > div:last-of-type");
       if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 220);
     const t = setTimeout(() => setFlashKey(null), 3200);
@@ -353,8 +356,8 @@ export default function OrdersPage() {
           <>
             {changeable && (
               <>
-                <button type="button" onClick={() => setEditing({ order, mode: "edit" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
-                  Change
+                <button type="button" onClick={() => setEditing({ order, mode: "edit" })} aria-label="Edit order" title="Edit order" className="grid place-items-center w-9 h-9 rounded-full text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
+                  <Pencil className="w-4 h-4" />
                 </button>
                 <button type="button" onClick={() => setEditing({ order, mode: "cancel" })} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[#A3261A] hover:bg-[#FBEDE8]">
                   Cancel order
@@ -451,6 +454,9 @@ export default function OrdersPage() {
       onNewOrder={() => setIsNewOrderModalOpen(true)}
       notice={orderNotice}
       menu={activeSection === "MENU_CATALOG" ? <MenuCatalog /> : null}
+      onEdit={(order) => setEditing({ order, mode: "edit" })}
+      onCancel={(order) => setEditing({ order, mode: "cancel" })}
+      onReassign={(order) => setReassigning(order)}
     />
   );
 

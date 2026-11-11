@@ -5,6 +5,8 @@
  * on the app kit (components/app/m.tsx). Same data and actions as the desktop views.
  */
 
+import { Pencil } from "lucide-react";
+import { canEditEntry } from "../components/EntryForms";
 import React, { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
@@ -152,6 +154,7 @@ export function CashbookMobile({
   onExport,
   onReceipt,
   onReverse,
+  onEdit,
   onOwed,
 }: {
   summary: CashbookSummary | null;
@@ -166,6 +169,7 @@ export function CashbookMobile({
   onExport: () => void;
   onReceipt: (tx: FinancialTransaction) => void;
   onReverse?: (tx: FinancialTransaction) => void;
+  onEdit?: (tx: FinancialTransaction) => void;
   onOwed: () => void;
 }) {
   const today = toLocalDateString();
@@ -258,6 +262,16 @@ export function CashbookMobile({
       />
 
       <MSearch value={search} onChange={setSearch} placeholder="Search name, room or note" onFilter={() => setFiltersOpen(true)} filterCount={filterCount} />
+      <MChips
+        label="Show"
+        value={kind === "IN" || kind === "OUT" ? kind : "ALL"}
+        onChange={(v) => setKind(v as Kind)}
+        options={[
+          { value: "ALL", label: "All" },
+          { value: "IN", label: "Received" },
+          { value: "OUT", label: "Expenses" },
+        ]}
+      />
 
       {isLoading && transactions.length === 0 ? (
         <MSkeletonRows rows={6} />
@@ -319,6 +333,22 @@ export function CashbookMobile({
         open={Boolean(openTx)}
         onClose={() => setOpenTx(null)}
         title={openTx ? txParty(openTx) : ""}
+        headerAction={
+          openTx && onEdit && canEditEntry(openTx) ? (
+            <button
+              type="button"
+              aria-label="Edit entry"
+              className="m-sheet-x m-press"
+              onClick={() => {
+                const t = openTx;
+                setOpenTx(null);
+                onEdit(t);
+              }}
+            >
+              <Pencil className="w-[18px] h-[18px]" />
+            </button>
+          ) : undefined
+        }
         footer={
           openTx ? (
             <>

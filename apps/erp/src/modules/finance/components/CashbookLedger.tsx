@@ -1,5 +1,8 @@
 "use client";
 
+import { Pencil } from "lucide-react";
+import { Segmented } from "@/components/ui/kit";
+import { canEditEntry } from "./EntryForms";
 import { readableNote } from "@/lib/format";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useMemo } from "react";
@@ -30,6 +33,8 @@ interface CashbookLedgerProps {
   onViewReceipt: (tx: FinancialTransaction) => void;
   /** Omitted for users without finance.manage: reversals are Owner-only. */
   onInitiateReversal?: (tx: FinancialTransaction) => void;
+  /** Edit a received payment or an expense. */
+  onEdit?: (tx: FinancialTransaction) => void;
   onOpenPayment: () => void;
   onOpenDeposit: () => void;
   onOpenExpense: () => void;
@@ -48,8 +53,11 @@ export function CashbookLedger({
   isLoading,
   onViewReceipt,
   onInitiateReversal,
+  onEdit,
   onOpenPayment,
 }: CashbookLedgerProps) {
+  // Received / Expenses: money in and money out on their own, the way people look for them.
+  const [flow, setFlow] = useState<"ALL" | "IN" | "OUT">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   // The box updates at once; the (up to 500-row) list follows without blocking typing.
   const deferredQuery = React.useDeferredValue(searchQuery);
@@ -87,6 +95,8 @@ export function CashbookLedger({
         if (!isTiffin) return false;
       }
 
+      if (flow === "IN" && !["RENT_PAYMENT", "SECURITY_DEPOSIT", "TIFFIN_PAYMENT"].includes(tx.transactionType)) return false;
+      if (flow === "OUT" && !["EXPENSE", "DEPOSIT_REFUND"].includes(tx.transactionType)) return false;
       // Type filter
       if (typeFilter !== "ALL" && tx.transactionType !== typeFilter) {
         return false;
@@ -125,12 +135,12 @@ export function CashbookLedger({
       }
       return true;
     });
-  }, [transactions, divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery]);
+  }, [transactions, divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery, flow]);
 
   // Reset page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery]);
+  }, [divisionFilter, typeFilter, methodFilter, statusFilter, deferredQuery, flow]);
 
   // Pagination slice
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
@@ -276,6 +286,16 @@ export function CashbookLedger({
                           <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
                           <span>Receipt</span>
                         </button>
+                        {onEdit && canEditEntry(tx) && (
+                          <button
+                            type="button"
+                            onClick={() => onEdit(tx)}
+                            className="min-h-[36px] px-3 py-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs font-medium flex items-center gap-1.5 shadow-2xs"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                        )}
 
                         {onInitiateReversal && !isReversed && !isReversal && (
                           <button
@@ -293,7 +313,7 @@ export function CashbookLedger({
                 );
               }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paginated, copiedId, onViewReceipt, onInitiateReversal]
+    [paginated, copiedId, onViewReceipt, onInitiateReversal, onEdit]
   );
   const tableRows = useMemo(
     () =>
@@ -461,6 +481,17 @@ export function CashbookLedger({
                             >
                               <Receipt className="w-3.5 h-3.5 text-[#B58A57]" />
                             </button>
+                            {onEdit && canEditEntry(tx) && (
+                              <button
+                                type="button"
+                                onClick={() => onEdit(tx)}
+                                className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] transition-colors shadow-2xs"
+                                title="Edit"
+                                aria-label="Edit entry"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
                             {onInitiateReversal && !isReversed && !isReversal && (
                               <button
@@ -478,7 +509,7 @@ export function CashbookLedger({
                     );
                   }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paginated, copiedId, onViewReceipt, onInitiateReversal]
+    [paginated, copiedId, onViewReceipt, onInitiateReversal, onEdit]
   );
 
   return (
@@ -505,6 +536,17 @@ export function CashbookLedger({
             </button>
           )}
         </div>
+
+        <Segmented
+          label="Show"
+          value={flow}
+          onChange={setFlow}
+          options={[
+            { value: "ALL", label: "All entries" },
+            { value: "IN", label: "Received" },
+            { value: "OUT", label: "Expenses" },
+          ]}
+        />
 
         {/* Division, Type, Method & Status Filters */}
         <div className="flex flex-wrap items-center gap-2 rn-filter-row">

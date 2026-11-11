@@ -17,8 +17,9 @@ import { recordRentCharge, getResidentRentBalance, getBusinessDateString } from 
 import { createTiffinCustomer, createTiffinProduct, createTiffinSubscription, cancelTiffinSubscription } from "../apps/erp/src/server/tiffin/tiffinService";
 import { createUnifiedOrder } from "../apps/erp/src/server/orders/orderService";
 import { completeDeliveryTask } from "../apps/erp/src/server/delivery/deliveryService";
-import { prepareDeliveryManifest } from "../apps/erp/src/server/delivery/deliveryOps";
+import { prepareDeliveryManifest, setResidentRoomDelivery } from "../apps/erp/src/server/delivery/deliveryOps";
 import { recordOtherReceipt } from "../apps/erp/src/server/finance/otherReceiptService";
+import { editTransaction } from "../apps/erp/src/server/finance/entryEditService";
 import { recordExpense, getCashbookSummary } from "../apps/erp/src/server/finance/financeService";
 import { assignDeliveryTask } from "../apps/erp/src/server/delivery/deliveryService";
 import { listReceivables, getReceivableAccount, getAccountStatement, receiveAccountPayment, spreadOldestFirst } from "../apps/erp/src/server/finance/receivablesService";
@@ -215,6 +216,13 @@ async function main() {
   await recordRentCharge(owner, { residentId: res.id, stayId: stay.id, amount: 6000, transactionDate: addDays(today, -5), billingPeriod: "D4 month two" }, IP, db);
   const R = `R:${res.id}`;
   assert((await total(R)) === 12000 && (await getResidentRentBalance(res.id, db)) === 12000, "Two rent charges: ₹12,000 due, equal to the rent ledger");
+  delete process.env.ERP_RESIDENT_AUTO_DELIVERY;
+  await setResidentRoomDelivery(manager, { residentId: res.id, lunch: true, dinner: true } as any, IP, db);
+  await prepareDeliveryManifest(owner, { serviceDate: today, mealType: "DINNER", trigger: "MANUAL" }, IP, db).catch(() => null);
+  await prepareDeliveryManifest(owner, { serviceDate: today, mealType: "LUNCH", trigger: "MANUAL" }, IP, db).catch(() => null);
+  assert((await num(db, "SELECT COUNT(*) AS n FROM delivery_tasks WHERE resident_id = ?", [res.id])) === 0, "A resident's saved room-delivery preference orders nothing by itself (no automatic dinner stop)");
+  // Leave no standing room-delivery preference behind for other suites sharing this database.
+  await setResidentRoomDelivery(manager, { residentId: res.id, lunch: false, dinner: false } as any, IP, db);
   const billR = await createBill(manager, { accountKey: R, type: "NON_GST" }, IP, db);
   assert(billR.total === 12000 && billR.snapshot.lines.length === 2 && billR.snapshot.lines[0].label === "Room rent" && billR.snapshot.recipient.place === `Room ${room.roomNumber}`, `Resident bill ${billR.billNumber}: ₹12,000, two rent lines, room on the bill`);
   assert((await total(R)) === 12000, "Billing a resident changes nothing that is owed");
@@ -280,6 +288,34 @@ async function main() {
   assert(at2?.assigned_to === owner.id, "Assign to another staff member (the Owner) while taking the order");
   const re = await assignDeliveryTask(manager, toOwner.deliveryTaskId, { assignedToStaffId: driver.id }, IP, db);
   assert(re.assignedTo === driver.id, "A taken order can be reassigned to someone else");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 9. Editing cashbook entries ---");
+  const pgBefore9 = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "PG" }, db);
+  const exp: any = await recordExpense(manager, { category: "MAINTENANCE", amount: 900, transactionDate: today, paymentMethod: "CASH", payeeVendor: "Plumber", description: "Tap repair" } as any, IP, db);
+  const d1 = await editTransaction(manager, exp.id, { description: "Bathroom tap repair", payeeVendor: "Raju plumber", referenceNumber: "BILL-77" }, IP, db);
+  const e1 = await db.queryOne<any>("SELECT description, payee_vendor, reference_number, amount, status FROM financial_transactions WHERE id = ?", [exp.id]);
+  assert(d1.changed && !d1.corrected && e1.description === "Bathroom tap repair" && e1.payee_vendor === "Raju plumber" && e1.reference_number === "BILL-77" && Number(e1.amount) === 900 && e1.status === "POSTED", "Manager edits an expense's details in place");
+  assert((await refused(() => editTransaction(manager, exp.id, { amount: 950 }, IP, db)))?.includes("Only the owner") === true, "A Manager cannot change the amount");
+  assert((await refused(() => editTransaction(driver, exp.id, { description: "x" }, IP, db))) !== null, "Delivery staff cannot edit entries");
+  const c1 = await editTransaction(owner, exp.id, { amount: 950, reason: "Bill was ₹950" }, IP, db);
+  const oldRow = await db.queryOne<any>("SELECT status FROM financial_transactions WHERE id = ?", [exp.id]);
+  const rev = await db.queryOne<any>("SELECT amount FROM financial_transactions WHERE reversal_of_id = ? AND transaction_type = 'REVERSAL'", [exp.id]);
+  const fresh = await db.queryOne<any>("SELECT amount, description, payee_vendor, category, status FROM financial_transactions WHERE id = ?", [c1.id]);
+  assert(c1.corrected && oldRow.status === "REVERSED" && Number(rev?.amount) === 900 && Number(fresh.amount) === 950 && fresh.description === "Bathroom tap repair" && fresh.category === "MAINTENANCE" && fresh.status === "POSTED", "Owner corrects the amount: the old entry is reversed and a corrected one recorded");
+  const pgAfter9 = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "PG" }, db);
+  assert((pgAfter9.netCashMovementExact ?? 0) - (pgBefore9.netCashMovementExact ?? 0) === -950, `Net cash moves by exactly −₹950 after the correction (₹${(pgAfter9.netCashMovementExact ?? 0) - (pgBefore9.netCashMovementExact ?? 0)})`);
+  assert((await refused(() => editTransaction(owner, exp.id, { description: "again" }, IP, db)))?.includes("reversed") === true, "A reversed entry cannot be edited");
+  const lpg: any = await recordExpense(owner, { category: "GROCERY", amount: 300, transactionDate: today, paymentMethod: "CASH", description: "Gas" } as any, IP, db);
+  await editTransaction(manager, lpg.id, { category: "LPG" }, IP, db);
+  assert((await db.queryOne<any>("SELECT category FROM financial_transactions WHERE id = ?", [lpg.id])).category === "LPG", "An expense's category can be corrected");
+  const otherEdit = await editTransaction(owner, other.id, { payeeVendor: "Party guest", amount: 800 }, IP, db);
+  const otherNew = await db.queryOne<any>("SELECT amount, payee_vendor, category, transaction_type FROM financial_transactions WHERE id = ?", [otherEdit.id]);
+  assert(otherEdit.corrected && Number(otherNew.amount) === 800 && otherNew.payee_vendor === "Party guest" && otherNew.category === "OTHER_RECEIPT" && otherNew.transaction_type === "TIFFIN_PAYMENT", "An Other receipt can be corrected (amount and who paid)");
+  const rentPay = await db.queryOne<any>("SELECT id FROM financial_transactions WHERE resident_id = ? AND transaction_type = 'RENT_PAYMENT' AND status = 'POSTED' LIMIT 1", [res.id]);
+  assert((await refused(() => editTransaction(owner, rentPay.id, { amount: 1 }, IP, db)))?.includes("dues payment") === true, "A dues payment's amount is not edited here (reverse and receive again)");
+  const rentNote = await editTransaction(manager, rentPay.id, { description: "Paid at the office", referenceNumber: "R-1" }, IP, db);
+  assert(rentNote.changed && !rentNote.corrected && (await getResidentRentBalance(res.id, db)) === 4500, "A dues payment's note can be edited; the resident still owes exactly ₹4,500");
 
   console.log("\n================================================================================");
   console.log(`DUES & BILLS RESULTS: ${state.passed} PASSED, ${state.failed} FAILED`);

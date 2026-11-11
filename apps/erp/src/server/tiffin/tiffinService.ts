@@ -120,6 +120,8 @@ export interface ListTiffinCustomersOptions {
   dietaryPreference?: DietaryPreference;
   limit?: number;
   offset?: number;
+  /** The order form's picker: everyone (up to 2,000), by name, without balances (fast). */
+  picker?: boolean;
 }
 
 /**
@@ -162,8 +164,13 @@ export async function listTiffinCustomers(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  const limit = Math.min(Math.max(1, options.limit ?? 50), 200);
+  const limit = Math.min(Math.max(1, options.limit ?? 50), options.picker ? 2000 : 200);
   const offset = Math.max(0, options.offset ?? 0);
+
+  if (options.picker) {
+    const rows = await db.query<any>(`SELECT c.* FROM tiffin_customers c ${whereClause} ORDER BY lower(c.full_name) ASC LIMIT ? OFFSET ?`, [...params, limit, offset]);
+    return { customers: rows.map(mapRowToCustomer), total: rows.length };
+  }
 
   // The count and the page are independent: one round trip for both.
   const [countRow, rows] = await Promise.all([

@@ -40,7 +40,7 @@ export function CashbookReceiveDialog({ open, onClose, onDone }: { open: boolean
   const owing = useMemo(() => (list.data?.accounts ?? []).filter((a) => a.total > 0), [list.data]);
   const s = search.trim().toLowerCase();
   const matches = useMemo(
-    () => owing.filter((a) => !s || a.name.toLowerCase().includes(s) || (a.phone || "").includes(s.replace(/\s+/g, "")) || (a.place || "").toLowerCase().includes(s)).slice(0, 40),
+    () => owing.filter((a) => !s || a.name.toLowerCase().includes(s) || (a.phone || "").includes(s.replace(/\s+/g, "")) || (a.place || "").toLowerCase().includes(s)),
     [owing, s]
   );
 
@@ -106,7 +106,7 @@ export function CashbookReceiveDialog({ open, onClose, onDone }: { open: boolean
                 {owing.length === 0 ? (kind === "RENT" ? "No resident owes rent." : "No tiffin customer owes anything.") : "No one matches."}
               </p>
             ) : (
-              <ul className="rn-due-list max-h-[46vh] overflow-y-auto" aria-label="Who paid">
+              <ul className="rn-due-list rn-pick-list" aria-label="Who paid">
                 {matches.map((a) => (
                   <li key={a.accountKey}>
                     <button type="button" className="rn-due-row" onClick={() => setPicked(a)}>

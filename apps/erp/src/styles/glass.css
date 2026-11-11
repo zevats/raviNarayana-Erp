@@ -1045,3 +1045,19 @@ button.rn-due-row:active { background: rgba(30, 58, 43, 0.09); }
 }
 .rn-date-chip > svg { width: 17px; height: 17px; }
 .rn-date-chip.is-set { background: var(--rn-accent, #1E3A2B); border-color: var(--rn-accent, #1E3A2B); color: #FFFFFF; }
+
+/* Lists to choose someone from (customers, residents, who paid): everyone is listed and the list
+   scrolls inside its own box; on computers a thin scrollbar that never pushes the rows around. */
+.rn-pick-list,
+.rn-due-list.rn-pick-list {
+  max-height: min(52dvh, 460px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 35, 32, 0.22) transparent;
+  scrollbar-gutter: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rn-pick-list::-webkit-scrollbar { width: 6px; }
+.rn-pick-list::-webkit-scrollbar-thumb { background: rgba(30, 35, 32, 0.22); border-radius: 999px; }
+.rn-pick-list::-webkit-scrollbar-track { background: transparent; }

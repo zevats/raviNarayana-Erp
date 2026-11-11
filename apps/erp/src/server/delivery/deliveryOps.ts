@@ -158,6 +158,11 @@ export function planAutoDelivery(): boolean {
   return process.env.ERP_PLAN_AUTO_DELIVERY === "1";
 }
 
+/** Whether residents' standing room-delivery preferences create stops without an order (off unless switched on). */
+export function residentAutoDelivery(): boolean {
+  return process.env.ERP_RESIDENT_AUTO_DELIVERY === "1";
+}
+
 export async function prepareDeliveryManifest(
   actor: AuthenticatedUser,
   input: { serviceDate: string; mealType: MealType; trigger?: "AUTO" | "MANUAL" | "TOPUP" },
@@ -282,8 +287,11 @@ export async function prepareDeliveryManifest(
       result.created++;
     };
 
-    // Residents: only meals delivered to the room (standing room-delivery preference for this meal).
-    if (mealType === "LUNCH" || mealType === "DINNER") {
+    // Residents: only meals delivered to the room. A standing room-delivery preference no longer
+    // creates a stop by itself (owner decision, 2026-11-11: nothing is ordered automatically); a
+    // resident's room meal goes out when it is ordered for that day. The old automatic stops stay
+    // available behind ERP_RESIDENT_AUTO_DELIVERY=1.
+    if (residentAutoDelivery() && (mealType === "LUNCH" || mealType === "DINNER")) {
       const col = mealType === "LUNCH" ? "lunch" : "dinner";
       const roomResidents = await tx.query<any>(
         `SELECT DISTINCT r.id AS resident_id, s.id AS stay_id

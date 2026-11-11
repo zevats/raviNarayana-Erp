@@ -296,10 +296,12 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     },
     { ttl: 60000, tags: ["products", "tiffin_products"] }
   );
+  // Every active customer, by name, in one light request (no balances): the list shows them all at
+  // once and the search filters it on the phone, with no wait.
   const customersQuery = useErpQuery<TiffinCustomer[]>(
-    "/api/tiffin/customers?status=ACTIVE&limit=20",
+    "/api/tiffin/customers?status=ACTIVE&picker=1&limit=2000",
     async () => {
-      const res = await fetch("/api/tiffin/customers?status=ACTIVE&limit=20");
+      const res = await fetch("/api/tiffin/customers?status=ACTIVE&picker=1&limit=2000");
       if (!res.ok) throw new Error("Could not load customers.");
       const data = await res.json();
       return Array.isArray(data.customers) ? data.customers : [];
@@ -314,19 +316,35 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (isOpen && customersQuery.data) setCustomers(customersQuery.data);
   }, [isOpen, customersQuery.data]);
 
-  // Search existing customers
+  // A customer added a moment ago may not be in the cached list yet: the search also asks the
+  // server and adds what it finds (the list stays instant; this only fills gaps).
   useEffect(() => {
-    if (!isOpen || customerMode !== "EXISTING" || customerSearch.length < 2) return;
+    if (!isOpen || customerMode !== "EXISTING" || customerSearch.trim().length < 2) return;
+    let gone = false;
     const t = setTimeout(() => {
-      fetch(`/api/tiffin/customers?search=${encodeURIComponent(customerSearch)}&limit=10`)
+      fetch(`/api/tiffin/customers?status=ACTIVE&picker=1&limit=30&search=${encodeURIComponent(customerSearch.trim())}`)
         .then((res) => (res.ok ? res.json() : { customers: [] }))
         .then((data) => {
-          if (data.customers) setCustomers(data.customers);
+          if (gone || !Array.isArray(data.customers) || data.customers.length === 0) return;
+          setCustomers((list) => {
+            const have = new Set(list.map((c) => c.id));
+            const extra = (data.customers as TiffinCustomer[]).filter((c) => !have.has(c.id));
+            return extra.length ? [...extra, ...list] : list;
+          });
         })
         .catch(() => {});
-    }, 250);
-    return () => clearTimeout(t);
+    }, 200);
+    return () => {
+      gone = true;
+      clearTimeout(t);
+    };
   }, [customerSearch, customerMode, isOpen]);
+
+  const shownCustomers = useMemo(() => {
+    const q = customerSearch.trim().toLowerCase();
+    const digits = q.replace(/\D/g, "");
+    return customers.filter((c) => !q || [c.fullName, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q)) || (digits.length >= 2 && [c.phone, c.alternatePhone].some((v) => String(v || "").replace(/\D/g, "").includes(digits))));
+  }, [customers, customerSearch]);
 
   // Check for duplicate customer phone when in NEW customer mode
   useEffect(() => {
@@ -906,15 +924,12 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                             className={`${FIELD} pl-10`}
                           />
                         </div>
-                        {customerSearch.trim().length > 0 && (
-                        <ul className="rounded-[18px] border border-[var(--rn-line)] bg-white divide-y divide-[var(--rn-line)] overflow-hidden" aria-label="Customers">
-                          {customers
-                            .filter((c) => {
-                              const q = customerSearch.trim().toLowerCase();
-                              return [c.fullName, c.phone, c.alternatePhone, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q));
-                            })
-                            .slice(0, 12)
-                            .map((c) => (
+                        <ul className="rn-pick-list rounded-[18px] border border-[var(--rn-line)] bg-white divide-y divide-[var(--rn-line)]" aria-label="Customers">
+                          {customersQuery.isLoading && customers.length === 0 &&
+                            Array.from({ length: 4 }).map((_, i) => (
+                              <li key={i} className="px-4 py-3"><span className="rn-skel block h-9 w-full rounded-xl" /></li>
+                            ))}
+                          {shownCustomers.map((c) => (
                             <li key={c.id}>
                               <button
                                 type="button"
@@ -940,14 +955,10 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                               </button>
                             </li>
                           ))}
-                          {customers.filter((c) => {
-                              const q = customerSearch.trim().toLowerCase();
-                              return [c.fullName, c.phone, c.alternatePhone, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q));
-                            }).length === 0 && (
-                            <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>No customer found</li>
+                          {!customersQuery.isLoading && shownCustomers.length === 0 && (
+                            <li className={`px-4 py-5 text-center text-[13.5px] ${INK2}`}>{customers.length === 0 ? "No customers yet" : "No customer found"}</li>
                           )}
                         </ul>
-                        )}
                       </div>
                     ) : (
                       <div className="rounded-[18px] border border-[var(--rn-line)] bg-white p-4 space-y-3.5">
