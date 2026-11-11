@@ -21,6 +21,9 @@ import { NavSkeleton } from "./shell/NavSkeleton";
 import { MobileTopBar, MobileBottomBar, MobileMoreSheet } from "./shell/MobileNav";
 import { useStackedTables } from "./shell/useStackedTables";
 import { useInlineDialogs } from "./shell/useInlineDialogs";
+import { Toaster } from "@/components/ui/toast";
+import { installActionFeedback } from "@/lib/actionFeedback";
+import { resetScrollLock } from "@/lib/scrollLock";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -45,6 +48,44 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
   useEffect(() => {
     rememberBrand(user.role === "DELIVERY_PERSON" ? "delivery" : "standard");
   }, [user.role]);
+
+  // Owner and Manager screens: every action answers with a message, and a date field with no date
+  // says so instead of showing an empty box (phones draw nothing for an empty date).
+  useEffect(() => {
+    if (user.role === "DELIVERY_PERSON") return;
+    const uninstall = installActionFeedback();
+    let frame = 0;
+    const mark = () => {
+      frame = 0;
+      document.querySelectorAll<HTMLInputElement>("input[type=date], input[type=month], input[type=time]").forEach((el) => {
+        if (el.value) el.removeAttribute("data-empty");
+        else el.setAttribute("data-empty", el.getAttribute("aria-label") || el.getAttribute("placeholder") || "Choose date");
+      });
+    };
+    const queue = () => {
+      if (!frame) frame = window.requestAnimationFrame(mark);
+    };
+    const observer = new MutationObserver(queue);
+    observer.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener("input", queue, true);
+    document.addEventListener("change", queue, true);
+    document.addEventListener("click", queue, true);
+    queue();
+    return () => {
+      uninstall();
+      observer.disconnect();
+      document.removeEventListener("input", queue, true);
+      document.removeEventListener("change", queue, true);
+      document.removeEventListener("click", queue, true);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [user.role]);
+
+  // A page change never leaves the page locked by a pop-up that the navigation closed.
+  useEffect(() => {
+    const t = window.setTimeout(resetScrollLock, 400);
+    return () => window.clearTimeout(t);
+  }, [pathname]);
 
   // Server-rendered pages (dashboard, staff) are reused from the Next router cache between visits.
   // When a mutation invalidates their data, refresh so the next visit renders fresh numbers.
@@ -376,6 +417,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
       <script dangerouslySetInnerHTML={{ __html: ARRIVAL_SCRIPT }} />
       <style>{"@view-transition { navigation: auto; }"}</style>
       <div className="rn-canvas" aria-hidden />
+      <Toaster />
       {navPending && <div className="erp-nav-progress" role="progressbar" aria-label="Opening page" />}
 
       {isLoggingOut && <SignOutScreen />}

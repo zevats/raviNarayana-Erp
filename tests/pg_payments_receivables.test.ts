@@ -209,11 +209,13 @@ async function main() {
   assert(woRow.payment_choice === "PAY_LATER" && woRow.payment_review === null && Object.keys(woDetail).length === 0,
     "Offline Pay Later synced after the approval was withdrawn: accepted, choice kept, no review flag");
   assert((await orderOutstanding(`C:${w.id}`, wo.orderId)).outstanding === 300, "The order stays outstanding (not erased, not paid)");
-  // An older flagged delivery (from before Pay Later was opened to everyone): reviews still work.
+  // An older flagged delivery (from before Pay Later was opened to everyone): no alert and no
+  // "not approved" flag any more (owner, 2026-11-11: Pay Later is approved for everyone); the
+  // stored flag can still be closed for the record.
   await db.execute("UPDATE orders SET payment_review = 'PAY_LATER_NOT_APPROVED', payment_reviewed_at = NULL WHERE id = ?", [wo.orderId]);
   invalidateNotificationCache();
   const feed = (await getNotifications(manager, { limit: 200 } as any)).notifications;
-  assert(feed.some((n: any) => n.id === `notif_pay_review_${wo.orderId}`), "Managers are notified of an older flagged order to review");
+  assert(!feed.some((n: any) => n.id === `notif_pay_review_${wo.orderId}`) && (await orderOutstanding(`C:${w.id}`, wo.orderId)).review === null, "An older flagged order raises no alert and shows no Pay Later flag");
   const cashOff = await placeOrder(w);
   const cashAction = { ...action, id: `act_${rnd()}`, taskId: cashOff.taskId, idempotencyKey: `off_${rnd()}`, payload: { recipientName: "Customer", lines: cashOff.lines, paymentChoice: "CASH", paymentMethod: "CASH", collectedAmount: 300, payLaterAllowedAtSelection: false } };
   await Promise.allSettled([syncDeliveryActions(driver, [cashAction], IP, db), syncDeliveryActions(driver, [cashAction], IP, db), syncDeliveryActions(driver, [cashAction], IP, db)]);
@@ -328,7 +330,7 @@ async function main() {
   const onlyDelivery = await listReceivables(owner, { source: "DELIVERY", limit: 100 }, db);
   assert(onlyDelivery.accounts.every((a) => a.pg === 0 && a.tiffin === 0 && a.delivery !== 0), "Source filter shows only delivery balances");
   const reviewOnly = await listReceivables(owner, { reviewOnly: true, limit: 100 }, db);
-  assert(reviewOnly.accounts.some((a) => a.accountKey === `C:${no.id}`) && reviewOnly.accounts.every((a) => a.reviews > 0), "Review filter lists only accounts with flagged deliveries");
+  assert(reviewOnly.accounts.length === 0 && all.accounts.every((a) => a.reviews === 0), "No account is flagged for a Pay Later review (Pay Later is open to everyone)");
 
   // ---------------------------------------------------------------------------
   console.log("\n--- 7. Receive payment for an account ---");

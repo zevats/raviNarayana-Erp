@@ -47,7 +47,7 @@ import { RoomBedsPanel } from "@/modules/rooms/RoomBedsPanel";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
-
+
 import { PhoneError } from "@/components/forms/PhoneError";
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   SINGLE: "Single Occupancy",
@@ -1226,7 +1226,7 @@ export default function RoomsPage() {
 
                     <div>
                       <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                        Monthly Rent (₹) *
+                        Monthly Rent *
                       </label>
                       <input
                         type="number"
@@ -1240,13 +1240,13 @@ export default function RoomsPage() {
                             monthlyRent: Number(e.target.value),
                           })
                         }
-                        className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                        className="rn-money w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                        Security Deposit (₹)
+                        Security Deposit
                       </label>
                       <input
                         type="number"
@@ -1259,7 +1259,7 @@ export default function RoomsPage() {
                             securityDeposit: Number(e.target.value),
                           })
                         }
-                        className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                        className="rn-money w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                       />
                     </div>
                   </div>
@@ -1490,7 +1490,7 @@ export default function RoomsPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                  Base Monthly Rent (₹) *
+                  Base Monthly Rent *
                 </label>
                 <input
                   type="number"
@@ -1504,7 +1504,7 @@ export default function RoomsPage() {
                       baseRentMonthly: Number(e.target.value),
                     })
                   }
-                  className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums"
+                  className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums"
                 />
               </div>
 
@@ -1664,7 +1664,7 @@ export default function RoomsPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                    Base Monthly Rent (₹)
+                    Base Monthly Rent
                   </label>
                   <input
                     type="number"
@@ -1677,7 +1677,7 @@ export default function RoomsPage() {
                         baseRentMonthly: Number(e.target.value),
                       })
                     }
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums"
+                    className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums"
                   />
                 </div>
 

@@ -3,6 +3,7 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { lockScroll } from "@/lib/scrollLock";
 
 /**
  * The shared dialog: drawn in the shell root (never clipped or offset by a card), backdrop,
@@ -38,8 +39,7 @@ export function Dialog({
   useEffect(() => {
     if (!open) return;
     const before = document.activeElement as HTMLElement | null;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockScroll();
     const t = window.setTimeout(() => {
       const first = panel.current?.querySelector<HTMLElement>("input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])");
       (first || panel.current)?.focus({ preventScroll: true });
@@ -54,7 +54,7 @@ export function Dialog({
     return () => {
       window.clearTimeout(t);
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
+      unlock();
       if (before && document.contains(before)) before.focus({ preventScroll: true });
     };
   }, [open, busy, onClose]);

@@ -58,9 +58,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Finance",
     items: [
       { key: "cashbook", label: "Cashbook", href: "/finance?tab=cashbook", icon: BookOpenText, roles: OM },
-      { key: "receivables", label: "Receivables", href: "/finance?tab=receivables", icon: HandCoins, roles: OM },
-      { key: "dues", label: "Resident Dues", href: "/finance?tab=residents", icon: Wallet, roles: OM },
-      { key: "invoices", label: "Invoices", href: "/finance?tab=invoices", icon: FileText, roles: OM },
+      { key: "receivables", label: "Dues", href: "/finance?tab=receivables", icon: HandCoins, roles: OM },
+      { key: "invoices", label: "Bills", href: "/finance?tab=invoices", icon: FileText, roles: OM },
       { key: "closing", label: "Daily Closing", href: "/finance?tab=closing", icon: LockKeyhole, roles: OM },
     ],
   },

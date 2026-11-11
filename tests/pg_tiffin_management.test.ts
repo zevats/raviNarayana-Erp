@@ -30,6 +30,9 @@ import { DeliveryTask } from "../apps/erp/src/types";
 import { useVerifyDatabase, migrateVerifyDatabase, createAsserter, insertStaff, uniqueBusinessDate } from "./helpers/pgVerifyTarget";
 
 const verifyUrl = useVerifyDatabase();
+// This suite checks the automatic plan stops, which are switched off by default since 2026-11-11
+// (plan thalis go out as orders). The logic is still there behind ERP_PLAN_AUTO_DELIVERY=1.
+process.env.ERP_PLAN_AUTO_DELIVERY = "1";
 const { assert, state } = createAsserter();
 const IP = "127.0.0.1";
 const rnd = () => crypto.randomBytes(3).toString("hex");

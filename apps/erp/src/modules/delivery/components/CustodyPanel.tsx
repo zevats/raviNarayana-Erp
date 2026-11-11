@@ -326,7 +326,7 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
             <label htmlFor="cash-counted" className="block text-[11px] text-[#1A2E20] pt-1">
               Cash counted
             </label>
-            <input id="cash-counted" type="number" inputMode="numeric" min={0} step={1} value={cash} onChange={(e) => setCash(e.target.value)} className="w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl" />
+            <input id="cash-counted" type="number" inputMode="numeric" min={0} step={1} value={cash} onChange={(e) => setCash(e.target.value)} className="rn-money w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl" />
           </div>
           {/* UPI is paid straight into the PG account (migration 0014); only older declarations carry UPI to confirm. */}
           {declaredUpi > 0 && <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA] space-y-1">
@@ -335,7 +335,7 @@ function VerifyHandover({ handover, onClose }: { handover: DriverCashHandover; o
             <label htmlFor="upi-received" className="block text-[11px] text-[#1A2E20] pt-1">
               UPI received in account
             </label>
-            <input id="upi-received" type="number" inputMode="numeric" min={0} max={declaredUpi} step={1} value={upi} disabled={declaredUpi === 0} onChange={(e) => setUpi(e.target.value)} className="w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl disabled:bg-gray-50" />
+            <input id="upi-received" type="number" inputMode="numeric" min={0} max={declaredUpi} step={1} value={upi} disabled={declaredUpi === 0} onChange={(e) => setUpi(e.target.value)} className="rn-money w-full h-11 px-2 text-base font-mono font-bold border border-[#DCD6CD] rounded-xl disabled:bg-gray-50" />
           </div>}
         </div>
         {differs && (
@@ -598,7 +598,7 @@ function WriteOffShortage({ row, onClose }: { row: StaffCustodyRow; onClose: (ms
         {error && <p role="alert" className="text-sm bg-red-50 border border-red-200 text-red-800 rounded-xl p-2">{error}</p>}
         <label className="block text-sm font-semibold text-[#1A2E20]">
           Amount to write off
-          <input type="text" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} className="mt-1 w-full h-11 px-3 rounded-xl border border-[#E6E1DA] text-base font-bold" />
+          <input type="text" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))} className="rn-money mt-1 w-full h-11 px-3 rounded-xl border border-[#E6E1DA] text-base font-bold" />
         </label>
         <label className="block text-sm font-semibold text-[#1A2E20]">
           Reason (at least 5 characters)

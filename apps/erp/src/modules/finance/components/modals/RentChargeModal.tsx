@@ -164,7 +164,7 @@ export function RentChargeModal({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Charge Amount (₹) *
+                Charge Amount *
               </label>
               <input
                 type="number"
@@ -173,7 +173,7 @@ export function RentChargeModal({
                 placeholder="8500"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
               />
             </div>
 

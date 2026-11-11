@@ -28,7 +28,7 @@ import { formatINR } from "@/modules/finance/utils/formatUtils";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { CustomerModal } from "./modals/CustomerModal";
 import { CustomerDetailModal } from "./modals/CustomerDetailModal";
-import { TiffinCustomerBalanceModal } from "./modals/TiffinCustomerBalanceModal";
+import { AccountSheet } from "@/modules/billing/AccountSheet";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { MButton, MChips, MEmpty, MGroup, MHero, MMore, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 
@@ -741,12 +741,8 @@ export function TiffinCustomerDirectory() {
         }}
       />
 
-      {/* Invoices, payments and outstanding balance */}
-      <TiffinCustomerBalanceModal
-        isOpen={accountCustomerId !== null}
-        onClose={() => setAccountCustomerId(null)}
-        customerId={accountCustomerId}
-      />
+      {/* Dues: bill and receive payment (the same pop-up as everywhere else) */}
+      <AccountSheet accountKey={accountCustomerId ? `C:${accountCustomerId}` : null} onClose={() => setAccountCustomerId(null)} />
     </div>
   );
 }

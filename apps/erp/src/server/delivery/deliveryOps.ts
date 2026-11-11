@@ -153,6 +153,11 @@ export async function getManifestStatus(
  * last time when they are still active delivery staff, else to the only delivery person when
  * there is just one, else left in the Unassigned group for the Manager.
  */
+/** Whether running plans get a delivery stop every meal without an order (off unless switched on). */
+export function planAutoDelivery(): boolean {
+  return process.env.ERP_PLAN_AUTO_DELIVERY === "1";
+}
+
 export async function prepareDeliveryManifest(
   actor: AuthenticatedUser,
   input: { serviceDate: string; mealType: MealType; trigger?: "AUTO" | "MANUAL" | "TOPUP" },
@@ -351,7 +356,10 @@ export async function prepareDeliveryManifest(
     for (const o of await tx.query<any>("SELECT subscription_id, action, quantity FROM subscription_day_overrides WHERE service_date = ? AND meal_type = ?", [serviceDate, mealType])) {
       overrides.set(o.subscription_id, { action: o.action, quantity: o.quantity === null ? null : Number(o.quantity) });
     }
-    const subs = await getEligibleTiffinSubscriptionsForDate(actor, serviceDate, mealType, tx);
+    // Plan customers are no longer put on the list by themselves (owner decision, 2026-11-11): a
+    // plan thali goes out only when it is taken as an order (New order → Subscription). The old
+    // automatic stops stay available behind ERP_PLAN_AUTO_DELIVERY=1.
+    const subs = planAutoDelivery() ? await getEligibleTiffinSubscriptionsForDate(actor, serviceDate, mealType, tx) : [];
     for (const sub of subs) {
       const o = overrides.get(sub.subscriptionId);
       if (o?.action === "SKIP") {

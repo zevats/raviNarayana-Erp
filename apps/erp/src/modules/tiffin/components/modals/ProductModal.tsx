@@ -241,7 +241,6 @@ export function ProductModal({
               Base Price (INR) <span className="text-red-500">*</span>
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-[#5A6C5E] font-medium">₹</span>
               <input
                 id="prod-price"
                 type="number"
@@ -251,7 +250,7 @@ export function ProductModal({
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 required
-                className="w-full pl-7 pr-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20] font-semibold"
+                className="rn-money w-full pl-7 pr-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20] font-semibold"
               />
             </div>
           </div>

@@ -11,20 +11,19 @@ import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadSubscriptionsView = () => import("@/modules/tiffin/components/SubscriptionsView");
 const SubscriptionsView = dynamic(() => loadSubscriptionsView().then((m) => m.SubscriptionsView), { ssr: false });
-const loadTiffinBillingView = () => import("@/modules/tiffin/components/TiffinBillingView");
-const TiffinBillingView = dynamic(() => loadTiffinBillingView().then((m) => m.TiffinBillingView), { ssr: false });
+const loadDues = () => import("@/modules/billing/DuesList");
+const DuesList = dynamic(() => loadDues().then((m) => m.DuesList), { ssr: false });
 
 type Tab = "customers" | "subscriptions" | "billing";
 
 /**
- * Tiffin management: customers, subscriptions and monthly billing. The menu and its prices are
- * edited in Orders → Menu.
- * Billing (invoices and payments) is Owner-only, as on the server (`finance.manage`).
+ * Tiffin management: customers, subscriptions and dues. The menu and its prices are edited in
+ * Orders → Menu. Dues (who owes, bills, receiving payments) is for Owner and Manager.
  */
 export default function TiffinPage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadSubscriptionsView, loadTiffinBillingView]), []);
-  const canBill = useHasPermission("finance.manage");
+  useEffect(() => preloadWhenIdle([loadSubscriptionsView, loadDues]), []);
+  const canBill = useHasPermission("finance.read");
   const [tab, setTab] = useState<Tab>("customers");
   // Links from notifications open a tab: /tiffin?tab=subscriptions
   useEffect(() => {
@@ -35,7 +34,7 @@ export default function TiffinPage() {
   const tabs: Array<{ value: Tab; label: string }> = [
     { value: "customers", label: "Customers" },
     { value: "subscriptions", label: "Subscriptions" },
-    ...(canBill ? [{ value: "billing" as Tab, label: "Billing" }] : []),
+    ...(canBill ? [{ value: "billing" as Tab, label: "Dues" }] : []),
   ];
 
   return (
@@ -49,7 +48,7 @@ export default function TiffinPage() {
 
       {tab === "customers" && <TiffinCustomerDirectory />}
       {tab === "subscriptions" && <SubscriptionsView />}
-      {tab === "billing" && canBill && <TiffinBillingView />}
+      {tab === "billing" && canBill && <DuesList scope="CUSTOMER" />}
     </div>
   );
 }

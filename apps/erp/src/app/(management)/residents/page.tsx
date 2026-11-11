@@ -58,6 +58,10 @@ import { formatNumberIN } from "@/lib/format";
 import { PhoneError } from "@/components/forms/PhoneError";
 import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import { ResidentsMobile } from "@/modules/residents/ResidentsMobile";
+import { useHasPermission } from "@/components/auth/CurrentUserContext";
+import { useDues } from "@/modules/billing/DuesList";
+import { AccountSheet } from "@/modules/billing/AccountSheet";
+import { BillAllDialog } from "@/modules/billing/BillDialogs";
 /**
  * Maps database floor integer to human-readable full label.
  */
@@ -101,9 +105,22 @@ export default function ResidentsPage() {
   const [errorOverride, setErrorOverride] = useState<string | null>(null);
   const error = errorOverride || (residentsQueryError ? residentsQueryError.message : null);
   const [search, setSearch] = useState("");
+  // Opens on the people living here now.
   const [selectedStatus, setSelectedStatus] = useState<
     "ALL" | "ACTIVE" | "CHECKED_OUT"
-  >("ALL");
+  >("ACTIVE");
+
+  // What each resident owes (rent), the same figures as Finance → Dues. Tap one to bill or collect.
+  const canSeeMoney = useHasPermission("finance.read");
+  const canRecordMoney = useHasPermission("finance.record");
+  const duesQ = useDues("RESIDENT", canSeeMoney);
+  const dueOf = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const a of duesQ.data?.accounts ?? []) if (a.total > 0) m.set(a.accountKey.slice(2), a.total);
+    return m;
+  }, [duesQ.data]);
+  const [duesFor, setDuesFor] = useState<{ id: string; name: string } | null>(null);
+  const [billAllOpen, setBillAllOpen] = useState(false);
 
   // Notifications
   const [actionError, setActionError] = useState<string | null>(null);
@@ -710,6 +727,12 @@ export default function ResidentsPage() {
   // ---------------------------------------------------------------------------
   return (
     <div className="space-y-5 min-w-0">
+      <AccountSheet
+        accountKey={duesFor ? `R:${duesFor.id}` : null}
+        preview={duesFor ? { name: duesFor.name, total: dueOf.get(duesFor.id) ?? 0 } : null}
+        onClose={() => setDuesFor(null)}
+      />
+      <BillAllDialog open={billAllOpen} onClose={() => setBillAllOpen(false)} accounts={(duesQ.data?.accounts ?? []).filter((a) => a.total > 0)} label="Residents" />
       <PhoneOrDesktop
         phone={phone}
         mobile={
@@ -735,6 +758,9 @@ export default function ResidentsPage() {
             onProfile={(r) => handleViewDetails(r.id, r.fullName)}
             onEdit={(r) => handleOpenEdit(r.id, r.fullName)}
             onMove={(r) => handleOpenTransferModal(r)}
+            dueOf={canSeeMoney ? dueOf : null}
+            onDues={(r) => setDuesFor({ id: r.id, name: r.fullName })}
+            onBillAll={canRecordMoney ? () => setBillAllOpen(true) : undefined}
           />
         }
         desktop={
@@ -743,7 +769,11 @@ export default function ResidentsPage() {
         title="Residents"
         actions={
           <>
-            <RefreshButton onRefresh={fetchData} busy={loading || isRevalidating} label="Refresh residents" />
+            {canRecordMoney && (
+              <button type="button" onClick={() => setBillAllOpen(true)} className="rn-btn" disabled={!duesQ.data || duesQ.data.accounts.every((a) => a.total <= 0)}>
+                <FileText /> Bill all
+              </button>
+            )}
             <button type="button" onClick={() => handleOpenCheckInModal()} className="rn-btn">
               <BedDouble /> Check in
             </button>
@@ -787,6 +817,7 @@ export default function ResidentsPage() {
 
       <StatStrip
         items={[
+          ...(canSeeMoney ? [{ label: "Rent due", value: duesQ.data ? `₹${formatNumberIN(duesQ.data.summary.total)}` : "—", tone: (duesQ.data?.summary.total ? "bad" : "good") as "bad" | "good" }] : []),
           { label: "In house", value: stats.active, tone: "good" },
           { label: "Checked out", value: stats.checkedOutCount, note: "last 30 days" },
           { label: "Listed", value: stats.total },
@@ -818,6 +849,7 @@ export default function ResidentsPage() {
                   <th>Room</th>
                   <th>Since</th>
                   <th>Status</th>
+                  {canSeeMoney && <th className="text-right">Due</th>}
                   <th className="text-right"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
@@ -892,6 +924,18 @@ export default function ResidentsPage() {
                         )}
                       </td>
 
+                      {canSeeMoney && (
+                        <td data-m="kv" className="text-right">
+                          {dueOf.get(res.id) ? (
+                            <button type="button" onClick={() => setDuesFor({ id: res.id, name: res.fullName })} className="font-semibold tabular-nums text-[#A3311D] hover:underline">
+                              ₹{formatNumberIN(dueOf.get(res.id)!)}
+                            </button>
+                          ) : (
+                            <span className="text-[var(--rn-ink-3)]">—</span>
+                          )}
+                        </td>
+                      )}
+
                       {/* Column 6: Actions */}
                       <td data-m="actions" className="text-right">
                         {/* One main action on the row; the rest are in the ⋯ menu. */}
@@ -919,6 +963,7 @@ export default function ResidentsPage() {
                           <RowMenu
                             label={`More for ${res.fullName}`}
                             items={[
+                              { key: "dues", label: "Dues, bill and payment", icon: <Wallet />, onSelect: () => setDuesFor({ id: res.id, name: res.fullName }), hidden: !canSeeMoney },
                               { key: "profile", label: "Profile and stay history", icon: <History />, onSelect: () => handleViewDetails(res.id, res.fullName) },
                               { key: "edit", label: "Edit profile", icon: <UserCog />, onSelect: () => handleOpenEdit(res.id, res.fullName) },
                               { key: "transfer", label: "Move to another room", icon: <ArrowRightLeft />, onSelect: () => handleOpenTransferModal(res), hidden: !isInHouse },
@@ -1522,13 +1567,13 @@ export default function ResidentsPage() {
                           monthlyRent: Number(e.target.value),
                         })
                       }
-                      className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
+                      className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
                     />
                   </div>
 
                   <div>
                     <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                      Security Deposit (₹)
+                      Security Deposit
                     </label>
                     <input
                       type="number"
@@ -1541,7 +1586,7 @@ export default function ResidentsPage() {
                           securityDeposit: Number(e.target.value),
                         })
                       }
-                      className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
+                      className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
                     />
                   </div>
                 </div>
@@ -1788,10 +1833,10 @@ export default function ResidentsPage() {
                       <input
                         type="number"
                         min="1"
-                        placeholder="Amount (₹)"
+                        placeholder="Amount"
                         value={newDeductionAmount}
                         onChange={(e) => setNewDeductionAmount(e.target.value)}
-                        className="w-24 px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-lg text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
+                        className="rn-money w-24 px-3 py-1.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-lg text-xs text-[#1A2E20] tabular-nums focus:outline-hidden"
                       />
                       <button
                         type="button"
@@ -2240,7 +2285,7 @@ export default function ResidentsPage() {
                 {/* New Monthly Rent */}
                 <div>
                   <label className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                    Monthly Rent for New Room (₹) *
+                    Monthly Rent for New Room *
                   </label>
                   <input
                     type="number"
@@ -2249,7 +2294,7 @@ export default function ResidentsPage() {
                     step={100}
                     value={transferForm.newMonthlyRent}
                     onChange={(e) => setTransferForm({ ...transferForm, newMonthlyRent: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
+                    className="rn-money w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] font-sans tabular-nums focus:outline-hidden focus:border-[#1A2E20]"
                   />
                 </div>
 

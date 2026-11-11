@@ -366,7 +366,7 @@ export function SingleScreenDeliveryModal({ task, isOpen, onClose, onSuccess, cu
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label htmlFor="collected" className="block text-[11px] text-[#1A2E20] mb-1">
-                    Amount collected (₹)
+                    Amount collected
                   </label>
                   <input
                     id="collected"
@@ -380,7 +380,7 @@ export function SingleScreenDeliveryModal({ task, isOpen, onClose, onSuccess, cu
                       setCollectedEdited(true);
                       setCollectedInput(e.target.value);
                     }}
-                    className={`w-full h-11 px-3 text-base font-mono font-bold bg-[#FAF8F5] border rounded-xl text-[#1A2E20] ${
+                    className={`rn-money w-full h-11 px-3 text-base font-mono font-bold bg-[#FAF8F5] border rounded-xl text-[#1A2E20] ${
                       collectedValid ? "border-[#DCD6CD]" : "border-red-400"
                     }`}
                   />

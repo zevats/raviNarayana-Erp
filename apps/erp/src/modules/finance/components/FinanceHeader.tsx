@@ -11,6 +11,8 @@ interface FinanceHeaderProps {
   onRefresh: () => void;
   isLoading: boolean;
   onOpenPayment: () => void;
+  /** Cashbook only: the entry actions. Dues, Bills and Daily closing show the title alone. */
+  showActions?: boolean;
   onOpenCharge: () => void;
   /** Monthly rent for everyone (preview, then charge). */
   onOpenRentRun?: () => void;
@@ -29,6 +31,7 @@ export function FinanceHeader({
   onRefresh,
   isLoading,
   onOpenPayment,
+  showActions = true,
   onOpenCharge,
   onOpenRentRun,
   onOpenDeposit,
@@ -59,6 +62,7 @@ export function FinanceHeader({
     { key: "expense", label: "Expense", icon: <TrendingDown />, onClick: onOpenExpense },
   ];
 
+  if (!showActions) return <PageHeader title={title} />;
   return (
     <PageHeader
       title={title}
@@ -100,7 +104,7 @@ export function FinanceHeader({
             )}
           </div>
           <button type="button" onClick={onOpenPayment} className="rn-btn rn-btn-primary">
-            <CreditCard /> Record payment
+            <CreditCard /> Receive payment
           </button>
         </>
       }

@@ -53,19 +53,17 @@ import {
   initials,
   type MTone,
 } from "@/components/app/m";
-import { AccountSheet } from "../components/ReceivablesView";
 
-export type FinanceTab = "cashbook" | "receivables" | "residents" | "invoices" | "closing";
+export type FinanceTab = "cashbook" | "receivables" | "invoices" | "closing";
 
 const PLACES: Array<{ value: FinanceTab; label: string; icon: React.ElementType }> = [
   { value: "cashbook", label: "Cashbook", icon: BookOpenText },
-  { value: "receivables", label: "Owed", icon: HandCoins },
-  { value: "residents", label: "Dues", icon: Wallet },
-  { value: "invoices", label: "Invoices", icon: FileText },
+  { value: "receivables", label: "Dues", icon: HandCoins },
+  { value: "invoices", label: "Bills", icon: FileText },
   { value: "closing", label: "Closing", icon: LockKeyhole },
 ];
 
-/** The five finance places in one row. */
+/** The finance places in one row. */
 export function FinancePlaces({ value, onChange }: { value: FinanceTab; onChange: (t: FinanceTab) => void }) {
   return (
     <nav aria-label="Finance" className="m-places" style={{ gridTemplateColumns: `repeat(${PLACES.length}, minmax(0, 1fr))` }}>
@@ -250,7 +248,7 @@ export function CashbookMobile({
 
       <MQuick
         items={[
-          { label: "Payment", icon: CreditCard, onClick: onPay, tone: "green" },
+          { label: "Receive", icon: CreditCard, onClick: onPay, tone: "green" },
           { label: "Expense", icon: TrendingDown, onClick: onExpense, tone: "red" },
           { label: "Deposit", icon: Wallet, onClick: onDeposit, tone: "amber" },
           { label: "More", icon: MoreHorizontal, onClick: () => setMoreOpen(true), tone: "neutral" },
@@ -265,7 +263,7 @@ export function CashbookMobile({
         <MEmpty icon={Receipt} title={transactions.length === 0 ? "Nothing recorded in this period" : "No entries match"}>
           {transactions.length === 0 ? (
             <MButton kind="primary" icon={CreditCard} onClick={onPay}>
-              Record payment
+              Receive payment
             </MButton>
           ) : (
             <MButton
@@ -520,281 +518,6 @@ export function CashbookMobile({
           <input type="date" className="m-input" value={to} min={from || undefined} max={today} onChange={(e) => setTo(e.target.value)} />
         </label>
       </MSheet>
-    </MStack>
-  );
-}
-
-/* ================================================================== Receivables */
-
-interface RecAccount {
-  accountKey: string;
-  kind: "RESIDENT" | "CUSTOMER" | "ORDER";
-  name: string;
-  phone: string | null;
-  place: string | null;
-  pg: number;
-  tiffin: number;
-  delivery: number;
-  total: number;
-  oldestDate: string | null;
-  ageDays: number | null;
-  partiallyPaid: boolean;
-  openItems: number;
-  reviews: number;
-  payLaterEnabled: boolean | null;
-}
-interface RecList {
-  summary: {
-    total: number;
-    bySource: { PG: number; TIFFIN: number; DELIVERY: number };
-    ageing: Record<"0_7" | "8_30" | "31_60" | "61_PLUS", number>;
-    unallocatedCredit: number;
-    accountsOwing: number;
-    reviews: number;
-  };
-  accounts: RecAccount[];
-  total: number;
-}
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: "no-store" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || "Could not load.");
-  return data as T;
-}
-const ageTone = (d: number | null): MTone => ((d ?? 0) > 60 ? "red" : (d ?? 0) > 30 ? "amber" : "neutral");
-const daysText = (n: number | null) => (n === null ? "" : n === 0 ? "today" : `${n} day${n === 1 ? "" : "s"}`);
-
-export function ReceivablesMobile({ initialReviewOnly = false }: { initialReviewOnly?: boolean }) {
-  const [source, setSource] = useState<"ALL" | "PG" | "TIFFIN" | "DELIVERY">("ALL");
-  const [bucket, setBucket] = useState<"ALL" | "0_7" | "8_30" | "31_60" | "61_PLUS">("ALL");
-  const [status, setStatus] = useState<"ALL" | "UNPAID" | "PARTIALLY_PAID">("ALL");
-  const [reviewOnly, setReviewOnly] = useState(initialReviewOnly);
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [search, setSearch] = useState("");
-  const q = useDebouncedValue(search.trim(), 300);
-  const [limit, setLimit] = useState(30);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
-  React.useEffect(() => setLimit(30), [source, bucket, status, reviewOnly, from, to, q]);
-  const url = useMemo(() => {
-    const p = new URLSearchParams({ source, status, bucket, limit: String(limit), offset: "0" });
-    if (q) p.set("q", q);
-    if (from) p.set("from", from);
-    if (to) p.set("to", to);
-    if (reviewOnly) p.set("review", "1");
-    return `/api/finance/receivables?${p.toString()}`;
-  }, [source, status, bucket, reviewOnly, from, to, q, limit]);
-  const list = useErpQuery<RecList>(url, () => getJson<RecList>(url), { tags: ["finance", "receivables", "delivery", "tiffin"], ttl: 15000 });
-  const d = list.data;
-  const s = d?.summary;
-  const filterCount = [status !== "ALL", reviewOnly].filter(Boolean).length;
-  const clear = () => {
-    setSource("ALL");
-    setBucket("ALL");
-    setStatus("ALL");
-    setReviewOnly(false);
-    setFrom("");
-    setTo("");
-    setSearch("");
-  };
-  const money = (v: number | undefined) => (s ? formatMoney(v ?? 0) : "—");
-
-  return (
-    <MStack>
-      <MHero
-        label="Owed to you"
-        value={money(s?.total)}
-        note={s ? `${s.accountsOwing} account${s.accountsOwing === 1 ? "" : "s"}${s.unallocatedCredit ? ` · advance ${formatMoney(s.unallocatedCredit)}` : ""}` : undefined}
-        items={[
-          { label: "PG rent", value: money(s?.bySource.PG), onClick: () => setSource("PG") },
-          { label: "Tiffin", value: money(s?.bySource.TIFFIN), onClick: () => setSource("TIFFIN") },
-          { label: "Delivery", value: money(s?.bySource.DELIVERY), onClick: () => setSource("DELIVERY") },
-        ]}
-      />
-      {s && s.reviews > 0 && !reviewOnly && (
-        <button type="button" onClick={() => setReviewOnly(true)} className="m-notice m-notice-red m-press text-left">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span className="flex-1">
-            {s.reviews} unpaid deliver{s.reviews === 1 ? "y" : "ies"} to review
-          </span>
-        </button>
-      )}
-      <MSegment
-        label="Source"
-        value={source}
-        onChange={setSource}
-        options={[
-          { value: "ALL", label: "All" },
-          { value: "PG", label: "PG" },
-          { value: "TIFFIN", label: "Tiffin" },
-          { value: "DELIVERY", label: "Delivery" },
-        ]}
-      />
-      <MSearch value={search} onChange={setSearch} placeholder="Search name, phone or room" onFilter={() => setFiltersOpen(true)} filterCount={filterCount} />
-
-      {list.error && !d ? (
-        <MEmpty icon={AlertTriangle} title="Could not load">
-          <MButton kind="soft" onClick={() => list.refetch()}>
-            Try again
-          </MButton>
-        </MEmpty>
-      ) : !d ? (
-        <MSkeletonRows rows={6} />
-      ) : d.accounts.length === 0 ? (
-        <MEmpty icon={HandCoins} title={filterCount || source !== "ALL" || bucket !== "ALL" || q ? "No accounts match" : "Nothing outstanding"}>
-          {(filterCount > 0 || source !== "ALL" || bucket !== "ALL" || Boolean(q)) && (
-            <MButton kind="soft" onClick={clear}>
-              Clear filters
-            </MButton>
-          )}
-        </MEmpty>
-      ) : (
-        <>
-          <MGroup>
-            {d.accounts.map((a) => (
-              <MRow
-                key={a.accountKey}
-                avatar={initials(a.name)}
-                tone={ageTone(a.ageDays)}
-                title={a.name}
-                sub={[a.place, a.reviews > 0 ? "to review" : a.partiallyPaid ? "partly paid" : "", daysText(a.ageDays)].filter(Boolean).join(" · ")}
-                right={formatMoney(a.total)}
-                rightTone={a.total < 0 ? "green" : undefined}
-                onClick={() => setOpen(a.accountKey)}
-              />
-            ))}
-          </MGroup>
-          <MMore shown={d.accounts.length} total={d.total} onMore={() => setLimit((l) => l + 30)} />
-        </>
-      )}
-
-      <MSheet
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        title="Filters"
-        footer={
-          <>
-            <MButton
-              kind="soft"
-              onClick={() => {
-                setStatus("ALL");
-                setReviewOnly(false);
-                setFrom("");
-                setTo("");
-              }}
-            >
-              Clear
-            </MButton>
-            <MButton kind="primary" onClick={() => setFiltersOpen(false)}>
-              Done
-            </MButton>
-          </>
-        }
-      >
-        <p className="m-sheet-label">Payment</p>
-        <MChips label="Payment" value={status} onChange={setStatus} options={[{ value: "ALL", label: "All" }, { value: "UNPAID", label: "Unpaid" }, { value: "PARTIALLY_PAID", label: "Partly paid" }]} />
-        <p className="m-sheet-label">Unpaid deliveries</p>
-        <MChips label="Unpaid deliveries" value={reviewOnly ? "YES" : "NO"} onChange={(v) => setReviewOnly(v === "YES")} options={[{ value: "NO", label: "All" }, { value: "YES", label: "Only to review" }]} />
-      </MSheet>
-
-      <AccountSheet accountKey={open} onClose={() => setOpen(null)} />
-    </MStack>
-  );
-}
-
-/* ================================================================== Resident dues */
-
-export function DuesMobile({ residents, isLoading }: { residents: ResidentListItem[]; isLoading: boolean }) {
-  const [view, setView] = useState<"OWING" | "ALL">("OWING");
-  const [search, setSearch] = useState("");
-  const q = React.useDeferredValue(search.trim().toLowerCase());
-  const [open, setOpen] = useState<string | null>(null);
-  const [shown, setShown] = useState(40);
-  const url = "/api/finance/receivables?source=PG&status=ALL&bucket=ALL&limit=500&offset=0";
-  const owing = useErpQuery<RecList>(url, () => getJson<RecList>(url), { tags: ["finance", "receivables"], ttl: 15000 });
-  const owedById = useMemo(() => {
-    const m = new Map<string, RecAccount>();
-    for (const a of owing.data?.accounts ?? []) if (a.accountKey.startsWith("R")) m.set(a.accountKey.slice(2), a);
-    return m;
-  }, [owing.data]);
-  const inHouse = residents.filter((r) => r.status === "ACTIVE").length;
-  const matches = (name: string, extra: string) => !q || `${name} ${extra}`.toLowerCase().includes(q);
-  const owingList = (owing.data?.accounts ?? []).filter((a) => a.accountKey.startsWith("R") && a.total > 0 && matches(a.name, `${a.place ?? ""} ${a.phone ?? ""}`));
-  const allList = residents
-    .filter((r) => matches(r.fullName, `${r.currentRoomNumber ?? ""} ${r.phone ?? ""}`))
-    .sort((x, y) => (owedById.get(y.id)?.total ?? 0) - (owedById.get(x.id)?.total ?? 0) || x.fullName.localeCompare(y.fullName));
-  React.useEffect(() => setShown(40), [view, q]);
-  const total = owing.data?.summary.bySource.PG;
-
-  return (
-    <MStack>
-      <MHero
-        label="Rent owed by residents"
-        value={total === undefined ? "—" : formatMoney(total)}
-        items={[
-          { label: "Owing", value: owing.data ? String(owingList.length || owing.data.summary.accountsOwing) : "—", onClick: () => setView("OWING") },
-          { label: "In house", value: isLoading ? "—" : String(inHouse), onClick: () => setView("ALL") },
-        ]}
-      />
-      <MSegment
-        label="Show"
-        value={view}
-        onChange={setView}
-        options={[
-          { value: "OWING", label: "Owing" },
-          { value: "ALL", label: "All residents" },
-        ]}
-      />
-      <MSearch value={search} onChange={setSearch} placeholder="Search name, room or phone" />
-      {view === "OWING" ? (
-        !owing.data ? (
-          <MSkeletonRows rows={5} />
-        ) : owingList.length === 0 ? (
-          <MEmpty icon={Wallet} title={q ? "No one matches" : "No rent owed"} />
-        ) : (
-          <MGroup>
-            {owingList.map((a) => (
-              <MRow
-                key={a.accountKey}
-                avatar={initials(a.name)}
-                tone={ageTone(a.ageDays)}
-                title={a.name}
-                sub={[a.place ? `Room ${a.place}` : "", daysText(a.ageDays)].filter(Boolean).join(" · ")}
-                right={formatMoney(a.total)}
-                onClick={() => setOpen(a.accountKey)}
-              />
-            ))}
-          </MGroup>
-        )
-      ) : isLoading && residents.length === 0 ? (
-        <MSkeletonRows rows={6} />
-      ) : allList.length === 0 ? (
-        <MEmpty icon={Users} title="No residents match" />
-      ) : (
-        <>
-          <MGroup>
-            {allList.slice(0, shown).map((r) => {
-              const owed = owedById.get(r.id)?.total ?? 0;
-              return (
-                <MRow
-                  key={r.id}
-                  avatar={initials(r.fullName)}
-                  tone={r.status === "ACTIVE" ? "accent" : "neutral"}
-                  title={r.fullName}
-                  sub={[r.currentRoomNumber ? `Room ${r.currentRoomNumber}` : "", r.status === "ACTIVE" ? "In house" : r.status === "CHECKED_OUT" ? "Checked out" : ""].filter(Boolean).join(" · ")}
-                  right={owed > 0 ? formatMoney(owed) : owed < 0 ? formatMoney(owed) : "Settled"}
-                  rightTone={owed > 0 ? undefined : "green"}
-                  onClick={() => setOpen(`R:${r.id}`)}
-                />
-              );
-            })}
-          </MGroup>
-          <MMore shown={shown} total={allList.length} onMore={() => setShown((s) => s + 40)} step={40} />
-        </>
-      )}
-      {/* Balances, statement and Receive payment for the resident. */}
-      <AccountSheet accountKey={open} onClose={() => setOpen(null)} />
     </MStack>
   );
 }

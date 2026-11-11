@@ -4,7 +4,8 @@ import { requirePermission, AuthorizationError } from "../authorization/authoriz
 import { hasPermission } from "../authorization/permissions";
 import { RENT_SETTLEMENT_SQL } from "./financialDefinitions";
 import { hasDeliveryOpsSchema, activeCollectionSql } from "../delivery/deliveryRules";
-import { hasPayLaterSchema, hasDineInPayLaterSchema } from "../database/schemaFeatures";
+import { hasPayLaterSchema, hasDineInPayLaterSchema, hasBillsSchema } from "../database/schemaFeatures";
+import { ensurePlanChargesSoon } from "../tiffin/planCharges";
 import { acquireLedgerKeyLock, getBusinessDateString, recordRentPayment, assertClosingDateNotFinalized } from "./financeService";
 import { recordTiffinPayment } from "../tiffin/tiffinBillingService";
 import { recordDeliveryCollection } from "../delivery/deliveryService";
@@ -74,6 +75,8 @@ export interface ReceivableAccount {
   openItems: number;
   reviews: number;
   payLaterEnabled: boolean | null;
+  /** Tiffin customers only: INDIVIDUAL, CORPORATE or RESIDENTIAL_PG. */
+  customerType: string | null;
 }
 
 export interface ReceivablesQuery {
@@ -84,6 +87,10 @@ export interface ReceivablesQuery {
   from?: string;
   to?: string;
   reviewOnly?: boolean;
+  /** RESIDENT = PG residents; CUSTOMER = tiffin customers and orders without a customer record. */
+  kind?: "RESIDENT" | "CUSTOMER" | "ALL";
+  /** Tiffin customers of one type (INDIVIDUAL / CORPORATE). */
+  customerType?: string;
   limit?: number;
   offset?: number;
   sort?: "total" | "oldest" | "name";
@@ -162,7 +169,9 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
     tf AS (
       SELECT 'TIFFIN' AS source, 'C' AS account_kind, i.customer_id AS account_id, 'INVOICE' AS kind, i.id AS ref_id,
              COALESCE(i.invoice_number, 'Draft') AS reference,
-             'Invoice ' || COALESCE(i.invoice_number, '') || ' · ' || i.billing_period AS description,
+             CASE WHEN i.subscription_id IS NOT NULL
+                  THEN 'Monthly plan · ' || to_char(CAST(i.issue_date AS date), 'DD Mon YYYY')
+                  ELSE 'Invoice ' || COALESCE(i.invoice_number, '') || ' · ' || i.billing_period END AS description,
              i.issue_date AS date, i.due_date AS due_date, i.total_amount AS amount, i.amount_paid AS paid,
              i.balance_due AS outstanding, NULL AS payment_choice, NULL AS review,
              '/finance?tab=invoices' AS link
@@ -173,7 +182,7 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
     tf_credit AS (
       SELECT 'TIFFIN' AS source, 'C' AS account_kind, t.customer_id AS account_id, 'UNALLOCATED' AS kind, t.id AS ref_id,
              'Unallocated payment' AS reference,
-             'Payment not yet allocated to an invoice (' || COALESCE(t.payment_method, '') || ')' AS description,
+             'Paid ahead (' || COALESCE(t.payment_method, '') || ')' AS description,
              t.transaction_date AS date, NULL AS due_date, t.amount AS amount, 0 AS paid,
              -(t.amount - COALESCE(a.allocated, 0)) AS outstanding,
              NULL AS payment_choice, NULL AS review,
@@ -188,7 +197,7 @@ async function linesSql(db: AsyncDb, today: string, accountKey?: string): Promis
       SELECT o.id, o.customer_id, o.service_date, o.meal_type, o.created_at,
              CASE WHEN o.customer_id IS NOT NULL THEN 'C' ELSE 'O' END AS account_kind,
              COALESCE(o.customer_id, o.id) AS account_id,
-             ${pay ? "o.payment_choice, CASE WHEN o.payment_reviewed_at IS NULL THEN o.payment_review END AS review" : "NULL AS payment_choice, NULL AS review"},
+             ${pay ? "o.payment_choice" : "NULL AS payment_choice"}, NULL AS review,
              ${orderMoney}
       FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
       ${orderJoins}
@@ -286,6 +295,7 @@ export async function listReceivables(actor: AuthenticatedUser, query: Receivabl
   requireReceivablesRead(actor);
   const db = asyncDb ?? getAsyncDb();
   const today = getBusinessDateString(new Date());
+  await ensurePlanChargesSoon(db, actor);
   const pay = await hasPayLaterSchema(db);
   const { sql: base, params: baseParams } = await linesSql(db, today);
 
@@ -312,12 +322,22 @@ export async function listReceivables(actor: AuthenticatedUser, query: Receivabl
     params.push(query.to);
   }
   if (query.reviewOnly) where.push("x.review IS NOT NULL");
+  if (query.kind === "RESIDENT") where.push("x.account_kind = 'R'");
+  if (query.kind === "CUSTOMER") where.push("x.account_kind <> 'R'");
   const search = (query.q || "").trim().toLowerCase();
-  const searchCond = search ? "WHERE (LOWER(name) LIKE ? OR COALESCE(phone, '') LIKE ? OR LOWER(COALESCE(place, '')) LIKE ?)" : "";
-  if (search) params.push(`%${search}%`, `%${search.replace(/\s+/g, "")}%`, `%${search}%`);
+  const matchConds: string[] = [];
+  if (search) {
+    matchConds.push("(LOWER(name) LIKE ? OR COALESCE(phone, '') LIKE ? OR LOWER(COALESCE(place, '')) LIKE ?)");
+    params.push(`%${search}%`, `%${search.replace(/\s+/g, "")}%`, `%${search}%`);
+  }
+  const customerType = (query.customerType || "").trim().toUpperCase();
+  if (customerType === "CORPORATE") matchConds.push("customer_type = 'CORPORATE'");
+  if (customerType === "INDIVIDUAL") matchConds.push("COALESCE(customer_type, 'INDIVIDUAL') <> 'CORPORATE'");
+  const searchCond = matchConds.length ? `WHERE ${matchConds.join(" AND ")}` : "";
+  const narrowed = matchConds.length > 0;
   const order =
     query.sort === "oldest" ? "oldest ASC NULLS LAST, total DESC, account_key" : query.sort === "name" ? "LOWER(name) ASC, account_key" : "total DESC, oldest ASC, account_key";
-  const limit = Math.min(100, Math.max(1, Number(query.limit) || 25));
+  const limit = Math.min(500, Math.max(1, Number(query.limit) || 25));
   const offset = Math.max(0, Number(query.offset) || 0);
 
   const sql = `
@@ -342,7 +362,8 @@ export async function listReceivables(actor: AuthenticatedUser, query: Receivabl
              COALESCE(r.full_name, c.full_name, o.customer_name, '—') AS name,
              COALESCE(r.phone, c.phone, o.customer_phone) AS phone,
              (SELECT rm.room_number FROM resident_stays s JOIN rooms rm ON rm.id = s.room_id WHERE acc.account_kind = 'R' AND s.resident_id = acc.account_id AND s.status = 'ACTIVE' LIMIT 1) AS place,
-             ${pay ? "c.pay_later_enabled" : "NULL"} AS pay_later_enabled
+             ${pay ? "c.pay_later_enabled" : "NULL"} AS pay_later_enabled,
+             c.customer_type AS customer_type
       FROM acc
       LEFT JOIN residents r ON acc.account_kind = 'R' AND r.id = acc.account_id
       LEFT JOIN tiffin_customers c ON acc.account_kind = 'C' AND c.id = acc.account_id
@@ -360,7 +381,7 @@ export async function listReceivables(actor: AuthenticatedUser, query: Receivabl
              COALESCE(SUM(CASE WHEN f.bucket = '31_60' THEN f.outstanding END), 0) AS b31_60,
              COALESCE(SUM(CASE WHEN f.bucket = '61_PLUS' THEN f.outstanding END), 0) AS b61_plus,
              COALESCE(SUM(CASE WHEN f.status = 'CREDIT' THEN f.outstanding END), 0) AS credit
-      FROM f ${search ? "JOIN matched m ON m.account_kind = f.account_kind AND m.account_id = f.account_id" : ""}
+      FROM f ${narrowed ? "JOIN matched m ON m.account_kind = f.account_kind AND m.account_id = f.account_id" : ""}
     ),
     page AS (SELECT * FROM matched ORDER BY ${order} LIMIT ${limit} OFFSET ${offset})
     SELECT t.*, a.*, p.* FROM totals t CROSS JOIN ageing a LEFT JOIN page p ON TRUE`;
@@ -387,6 +408,7 @@ export async function listReceivables(actor: AuthenticatedUser, query: Receivabl
       openItems: n(r.open_items),
       reviews: n(r.reviews),
       payLaterEnabled: r.pay_later_enabled === null || r.pay_later_enabled === undefined ? null : Number(r.pay_later_enabled) === 1,
+      customerType: r.customer_type || null,
     };
   });
   return {
@@ -416,11 +438,11 @@ async function accountHeader(db: AsyncDb, accountKey: string) {
        LEFT JOIN resident_stays s ON s.resident_id = r.id AND s.status = 'ACTIVE' LEFT JOIN rooms rm ON rm.id = s.room_id WHERE r.id = ?`,
       [id]
     );
-    return r ? { accountKey, kind: "RESIDENT" as const, id, name: r.full_name, phone: r.phone, place: r.room_number || null, payLater: null } : null;
+    return r ? { accountKey, kind: "RESIDENT" as const, id, name: r.full_name, phone: r.phone, place: r.room_number ? `Room ${r.room_number}` : null, payLater: null, customerType: null as string | null } : null;
   }
   if (kind === "C") {
     const c = await db.queryOne<any>(
-      `SELECT c.id, c.full_name, c.phone, c.delivery_address${pay ? ", c.pay_later_enabled, c.pay_later_updated_at, u.full_name AS pay_later_updated_by_name" : ""}
+      `SELECT c.id, c.full_name, c.phone, c.delivery_address, c.customer_type${pay ? ", c.pay_later_enabled, c.pay_later_updated_at, u.full_name AS pay_later_updated_by_name" : ""}
        FROM tiffin_customers c ${pay ? "LEFT JOIN staff_users u ON u.id = c.pay_later_updated_by" : ""} WHERE c.id = ?`,
       [id]
     );
@@ -428,12 +450,13 @@ async function accountHeader(db: AsyncDb, accountKey: string) {
       ? {
           accountKey, kind: "CUSTOMER" as const, id, name: c.full_name, phone: c.phone, place: c.delivery_address || null,
           payLater: pay ? { enabled: Number(c.pay_later_enabled) === 1, updatedAt: c.pay_later_updated_at || null, updatedBy: c.pay_later_updated_by_name || null } : null,
+          customerType: (c.customer_type || null) as string | null,
         }
       : null;
   }
   if (kind === "O") {
     const o = await db.queryOne<any>("SELECT id, customer_name, customer_phone, delivery_address FROM orders WHERE id = ? AND customer_id IS NULL", [id]);
-    return o ? { accountKey, kind: "ORDER" as const, id, name: o.customer_name, phone: o.customer_phone || null, place: o.delivery_address || null, payLater: null } : null;
+    return o ? { accountKey, kind: "ORDER" as const, id, name: o.customer_name, phone: o.customer_phone || null, place: o.delivery_address || null, payLater: null, customerType: null as string | null } : null;
   }
   return null;
 }
@@ -442,10 +465,11 @@ async function accountHeader(db: AsyncDb, accountKey: string) {
 export async function getReceivableAccount(actor: AuthenticatedUser, accountKey: string, asyncDb?: AsyncDb) {
   requireReceivablesRead(actor);
   const db = asyncDb ?? getAsyncDb();
-  const header = await accountHeader(db, accountKey);
-  if (!header) throw new Error("Account not found.");
+  if (accountKey.startsWith("C:")) await ensurePlanChargesSoon(db, actor);
   const today = getBusinessDateString(new Date());
-  const { sql, params } = await linesSql(db, today, accountKey);
+  const [header, built] = await Promise.all([accountHeader(db, accountKey), linesSql(db, today, accountKey)]);
+  if (!header) throw new Error("Account not found.");
+  const { sql, params } = built;
   const rows = await db.query<any>(`SELECT * FROM (${sql}) x ORDER BY x.date ASC, x.source`, params);
   const lines = rows.map(mapLine);
   const sum = (s?: ReceivableSource) => lines.filter((l) => !s || l.source === s).reduce((a, l) => a + l.outstanding, 0);
@@ -528,7 +552,7 @@ async function statementEvents(db: AsyncDb, accountKey: string): Promise<Omit<St
 
   if (kind === "C") {
     const rows = await db.query<any>(
-      `SELECT t.*, i.invoice_number, i.cancelled_at AS invoice_cancelled_at, i.status AS invoice_status
+      `SELECT t.*, i.invoice_number, i.cancelled_at AS invoice_cancelled_at, i.status AS invoice_status, i.subscription_id AS invoice_subscription_id, i.issue_date AS invoice_issue_date
        FROM financial_transactions t LEFT JOIN invoices i ON i.id = t.invoice_id
        WHERE t.customer_id = ? AND t.transaction_type IN ('TIFFIN_CHARGE', 'TIFFIN_PAYMENT')
        ORDER BY t.transaction_date, t.created_at`,
@@ -564,9 +588,9 @@ async function statementEvents(db: AsyncDb, accountKey: string): Promise<Omit<St
       const isCharge = r.transaction_type === "TIFFIN_CHARGE";
       ev({
         date: r.transaction_date, at: r.created_at, source: "TIFFIN",
-        type: isCharge ? "Tiffin invoice" : "Tiffin payment",
-        description: isCharge ? `Invoice ${r.invoice_number || ""} · ${r.billing_period || ""}`.trim() : r.description || "Payment",
-        reference: isCharge ? r.invoice_number || null : r.reference_number || null,
+        type: isCharge ? (r.invoice_subscription_id ? "Monthly plan" : "Tiffin invoice") : "Tiffin payment",
+        description: isCharge ? (r.invoice_subscription_id ? r.description || "Monthly plan" : `Invoice ${r.invoice_number || ""} · ${r.billing_period || ""}`.trim()) : r.description || "Payment",
+        reference: isCharge ? (r.invoice_subscription_id ? `from ${r.invoice_issue_date}` : r.invoice_number || null) : r.reference_number || null,
         charge: isCharge ? n(r.amount) : 0,
         payment: isCharge ? 0 : n(r.amount),
         reversedLater: r.status === "REVERSED",
@@ -579,8 +603,8 @@ async function statementEvents(db: AsyncDb, accountKey: string): Promise<Omit<St
         // none, so the invoice's cancellation date is used.
         const when = v ? { date: v.transaction_date, at: v.created_at } : { date: istDate(r.invoice_cancelled_at || r.updated_at), at: r.invoice_cancelled_at || r.updated_at };
         ev({
-          ...when, source: "TIFFIN", type: isCharge ? (v ? "Charge reversed" : "Invoice cancelled") : "Payment reversed",
-          description: v?.description || (isCharge ? `Invoice ${r.invoice_number || ""} cancelled` : "Reversal"),
+          ...when, source: "TIFFIN", type: isCharge ? (v ? "Charge reversed" : r.invoice_subscription_id ? "Plan charge cancelled" : "Invoice cancelled") : "Payment reversed",
+          description: v?.description || (isCharge ? (r.invoice_subscription_id ? "Monthly plan charge cancelled" : `Invoice ${r.invoice_number || ""} cancelled`) : "Reversal"),
           reference: isCharge ? r.invoice_number || null : null,
           adjustment: isCharge ? -n(r.amount) : n(r.amount),
         });
@@ -718,8 +742,51 @@ export interface ReceivePaymentInput {
   referenceNumber?: string;
   amountReceived: number;
   idempotencyKey: string;
-  items: Array<{ source: ReceivableSource; refId: string; amount: number }>;
+  /**
+   * Where the money goes. Left out (the normal case): the oldest dues are paid first, by the
+   * server, from the account as it stands when the payment is recorded.
+   */
+  items?: Array<{ source: ReceivableSource; refId: string; amount: number }>;
+  /** The bill the customer paid against (optional). A record only: dues are still paid oldest first. */
+  billNumber?: string;
   notes?: string;
+}
+
+const DINE_IN_LINE = "Dine-in order, Pay Later";
+
+/**
+ * Spreads an amount over an account's open dues, oldest first. Rent is one running balance (its
+ * own ledger already pays the oldest charge first). A dine-in order is paid in full or not at all
+ * (it has one payment record), so it is skipped when the money left does not cover it.
+ */
+export function spreadOldestFirst(
+  lines: Array<Pick<ReceivableLine, "source" | "refId" | "outstanding" | "date" | "description">>,
+  accountId: string,
+  amount: number
+): { items: Array<{ source: ReceivableSource; refId: string; amount: number }>; left: number; skippedDineIn: number[] } {
+  const open = lines.filter((l) => l.outstanding > 0).sort((a, b) => a.date.localeCompare(b.date));
+  const items: Array<{ source: ReceivableSource; refId: string; amount: number }> = [];
+  const skippedDineIn: number[] = [];
+  let left = amount;
+  for (const l of open) {
+    if (left <= 0) break;
+    if (l.source === "PG") {
+      const take = Math.min(left, l.outstanding);
+      const rent = items.find((i) => i.source === "PG");
+      if (rent) rent.amount += take;
+      else items.push({ source: "PG", refId: accountId, amount: take });
+      left -= take;
+      continue;
+    }
+    if (l.description === DINE_IN_LINE && left < l.outstanding) {
+      skippedDineIn.push(l.outstanding);
+      continue;
+    }
+    const take = Math.min(left, l.outstanding);
+    items.push({ source: l.source, refId: l.refId, amount: take });
+    left -= take;
+  }
+  return { items, left, skippedDineIn };
 }
 
 /** The same payment reference was already used for a different payment: nothing is recorded (409). */
@@ -765,8 +832,9 @@ export async function receiveAccountPayment(actor: AuthenticatedUser, input: Rec
   if (!header) throw new Error("Account not found.");
   const method = normalizePaymentMethod(input.paymentMethod);
   const date = input.transactionDate && DATE.test(input.transactionDate) ? input.transactionDate : getBusinessDateString(new Date());
-  const items = Array.isArray(input.items) ? input.items : [];
-  if (items.length === 0) throw new Error("Choose at least one balance to pay.");
+  const automatic = !Array.isArray(input.items) || input.items.length === 0;
+  if (automatic) return receiveOldestFirst(actor, input, header, key, method, date, clientIp, db);
+  const items = input.items as Array<{ source: ReceivableSource; refId: string; amount: number }>;
   const seen = new Set<string>();
   for (const it of items) {
     if (!["PG", "TIFFIN", "DELIVERY"].includes(it.source)) throw new Error("Unknown balance type.");
@@ -805,6 +873,42 @@ export async function receiveAccountPayment(actor: AuthenticatedUser, input: Rec
         );
       }
     }
+    await applyPaymentItems(tx, actor, header, ordered, key, method, date, input, clientIp, results);
+    if (replay) return;
+    await recordBillPayment(tx, actor, input, total, method, date, key);
+    await recordAuditEventAsync(
+      {
+        actorId: actor.id,
+        actorUsername: actor.username,
+        action: "finance.account_payment_received",
+        targetType: "receivable_account",
+        targetId: input.accountKey,
+        metadata: { idempotencyKey: key, paymentMethod: method, transactionDate: date, amountReceived: total, items: results, billNumber: input.billNumber?.trim() || null },
+        ipAddress: clientIp,
+      },
+      tx
+    );
+  });
+
+  return { accountKey: input.accountKey, amountReceived: total, paymentMethod: method, results, account: await getReceivableAccount(actor, input.accountKey, db) };
+}
+
+type AccountHeader = NonNullable<Awaited<ReturnType<typeof accountHeader>>>;
+type PaymentResult = { source: ReceivableSource; refId: string; amount: number; recordId: string | null };
+
+/** Records each part of a payment through the service that owns that balance. */
+async function applyPaymentItems(
+  tx: AsyncDb,
+  actor: AuthenticatedUser,
+  header: AccountHeader,
+  ordered: Array<{ source: ReceivableSource; refId: string; amount: number }>,
+  key: string,
+  method: PaymentMethod,
+  date: string,
+  input: ReceivePaymentInput,
+  clientIp: string | undefined,
+  results: PaymentResult[]
+) {
     for (const it of ordered) {
       const amount = Number(it.amount);
       const itemKey = `${key}:${it.source}:${it.refId}`;
@@ -865,7 +969,81 @@ export async function receiveAccountPayment(actor: AuthenticatedUser, input: Rec
         results.push({ source: "DELIVERY", refId: it.refId, amount, recordId: c?.id ?? null });
       }
     }
-    if (replay) return;
+}
+
+/** Keeps the bill a payment was made against (migration 0027). A record only; it settles nothing. */
+async function recordBillPayment(tx: AsyncDb, actor: AuthenticatedUser, input: ReceivePaymentInput, total: number, method: PaymentMethod, date: string, key: string) {
+  const number = String(input.billNumber || "").trim();
+  if (!number) return;
+  if (!(await hasBillsSchema(tx))) throw new Error("Bills are not set up on this server yet, so a bill number cannot be recorded.");
+  const bill = await tx.queryOne<{ id: string; bill_number: string }>("SELECT id, bill_number FROM bills WHERE UPPER(bill_number) = UPPER(?) AND account_key = ?", [number, input.accountKey]);
+  if (!bill) throw new Error(`Bill ${number} is not one of this account's bills. Check the number or leave it empty.`);
+  await tx.execute(
+    `INSERT INTO bill_payments (id, bill_id, bill_number, account_key, amount, payment_method, payment_date, payment_key, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (payment_key) DO NOTHING`,
+    [`bpay_${crypto.randomUUID()}`, bill.id, bill.bill_number, input.accountKey, total, method, date, key, actor.id, new Date().toISOString()]
+  );
+}
+
+/**
+ * Receive payment, the normal way: an amount, how it was paid and (optionally) the bill it was
+ * paid against. The money pays the account's oldest dues first; the split is worked out here,
+ * under a lock on the account, from the dues as they stand at that moment. It can never be more
+ * than the account owes.
+ */
+async function receiveOldestFirst(
+  actor: AuthenticatedUser,
+  input: ReceivePaymentInput,
+  header: AccountHeader,
+  key: string,
+  method: PaymentMethod,
+  date: string,
+  clientIp: string | undefined,
+  db: AsyncDb
+) {
+  const amount = Number(input.amountReceived);
+  if (!Number.isInteger(amount) || amount <= 0) throw new Error("Enter the amount received in whole rupees.");
+  const today = getBusinessDateString(new Date());
+  const results: PaymentResult[] = [];
+  const money = (v: number) => `₹${v.toLocaleString("en-IN")}`;
+
+  await db.transaction(async (tx) => {
+    await acquireLedgerKeyLock(tx, `receive:${key}`);
+    await acquireLedgerKeyLock(tx, `receive-account:${input.accountKey}`);
+    const prior = await recordedUnderKey(tx, key);
+    if (prior.size > 0) {
+      // The same payment sent again (double tap, lost answer): it is already recorded.
+      const kept = [...prior.entries()];
+      const sum = kept.reduce((a, [, p]) => a + p.amount, 0);
+      if (sum !== amount || kept.some(([, p]) => p.method !== method)) {
+        throw new PaymentKeyConflictError("This payment was already recorded with a different amount or method. Nothing new was recorded. Close this window and check the account.");
+      }
+      for (const [k, p] of kept) {
+        const [source, refId] = [k.slice(0, k.indexOf(":")), k.slice(k.indexOf(":") + 1)];
+        results.push({ source: source as ReceivableSource, refId, amount: p.amount, recordId: null });
+      }
+      return;
+    }
+    const { sql, params } = await linesSql(tx, today, input.accountKey);
+    const lines = (await tx.query<any>(`SELECT * FROM (${sql}) x ORDER BY x.date ASC, x.source`, params)).map(mapLine);
+    const owed = lines.reduce((a, l) => a + l.outstanding, 0);
+    if (owed <= 0) throw new Error(`${header.name} owes nothing right now.`);
+    if (amount > owed) throw new Error(`${header.name} owes ${money(owed)}. Enter ${money(owed)} or less.`);
+    const spread = spreadOldestFirst(lines, header.id, amount);
+    if (spread.left > 0) {
+      const dine = spread.skippedDineIn[0];
+      throw new Error(
+        dine
+          ? `A dine-in order of ${money(dine)} is paid in full, not in part. Receive ${money(amount - spread.left)} or ${money(amount - spread.left + dine)}.`
+          : `Only ${money(amount - spread.left)} can be received on this account right now.`
+      );
+    }
+    if (!hasPermission(actor.role, "delivery.update") && spread.items.some((i) => i.source === "DELIVERY")) {
+      throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
+    }
+    const ordered = [...spread.items].sort((a, b) => `${a.source}:${a.refId}`.localeCompare(`${b.source}:${b.refId}`));
+    await applyPaymentItems(tx, actor, header, ordered, key, method, date, input, clientIp, results);
+    await recordBillPayment(tx, actor, input, amount, method, date, key);
     await recordAuditEventAsync(
       {
         actorId: actor.id,
@@ -873,12 +1051,12 @@ export async function receiveAccountPayment(actor: AuthenticatedUser, input: Rec
         action: "finance.account_payment_received",
         targetType: "receivable_account",
         targetId: input.accountKey,
-        metadata: { idempotencyKey: key, paymentMethod: method, transactionDate: date, amountReceived: total, items: results },
+        metadata: { idempotencyKey: key, paymentMethod: method, transactionDate: date, amountReceived: amount, oldestFirst: true, items: results, billNumber: input.billNumber?.trim() || null },
         ipAddress: clientIp,
       },
       tx
     );
   });
 
-  return { accountKey: input.accountKey, amountReceived: total, paymentMethod: method, results, account: await getReceivableAccount(actor, input.accountKey, db) };
+  return { accountKey: input.accountKey, amountReceived: amount, paymentMethod: method, results, account: await getReceivableAccount(actor, input.accountKey, db) };
 }

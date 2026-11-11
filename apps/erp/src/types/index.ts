@@ -1524,6 +1524,8 @@ export interface TiffinSubscription {
   productCode?: string;
   productName?: string;
   productCategory?: ProductCategory;
+  /** PER_MONTH for a monthly plan (owed in full each month). */
+  productBillingUnit?: BillingUnit | null;
   status: SubscriptionStatus;
   startDate: string; // YYYY-MM-DD
   endDate: string | null; // YYYY-MM-DD

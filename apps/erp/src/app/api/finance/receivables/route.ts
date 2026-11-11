@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
       from: p.get("from") || undefined,
       to: p.get("to") || undefined,
       reviewOnly: p.get("review") === "1",
+      kind: (p.get("kind") as any) || undefined,
+      customerType: p.get("customerType") || undefined,
       sort: (p.get("sort") as any) || undefined,
       limit: Number(p.get("limit")) || undefined,
       offset: Number(p.get("offset")) || undefined,

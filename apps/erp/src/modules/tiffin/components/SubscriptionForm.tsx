@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { X, Search, Check, UserPlus } from "lucide-react";
-import type { TiffinCustomer, TiffinProduct, TiffinSubscription, SubscriptionMealTypes, SubscriptionServiceDays } from "@/types";
+import type { TiffinCustomer, TiffinProduct, TiffinSubscription, SubscriptionMealTypes } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday } from "@/lib/businessDate";
 import { planMealsLabel } from "@/lib/planMeals";
@@ -25,9 +25,9 @@ export function planKind(p?: TiffinProduct | null): SubscriptionMealTypes | null
 }
 
 /**
- * New subscription (or edit): the customer, the monthly plan from the menu, the start date and,
- * for a lunch + dinner plan, the days. The plan sets the price. Customers who already have a plan
- * are not offered again.
+ * New subscription (or edit): the customer, one of the two monthly plans (1 thali, or lunch +
+ * dinner), the start date and the address. The plan sets the price and runs every day. Customers
+ * who already have a plan are not offered again.
  */
 export function SubscriptionForm({ open, onClose, subscription, onSaved }: { open: boolean; onClose: () => void; subscription?: TiffinSubscription | null; onSaved: (message: string) => void }) {
   const editing = Boolean(subscription);
@@ -58,7 +58,16 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
     },
     { ttl: 60000, tags: ["products", "tiffin_products"] }
   );
-  const plans = useMemo(() => (plansQ.data ?? []).filter((p) => p.billingUnit === "PER_MONTH" || p.category === "SUBSCRIPTION_PACKAGE").sort((a, b) => a.price - b.price), [plansQ.data]);
+  // Only the two monthly plans can be given: 1 thali (any meal) and lunch + dinner. A menu item
+  // priced like a single meal (under ₹500) is never offered as a monthly plan; if the menu holds
+  // more than one plan of a kind, the full-price one is offered.
+  const plans = useMemo(() => {
+    const monthly = (plansQ.data ?? []).filter((p) => p.billingUnit === "PER_MONTH" && p.price >= 500).sort((a, b) => b.price - a.price);
+    const one = monthly.find((p) => planKind(p) === "ANY");
+    const two = monthly.find((p) => planKind(p) === "BOTH");
+    const known = [one, two].filter(Boolean) as TiffinProduct[];
+    return (known.length ? known : monthly.slice(0, 2)).sort((a, b) => a.price - b.price);
+  }, [plansQ.data]);
   const taken = useMemo(() => new Set((subsQ.data ?? []).filter((s) => s.status === "ACTIVE" || s.status === "PAUSED").map((s) => s.customerId)), [subsQ.data]);
 
   const [mode, setMode] = useState<"pick" | "new">("pick");
@@ -68,7 +77,6 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
   const [newPhone, setNewPhone] = useState("");
   const [planId, setPlanId] = useState("");
   const [meals, setMeals] = useState<SubscriptionMealTypes>("BOTH");
-  const [days, setDays] = useState<SubscriptionServiceDays>("ALL_DAYS");
   const [start, setStart] = useState(businessToday());
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
@@ -83,7 +91,6 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
     if (subscription) {
       setPlanId(subscription.productId);
       setMeals(subscription.mealTypes);
-      setDays(subscription.serviceDays);
       setStart(subscription.startDate);
       setAddress(subscription.deliveryAddress || "");
     } else {
@@ -94,7 +101,6 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
       setNewPhone("");
       setPlanId("");
       setMeals("BOTH");
-      setDays("ALL_DAYS");
       setStart(businessToday());
       setAddress("");
     }
@@ -151,7 +157,7 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
         const r = await fetch(`/api/tiffin/subscriptions/${subscription.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mealTypes: meals, serviceDays: meals === "BOTH" ? days : "ALL_DAYS", deliveryAddress: address.trim() }),
+          body: JSON.stringify({ mealTypes: meals, serviceDays: "ALL_DAYS", deliveryAddress: address.trim() }),
         });
         const d = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(d.error || "Could not save the changes.");
@@ -184,7 +190,7 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
           productId: plan!.id,
           startDate: start,
           mealTypes: meals,
-          serviceDays: meals === "BOTH" ? days : "ALL_DAYS",
+          serviceDays: "ALL_DAYS",
           quantityPerMeal: 1,
           deliveryAddress: address.trim(),
           customPrice: plan!.price,
@@ -192,8 +198,8 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Could not start the subscription.");
-      invalidateErpCache(["tiffin_subscriptions", "subscriptions", "tiffin_customers", "finance"]);
-      onSaved(`${target!.fullName} is on ${plan!.name} from ${start}.`);
+      invalidateErpCache(["tiffin_subscriptions", "subscriptions", "tiffin_customers", "finance", "receivables"]);
+      onSaved(`${target!.fullName} is on ${plan!.name} from ${start}. ${rupees(plan!.price)} a month is added to their dues.`);
     } catch (err: any) {
       setError(friendlyError(err?.message || "Could not save."));
     } finally {
@@ -320,20 +326,12 @@ export function SubscriptionForm({ open, onClose, subscription, onSaved }: { ope
             )}
           </section>
 
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {!editing && (
-              <div>
-                <label htmlFor="subform-start" className={LABEL}>Starts on</label>
-                <input id="subform-start" type="date" value={start} onChange={(e) => e.target.value && setStart(e.target.value)} className={FIELD} />
-              </div>
-            )}
-            {meals === "BOTH" && (
-              <div>
-                <span className={LABEL}>Days</span>
-                <Segmented label="Days" value={days} onChange={setDays} options={[{ value: "ALL_DAYS", label: "Every day" }, { value: "MON_SAT", label: "Mon–Sat" }, { value: "MON_FRI", label: "Mon–Fri" }]} />
-              </div>
-            )}
-          </section>
+          {!editing && (
+            <section>
+              <label htmlFor="subform-start" className={LABEL}>Starts on</label>
+              <input id="subform-start" type="date" value={start} onChange={(e) => e.target.value && setStart(e.target.value)} className={FIELD} aria-label="Starts on" />
+            </section>
+          )}
 
           <section>
             <label htmlFor="subform-address" className={LABEL}>Delivery address</label>

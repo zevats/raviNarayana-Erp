@@ -165,7 +165,7 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
                   className="inline-flex items-center gap-1.5 h-10 px-4 rounded-full bg-[#F3EADD] text-[#6E4E28] text-[13px] font-semibold hover:bg-[#EBDDC8] transition-colors"
                 >
                   <Wallet className="w-4 h-4" />
-                  Invoices &amp; payments
+                  Bill or receive payment
                 </button>
               )}
             </div>
@@ -173,7 +173,7 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
               <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
                   ["Delivered orders", formatINR(b.orders)],
-                  ["Tiffin bills", formatINR(b.bills)],
+                  ["Monthly plan", formatINR(b.bills)],
                   ["Paid ahead", formatINR(b.credit)],
                   ["Unpaid since", b.oldestUnpaid ? dayLabel(b.oldestUnpaid) : "—"],
                 ].map(([k, v]) => (
@@ -183,11 +183,6 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
                   </div>
                 ))}
               </dl>
-            )}
-            {b && b.unpaidOrders > 0 && (
-              <p className="mt-3 text-[12.5px] text-[#5A6C5E]">
-                {b.unpaidOrders} delivered order{b.unpaidOrders === 1 ? "" : "s"} not fully paid. Pay Later is open to every customer.
-              </p>
             )}
           </section>
 

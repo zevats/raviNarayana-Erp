@@ -7,6 +7,7 @@
  * Styles: styles/mobile.css ("App kit").
  */
 
+import { lockScroll } from "@/lib/scrollLock";
 import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -465,13 +466,12 @@ export function MSheet({ open, onClose, title, children, footer, tall, headerAct
   }, [open]);
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlock = lockScroll();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     const focusT = setTimeout(() => panel.current?.focus({ preventScroll: true }), 30);
     return () => {
-      document.body.style.overflow = prev;
+      unlock();
       window.removeEventListener("keydown", onKey);
       clearTimeout(focusT);
     };

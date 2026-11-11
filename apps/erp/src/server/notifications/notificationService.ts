@@ -226,16 +226,9 @@ async function buildNotificationFeed(actor: AuthenticatedUser): Promise<Notifica
           ORDER BY p.created_at ASC
           LIMIT 10`))
       : none(),
-    // Orders delivered with a balance for a customer not approved for Pay Later (migration 0021;
-    // without it the query fails and optional() returns nothing).
-    canManageDelivery
-      ? optional(() => db.query<any>(`
-          SELECT o.id, o.customer_name, o.service_date, o.meal_type, o.updated_at
-          FROM orders o
-          WHERE o.payment_review IS NOT NULL AND o.payment_reviewed_at IS NULL
-          ORDER BY o.updated_at DESC
-          LIMIT 10`))
-      : none(),
+    // Pay Later is open to every customer (owner, 2026-11-11): a balance left at the door is simply
+    // a due on the customer's account, so there is nothing to review any more.
+    none(),
   ]);
 
   const readIds = new Set(readRows.map((r) => r.notification_id));

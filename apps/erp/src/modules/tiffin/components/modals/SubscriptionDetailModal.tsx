@@ -14,7 +14,6 @@ interface SubscriptionDetailModalProps {
 
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const day = (d: string | null | undefined) => (d ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${d.slice(0, 10)}T00:00:00Z`)) : "—");
-const DAYS: Record<string, string> = { ALL_DAYS: "Every day", MON_SAT: "Mon–Sat", MON_FRI: "Mon–Fri" };
 const STATUS: Record<string, [string, string]> = {
   ACTIVE: ["Active", "bg-[#E4F2E0] text-[#1D4E16]"],
   PAUSED: ["Paused", "bg-[#FBF0D9] text-[#6B4A06]"],
@@ -22,7 +21,7 @@ const STATUS: Record<string, [string, string]> = {
   COMPLETED: ["Ended", "bg-[#EEECE8] text-[#3A403C]"],
 };
 
-/** One subscription at a glance: plan, price, meals, days, dates and where it is delivered. */
+/** One subscription at a glance: plan, price, meals, dates and where it is delivered. */
 export function SubscriptionDetailModal({ isOpen, onClose, subscription: s, onEdit }: SubscriptionDetailModalProps) {
   useEffect(() => {
     if (!isOpen) return;
@@ -36,7 +35,6 @@ export function SubscriptionDetailModal({ isOpen, onClose, subscription: s, onEd
     ["Plan", s.productName || "—"],
     ["Monthly price", rupees(s.price)],
     ["Meals", planMealsLabel(s.mealTypes)],
-    ...(s.mealTypes === "BOTH" ? ([["Days", DAYS[s.serviceDays] || s.serviceDays]] as Array<[string, React.ReactNode]>) : []),
     ["Started", day(s.startDate)],
     ...(s.status === "PAUSED" ? ([["Paused", `${day(s.pauseStartDate)} → ${s.pauseResumeDate ? day(s.pauseResumeDate) : "until resumed"}`]] as Array<[string, React.ReactNode]>) : []),
     ...(s.status === "CANCELLED" ? ([["Ended", `${day(s.cancelledAt)}${s.cancellationReason ? ` · ${s.cancellationReason}` : ""}`]] as Array<[string, React.ReactNode]>) : []),

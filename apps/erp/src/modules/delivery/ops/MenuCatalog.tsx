@@ -139,7 +139,6 @@ export function MenuCatalog() {
                             void savePrice(p);
                           }}
                         >
-                          <span className="text-[15px] font-bold">₹</span>
                           <input
                             autoFocus
                             type="number"
@@ -149,7 +148,7 @@ export function MenuCatalog() {
                             onChange={(e) => setPriceText(e.target.value)}
                             onKeyDown={(e) => e.key === "Escape" && setPriceFor(null)}
                             aria-label={`New price for ${p.name}`}
-                            className="w-20 h-9 px-2 rounded-lg border border-[var(--rn-accent)] text-[15px] font-bold tabular-nums"
+                            className="rn-money w-28 h-9 px-2 rounded-lg border border-[var(--rn-accent)] text-[15px] font-bold tabular-nums"
                           />
                           <button type="submit" disabled={busy === p.id} aria-label="Save price" className="w-9 h-9 rounded-full bg-[var(--rn-accent)] text-white flex items-center justify-center disabled:opacity-60">
                             <Check className="w-4 h-4" />

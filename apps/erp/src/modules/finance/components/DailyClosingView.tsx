@@ -482,7 +482,7 @@ export function DailyClosingView({
           {/* Actual Cash Counted */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#1A2E20]">
-              Cash counted (₹)
+              Cash counted
             </label>
             <input
               type="number"
@@ -490,7 +490,7 @@ export function DailyClosingView({
               value={actualCashCounted}
               onChange={(e) => setActualCashCounted(e.target.value)}
               placeholder="e.g. 15000"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 disabled:bg-neutral-100 disabled:text-neutral-500"
+              className="rn-money w-full px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 disabled:bg-neutral-100 disabled:text-neutral-500"
             />
             <p className="text-[11px] text-[#5A6C5E]">
               Expected: ₹{formatNumberIN(preview?.expectedCashBalance || 0)}
@@ -500,7 +500,7 @@ export function DailyClosingView({
           {/* Actual Bank Balance Verified */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#1A2E20]">
-              Verified Bank / UPI Balance (₹) (Optional)
+              Verified Bank / UPI Balance (Optional)
             </label>
             <input
               type="number"
@@ -508,7 +508,7 @@ export function DailyClosingView({
               value={actualBankVerified}
               onChange={(e) => setActualBankVerified(e.target.value)}
               placeholder="Verified online account balance"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 disabled:bg-neutral-100 disabled:text-neutral-500"
+              className="rn-money w-full px-3.5 py-2.5 rounded-xl border border-[#8E9F89]/30 text-sm font-semibold focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 disabled:bg-neutral-100 disabled:text-neutral-500"
             />
           </div>
 

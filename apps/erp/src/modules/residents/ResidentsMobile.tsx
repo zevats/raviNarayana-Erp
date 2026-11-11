@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from "react";
-import { ArrowRightLeft, BedDouble, DoorOpen, History, LogOut, Phone, Plus, UserCog, Users } from "lucide-react";
+import { ArrowRightLeft, BedDouble, DoorOpen, FileText, History, LogOut, Phone, Plus, UserCog, Users, Wallet } from "lucide-react";
 import type { ResidentListItem } from "@/types";
 import { MButton, MEmpty, MField, MGroup, MHero, MNotice, MPill, MQuick, MRow, MSearch, MSegment, MSheet, MSkeletonRows, MStack, initials } from "@/components/app/m";
 
@@ -31,6 +31,9 @@ export function ResidentsMobile({
   onProfile,
   onEdit,
   onMove,
+  dueOf,
+  onDues,
+  onBillAll,
 }: {
   residents: ResidentListItem[];
   allCount: number;
@@ -50,7 +53,13 @@ export function ResidentsMobile({
   onProfile: (r: ResidentListItem) => void;
   onEdit: (r: ResidentListItem) => void;
   onMove: (r: ResidentListItem) => void;
+  /** Rent due per resident id (Owner and Manager); null hides money. */
+  dueOf: Map<string, number> | null;
+  onDues: (r: ResidentListItem) => void;
+  onBillAll?: () => void;
 }) {
+  const money = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+  const totalDue = dueOf ? Array.from(dueOf.values()).reduce((a, b) => a + b, 0) : 0;
   const [openId, setOpenId] = useState<string | null>(null);
   const open = openId ? residents.find((r) => r.id === openId) ?? null : null;
   const inHouse = (r: ResidentListItem) => r.status === "ACTIVE" && Boolean(r.currentRoomNumber);
@@ -65,7 +74,7 @@ export function ResidentsMobile({
         items={[
           { label: "New resident", icon: Plus, onClick: onRegister, tone: "accent" },
           { label: "Check in", icon: BedDouble, onClick: () => onCheckIn(), tone: "green" },
-          { label: "Rooms", icon: DoorOpen, href: "/rooms", tone: "neutral" },
+          ...(onBillAll ? [{ label: "Bill all", icon: FileText, onClick: onBillAll, tone: "neutral" as const }] : [{ label: "Rooms", icon: DoorOpen, href: "/rooms", tone: "neutral" as const }]),
         ]}
       />
       {approvals}
@@ -76,6 +85,7 @@ export function ResidentsMobile({
         label="In house"
         value={loading ? "—" : stats.active}
         items={[
+          ...(dueOf ? [{ label: "Rent due", value: money(totalDue) }] : []),
           { label: "Checked out · 30 days", value: stats.checkedOutCount, onClick: () => setStatus("CHECKED_OUT") },
           { label: "Listed", value: stats.total, onClick: () => setStatus("ALL") },
         ]}
@@ -115,7 +125,9 @@ export function ResidentsMobile({
                 tone={here ? "accent" : "neutral"}
                 title={r.fullName}
                 sub={here ? [`Room ${r.currentRoomNumber}`, r.checkInDate ? `since ${r.checkInDate}` : ""].filter(Boolean).join(" · ") : r.phone}
-                rightSub={here ? undefined : r.lastCheckOutDate ? `Left ${r.lastCheckOutDate.slice(8, 10)}/${r.lastCheckOutDate.slice(5, 7)}` : "Left"}
+                right={dueOf?.get(r.id) ? money(dueOf.get(r.id)!) : undefined}
+                rightTone={dueOf?.get(r.id) ? "red" : undefined}
+                rightSub={here ? (dueOf?.get(r.id) ? "due" : undefined) : r.lastCheckOutDate ? `Left ${r.lastCheckOutDate.slice(8, 10)}/${r.lastCheckOutDate.slice(5, 7)}` : "Left"}
                 onClick={() => setOpenId(r.id)}
               />
             );
@@ -157,6 +169,7 @@ export function ResidentsMobile({
               {open.email && <MField label="Email">{open.email}</MField>}
             </div>
             <MGroup>
+              {dueOf && <MRow icon={Wallet} tone="red" title="Dues, bill and payment" right={dueOf.get(open.id) ? money(dueOf.get(open.id)!) : "Nothing due"} onClick={() => act(() => onDues(open))} />}
               <MRow icon={History} tone="accent" title="Profile and stays" onClick={() => act(() => onProfile(open))} />
               <MRow icon={UserCog} tone="neutral" title="Edit details" onClick={() => act(() => onEdit(open))} />
               {inHouse(open) && <MRow icon={ArrowRightLeft} tone="blue" title="Move to another room" onClick={() => act(() => onMove(open))} />}

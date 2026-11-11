@@ -3,6 +3,7 @@ import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { hasCustomerCodeSchema, hasAnyMealPlanSchema } from "../database/schemaFeatures";
 import { loadCustomerBalancesById } from "./customerBalance";
+import { ensurePlanCharges } from "./planCharges";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
@@ -1156,6 +1157,7 @@ function mapRowToSubscription(row: any): TiffinSubscription {
     productCode: row.product_code || null,
     productName: row.product_name || null,
     productCategory: row.product_category || null,
+    productBillingUnit: row.product_billing_unit || null,
     status: row.status as SubscriptionStatus,
     startDate: row.start_date,
     endDate: row.end_date || null,
@@ -1353,6 +1355,13 @@ export async function createTiffinSubscription(
     }, tx);
   });
 
+  // A monthly plan is owed from the day it starts: the first month goes on the customer's dues now.
+  try {
+    await ensurePlanCharges(db, actor, { subscriptionId: id });
+  } catch (e) {
+    console.warn("[plan charges] first month not added yet:", (e as Error)?.message);
+  }
+
   return (await getTiffinSubscriptionById(actor, id, db))!;
 }
 
@@ -1377,6 +1386,7 @@ export async function getTiffinSubscriptionById(
       p.code as product_code,
       p.name as product_name,
       p.category as product_category,
+      p.billing_unit as product_billing_unit,
       u1.full_name as created_by_name,
       u2.full_name as updated_by_name,
       u3.full_name as cancelled_by_name
@@ -1475,6 +1485,7 @@ export async function listTiffinSubscriptions(
       p.code as product_code,
       p.name as product_name,
       p.category as product_category,
+      p.billing_unit as product_billing_unit,
       u1.full_name as created_by_name,
       u2.full_name as updated_by_name,
       u3.full_name as cancelled_by_name

@@ -258,7 +258,7 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                   )}
                   {action === "collect" ? (
                     <div className="grid grid-cols-[1fr_auto] gap-2">
-                      <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount (₹)" className="min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-surface-canvas" />
+                      <input type="number" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount (₹)" className="rn-money min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-surface-canvas" />
                       <div className="grid grid-cols-2 gap-1">
                         {(["CASH", "UPI"] as const).map((m) => (
                           <button key={m} type="button" onClick={() => setMethod(m)} aria-pressed={method === m} className={`rn-press min-h-[44px] px-3 rounded-xl border text-sm ${method === m ? "bg-forest-deepest text-text-light" : "bg-white"}`}>

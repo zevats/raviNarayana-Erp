@@ -15,7 +15,6 @@ import {
 import {
   FinancialTransaction,
   CashbookSummary,
-  ResidentFinancialSummary,
   ResidentListItem,
 } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
@@ -23,8 +22,6 @@ import { FinanceHeader } from "@/modules/finance/components/FinanceHeader";
 import { AccountingPeriodSelector } from "@/modules/finance/components/AccountingPeriodSelector";
 import { FinancialSummaryCards } from "@/modules/finance/components/FinancialSummaryCards";
 import { CashbookLedger } from "@/modules/finance/components/CashbookLedger";
-import { ResidentStatementsView } from "@/modules/finance/components/ResidentStatementsView";
-import { InvoiceLedgerView } from "@/modules/finance/components/InvoiceLedgerView";
 import { DailyClosingView } from "@/modules/finance/components/DailyClosingView";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { Segmented } from "@/components/ui/kit";
@@ -37,11 +34,9 @@ import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
 import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 import { MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
-import { FinancePlaces, CashbookMobile, ReceivablesMobile, DuesMobile } from "@/modules/finance/mobile/FinanceMobile";
+import { FinancePlaces, CashbookMobile } from "@/modules/finance/mobile/FinanceMobile";
 
 // Dialogs and secondary views load on demand, off the navigation path.
-const loadPaymentModal = () => import("@/modules/finance/components/modals/PaymentModal");
-const PaymentModal = dynamic(() => loadPaymentModal().then((m) => m.PaymentModal), { ssr: false });
 const loadRentChargeModal = () => import("@/modules/finance/components/modals/RentChargeModal");
 const RentChargeModal = dynamic(() => loadRentChargeModal().then((m) => m.RentChargeModal), { ssr: false });
 const loadRentRunModal = () => import("@/modules/finance/components/modals/RentRunModal");
@@ -54,42 +49,28 @@ const loadReceiptModal = () => import("@/modules/finance/components/modals/Recei
 const ReceiptModal = dynamic(() => loadReceiptModal().then((m) => m.ReceiptModal), { ssr: false });
 const loadReversalModal = () => import("@/modules/finance/components/modals/ReversalModal");
 const ReversalModal = dynamic(() => loadReversalModal().then((m) => m.ReversalModal), { ssr: false });
-// Receivables is its own tab: its code loads when the tab opens (preloaded when idle), and until
-// then the tab shows the same summary and list skeleton the view uses, never a spinner.
-const loadReceivablesView = () => import("@/modules/finance/components/ReceivablesView");
-const ReceivablesView = dynamic(() => loadReceivablesView().then((m) => m.ReceivablesView), {
-  ssr: false,
-  loading: () => (
-    <div className="space-y-5" aria-busy="true">
-      <div className="rn-card p-4 sm:p-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <span key={i} className="rn-skel block h-10 rounded" />
-        ))}
-      </div>
-      <div className="rn-card p-4 sm:p-5 space-y-3">
-        <span className="rn-skel block h-10 w-full rounded-full" />
-        <span className="rn-skel block h-10 w-2/3 rounded" />
-      </div>
-      <div className="rn-card divide-y divide-[var(--rn-line)]">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="px-4 sm:px-5 py-4 flex items-center gap-4">
-            <span className="rn-skel block h-4 w-1/3 rounded" />
-            <span className="rn-skel block h-4 w-16 rounded ml-auto" />
-          </div>
-        ))}
-      </div>
-    </div>
-  ),
-});
+// Dues and Bills are their own tabs: the code loads when a tab opens (preloaded when idle).
+const loadDues = () => import("@/modules/billing/DuesList");
+const duesLoading = () => (
+  <div className="space-y-3" aria-busy="true">
+    <span className="rn-skel block h-[104px] w-full rounded-3xl" />
+    <span className="rn-skel block h-11 w-full rounded-full" />
+    {Array.from({ length: 5 }).map((_, i) => (
+      <span key={i} className="rn-skel block h-[66px] w-full rounded-2xl" />
+    ))}
+  </div>
+);
+const DuesList = dynamic(() => loadDues().then((m) => m.DuesList), { ssr: false, loading: duesLoading });
+const BillsList = dynamic(() => loadDues().then((m) => m.BillsList), { ssr: false, loading: duesLoading });
 
 export default function FinancePage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadPaymentModal, loadRentChargeModal, loadRentRunModal, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadReceivablesView]), []);
+  useEffect(() => preloadWhenIdle([loadRentChargeModal, loadRentRunModal, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadDues]), []);
   // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
   const phone = useIsPhone();
-  type FinanceTab = "cashbook" | "receivables" | "residents" | "invoices" | "closing";
-  const SECTION_TITLE: Record<FinanceTab, string> = { cashbook: "Cashbook", receivables: "Receivables", residents: "Resident dues", invoices: "Invoices", closing: "Daily closing" };
+  type FinanceTab = "cashbook" | "receivables" | "invoices" | "closing";
+  const SECTION_TITLE: Record<FinanceTab, string> = { cashbook: "Cashbook", receivables: "Dues", invoices: "Bills", closing: "Daily closing" };
   const [activeTab, setTabState] = useState<FinanceTab>("cashbook");
   // The tab follows the address (/finance?tab=closing), so the sidebar's Cashbook, Resident Dues,
   // Invoices and Daily Closing links, notifications and reports all open the right view.
@@ -97,7 +78,9 @@ export default function FinancePage() {
   const router = useRouter();
   const urlTab = searchParams?.get("tab");
   useEffect(() => {
-    if (urlTab === "cashbook" || urlTab === "receivables" || urlTab === "residents" || urlTab === "invoices" || urlTab === "closing") setTabState(urlTab);
+    if (urlTab === "cashbook" || urlTab === "receivables" || urlTab === "invoices" || urlTab === "closing") setTabState(urlTab);
+    // Older links to the resident dues page open Dues (one list for everyone now).
+    else if (urlTab === "residents") setTabState("receivables");
     else if (!urlTab) setTabState("cashbook");
   }, [urlTab]);
   const setActiveTab = (t: FinanceTab) => {
@@ -165,12 +148,10 @@ export default function FinancePage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Modal dialog states
-  const [isPaymentOpen, setIsPaymentOpen] = useState(false);
   const [isChargeOpen, setIsChargeOpen] = useState(false);
   const [isRentRunOpen, setIsRentRunOpen] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
-  const [paymentResidentId, setPaymentResidentId] = useState<string | undefined>(undefined);
 
   const [receiptTx, setReceiptTx] = useState<FinancialTransaction | null>(null);
   const [reversalTarget, setReversalTarget] = useState<FinancialTransaction | null>(null);
@@ -185,21 +166,6 @@ export default function FinancePage() {
       setErrorOverride(err.message || "Failed to load financial records.");
     }
   }, [refetchFinance]);
-
-  // Load single resident financial statement dossier
-  const handleLoadStatement = async (residentId: string): Promise<ResidentFinancialSummary | null> => {
-    try {
-      const res = await fetch(`/api/finance/residents/${residentId}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load resident statement.");
-      }
-      return data.summary;
-    } catch (err: any) {
-      setActionError(friendlyError(err.message || "Failed to load resident financial statement."));
-      return null;
-    }
-  };
 
   // Date range handlers
   const handleDateRangeChange = (start: string, end: string) => {
@@ -224,11 +190,8 @@ export default function FinancePage() {
     });
   };
 
-  // Quick action: Collect payment for specific resident
-  const handleOpenPaymentForResident = (residentId: string) => {
-    setPaymentResidentId(residentId);
-    setIsPaymentOpen(true);
-  };
+  // Receiving money has one place: Dues (pick the person, then Receive payment).
+  const openReceive = () => setActiveTab("receivables");
 
   // Modal success callback
   const handleMutationSuccess = (tx: FinancialTransaction, message: string) => {
@@ -246,14 +209,6 @@ export default function FinancePage() {
 
   const modals = (
     <>
-        <PaymentModal
-          isOpen={isPaymentOpen}
-          onClose={() => setIsPaymentOpen(false)}
-          residents={residents}
-          initialResidentId={paymentResidentId}
-          onSuccess={handleMutationSuccess}
-        />
-
         <RentRunModal isOpen={isRentRunOpen} onClose={() => setIsRentRunOpen(false)} onDone={fetchData} />
 
         <RentChargeModal
@@ -308,10 +263,7 @@ export default function FinancePage() {
             startDate={startDate}
             endDate={endDate}
             onRange={handleDateRangeChange}
-            onPay={() => {
-              setPaymentResidentId(undefined);
-              setIsPaymentOpen(true);
-            }}
+            onPay={openReceive}
             onExpense={() => setIsExpenseOpen(true)}
             onDeposit={() => setIsDepositOpen(true)}
             onCharge={() => setIsChargeOpen(true)}
@@ -319,14 +271,12 @@ export default function FinancePage() {
             onExport={handleExportCashbook}
             onReceipt={(tx) => setReceiptTx(tx)}
             onReverse={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
-            onOwed={() => setActiveTab("residents")}
+            onOwed={openReceive}
           />
         ) : activeTab === "receivables" ? (
-          <ReceivablesMobile initialReviewOnly={searchParams?.get("review") === "1"} />
-        ) : activeTab === "residents" ? (
-          <DuesMobile residents={residents} isLoading={loading} />
+          <DuesList scope="ALL" />
         ) : activeTab === "invoices" ? (
-          <InvoiceLedgerView residents={residents} onOpenRecordPayment={handleOpenPaymentForResident} onRefreshParentFinance={fetchData} />
+          <BillsList />
         ) : (
           <DailyClosingView
             onMutationSuccess={(msg) => {
@@ -345,10 +295,8 @@ export default function FinancePage() {
         title={SECTION_TITLE[activeTab]}
         onRefresh={fetchData}
         isLoading={loading || isRevalidating}
-        onOpenPayment={() => {
-          setPaymentResidentId(undefined);
-          setIsPaymentOpen(true);
-        }}
+        onOpenPayment={openReceive}
+        showActions={activeTab === "cashbook"}
         onOpenCharge={() => setIsChargeOpen(true)}
         onOpenRentRun={() => setIsRentRunOpen(true)}
         onOpenDeposit={() => setIsDepositOpen(true)}
@@ -404,9 +352,8 @@ export default function FinancePage() {
           onChange={setActiveTab}
           options={[
             { value: "cashbook", label: "Cashbook" },
-            { value: "receivables", label: "Receivables" },
-            { value: "residents", label: "Resident dues" },
-            { value: "invoices", label: "Invoices" },
+            { value: "receivables", label: "Dues" },
+            { value: "invoices", label: "Bills" },
             { value: "closing", label: "Daily closing" },
           ]}
         />
@@ -436,33 +383,18 @@ export default function FinancePage() {
             isLoading={loading}
             onViewReceipt={(tx) => setReceiptTx(tx)}
             onInitiateReversal={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
-            onOpenPayment={() => {
-              setPaymentResidentId(undefined);
-              setIsPaymentOpen(true);
-            }}
+            onOpenPayment={openReceive}
             onOpenCharge={() => setIsChargeOpen(true)}
             onOpenDeposit={() => setIsDepositOpen(true)}
             onOpenExpense={() => setIsExpenseOpen(true)}
           />
         </div>
       ) : activeTab === "receivables" ? (
-        /* Who owes what: PG rent, tiffin invoices and delivered orders (read from those records) */
-        <ReceivablesView initialReviewOnly={searchParams?.get("review") === "1"} />
-      ) : activeTab === "residents" ? (
-        /* Resident Statements Directory */
-        <ResidentStatementsView
-          residents={residents}
-          isLoading={loading}
-          onOpenPaymentForResident={handleOpenPaymentForResident}
-          onLoadStatement={handleLoadStatement}
-        />
+        /* Who owes what (residents and tiffin customers): bill them and receive payments */
+        <DuesList scope="ALL" />
       ) : activeTab === "invoices" ? (
-        /* Invoices & Billing Engine */
-        <InvoiceLedgerView
-          residents={residents}
-          onOpenRecordPayment={handleOpenPaymentForResident}
-          onRefreshParentFinance={fetchData}
-        />
+        /* Every bill kept on record */
+        <BillsList />
       ) : (
         /* Daily Closing & Multi-Channel Reconciliation Engine */
         <DailyClosingView

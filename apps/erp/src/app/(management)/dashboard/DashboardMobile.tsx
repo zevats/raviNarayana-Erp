@@ -58,7 +58,7 @@ export function DashboardMobile({
   if (division !== "PG") tiles.push({ icon: Truck, tone: t && t.problems > 0 ? "red" : "orange", label: t ? (t.problems > 0 ? `Delivered · ${t.problems} problem${t.problems === 1 ? "" : "s"}` : `Delivered · ${t.waiting} waiting`) : "Delivered", value: t ? `${t.delivered}/${t.total}` : "—", href: "/delivery" });
   if (division !== "PG") tiles.push({ icon: UtensilsCrossed, tone: "orange", label: t ? `Thalis · ${t.boxes.breakfast ? `B ${t.boxes.breakfast} · ` : ""}L ${t.boxes.lunch} · D ${t.boxes.dinner}` : "Thalis today", value: t ? (t.boxes.breakfast ?? 0) + t.boxes.lunch + t.boxes.dinner : "—", href: "/orders" });
   if (division === "TIFFIN") tiles.push({ icon: Users, label: `Customers · ${ops.tiffin?.activeSubscriptions ?? 0} plans`, value: ops.tiffin ? ops.tiffin.activeCustomers : "—", href: "/tiffin" });
-  if (division === "PG") tiles.push({ icon: Wallet, tone: finance.overdueCount > 0 ? "amber" : "accent", label: `Rent owed · ${finance.overdueCount} owing`, value: metricsUnavailable ? "—" : formatMoney(finance.outstandingRent), href: "/finance?tab=residents" });
+  if (division === "PG") tiles.push({ icon: Wallet, tone: finance.overdueCount > 0 ? "amber" : "accent", label: `Rent owed · ${finance.overdueCount} owing`, value: metricsUnavailable ? "—" : formatMoney(finance.outstandingRent), href: "/residents" });
 
   return (
     <MStack>
@@ -90,7 +90,7 @@ export function DashboardMobile({
               { label: "Cash in hand", value: cashInHand === null ? "—" : formatMoney(cashInHand), href: "/finance?tab=closing" },
               division === "TIFFIN"
                 ? { label: "Cash with staff", value: ops.custody ? formatMoney(ops.custody.cashWithStaff) : "—", href: "/delivery?tab=custody" }
-                : { label: "Rent owed", value: metricsUnavailable ? "—" : formatMoney(finance.outstandingRent), href: "/finance?tab=residents" },
+                : { label: "Rent owed", value: metricsUnavailable ? "—" : formatMoney(finance.outstandingRent), href: "/residents" },
             ]}
           />
           {ops.money.yesterdayUnclosed && (
