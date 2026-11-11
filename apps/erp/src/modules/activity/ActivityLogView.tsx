@@ -91,7 +91,7 @@ export function ActivityLogView() {
 
   return (
     <div className="space-y-4">
-      <div className="rn-card">
+      <div className="rn-card rn-mflat">
       <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <SearchField value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" className="lg:col-span-2" />
         <div className="rn-filter-row sm:contents">
@@ -118,7 +118,7 @@ export function ActivityLogView() {
       ) : entries.length === 0 ? (
         <EmptyState title="No activity matches these filters" />
       ) : (
-          <table className="rn-table">
+          <table className="rn-table rn-mcards">
             <thead>
               <tr>
                 <th>When</th>
@@ -131,11 +131,11 @@ export function ActivityLogView() {
             <tbody>
               {entries.map((e) => (
                 <tr key={e.id} onClick={() => setOpen(e)} className="cursor-pointer">
-                  <td className="tabular-nums text-[var(--rn-ink-3)]">{when(e.at)}</td>
-                  <td className="text-[var(--rn-ink)]">{e.actorName}</td>
-                  <td><span className="text-[11px] uppercase tracking-wide text-[var(--rn-ink-3)] mr-1.5">{e.area}</span>{readable(e.action)}</td>
-                  <td className="text-[12px] text-[var(--rn-ink-3)]">{recordLabel(e.targetType, e.targetId)}</td>
-                  <td>
+                  <td data-m="line" className="tabular-nums text-[var(--rn-ink-3)]">{when(e.at)}</td>
+                  <td data-m="line" className="text-[var(--rn-ink)]">{e.actorName}</td>
+                  <td data-m="title"><span className="hidden lg:inline text-[11px] uppercase tracking-wide text-[var(--rn-ink-3)] mr-1.5">{e.area}</span><span className="inline-block first-letter:uppercase">{readable(e.action)}</span></td>
+                  <td data-m="line" className="text-[12px] text-[var(--rn-ink-3)]">{recordLabel(e.targetType, e.targetId)}</td>
+                  <td data-m="badge">
                     <Badge tone={e.outcome === "REFUSED" ? "bad" : "good"}>{e.outcome === "REFUSED" ? "Refused" : "Done"}</Badge>
                   </td>
                 </tr>

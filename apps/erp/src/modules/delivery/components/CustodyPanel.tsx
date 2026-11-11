@@ -452,7 +452,7 @@ function StaffOverview() {
       ) : rows.length === 0 ? (
         <StateMessage title="No cash with staff" compact />
       ) : (
-        <table className="rn-table">
+        <table className="rn-table rn-mcards rn-mcards-soft">
           <thead>
             <tr>
               <th>Employee</th>
@@ -469,7 +469,7 @@ function StaffOverview() {
               const short = r.cashShort;
               return (
                 <tr key={r.staffId}>
-                  <td>
+                  <td data-m="title">
                     <span className="flex items-center gap-3">
                       <span className="grid place-items-center w-9 h-9 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent)] text-[13px] font-semibold shrink-0" aria-hidden>
                         {r.staffName.trim().charAt(0).toUpperCase()}
@@ -480,10 +480,10 @@ function StaffOverview() {
                       </span>
                     </span>
                   </td>
-                  <td className="num">{inr(r.cashCollected)}</td>
-                  <td className="num">{inr(r.cashHandedOver)}</td>
-                  <td className={`num text-[15px] font-semibold ${r.cashPending > 0 ? "text-[var(--rn-ink)]" : "text-[var(--rn-ink-3)]"}`}>{inr(r.cashPending)}</td>
-                  <td>
+                  <td data-m="kv" className="num">{inr(r.cashCollected)}</td>
+                  <td data-m="kv" className="num">{inr(r.cashHandedOver)}</td>
+                  <td data-m="badge" className={`num text-[15px] font-semibold ${r.cashPending > 0 ? "text-[var(--rn-ink)]" : "text-[var(--rn-ink-3)]"}`}>{inr(r.cashPending)}</td>
+                  <td data-m="line" className="max-lg:pt-1.5">
                     {short > 0 ? (
                       <span className="inline-flex items-center gap-2 flex-wrap">
                         <Badge tone="bad">Short {inr(short)}</Badge>
@@ -497,7 +497,7 @@ function StaffOverview() {
                       <Badge tone={r.status === "AWAITING_ACCEPTANCE" ? "warn" : r.status === "DISCREPANCY" ? "bad" : r.status === "CLEAR" ? "good" : "neutral"}>{STATUS_LABEL[r.status] || r.status}</Badge>
                     )}
                   </td>
-                  <td className="text-right">
+                  <td data-m="actions" className="text-right">
                     {waiting.length > 0 ? (
                       <button type="button" className="rn-btn rn-btn-sm rn-btn-primary" onClick={() => setVerify(waiting[0])} aria-label={`Verify ${r.staffName}'s handover`}>
                         Verify{waiting.length > 1 ? ` (${waiting.length})` : ""}

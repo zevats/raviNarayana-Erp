@@ -419,7 +419,7 @@ async function runTask67Tests() {
   const cashbookContent = fs.readFileSync(cashbookPath, "utf-8");
 
   assert(
-    cashbookContent.includes("block md:hidden") && cashbookContent.includes("hidden md:block"),
+    /(block md|lg):hidden/.test(cashbookContent) && /hidden (md|lg):block/.test(cashbookContent),
     "CashbookLedger implements dual-mode responsive layout (mobile cards vs desktop table)"
   );
   assert(
@@ -432,7 +432,7 @@ async function runTask67Tests() {
   const invoiceContent = fs.readFileSync(invoiceLedgerPath, "utf-8");
 
   assert(
-    invoiceContent.includes("block md:hidden") && invoiceContent.includes("hidden md:block"),
+    /(block md|lg):hidden/.test(invoiceContent) && /hidden (md|lg):block/.test(invoiceContent),
     "InvoiceLedgerView implements dual-mode responsive layout (mobile cards vs desktop table)"
   );
   assert(

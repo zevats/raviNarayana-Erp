@@ -63,7 +63,7 @@ function TypeIcon({ type }: { type: NotificationItem["type"] }) {
 /** One list of notifications, used by the header panel and the notification centre page. */
 export function NotificationRows({ items, onOpen, onMarkRead }: { items: NotificationItem[]; onOpen: (n: NotificationItem) => void; onMarkRead: (n: NotificationItem) => void }) {
   return (
-    <ul className="rn-rows">
+    <ul className="rn-rows rn-mlist">
       {items.map((n) => (
         <li key={n.id} className="flex items-start gap-3 px-3 py-3">
           <TypeIcon type={n.type} />

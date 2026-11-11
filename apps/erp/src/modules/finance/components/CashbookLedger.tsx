@@ -487,7 +487,7 @@ export function CashbookLedger({
     <div className="space-y-4">
       {/* 1. Search and Filters Bar (Matching Residents & Rooms pattern) */}
       <div className="rn-card">
-<div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-between gap-3">
+<div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center justify-between gap-3 min-w-0 [&>*]:min-w-0">
         {/* Search */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-[#6E7F70] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -605,12 +605,12 @@ export function CashbookLedger({
         ) : (
           <>
             {/* Mobile Card List (< md screens) - Prevents Wide Table Viewport Overflow */}
-            <div className="block md:hidden divide-y divide-[#8E9F89]/15">
+            <div className="lg:hidden rn-mlist">
               {mobileRows}
             </div>
 
             {/* Dedicated Horizontally Scrollable Transaction Table (Desktop/Tablet) */}
-            <div className="hidden md:block overflow-x-auto w-full min-w-0">
+            <div className="hidden lg:block overflow-x-auto w-full min-w-0">
               <table className="w-full min-w-[760px] text-left border-collapse">
                 <thead>
                   <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">

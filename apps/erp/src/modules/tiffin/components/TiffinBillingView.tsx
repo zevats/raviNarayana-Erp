@@ -170,7 +170,7 @@ export function TiffinBillingView() {
         ) : bills.length === 0 ? (
           <p className="px-5 py-10 text-center text-[15px] text-[var(--rn-ink-2)]">No plans ran in {monthLabel(month)}.</p>
         ) : (
-          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Plan bills">
+          <ul className="divide-y divide-[var(--rn-line)] rn-mlist" aria-label="Plan bills">
             {bills.map((b) => {
               const st = b.existingInvoiceStatus;
               return (
@@ -210,7 +210,7 @@ export function TiffinBillingView() {
         ) : shownDues.length === 0 ? (
           <p className="px-5 py-10 text-center text-[15px] text-[var(--rn-ink-2)]">{search.trim() ? "No customer matches." : "No customer owes anything."}</p>
         ) : (
-          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Customer dues">
+          <ul className="divide-y divide-[var(--rn-line)] rn-mlist" aria-label="Customer dues">
             {shownDues.map((d) => (
               <li key={d.accountKey} className="flex items-center gap-3 px-4 sm:px-5 py-3.5">
                 <div className="min-w-0 flex-1">

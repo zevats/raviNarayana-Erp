@@ -28,7 +28,7 @@ import {
 } from "@/types";
 import { toLocalDateString } from "../utils/dateUtils";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
-import { formatNumberIN } from "@/lib/format";
+import { formatNumberIN, formatMoney } from "@/lib/format";
 
 interface DailyClosingViewProps {
   onMutationSuccess?: (message: string) => void;
@@ -270,7 +270,7 @@ export function DailyClosingView({
                   : "text-[#5A6C5E] hover:text-[#1A2E20]"
               }`}
             >
-              PG Hostel
+              PG
             </button>
             <button
               type="button"
@@ -282,7 +282,7 @@ export function DailyClosingView({
                   : "text-[#5A6C5E] hover:text-[#1A2E20]"
               }`}
             >
-              Commercial Tiffin
+              Tiffin
             </button>
           </div>
         </div>
@@ -307,7 +307,7 @@ export function DailyClosingView({
           ) : (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-100 text-neutral-800 border border-neutral-300 rounded-full text-xs font-bold">
               <RotateCcw className="w-3.5 h-3.5" />
-              PENDING CLOSING
+              Not closed yet
             </span>
           )}
         </div>
@@ -350,19 +350,19 @@ export function DailyClosingView({
               Payments by channel
             </h3>
             <span className="text-xs text-[#5A6C5E]">
-              {preview?.transactions.length || 0} transaction(s) today
+              {preview?.transactions.length || 0} entries
             </span>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full text-left text-xs border-collapse rn-mcards rn-mcards-soft max-lg:[&_tbody]:!px-0">
               <thead>
                 <tr className="border-b border-[#8E9F89]/20 text-[#5A6C5E] font-semibold bg-[#FAF8F5]">
-                  <th className="py-2.5 px-3">Payment Channel</th>
-                  <th className="py-2.5 px-3 text-right">Inflows (Receipts)</th>
-                  <th className="py-2.5 px-3 text-right">Outflows (Paid)</th>
-                  <th className="py-2.5 px-3 text-right">Net Movement</th>
-                  <th className="py-2.5 px-3 text-center">Tx Count</th>
+                  <th className="py-2.5 px-3">Channel</th>
+                  <th className="py-2.5 px-3 text-right">Money in</th>
+                  <th className="py-2.5 px-3 text-right">Money out</th>
+                  <th className="py-2.5 px-3 text-right">Net</th>
+                  <th className="py-2.5 px-3 text-center">Entries</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#8E9F89]/10">
@@ -370,19 +370,19 @@ export function DailyClosingView({
                   const b = preview?.channelBreakdown[ch];
                   return (
                     <tr key={ch} className="hover:bg-neutral-50/60">
-                      <td className="py-2.5 px-3 font-semibold text-[#1A2E20]">
-                        {ch === "BANK_TRANSFER" ? "Bank Transfer (NEFT/RTGS/IMPS)" : ch}
+                      <td data-m="title" className="py-2.5 px-3 font-semibold text-[#1A2E20]">
+                        {ch === "BANK_TRANSFER" ? "Bank transfer" : ch === "UPI" ? "UPI" : ch.charAt(0) + ch.slice(1).toLowerCase()}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                      <td data-m="kv" className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
                         ₹{formatNumberIN(b?.inflow || 0)}
                       </td>
-                      <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                      <td data-m="kv" className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
                         ₹{formatNumberIN(b?.outflow || 0)}
                       </td>
-                      <td className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
-                        ₹{formatNumberIN(b?.net || 0)}
+                      <td data-m="badge" className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
+                        {formatMoney(b?.net || 0)}
                       </td>
-                      <td className="py-2.5 px-3 text-center text-[#5A6C5E]">
+                      <td data-m="hide" className="py-2.5 px-3 text-center text-[#5A6C5E]">
                         {b?.transactionCount || 0}
                       </td>
                     </tr>
@@ -400,29 +400,29 @@ export function DailyClosingView({
           </h3>
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
-              <span className="text-[#5A6C5E]">Total Delivery Tasks</span>
+              <span className="text-[#5A6C5E]">Stops</span>
               <span className="font-bold text-[#1A2E20]">{preview?.deliverySummary.totalTasks || 0}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
-              <span className="text-[#5A6C5E]">Delivered Successfully</span>
+              <span className="text-[#5A6C5E]">Delivered</span>
               <span className="font-semibold text-[var(--rn-ink)]">
                 {preview?.deliverySummary.deliveredCount || 0}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
-              <span className="text-[#5A6C5E]">Resident Meals</span>
+              <span className="text-[#5A6C5E]">Room meals</span>
               <span className="font-semibold text-[#1A2E20]">
                 {preview?.deliverySummary.residentTasks || 0}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
-              <span className="text-[#5A6C5E]">External Tiffin Runs</span>
+              <span className="text-[#5A6C5E]">Tiffin deliveries</span>
               <span className="font-semibold text-[#1A2E20]">
                 {preview?.deliverySummary.externalTasks || 0}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-[#8E9F89]/10">
-              <span className="text-[#5A6C5E]">Delivery Exceptions</span>
+              <span className="text-[#5A6C5E]">Problems</span>
               <span
                 className={`font-semibold ${
                   (preview?.deliverySummary.exceptionCount || 0) > 0 ? "text-rose-600 font-bold" : "text-[#5A6C5E]"
@@ -445,7 +445,7 @@ export function DailyClosingView({
           {/* Actual Cash Counted */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#1A2E20]">
-              Physical Cash Counted in Drawer (₹) *
+              Cash counted (₹)
             </label>
             <input
               type="number"
@@ -603,25 +603,25 @@ export function DailyClosingView({
         </h3>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full text-left text-xs border-collapse rn-mcards rn-mcards-soft max-lg:[&_tbody]:!px-0">
             <thead>
               <tr className="border-b border-[#8E9F89]/20 text-[#5A6C5E] font-semibold bg-[#FAF8F5]">
                 <th className="py-2.5 px-3">Date</th>
                 <th className="py-2.5 px-3">Division</th>
-                <th className="py-2.5 px-3 text-right">Inflows</th>
-                <th className="py-2.5 px-3 text-right">Outflows</th>
-                <th className="py-2.5 px-3 text-right">Expected Cash</th>
-                <th className="py-2.5 px-3 text-right">Counted Cash</th>
-                <th className="py-2.5 px-3 text-right">Cash Discrepancy</th>
+                <th className="py-2.5 px-3 text-right">Money in</th>
+                <th className="py-2.5 px-3 text-right">Money out</th>
+                <th className="py-2.5 px-3 text-right">Expected cash</th>
+                <th className="py-2.5 px-3 text-right">Counted cash</th>
+                <th className="py-2.5 px-3 text-right">Difference</th>
                 <th className="py-2.5 px-3 text-center">Status</th>
-                <th className="py-2.5 px-3 text-right">Reconciler</th>
+                <th className="py-2.5 px-3 text-right">Closed by</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#8E9F89]/10">
               {historicalClosings.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="py-6 text-center text-[#5A6C5E]">
-                    No historical closings recorded yet.
+                    No past closings
                   </td>
                 </tr>
               ) : (
@@ -634,21 +634,21 @@ export function DailyClosingView({
                     }}
                     className="hover:bg-neutral-50/80 cursor-pointer transition-colors"
                   >
-                    <td className="py-2.5 px-3 font-bold text-[#1A2E20]">{c.closingDate}</td>
-                    <td className="py-2.5 px-3 text-[#5A6C5E]">{c.division}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                    <td data-m="title" className="py-2.5 px-3 font-bold text-[#1A2E20]">{c.closingDate}</td>
+                    <td data-m="line" className="py-2.5 px-3 text-[#5A6C5E]">{c.division === "COMBINED" ? "PG and Tiffin" : c.division === "PG" ? "PG" : "Tiffin"}</td>
+                    <td data-m="kv" className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
                       ₹{formatNumberIN(c.totalInflow)}
                     </td>
-                    <td className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
+                    <td data-m="kv" className="py-2.5 px-3 text-right tabular-nums text-[var(--rn-ink)]">
                       ₹{formatNumberIN(c.totalOutflow)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-medium text-[#1A2E20]">
+                    <td data-m="kv" className="py-2.5 px-3 text-right font-medium text-[#1A2E20]">
                       ₹{formatNumberIN(c.expectedCashBalance)}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
+                    <td data-m="kv" className="py-2.5 px-3 text-right font-bold text-[#1A2E20]">
                       {c.actualCashCounted !== null ? `₹${formatNumberIN(c.actualCashCounted)}` : "—"}
                     </td>
-                    <td className="py-2.5 px-3 text-right">
+                    <td data-m="kv" className="py-2.5 px-3 text-right">
                       {c.cashDiscrepancy === 0 ? (
                         <span className="text-[var(--rn-ink-3)]">₹0</span>
                       ) : (
@@ -657,22 +657,22 @@ export function DailyClosingView({
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-center">
+                    <td data-m="badge" className="py-2.5 px-3 text-center">
                       {c.status === "FINALIZED" ? (
                         <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E6F1E4] text-[#2F6B24]">
-                          FINALIZED
+                          Closed
                         </span>
                       ) : c.status === "REOPENED" ? (
                         <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#FBF4E6] text-[#8F6710]">
-                          REOPENED
+                          Reopened
                         </span>
                       ) : (
                         <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-black/[0.045] text-[var(--rn-ink-2)]">
-                          DRAFT
+                          Draft
                         </span>
                       )}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-[#5A6C5E]">
+                    <td data-m="hide" className="py-2.5 px-3 text-right text-[#5A6C5E]">
                       {c.finalizedByName || c.preparedByName || "—"}
                     </td>
                   </tr>

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { greeting } from "@/lib/names";
 import Link from "next/link";
-import { Users, Truck, ReceiptText, ArrowUpRight, BedDouble, UtensilsCrossed, AlertTriangle, Info, CheckCircle2, ArrowDownLeft, ArrowUpLeft, ArrowRight, Wallet, Banknote } from "lucide-react";
+import { Users, Truck, ReceiptText, ArrowUpRight, BedDouble, UtensilsCrossed, AlertTriangle, Info, CheckCircle2, ArrowDownLeft, ArrowUpLeft, ArrowRight, Wallet, Banknote, Plus } from "lucide-react";
 import type { DashboardOps } from "@/server/dashboard/dashboardOpsService";
 import type { NotificationItem, ClosingDivision } from "@/types";
 import { CollectionsChart, ExpenseDonut, CompletionTrend } from "./DashboardCharts";
@@ -297,6 +297,23 @@ export function DashboardView({
           <ExportReportModal summary={exportSummary} division={division} startDate={startDate} endDate={endDate} />
         </div>
       </div>
+
+      {/* Phones: the things done most, one tap away. */}
+      <nav aria-label="Shortcuts" className="lg:hidden grid grid-cols-4 gap-2">
+        {[
+          { href: "/orders?new=1", label: "New order", Icon: Plus, tone: "orange" },
+          { href: "/delivery", label: "Deliveries", Icon: Truck, tone: "orange" },
+          { href: "/finance?tab=receivables", label: "Collect", Icon: Wallet, tone: "green" },
+          { href: "/residents", label: "Residents", Icon: Users, tone: "green" },
+        ].map(({ href, label, Icon, tone }) => (
+          <Link key={href} href={href} prefetch={false} className="rn-press rn-dash-quick flex flex-col items-center gap-2 py-3.5 px-1 text-center">
+            <span className={`grid place-items-center w-11 h-11 rounded-2xl ${tone === "orange" ? "bg-[#FCE9DD] text-[#C9501C]" : "bg-[#EAF1E6] text-[#1E3A2B]"}`}>
+              <Icon className="w-5 h-5" strokeWidth={2} />
+            </span>
+            <span className="text-[12px] font-semibold leading-tight text-[#1F2320]">{label}</span>
+          </Link>
+        ))}
+      </nav>
 
       {/* Row 1: tiles + chart (left), money + spending (right); both columns end level */}
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] items-stretch">

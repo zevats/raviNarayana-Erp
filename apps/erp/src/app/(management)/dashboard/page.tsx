@@ -43,6 +43,8 @@ import { formatMoney } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+let lastRentCheck = 0;
+
 function formatCurrency(amount: number): string {
   return formatMoney(amount);
 }
@@ -90,7 +92,12 @@ export default async function DashboardPage({ searchParams }: DashboardPageProps
 
   // Monthly rent is generated on the first dashboard visit on or after the rent due day (Settings);
   // nothing happens when automatic rent is off or already done. Never blocks the page on failure.
-  if (user) await runAutomaticRentIfDue(user);
+  // Checked at most every 30 minutes per server (it reads the whole month's rent), so opening the
+  // dashboard stays quick; the rent itself is created on the first check after the due day.
+  if (user && Date.now() - lastRentCheck > 30 * 60_000) {
+    lastRentCheck = Date.now();
+    await runAutomaticRentIfDue(user);
+  }
 
   const emptyOps = (): DashboardOps => ({ today: null, custody: null, people: null, money: null, charts: null, tiffin: null, recent: null, failed: ["all"] });
   const [perDivision, notifs, cashInHand] = await Promise.all([

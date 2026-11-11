@@ -325,9 +325,9 @@ export function ResidentStatementsView({
       </div>
 
       {/* Residents Table */}
-      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden w-full min-w-0">
+      <div className="bg-white rounded-2xl border border-[#8E9F89]/25 shadow-2xs overflow-hidden w-full min-w-0 rn-mflat">
         <div className="overflow-x-auto w-full min-w-0">
-          <table className="w-full min-w-[680px] text-left border-collapse">
+          <table className="w-full min-w-[680px] text-left border-collapse rn-mcards">
             <thead>
               <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] uppercase font-semibold tracking-wider text-[#6E7F70]">
                 <th className="py-3 px-4 whitespace-nowrap">Resident</th>
@@ -375,7 +375,7 @@ export function ResidentStatementsView({
                   return (
                     <tr key={r.id} className="hover:bg-[#FAF8F5]/60 transition-colors">
                       {/* Resident Name & Avatar */}
-                      <td className="py-3 px-4">
+                      <td data-m="title" className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="w-7 h-7 rounded-full bg-[#1A2E20] text-[#B58A57] flex items-center justify-center font-serif font-bold text-xs shrink-0 shadow-2xs">
                             {r.fullName.charAt(0).toUpperCase()}
@@ -393,11 +393,11 @@ export function ResidentStatementsView({
                       </td>
 
                       {/* Current Room */}
-                      <td className="py-3 px-4">
+                      <td data-m="kv" className="py-3 px-4">
                         {r.currentRoomNumber ? (
                           <div className="font-medium text-[#1A2E20]">
                             Room {r.currentRoomNumber}
-                            <span className="text-[10px] text-[#5A6C5E] block font-light">
+                            <span className="text-[10px] text-[#5A6C5E] lg:block font-light"> · 
                               {r.currentFloor === 0 ? "Ground Floor" : `Floor ${r.currentFloor}`}
                             </span>
                           </div>
@@ -407,13 +407,13 @@ export function ResidentStatementsView({
                       </td>
 
                       {/* Contact Info */}
-                      <td className="py-3 px-4 font-sans text-xs text-[#1A2E20]">
+                      <td data-m="kv" className="py-3 px-4 font-sans text-xs text-[#1A2E20]">
                         <div>{r.phone}</div>
                         {r.email && <div className="text-[10px] text-[#5A6C5E] font-sans">{r.email}</div>}
                       </td>
 
                       {/* Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
+                      <td data-m="badge" className="py-3 px-4 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
                             r.status === "ACTIVE"
@@ -426,14 +426,14 @@ export function ResidentStatementsView({
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <td data-m="actions" className="py-3 px-4 text-right whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => handleOpenStatement(r.id)}
                           disabled={isLoadingThis}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-[#1A2E20] text-xs font-semibold transition-all shadow-2xs"
+                          className="rn-btn rn-btn-sm"
                         >
-                          <span>{isLoadingThis ? "Loading..." : "View Statement"}</span>
+                          <span>{isLoadingThis ? "Opening…" : "View statement"}</span>
                           <ArrowRight className="w-3.5 h-3.5 text-[#B58A57]" />
                         </button>
                       </td>

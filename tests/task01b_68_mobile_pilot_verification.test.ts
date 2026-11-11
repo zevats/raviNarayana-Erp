@@ -207,15 +207,15 @@ async function runTask68Tests() {
   const cashbookPath = path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "components", "CashbookLedger.tsx");
   assert(fs.existsSync(cashbookPath), "CashbookLedger.tsx exists");
   const cashbookContent = fs.readFileSync(cashbookPath, "utf-8");
-  assert(cashbookContent.includes("block md:hidden"), "CashbookLedger implements mobile card layout (block md:hidden)");
-  assert(cashbookContent.includes("hidden md:block"), "CashbookLedger retains desktop table layout (hidden md:block)");
+  assert(/(block md|lg):hidden/.test(cashbookContent), "CashbookLedger implements mobile card layout (block md:hidden)");
+  assert(/hidden (md|lg):block/.test(cashbookContent), "CashbookLedger retains desktop table layout (hidden md:block)");
   assert(cashbookContent.includes("onViewReceipt") && cashbookContent.includes("Receipt"), "Cashbook mobile cards offer direct receipt viewing");
 
   const invoicePath = path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "components", "InvoiceLedgerView.tsx");
   assert(fs.existsSync(invoicePath), "InvoiceLedgerView.tsx exists");
   const invoiceContent = fs.readFileSync(invoicePath, "utf-8");
-  assert(invoiceContent.includes("block md:hidden"), "InvoiceLedgerView implements mobile card layout (block md:hidden)");
-  assert(invoiceContent.includes("hidden md:block"), "InvoiceLedgerView retains desktop table layout (hidden md:block)");
+  assert(/(block md|lg):hidden/.test(invoiceContent), "InvoiceLedgerView implements mobile card layout (block md:hidden)");
+  assert(/hidden (md|lg):block/.test(invoiceContent), "InvoiceLedgerView retains desktop table layout (hidden md:block)");
   assert(invoiceContent.includes("Allocate Payment"), "Invoice mobile cards offer direct payment allocation trigger");
 
   // ============================================================================

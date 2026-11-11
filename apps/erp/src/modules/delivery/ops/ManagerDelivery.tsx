@@ -341,8 +341,8 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           </div>
 
           {byPerson.length > 0 && (
-            <div className="rounded-3xl border border-surface-subtle bg-white overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="rounded-3xl border border-surface-subtle bg-white overflow-x-auto rn-mflat">
+              <table className="w-full text-sm rn-mcards">
                 <caption className="sr-only">Deliveries by person for this meal</caption>
                 <thead>
                   <tr className="text-[11px] uppercase tracking-wide text-text-muted text-left">
@@ -359,14 +359,14 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                 <tbody>
                   {byPerson.map((r) => (
                     <tr key={r.key} className="border-t border-surface-subtle tabular-nums">
-                      <td className="px-4 py-2 text-text-primary">{r.name}</td>
-                      <td className="px-2 py-2 text-right">{r.assigned}</td>
-                      <td className="px-2 py-2 text-right">{r.delivered}</td>
-                      <td className="px-2 py-2 text-right">{r.partial}</td>
-                      <td className="px-2 py-2 text-right">{r.failed}</td>
-                      <td className="px-2 py-2 text-right">{r.open}</td>
-                      <td className="px-2 py-2 text-right text-text-muted">{r.cancelled}</td>
-                      <td className="px-4 py-2 text-right">{rupees(r.collected)}{r.due > r.collected ? <span className="text-text-muted"> / {rupees(r.due)}</span> : null}</td>
+                      <td data-m="title" className="px-4 py-2 text-text-primary">{r.name}</td>
+                      <td data-m="kv" className="px-2 py-2 text-right">{r.assigned}</td>
+                      <td data-m="kv" className="px-2 py-2 text-right">{r.delivered}</td>
+                      <td data-m="kv" className="px-2 py-2 text-right">{r.partial}</td>
+                      <td data-m="kv" className="px-2 py-2 text-right">{r.failed}</td>
+                      <td data-m="kv" className="px-2 py-2 text-right">{r.open}</td>
+                      <td data-m="hide" className="px-2 py-2 text-right text-text-muted">{r.cancelled}</td>
+                      <td data-m="badge" className="px-4 py-2 text-right">{rupees(r.collected)}{r.due > r.collected ? <span className="text-text-muted"> / {rupees(r.due)}</span> : null}</td>
                     </tr>
                   ))}
                 </tbody>

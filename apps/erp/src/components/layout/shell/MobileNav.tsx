@@ -28,29 +28,23 @@ export function MobileTopBar({ title, queued, online, onAccount }: { title: stri
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
   return (
-    <header
-      className={`lg:hidden sticky top-0 z-40 flex justify-center transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${scrolled ? "px-3 pt-[calc(env(safe-area-inset-top)+0.6rem)]" : ""}`}
-      aria-label={title}
-      data-scrolled={scrolled ? "" : undefined}
-    >
-      <div
-        className={`w-full flex items-center gap-3 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          scrolled
-            ? "rn-m-bar-float rounded-full pl-3 pr-2 py-1.5"
-            : "rn-m-bar px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
-        }`}
-      >
-        <RnLogo size={scrolled ? 34 : 40} title="Ravinarayan" />
-        <p className="flex-1 min-w-0 text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320] truncate">Ravinarayan</p>
-        {(!online || queued > 0) && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#F6E3B8] text-[#5E3F04] whitespace-nowrap">{online ? `${queued} to send` : "Offline"}</span>}
-        <span className="grid place-items-center w-10 h-10 rounded-full bg-[#EFEAE1]">
-          <NotificationBell />
-        </span>
-        <Link href="/account" prefetch={false} onClick={onAccount} aria-label="My account" className="rn-press shrink-0">
-          <UserAvatar size={40} tone="forest" className="ring-2 ring-white shadow-sm" />
-        </Link>
-      </div>
-    </header>
+    <>
+      {/* The bar floats above the page; this keeps the page's place under it. */}
+      <div aria-hidden className="lg:hidden h-[calc(64px+env(safe-area-inset-top))]" />
+      <header className="lg:hidden rn-topbar-wrap" aria-label={title} data-scrolled={scrolled ? "" : undefined}>
+        <div className="rn-topbar">
+          <span className="rn-topbar-logo"><RnLogo size={40} title="Ravinarayan" /></span>
+          <p className="flex-1 min-w-0 text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320] truncate">Ravinarayan</p>
+          {(!online || queued > 0) && <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#F6E3B8] text-[#5E3F04] whitespace-nowrap">{online ? `${queued} to send` : "Offline"}</span>}
+          <span className="grid place-items-center w-10 h-10 rounded-full bg-[#EFEAE1]">
+            <NotificationBell />
+          </span>
+          <Link href="/account" prefetch={false} onClick={onAccount} aria-label="My account" className="rn-press shrink-0">
+            <UserAvatar size={40} tone="forest" className="ring-2 ring-white shadow-sm" />
+          </Link>
+        </div>
+      </header>
+    </>
   );
 }
 
@@ -70,35 +64,27 @@ export function MobileBottomBar({
   const items = BAR_KEYS.map((k) => links.find((l) => l.key === k)).filter(Boolean) as NavLink[];
   const inBar = items.some((i) => i.key === active);
   const moreActive = moreOpen || (!inBar && Boolean(active));
-  const tab = (on: boolean) =>
-    `rn-press h-11 rounded-full flex items-center justify-center gap-1.5 text-[12.5px] font-semibold transition-[background-color,color,flex-grow] duration-200 ${
-      on ? "grow-[2.2] px-3.5 text-white shadow-sm" : "grow basis-0 text-[#3E4E42]"
-    }`;
+  // The chosen tab is marked by one pill that slides from tab to tab.
+  const index = moreActive ? items.length : items.findIndex((i) => i.key === active);
+  const count = items.length + 1;
+  const tab = (on: boolean) => `rn-press relative z-[1] h-[52px] rounded-full flex flex-col items-center justify-center gap-[3px] transition-colors duration-300 ${on ? "text-white" : "text-[#3E4E42]"}`;
   return (
     <nav aria-label="Main navigation" className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-      <div data-bottom-bar className="rn-m-tabs pointer-events-auto w-full max-w-md flex items-center gap-1 p-1 rounded-full">
+      <div data-bottom-bar className="rn-m-tabs pointer-events-auto relative w-full max-w-md grid p-1 rounded-full" style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}>
+        <span aria-hidden className="rn-tab-pill" style={{ width: `calc((100% - 8px) / ${count})`, transform: `translateX(${Math.max(0, index) * 100}%)`, opacity: index < 0 ? 0 : 1 }} />
         {items.map((item) => {
-          const isActive = active === item.key && !moreOpen;
+          const isActive = active === item.key && !moreActive;
           const Icon = item.icon;
           return (
-            <Link
-              key={item.key}
-              href={item.href}
-              prefetch
-              aria-current={isActive ? "page" : undefined}
-              aria-label={item.label}
-              onClick={(e) => onNavigate(e, item.href, item.key)}
-              className={tab(isActive)}
-              style={isActive ? { background: "var(--rn-accent)" } : undefined}
-            >
+            <Link key={item.key} href={item.href} prefetch aria-current={isActive ? "page" : undefined} onClick={(e) => onNavigate(e, item.href, item.key)} className={tab(isActive)}>
               <Icon className="w-[19px] h-[19px] shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />
-              {isActive && <span className="truncate">{BAR_LABEL[item.key] ?? item.label}</span>}
+              <span className="text-[10.5px] font-semibold leading-none">{BAR_LABEL[item.key] ?? item.label}</span>
             </Link>
           );
         })}
-        <button type="button" onClick={onMore} aria-expanded={moreOpen} aria-haspopup="dialog" aria-label="More" className={tab(moreActive)} style={moreActive ? { background: "var(--rn-accent)" } : undefined}>
+        <button type="button" onClick={onMore} aria-expanded={moreOpen} aria-haspopup="dialog" className={tab(moreActive)}>
           <LayoutGrid className="w-[19px] h-[19px] shrink-0" strokeWidth={moreActive ? 2.2 : 1.8} />
-          {moreActive && <span>More</span>}
+          <span className="text-[10.5px] font-semibold leading-none">More</span>
         </button>
       </div>
     </nav>

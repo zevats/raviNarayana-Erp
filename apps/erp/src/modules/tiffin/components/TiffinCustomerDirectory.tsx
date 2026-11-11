@@ -275,7 +275,7 @@ export function TiffinCustomerDirectory() {
       )}
 
       {/* Control bar: search, filters, actions */}
-      <div className="rn-card">
+      <div className="rn-card rn-mflat">
 <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] space-y-3">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
           {/* Search box */}
@@ -283,7 +283,7 @@ export function TiffinCustomerDirectory() {
             <Search className="pointer-events-none w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by customer name, phone number, delivery address, or landmark..."
+              placeholder="Search name, phone or address"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-2 text-sm bg-[#FAF8F5] border border-[#8E9F89]/40 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-[#1A2E20]/20 focus:border-[#1A2E20]"
@@ -291,7 +291,7 @@ export function TiffinCustomerDirectory() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 [&>button:last-child]:flex-1 md:[&>button:last-child]:flex-none [&>button:last-child]:justify-center">
             <button
               onClick={() => {
                 invalidateErpCache(["tiffin_customers"]);
@@ -317,7 +317,6 @@ export function TiffinCustomerDirectory() {
 
         {/* Filters bar */}
         <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#8E9F89]/20 text-xs rn-filter-row">
-          <span className="font-medium text-gray-500">Filter by:</span>
 
           {/* Type filter */}
           <AppSelect
@@ -386,11 +385,6 @@ export function TiffinCustomerDirectory() {
           <div className="p-12 text-center text-gray-500">
             <User className="w-12 h-12 mx-auto text-gray-300 mb-3" />
             <h3 className="text-base font-bold text-[#1A2E20]">No tiffin customers found</h3>
-            <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-              {searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL"
-                ? "No customers matched your active filter criteria. Try adjusting or resetting your search."
-                : "Get started by adding your first commercial tiffin customer with delivery details."}
-            </p>
             {!(searchQuery || typeFilter !== "ALL" || statusFilter !== "ALL") && (
               <button
                 onClick={handleOpenAdd}
@@ -404,17 +398,17 @@ export function TiffinCustomerDirectory() {
         ) : (
           <>
           {/* Phones: one line per customer (name, code, phone, what they owe, status); a tap opens them. */}
-          <ul className="sm:hidden divide-y divide-[var(--rn-line)]" aria-label="Customers">
+          <ul className="lg:hidden grid gap-2.5 sm:grid-cols-2 pt-3" aria-label="Customers">
             {paginatedCustomers.map((customer) => {
               const due = customer.balance?.due;
               const active = customer.status === "ACTIVE";
               return (
-                <li key={customer.id}>
-                  <button type="button" onClick={() => handleViewDetail(customer)} className="w-full min-h-[64px] px-4 py-3 flex items-center gap-3 text-left active:bg-[#FAF8F5]">
-                    <span className="w-10 h-10 rounded-full bg-[#F3EADD] text-[#8A6436] flex items-center justify-center font-semibold text-sm shrink-0">{initialsOf(customer.fullName)}</span>
+                <li key={customer.id} className="rn-m-card overflow-hidden">
+                  <button type="button" onClick={() => handleViewDetail(customer)} className="rn-press w-full min-h-[72px] px-4 py-3.5 flex items-center gap-3.5 text-left active:bg-[#F7F4EE]">
+                    <span className="w-11 h-11 rounded-xl bg-[#FCE9DD] text-[#B4440F] flex items-center justify-center font-bold text-sm shrink-0">{initialsOf(customer.fullName)}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-[14.5px] text-[#1A2E20] truncate">{customer.fullName}</span>
+                        <span className="font-bold text-[16px] text-[#1F2320] truncate">{customer.fullName}</span>
                         {!active && <span className="shrink-0 text-[11px] font-semibold px-1.5 py-0.5 rounded-md bg-[#EEECE8] text-[#6E6A63]">Inactive</span>}
                       </span>
                       <span className="block text-[12.5px] text-[#5A6C5E] truncate tabular-nums">
@@ -438,7 +432,7 @@ export function TiffinCustomerDirectory() {
               );
             })}
           </ul>
-          <div className="hidden sm:block overflow-x-auto">
+          <div className="hidden lg:block overflow-x-auto">
             <table className="w-full table-fixed text-left border-collapse">
               {/* Short columns get the width their content needs; the address takes the rest
                   (no wide empty gaps between short values on large screens). */}
@@ -545,13 +539,9 @@ export function TiffinCustomerDirectory() {
 
         {/* Pagination controls */}
         {filteredCustomers.length > ITEMS_PER_PAGE && (
-          <div className="p-3 bg-[#FAF8F5] border-t border-[#8E9F89]/20 flex items-center justify-between text-xs text-gray-600">
+          <div className="p-3 bg-[#FAF8F5] border-t border-[#8E9F89]/20 flex items-center justify-between text-xs text-gray-600 max-lg:!bg-transparent max-lg:border-0 max-lg:px-0">
             <div>
-              Showing <span className="font-semibold">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{" "}
-              <span className="font-semibold">
-                {Math.min(currentPage * ITEMS_PER_PAGE, filteredCustomers.length)}
-              </span>{" "}
-              of <span className="font-semibold">{filteredCustomers.length}</span> customers
+              <span className="font-semibold tabular-nums">{(currentPage - 1) * ITEMS_PER_PAGE + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, filteredCustomers.length)}</span> / <span className="font-semibold tabular-nums">{filteredCustomers.length}</span>
             </div>
             <div className="flex items-center gap-1">
               <button

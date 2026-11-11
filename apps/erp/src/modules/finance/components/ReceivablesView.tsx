@@ -259,7 +259,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
         ) : (
           <>
             {/* Phones: cards */}
-            <ul className="md:hidden divide-y divide-[var(--rn-line)]">
+            <ul className="lg:hidden rn-mlist">
               {data.accounts.map((a) => (
                 <li key={a.accountKey}>
                   <button type="button" onClick={() => setOpen(a.accountKey)} className="w-full text-left px-4 py-3.5 space-y-1.5 min-w-0">
@@ -282,7 +282,7 @@ export function ReceivablesView({ initialReviewOnly = false }: { initialReviewOn
               ))}
             </ul>
             {/* Tablets and desktops: table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="rn-table w-full table-fixed text-left">
                 <colgroup>
                   <col className="w-[30%]" />

@@ -145,7 +145,7 @@ export function ReportsView() {
           />
         ) : r ? (
           <div>
-            <table className="rn-table">
+            <table className="rn-table rn-mcards rn-mcards-soft">
               <thead>
                 <tr>
                   {r.columns.map((c) => (
@@ -157,14 +157,14 @@ export function ReportsView() {
               <tbody>
                 {r.rows.map((row, i) => (
                   <tr key={i} className="tabular-nums">
-                    {r.columns.map((c) => (
-                      <td key={c.key} className={c.type === "money" || c.type === "number" || c.type === "percent" ? "num" : ""}>
+                    {r.columns.map((c, ci) => (
+                      <td key={c.key} data-m={ci === 0 ? "title" : "kv"} className={c.type === "money" || c.type === "number" || c.type === "percent" ? "num" : ""}>
                         {fmt(row[c.key], c.type)}
                       </td>
                     ))}
-                    <td className="text-right">
+                    <td data-m={row._link ? "actions" : "hide"} className="text-right">
                       {row._link && (
-                        <Link href={row._link} aria-label="Open the records" className="rn-btn rn-btn-sm rn-btn-icon"><ArrowRight className="w-4 h-4" /></Link>
+                        <Link href={row._link} aria-label="Open the records" data-m-wide className="rn-btn rn-btn-sm rn-btn-icon"><span className="lg:hidden">Open</span><ArrowRight className="w-4 h-4" /></Link>
                       )}
                     </td>
                   </tr>

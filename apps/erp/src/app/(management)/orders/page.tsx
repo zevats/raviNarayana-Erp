@@ -124,10 +124,13 @@ export default function OrdersPage() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const take = url.searchParams.get("take");
-    if (!take) return;
-    setPresetPlanId(take);
+    // The dashboard's "New order" shortcut opens /orders?new=1.
+    const fresh = url.searchParams.get("new");
+    if (!take && !fresh) return;
+    if (take) setPresetPlanId(take);
     setIsNewOrderModalOpen(true);
     url.searchParams.delete("take");
+    url.searchParams.delete("new");
     window.history.replaceState(window.history.state, "", url.toString());
   }, []);
 

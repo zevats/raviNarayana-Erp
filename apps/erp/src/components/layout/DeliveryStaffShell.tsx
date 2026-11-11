@@ -90,17 +90,11 @@ export function DeliveryStaffShell({
       <div className="fixed top-0 left-0 right-0 h-[2px] bg-[#C9501C] origin-left z-50 pointer-events-none" style={{ transform: `scaleX(${progress})` }} />
 
       {scrolled && <div aria-hidden="true" className="fixed top-0 inset-x-0 z-40 h-[env(safe-area-inset-top)] bg-[#FAF8F5]" />}
-      <header className={`fixed top-0 left-0 right-0 z-40 flex justify-center pointer-events-none transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${scrolled ? "pt-[calc(env(safe-area-inset-top)+0.75rem)] px-3 sm:px-4" : ""}`}>
-        <div
-          className={`pointer-events-auto w-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-            scrolled
-              ? "max-w-[1100px] rounded-full bg-[#F3F5F1]/95 backdrop-blur-md border border-[#8E9F89]/25 shadow-[0_6px_24px_rgba(43,51,41,0.12)] px-3 sm:px-5 py-2"
-              : "bg-[#FBF9F3]/95 backdrop-blur-sm border-b border-[#ECE6DB] px-4 sm:px-6 lg:px-8 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]"
-          }`}
-        >
+      <header className="rn-topbar-wrap rn-topbar-wide" data-scrolled={scrolled ? "" : undefined}>
+        <div className="rn-topbar">
           <div className="mx-auto max-w-[1180px] flex items-center gap-4">
             <button type="button" onClick={() => open("stops")} className="flex items-center gap-2.5 shrink-0" aria-label="My stops">
-              <RnLogo brand="delivery" size={40} title="" />
+              <span className="rn-topbar-logo"><RnLogo brand="delivery" size={40} title="" /></span>
               <span className="text-[20px] font-extrabold tracking-[-0.02em] text-[#1F2320]">Ravinarayan</span>
             </button>
 
@@ -140,14 +134,15 @@ export function DeliveryStaffShell({
 
       {/* Phone tab bar: always a floating pill, the same style as the top bar once scrolled. */}
       <nav aria-label="Delivery sections" className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
-        <div data-bottom-bar className="pointer-events-auto w-full max-w-md grid grid-cols-3 gap-1 p-1 rounded-full bg-[#EEF1ED]/85 backdrop-blur-md border border-[#8E9F89]/25 shadow-[0_4px_24px_rgba(43,51,41,0.12)]">
+        <div data-bottom-bar className="rn-m-tabs pointer-events-auto relative w-full max-w-md grid grid-cols-3 p-1 rounded-full">
+          <span aria-hidden className="rn-tab-pill rn-tab-pill-orange" style={{ width: "calc((100% - 8px) / 3)", transform: `translateX(${Math.max(0, TABS.findIndex((t) => active(t.view))) * 100}%)`, opacity: TABS.some((t) => active(t.view)) ? 1 : 0 }} />
           {TABS.map(({ view: v, label, Icon }) => (
             <button
               key={v}
               type="button"
               onClick={() => open(v)}
               aria-current={active(v) ? "page" : undefined}
-              className={`rn-press relative h-10 rounded-full flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors ${active(v) ? "bg-[#C9501C] text-white shadow-sm" : "text-[#3E4E42]"}`}
+              className={`rn-press relative z-[1] h-11 rounded-full flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors duration-300 ${active(v) ? "text-white" : "text-[#3E4E42]"}`}
             >
               <span className="relative">
                 <Icon className="w-[18px] h-[18px]" strokeWidth={active(v) ? 2.2 : 1.8} />

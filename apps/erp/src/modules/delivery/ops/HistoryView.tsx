@@ -78,7 +78,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
             {c.items.length === 0 ? (
               <StateMessage compact title="No items for this meal" />
             ) : (
-              <table className="rn-table">
+              <table className="rn-table rn-mcards rn-mcards-soft">
                 <thead>
                   <tr>
                     <th>Item</th>
@@ -98,11 +98,11 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
                     ].filter(Boolean).join(" · ");
                     return (
                       <tr key={i.productName}>
-                        <td className="text-[var(--rn-ink)]">{i.productName}</td>
-                        <td className="num">{i.ordered}</td>
-                        <td className="num">{i.delivered}</td>
-                        <td className={`num ${i.undelivered ? "font-semibold text-[#8F6710]" : ""}`}>{quiet(i.undelivered)}</td>
-                        <td className="rn-t-meta">{where || "—"}</td>
+                        <td data-m="title" className="text-[var(--rn-ink)]">{i.productName}</td>
+                        <td data-m="kv" className="num">{i.ordered}</td>
+                        <td data-m="kv" className="num">{i.delivered}</td>
+                        <td data-m="kv" className={`num ${i.undelivered ? "font-semibold text-[#8F6710]" : ""}`}>{quiet(i.undelivered)}</td>
+                        <td data-m={where ? "line" : "hide"} className="rn-t-meta">{where || "—"}</td>
                       </tr>
                     );
                   })}
@@ -139,7 +139,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
               {c.collections.length === 0 ? (
                 <StateMessage compact title="No money collected for these deliveries" />
               ) : (
-                <table className="rn-table">
+                <table className="rn-table rn-mcards rn-mcards-soft">
                   <thead>
                     <tr>
                       <th>Person</th>
@@ -151,13 +151,13 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
                   <tbody>
                     {c.collections.map((p) => (
                       <tr key={p.staffId}>
-                        <td className="text-[var(--rn-ink)]">{p.staffName}</td>
-                        <td className="num">
+                        <td data-m="title" className="text-[var(--rn-ink)]">{p.staffName}</td>
+                        <td data-m="badge" className="num">
                           {rupees(p.cash + p.upi)}
                           {p.upi > 0 && <span className="block rn-t-meta">{rupees(p.cash)} cash · {rupees(p.upi)} UPI</span>}
                         </td>
-                        <td className="num">{rupees(p.handedOver)}</td>
-                        <td className={`num ${p.undeclared + p.awaitingAcceptance ? "font-semibold text-[var(--rn-ink)]" : ""}`}>{rupees(p.undeclared + p.awaitingAcceptance)}</td>
+                        <td data-m="kv" className="num">{rupees(p.handedOver)}</td>
+                        <td data-m="kv" className={`num ${p.undeclared + p.awaitingAcceptance ? "font-semibold text-[var(--rn-ink)]" : ""}`}>{rupees(p.undeclared + p.awaitingAcceptance)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -220,7 +220,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
         ) : hist.data.length === 0 ? (
           <StateMessage compact title="No deliveries in the last two weeks" />
         ) : (
-          <table className="rn-table">
+          <table className="rn-table rn-mcards rn-mcards-soft">
             <thead>
               <tr>
                 <th>Day</th>
@@ -236,14 +236,14 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
             <tbody>
               {hist.data.map((h) => (
                 <tr key={`${h.serviceDate}-${h.mealType}`} onClick={() => onDate(h.serviceDate)} className={`cursor-pointer ${h.serviceDate === date ? "bg-[var(--rn-accent-tint)]" : ""}`}>
-                  <td className="text-[var(--rn-ink)] whitespace-nowrap">{shortDay(h.serviceDate, today)}</td>
-                  <td className="rn-t-meta">{mealName(h.mealType)}</td>
-                  <td className="num">{h.total}</td>
-                  <td className="num">{quiet(h.delivered)}</td>
-                  <td className={`num ${h.partial ? "text-[#8F6710] font-medium" : ""}`}>{quiet(h.partial)}</td>
-                  <td className={`num ${h.notDelivered ? "text-[#9A3423] font-medium" : ""}`}>{quiet(h.notDelivered)}</td>
-                  <td className="num">{quiet(h.open)}</td>
-                  <td className="num">{quiet(h.cancelled)}</td>
+                  <td data-m="title" className="text-[var(--rn-ink)] whitespace-nowrap">{shortDay(h.serviceDate, today)}</td>
+                  <td data-m="line" className="rn-t-meta">{mealName(h.mealType)}</td>
+                  <td data-m="kv" className="num">{h.total}</td>
+                  <td data-m="kv" className="num">{quiet(h.delivered)}</td>
+                  <td data-m="kv" className={`num ${h.partial ? "text-[#8F6710] font-medium" : ""}`}>{quiet(h.partial)}</td>
+                  <td data-m="kv" className={`num ${h.notDelivered ? "text-[#9A3423] font-medium" : ""}`}>{quiet(h.notDelivered)}</td>
+                  <td data-m="hide" className="num">{quiet(h.open)}</td>
+                  <td data-m="hide" className="num">{quiet(h.cancelled)}</td>
                 </tr>
               ))}
             </tbody>

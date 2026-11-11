@@ -57,6 +57,28 @@ async function block<T>(name: string, failed: string[], fn: () => Promise<T>): P
   }
 }
 
+/**
+ * The dashboard loads All, PG and Tiffin at the same moment; parts that do not depend on the view
+ * (today's deliveries, cash with staff, residents, tiffin counts, delivery completion, occupancy)
+ * are read once and shared by the three, for a few seconds, per database.
+ */
+const SHARED_MS = 4000;
+const sharedByDb = new WeakMap<object, Map<string, { at: number; p: Promise<unknown> }>>();
+function shared<T>(db: object, key: string, fn: () => Promise<T>): Promise<T> {
+  let m = sharedByDb.get(db);
+  if (!m) {
+    m = new Map();
+    sharedByDb.set(db, m);
+  }
+  const hit = m.get(key);
+  if (hit && Date.now() - hit.at < SHARED_MS) return hit.p as Promise<T>;
+  const p = fn();
+  m.set(key, { at: Date.now(), p });
+  // A failed read is not kept: the next view asks again.
+  p.catch(() => m!.delete(key));
+  return p;
+}
+
 export async function getDashboardOps(division: ClosingDivision = "COMBINED", asyncDb?: AsyncDb): Promise<DashboardOps> {
   const db = asyncDb ?? getAsyncDb();
   const today = businessToday();
@@ -65,7 +87,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
   const failed: string[] = [];
 
   const [todayBlock, custody, people, money, charts, tiffin, recent] = await Promise.all([
-    block("Today's deliveries", failed, async () => {
+    block("Today's deliveries", failed, () => shared(db, `today:${today}`, async () => {
       // Databases without the delivery update (migration 0014) have no resolution tracking and no
       // per-stop item lines: count every exception, and boxes from order lines only.
       const opsSchema = await hasDeliveryOpsSchema(db);
@@ -105,8 +127,8 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
         completionRate: total > 0 ? Math.round((delivered / total) * 100) : 0, problems: n(row?.problems),
         boxes: { lunch: by("LUNCH"), dinner: by("DINNER") },
       };
-    }),
-    block("Cash with staff", failed, async () => {
+    })),
+    block("Cash with staff", failed, () => shared(db, "custody", async () => {
       const row = await db.queryOne<any>(
         `SELECT
            COALESCE(SUM(CASE WHEN h.id IS NULL OR h.status = 'DECLARED' THEN dc.amount ELSE 0 END), 0) AS held,
@@ -115,11 +137,11 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
          WHERE dc.payment_method = 'CASH'`
       );
       return { cashWithStaff: n(row?.held), awaitingAcceptance: n(row?.awaiting) };
-    }),
-    block("Residents", failed, async () => {
+    })),
+    block("Residents", failed, () => shared(db, "people", async () => {
       const row = await db.queryOne<any>("SELECT COUNT(DISTINCT resident_id) AS n FROM resident_stays WHERE status = 'ACTIVE'");
       return { activeResidents: n(row?.n) };
-    }),
+    })),
     block("Money this month", failed, async () => {
       const [m, closed, yRow] = await Promise.all([
         db.queryOne<any>(
@@ -154,11 +176,11 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
            GROUP BY transaction_date`,
           [from30, today]
         ),
-        db.query<any>(
+        shared(db, `completion:${today}`, () => db.query<any>(
           `SELECT service_date AS d, SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) AS delivered, SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS total
            FROM delivery_tasks WHERE service_date >= ? AND service_date <= ? GROUP BY service_date`,
           [from14, today]
-        ),
+        )),
         db.query<any>(
           `SELECT category, COALESCE(SUM(amount), 0) AS v FROM financial_transactions
            WHERE status = 'POSTED' AND transaction_type = 'EXPENSE' ${divisionExpenseSql(division)} AND transaction_date >= ? AND transaction_date <= ?
@@ -166,7 +188,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
           [monthStart, today]
         ),
         // Occupancy at each month end (or today for this month), from the stays' own dates.
-        Promise.all(
+        shared(db, `occupancy:${today}`, () => Promise.all(
           [-5, -4, -3, -2, -1, 0].map(async (off) => {
             const month = businessMonthKey(off);
             const [y, mm] = month.split("-").map(Number);
@@ -182,7 +204,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
             const occupied = n(row?.occupied);
             return { month, occupied, capacity, value: capacity > 0 ? Math.round((occupied / capacity) * 100) : 0 };
           })
-        ),
+        )),
       ]);
       const dailyMap = new Map(daily.map((r) => [r.d, n(r.v)]));
       const compMap = new Map(completion.map((r) => [r.d, r]));
@@ -202,7 +224,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
         occupancyHistory: months,
       };
     }),
-    block("Tiffin", failed, async () => {
+    block("Tiffin", failed, () => shared(db, "tiffin", async () => {
       const row = await db.queryOne<any>(
         `SELECT
            (SELECT COUNT(*) FROM tiffin_subscriptions WHERE status = 'ACTIVE') AS active,
@@ -210,7 +232,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
            (SELECT COUNT(*) FROM tiffin_customers WHERE status = 'ACTIVE') AS customers`
       );
       return { activeSubscriptions: n(row?.active), pausedSubscriptions: n(row?.paused), activeCustomers: n(row?.customers) };
-    }),
+    })),
     block("Recent transactions", failed, async () => {
       const rows = await db.query<any>(
         `SELECT ft.id, ft.transaction_date, ft.transaction_type, ft.category, ft.amount, ft.payment_method, ft.created_at,

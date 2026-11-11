@@ -160,14 +160,14 @@ export function SubscriptionsView() {
             {search.trim() ? "No subscription matches." : filter === "ACTIVE" ? "No active subscriptions yet." : "Nothing here."}
           </p>
         ) : (
-          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Subscriptions">
+          <ul className="divide-y divide-[var(--rn-line)] rn-mlist" aria-label="Subscriptions">
             {rows.map((s) => {
               const bill = bills[s.id];
               const active = s.status === "ACTIVE";
               return (
-                <li key={s.id} data-sub-id={s.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-4">
-                  <div className="min-w-0 sm:w-[28%]">
-                    <p className="text-[15px] font-semibold text-[var(--rn-ink)] truncate">{s.customerName}</p>
+                <li key={s.id} data-sub-id={s.id} className="flex flex-col lg:flex-row lg:items-center gap-3 px-4 sm:px-5 py-4">
+                  <div className="min-w-0 lg:w-[28%]">
+                    <p className="text-[17px] lg:text-[15px] font-extrabold lg:font-semibold text-[var(--rn-ink)] truncate">{s.customerName}</p>
                     <p className="text-[13px] text-[var(--rn-ink-2)] tabular-nums">{s.customerPhone}</p>
                   </div>
                   <div className="min-w-0 flex-1">
@@ -180,7 +180,7 @@ export function SubscriptionsView() {
                       {s.status === "PAUSED" && s.pauseResumeDate ? ` · back ${day(s.pauseResumeDate)}` : ""}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end sm:w-[30%]">
+                  <div className="flex flex-wrap items-center gap-2 lg:justify-end lg:w-[30%]">
                     {s.status === "PAUSED" ? <Badge tone="warn">Paused</Badge> : s.status === "ACTIVE" ? <Badge tone="good">Active</Badge> : <Badge>Ended</Badge>}
                     {canSeeMoney && active && bill && (
                       bill.status === "NOT_BILLED" ? <Badge>Not billed</Badge>
@@ -188,7 +188,7 @@ export function SubscriptionsView() {
                       : bill.status === "PART_PAID" ? <Badge tone="warn">Part paid</Badge>
                       : <Badge tone="bad">Unpaid {rupees(bill.amount)}</Badge>
                     )}
-                    <span className="flex items-center gap-1.5 ml-auto sm:ml-2">
+                    <span className="flex items-center gap-2 lg:gap-1.5 max-lg:w-full max-lg:mt-1.5 lg:ml-2 max-lg:[&>button:first-child]:flex-1 max-lg:[&>button:first-child]:h-11">
                       {active && canManage && (
                         <button type="button" onClick={() => router.push(`/orders?take=${encodeURIComponent(s.id)}`)} className="rn-btn rn-btn-sm" aria-label={`Take an order for ${s.customerName}`}>
                           <ShoppingBag /> Take order

@@ -2,7 +2,7 @@
 
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Lock, User, Eye, EyeOff, AlertCircle, CheckCircle2, ArrowRight, BedDouble, DoorOpen, UtensilsCrossed, ReceiptText, MapPin, Wallet, HandCoins, QrCode } from "lucide-react";
 import { RnLogo, type RnBrand } from "@/components/brand/RnLogo";
 import { storedBrand, rememberBrand } from "@/lib/brand";
@@ -21,7 +21,7 @@ function sanitizeNextUrl(rawUrl: string | null): string {
 }
 
 export function LoginForm() {
-  const router = useRouter();
+
   const searchParams = useSearchParams();
   const nextUrl = sanitizeNextUrl(searchParams.get("next"));
   const resetTokenParam = searchParams.get("token");
@@ -41,6 +41,11 @@ export function LoginForm() {
   const [otp, setOtp] = useState("");
   // Code accepted: a full-screen logo covers the switch to the app (no frozen button, no sudden page).
   const [entering, setEntering] = useState(false);
+  // Signed in: a full page load of the app (never an in-app jump that could reuse a page answer
+  // from before the session existed, which sent people back to the password step).
+  const openApp = (href: string) => {
+    window.location.replace(href.startsWith("/") ? href : "/dashboard");
+  };
   const otpFormRef = useRef<HTMLFormElement | null>(null);
   const autoSent = useRef("");
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -154,7 +159,7 @@ export function LoginForm() {
       // Direct session login fallback if OTP is not required
       setLoginPhase("IDLE");
       setEntering(true);
-      router.replace(nextUrl);
+      openApp(nextUrl);
     } catch (err) {
       clearTimeout(phaseTimer);
       inFlight.current = false;
@@ -210,7 +215,7 @@ export function LoginForm() {
       setEntering(true);
       const landing =
         !searchParams.get("next") && data.user?.role === "DELIVERY_PERSON" ? "/delivery" : nextUrl;
-      router.replace(landing);
+      openApp(landing);
     } catch (err) {
       console.error("OTP verification error:", err);
       inFlight.current = false;
@@ -345,12 +350,12 @@ export function LoginForm() {
     }
   };
 
-  // While the code is typed, the app it opens is already being fetched.
+  // Wake the server and the database while the person types (a sleeping database adds seconds to
+  // the first sign-in request). Nothing about the app is preloaded here: before the code is
+  // accepted there is no session, and a preloaded page would only be a redirect back to sign-in.
   useEffect(() => {
-    if (step !== "OTP") return;
-    router.prefetch(searchParams.get("next") || "/dashboard");
-    router.prefetch("/delivery");
-  }, [step, router, searchParams]);
+    fetch("/api/health", { cache: "no-store" }).catch(() => undefined);
+  }, []);
   // The sixth digit sends the code (once per code; a wrong code is not resent by itself).
   useEffect(() => {
     if (step !== "OTP" || otp.length !== 6 || isVerifyingOtp || autoSent.current === otp) return;

@@ -775,7 +775,7 @@ export default function ResidentsPage() {
         ]}
       />
 
-      <Card flush>
+      <Card flush className="rn-mflat">
         <div className="p-4 sm:p-5 flex flex-wrap items-center gap-2.5 border-b border-[var(--rn-line)]">
           <SearchField value={search} onChange={setSearch} placeholder="Search name, phone or room" className="flex-1 basis-[240px]" />
           <div className="flex items-center gap-3">
@@ -793,7 +793,7 @@ export default function ResidentsPage() {
       ) : filteredResidents.length === 0 ? (
         <EmptyState title={residents.length === 0 ? "No residents yet" : "No residents match"} />
       ) : (
-            <table className="rn-table">
+            <table className="rn-table rn-mcards">
               <thead>
                 <tr>
                   <th>Resident</th>
@@ -812,7 +812,7 @@ export default function ResidentsPage() {
                   return (
                     <tr key={res.id} className="sm:h-[64px]">
                       {/* Column 1: Resident Name & Avatar */}
-                      <td>
+                      <td data-m="title">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent-mid)] flex items-center justify-center font-semibold text-[12px] shrink-0">
                             {res.fullName.charAt(0).toUpperCase()}
@@ -830,7 +830,7 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 2: Contact Info */}
-                      <td>
+                      <td data-m="kv">
                         <div className="space-y-0.5">
                           <p className="tabular-nums">
                             <span>{res.phone}</span>
@@ -844,7 +844,7 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 3: Current Room & Readable Floor Label */}
-                      <td>
+                      <td data-m="kv">
                         {isInHouse ? (
                           <div className="text-[var(--rn-ink)]">
                             <span className="tabular-nums font-medium">
@@ -860,12 +860,12 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 4: Current Stay Date */}
-                      <td className="tabular-nums text-[var(--rn-ink-3)]">
+                      <td data-m="kv" className="tabular-nums text-[var(--rn-ink-3)]">
                         {isInHouse && res.checkInDate ? res.checkInDate : "—"}
                       </td>
 
                       {/* Column 5: Status Badge */}
-                      <td>
+                      <td data-m="badge">
                         {isInHouse ? (
                           <Badge tone="good">In house</Badge>
                         ) : isCheckedOut ? (
@@ -876,7 +876,7 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Column 6: Actions */}
-                      <td className="text-right">
+                      <td data-m="actions" className="text-right">
                         {/* One main action on the row; the rest are in the ⋯ menu. */}
                         <div className="inline-flex justify-end items-center gap-1.5">
                           {/* Check-In action if unassigned */}

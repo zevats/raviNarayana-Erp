@@ -421,7 +421,7 @@ export function InvoiceLedgerView({
         ) : (
           <>
             {/* Mobile Invoices Card List (< md screens) */}
-            <div className="block md:hidden divide-y divide-[#8E9F89]/15">
+            <div className="lg:hidden rn-mlist">
               {filteredInvoices.map((inv) => {
                 const isPaid = inv.status === "PAID";
                 const isPartiallyPaid = inv.status === "PARTIALLY_PAID";
@@ -529,7 +529,7 @@ export function InvoiceLedgerView({
             </div>
 
             {/* Desktop / Tablet Horizontal Table */}
-            <div className="hidden md:block overflow-x-auto">
+            <div className="hidden lg:block overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#FAF8F5] border-b border-[#8E9F89]/20 text-[11px] font-bold text-[#1A2E20] uppercase tracking-wider">

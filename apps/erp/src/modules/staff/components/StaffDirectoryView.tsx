@@ -205,7 +205,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
         ]}
       />
 
-      <div className="rn-card">
+      <div className="rn-card rn-mflat">
       <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-2.5">
         <SearchField value={search} onChange={setSearch} placeholder="Search name, username or email" className="flex-1 basis-[240px]" />
         <div className="flex flex-wrap items-center gap-2">
@@ -244,7 +244,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
             <StateMessage title="No staff accounts yet" action={isSuperAdmin ? <button type="button" className="rn-btn rn-btn-primary" onClick={() => setIsCreateOpen(true)}><UserPlus /> Add staff</button> : undefined} />
           )
         ) : (
-          <table className="rn-table">
+          <table className="rn-table rn-mcards">
             <thead>
               <tr>
                 <th>Staff member</th>
@@ -258,7 +258,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
             <tbody>
               {sortedStaff.map((member) => (
                 <tr key={member.id}>
-                  <td>
+                  <td data-m="title">
                     <div className="flex items-center gap-3">
                       <span className="grid place-items-center w-8 h-8 rounded-full bg-[var(--rn-accent-tint)] text-[var(--rn-accent-mid)] text-[12px] font-semibold shrink-0" aria-hidden>
                         {member.fullName.charAt(0).toUpperCase()}
@@ -269,22 +269,23 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
                       </div>
                     </div>
                   </td>
-                  <td><Badge>{ROLE_LABELS[member.role] || member.role}</Badge></td>
-                  <td>{member.isActive ? <Badge tone="good">Active</Badge> : <Badge>Deactivated</Badge>}</td>
-                  <td className="break-all">{member.email}</td>
-                  <td className="rn-t-meta tabular-nums">
+                  <td data-m="kv"><Badge>{ROLE_LABELS[member.role] || member.role}</Badge></td>
+                  <td data-m="badge">{member.isActive ? <Badge tone="good">Active</Badge> : <Badge>Deactivated</Badge>}</td>
+                  <td data-m="kv" className="break-all">{member.email}</td>
+                  <td data-m="kv" className="rn-t-meta tabular-nums">
                     {member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" }) : "Never"}
                   </td>
-                  <td className="text-right">
+                  <td data-m="actions" className="text-right">
                     <div className="inline-flex items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => { setSelectedStaff(member); setIsHistoryOpen(true); }}
                         title="Login history"
                         aria-label={`Login history for ${member.fullName}`}
+                        data-m-wide
                         className="rn-btn rn-btn-sm rn-btn-icon"
                       >
-                        <History />
+                        <History /><span className="lg:hidden">Sign-in history</span>
                       </button>
                       {isSuperAdmin && (
                         <ActionMenu
