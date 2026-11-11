@@ -200,7 +200,8 @@ async function buildNotificationFeed(actor: AuthenticatedUser): Promise<Notifica
           LIMIT 10`, [today, addBusinessDays(today, 7)])
       : none(),
     // Cash handed over by staff but not yet checked and accepted (Settings → Alerts)
-    canManageDelivery && settings.notifications.pendingHandover
+    // Cash is handed over to the Owner only, so only the Owner is asked to accept it.
+    actor.role === "SUPER_ADMIN" && settings.notifications.pendingHandover
       ? db.query<any>(`
           SELECT h.id, h.shift_date, h.declared_cash, h.created_at, u.full_name
           FROM driver_cash_handovers h JOIN staff_users u ON u.id = h.driver_id

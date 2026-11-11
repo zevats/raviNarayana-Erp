@@ -91,18 +91,10 @@ async function resolveAssignee(
   if (!Number(staff.isActive)) {
     throw new Error(`Staff member '${staff.fullName}' is currently inactive and cannot receive delivery assignments.`);
   }
-  if (staff.role === "DELIVERY_PERSON") {
-    return { id: staff.id, fullName: staff.fullName, role: staff.role, selfFulfilment: false };
-  }
-  const managesDeliveries = staff.role === "SUPER_ADMIN" || staff.role === "OPERATIONS_MANAGER";
-  if (managesDeliveries && staff.id === actor.id) {
-    return { id: staff.id, fullName: staff.fullName, role: staff.role, selfFulfilment: true };
-  }
-  throw new Error(
-    managesDeliveries
-      ? `Only ${staff.fullName} can take a delivery for themselves. Assign it to delivery staff, or to yourself.`
-      : `Staff member '${staff.fullName}' holds role '${staff.role}'. Only active DELIVERY_PERSON staff can be assigned delivery tasks.`
-  );
+  // Any active staff member can take a delivery (owner decision, 2026-11-11): delivery staff, the
+  // person taking the order, or another Owner / Manager. Someone who is not delivery staff and takes
+  // it themselves gets no phone alert for it.
+  return { id: staff.id, fullName: staff.fullName, role: staff.role, selfFulfilment: staff.role !== "DELIVERY_PERSON" && staff.id === actor.id };
 }
 
 export interface ReportDeliveryExceptionInput {
@@ -2675,6 +2667,22 @@ export async function listActiveDeliveryStaff(
   }));
 }
 
+/**
+ * Everyone a delivery can be given to: every active staff member, delivery staff first, then the
+ * person asking, then the others by name.
+ */
+export async function listAssignableStaff(
+  actor: AuthenticatedUser,
+  asyncDb?: AsyncDb
+): Promise<Array<{ id: string; fullName: string; username: string; role: string; isDelivery: boolean; isMe: boolean }>> {
+  requirePermission(actor, "delivery.read");
+  const db = asyncDb || getAsyncDb();
+  const rows = await db.query<any>(`SELECT id, full_name AS "fullName", username, role FROM staff_users WHERE is_active = 1 ORDER BY full_name ASC`);
+  return rows
+    .map((r) => ({ id: r.id, fullName: r.fullName, username: r.username, role: r.role, isDelivery: r.role === "DELIVERY_PERSON", isMe: r.id === actor.id }))
+    .sort((a, b) => Number(b.isDelivery) - Number(a.isDelivery) || Number(b.isMe) - Number(a.isMe) || a.fullName.localeCompare(b.fullName));
+}
+
 export interface DefaultDeliveryStaffResolution {
   staff: { id: string; fullName: string; username: string } | null;
   /** How the person was chosen; "UNAVAILABLE" when the partner set in Settings is switched off. */
@@ -3494,8 +3502,9 @@ export async function acceptCashHandover(
   clientIp?: string,
   asyncDb?: AsyncDb
 ): Promise<DriverCashHandover> {
-  if (!canSeeAllCustody(actor)) {
-    throw new AuthorizationError(403, "You do not have permission to verify and accept driver cash handovers.");
+  // All cash is handed over to the Owner (owner decision, 2026-11-11): only an Owner accepts it.
+  if (actor.role !== "SUPER_ADMIN") {
+    throw new AuthorizationError(403, "Only the owner accepts cash handovers.");
   }
   const db = asyncDb || getAsyncDb();
   const handoverRow = await db.queryOne<any>(`${HANDOVER_SELECT} WHERE h.id = ?`, [handoverId]);

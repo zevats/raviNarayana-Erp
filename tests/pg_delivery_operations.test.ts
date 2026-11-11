@@ -309,7 +309,7 @@ async function main() {
   console.log("\n[11] Handover: cashbook on the handover date, service date kept on the payment");
   const decl = await createCashHandoverDeclaration(A, { shiftDate: DAY1 }, IP, db);
   assert((decl.declaredUpi || 0) === 0 && decl.declaredCash === 60, `Handover is cash only (₹${decl.declaredCash} cash, ₹${decl.declaredUpi || 0} UPI)`);
-  await acceptCashHandover(manager, decl.id, { acceptedCash: decl.declaredCash, acceptedUpi: decl.declaredUpi }, IP, db);
+  await acceptCashHandover(owner, decl.id, { acceptedCash: decl.declaredCash, acceptedUpi: decl.declaredUpi }, IP, db);
   const ledger = await db.queryOne<any>("SELECT transaction_date FROM financial_transactions WHERE idempotency_key = ?", [`dch_tx_${decl.id}`]);
   assert(ledger?.transaction_date === getBusinessDateString(), `Cashbook entry dated the handover day ${getBusinessDateString()} (declared shift ${DAY1})`);
   const col = await db.queryOne<any>("SELECT service_date FROM delivery_collections WHERE delivery_task_id = ? AND collected_by = ?", [o1Task.id, A.id]);

@@ -204,7 +204,7 @@ async function runTests() {
   // Test 1: Late cash handover acceptance on finalized shift date must be REJECTED
   let lateHandoverBlocked = false;
   try {
-    await acceptCashHandover(accountantActor, "dch_63_locked", {
+    await acceptCashHandover(adminActor, "dch_63_locked", {
       acceptedCash: 500,
     }, undefined, db);
   } catch (err: any) {
@@ -238,7 +238,7 @@ async function runTests() {
     )
   `, [driverActor.id, shiftDateOpen, now, now]);
 
-  const acceptedHandover = await acceptCashHandover(accountantActor, "dch_63_open", {
+  const acceptedHandover = await acceptCashHandover(adminActor, "dch_63_open", {
     acceptedCash: 800,
   }, undefined, db);
   assert(acceptedHandover.status === "ACCEPTED", "acceptCashHandover succeeds on open shift date");
@@ -252,7 +252,7 @@ async function runTests() {
   // Test 4: Repeated acceptance attempt on already-accepted handover must be REJECTED (Idempotency)
   let repeatAcceptanceBlocked = false;
   try {
-    await acceptCashHandover(accountantActor, "dch_63_open", {
+    await acceptCashHandover(adminActor, "dch_63_open", {
       acceptedCash: 800,
     }, undefined, db);
   } catch (err: any) {
@@ -267,7 +267,7 @@ async function runTests() {
     reason: "Reopening to accept delayed driver shift handover",
   }, undefined, db);
 
-  const acceptedAfterReopen = await acceptCashHandover(accountantActor, "dch_63_locked", {
+  const acceptedAfterReopen = await acceptCashHandover(adminActor, "dch_63_locked", {
     acceptedCash: 500,
   }, undefined, db);
   assert(acceptedAfterReopen.status === "ACCEPTED", "Handover accepted successfully after authorized closing reopening");

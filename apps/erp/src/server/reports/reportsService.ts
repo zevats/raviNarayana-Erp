@@ -211,7 +211,7 @@ async function build(db: AsyncDb, actor: AuthenticatedUser, key: ReportKey, o: R
       };
     }
     case "expenses": {
-      const div = division === "PG" ? "AND ft.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')" : division === "TIFFIN" ? "AND ft.category IN ('GROCERY', 'KITCHEN_SUPPLIES')" : "";
+      const div = division === "PG" ? "AND ft.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')" : division === "TIFFIN" ? "AND ft.category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')" : "";
       const rows = await db.query<any>(
         `SELECT ft.transaction_date, ft.category, ft.payee_vendor, ft.payment_method, ft.amount, ft.reference_number, ft.description
          FROM financial_transactions ft

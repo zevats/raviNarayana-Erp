@@ -17,6 +17,8 @@ export async function GET(request: NextRequest) {
       accountKey: p.get("account") || undefined,
       q: p.get("q") || undefined,
       kind: (p.get("kind") as any) || undefined,
+      type: (p.get("type") as any) || undefined,
+      date: p.get("date") || undefined,
       limit: Number(p.get("limit")) || undefined,
       offset: Number(p.get("offset")) || undefined,
     });

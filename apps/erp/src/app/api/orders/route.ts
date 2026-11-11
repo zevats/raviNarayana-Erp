@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
         idempotencyKey: body.idempotencyKey,
         // A monthly-plan customer's order: the plan's thali for the meal is free.
         subscriptionId: typeof body.subscriptionId === "string" ? body.subscriptionId : undefined,
+        assignToStaffId: typeof body.assignToStaffId === "string" && body.assignToStaffId ? body.assignToStaffId : undefined,
       },
       clientIp
     );

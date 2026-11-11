@@ -37,10 +37,8 @@ import { MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import { FinancePlaces, CashbookMobile } from "@/modules/finance/mobile/FinanceMobile";
 
 // Dialogs and secondary views load on demand, off the navigation path.
-const loadRentChargeModal = () => import("@/modules/finance/components/modals/RentChargeModal");
-const RentChargeModal = dynamic(() => loadRentChargeModal().then((m) => m.RentChargeModal), { ssr: false });
-const loadRentRunModal = () => import("@/modules/finance/components/modals/RentRunModal");
-const RentRunModal = dynamic(() => loadRentRunModal().then((m) => m.RentRunModal), { ssr: false });
+const loadReceive = () => import("@/modules/billing/CashbookReceive");
+const CashbookReceiveDialog = dynamic(() => loadReceive().then((m) => m.CashbookReceiveDialog), { ssr: false });
 const loadSecurityDepositModal = () => import("@/modules/finance/components/modals/SecurityDepositModal");
 const SecurityDepositModal = dynamic(() => loadSecurityDepositModal().then((m) => m.SecurityDepositModal), { ssr: false });
 const loadExpenseModal = () => import("@/modules/finance/components/modals/ExpenseModal");
@@ -65,7 +63,7 @@ const BillsList = dynamic(() => loadDues().then((m) => m.BillsList), { ssr: fals
 
 export default function FinancePage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadRentChargeModal, loadRentRunModal, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadDues]), []);
+  useEffect(() => preloadWhenIdle([loadReceive, loadSecurityDepositModal, loadExpenseModal, loadReceiptModal, loadReversalModal, loadDues]), []);
   // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
   const phone = useIsPhone();
@@ -148,8 +146,7 @@ export default function FinancePage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Modal dialog states
-  const [isChargeOpen, setIsChargeOpen] = useState(false);
-  const [isRentRunOpen, setIsRentRunOpen] = useState(false);
+  const [isReceiveOpen, setIsReceiveOpen] = useState(false);
   const [isDepositOpen, setIsDepositOpen] = useState(false);
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
 
@@ -190,8 +187,8 @@ export default function FinancePage() {
     });
   };
 
-  // Receiving money has one place: Dues (pick the person, then Receive payment).
-  const openReceive = () => setActiveTab("receivables");
+  // Receive: rent, tiffin or other money, straight from the cashbook.
+  const openReceive = () => setIsReceiveOpen(true);
 
   // Modal success callback
   const handleMutationSuccess = (tx: FinancialTransaction, message: string) => {
@@ -209,13 +206,13 @@ export default function FinancePage() {
 
   const modals = (
     <>
-        <RentRunModal isOpen={isRentRunOpen} onClose={() => setIsRentRunOpen(false)} onDone={fetchData} />
-
-        <RentChargeModal
-          isOpen={isChargeOpen}
-          onClose={() => setIsChargeOpen(false)}
-          residents={residents}
-          onSuccess={handleMutationSuccess}
+        <CashbookReceiveDialog
+          open={isReceiveOpen}
+          onClose={() => setIsReceiveOpen(false)}
+          onDone={() => {
+            setIsReceiveOpen(false);
+            fetchData();
+          }}
         />
 
         <SecurityDepositModal
@@ -266,12 +263,10 @@ export default function FinancePage() {
             onPay={openReceive}
             onExpense={() => setIsExpenseOpen(true)}
             onDeposit={() => setIsDepositOpen(true)}
-            onCharge={() => setIsChargeOpen(true)}
-            onRentRun={() => setIsRentRunOpen(true)}
             onExport={handleExportCashbook}
             onReceipt={(tx) => setReceiptTx(tx)}
             onReverse={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
-            onOwed={openReceive}
+            onOwed={() => setActiveTab("receivables")}
           />
         ) : activeTab === "receivables" ? (
           <DuesList scope="ALL" />
@@ -297,8 +292,6 @@ export default function FinancePage() {
         isLoading={loading || isRevalidating}
         onOpenPayment={openReceive}
         showActions={activeTab === "cashbook"}
-        onOpenCharge={() => setIsChargeOpen(true)}
-        onOpenRentRun={() => setIsRentRunOpen(true)}
         onOpenDeposit={() => setIsDepositOpen(true)}
         onOpenExpense={() => setIsExpenseOpen(true)}
         onExport={handleExportCashbook}
@@ -384,7 +377,6 @@ export default function FinancePage() {
             onViewReceipt={(tx) => setReceiptTx(tx)}
             onInitiateReversal={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
             onOpenPayment={openReceive}
-            onOpenCharge={() => setIsChargeOpen(true)}
             onOpenDeposit={() => setIsDepositOpen(true)}
             onOpenExpense={() => setIsExpenseOpen(true)}
           />

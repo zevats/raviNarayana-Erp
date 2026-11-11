@@ -1,16 +1,15 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, MessageCircle } from "lucide-react";
+import { Check } from "lucide-react";
 import type { Bill, BillSummary, BillType } from "@/lib/bills";
 import { billDay } from "@/lib/bills";
 import { Dialog } from "@/components/ui/Dialog";
-import { Segmented } from "@/components/ui/kit";
 import { AppSelect } from "@/components/forms/AppSelect";
 import { toast } from "@/components/ui/toast";
 import { businessToday } from "@/lib/businessDate";
 import { AccountDues, DueAccount, METHODS, Method, createBill, methodLabel, money, refreshMoney, send } from "./api";
-import { shareOnWhatsApp } from "./BillViewer";
+import { WhatsAppIcon, shareOnWhatsApp } from "./BillViewer";
 
 const GSTIN = "06AAEFZ6389H1ZL";
 const RATES = [5, 12, 18];
@@ -35,29 +34,38 @@ function useBillKind(open: boolean) {
   return { type, setType, rate, setRate, remember };
 }
 
+/** Equal-width choices in one row (bill type, GST rate, how it was paid). */
+export function Choice<T extends string>({ label, value, onChange, options, size = "md" }: { label: string; value: T; onChange: (v: T) => void; options: Array<{ value: T; label: React.ReactNode }>; size?: "md" | "sm" }) {
+  return (
+    <div role="radiogroup" aria-label={label} className={`rn-choice ${size === "sm" ? "is-sm" : ""}`} style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map((o) => (
+        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} onClick={() => onChange(o.value)} className="rn-choice-item">
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function BillKind({ type, setType, rate, setRate }: { type: BillType; setType: (t: BillType) => void; rate: number; setRate: (r: number) => void }) {
   return (
     <div className="space-y-3">
-      <Segmented
+      <Choice
         label="Bill type"
         value={type}
         onChange={setType}
-        className="w-full"
         options={[
-          { value: "NON_GST", label: "Non-GST bill" },
-          { value: "GST", label: "GST bill" },
+          { value: "NON_GST", label: "Non-GST" },
+          { value: "GST", label: "GST" },
         ]}
       />
       {type === "GST" && (
-        <div className="rounded-2xl border border-[var(--rn-line)] px-4 py-3 space-y-2.5">
-          <div className="flex items-center justify-between gap-3 text-[14px]">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3 text-[13.5px] px-1">
             <span className="text-[var(--rn-ink-2)]">GSTIN</span>
             <span className="font-semibold tabular-nums">{GSTIN}</span>
           </div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[14px] text-[var(--rn-ink-2)]">GST rate</span>
-            <Segmented label="GST rate" size="sm" value={String(rate)} onChange={(v) => setRate(Number(v))} options={RATES.map((r) => ({ value: String(r), label: `${r}%` }))} />
-          </div>
+          <Choice label="GST rate" size="sm" value={String(rate)} onChange={(v) => setRate(Number(v))} options={RATES.map((r) => ({ value: String(r), label: `${r}%` }))} />
         </div>
       )}
     </div>
@@ -111,13 +119,13 @@ export function GenerateBillDialog({ open, onClose, accountKey, name, due, onMad
 }
 
 /**
- * Receive payment: the amount, how it was paid and (if the customer has one) the bill number. The
- * money pays the oldest dues first; nothing is chosen here. One tap records it, and a retry of the
- * same payment is never recorded twice.
+ * The payment form: amount (fixed ₹ sign, "Full" fills what is due), how it was paid, the bill it
+ * was paid against (optional), the date and a reference for non-cash payments. The money pays the
+ * account's oldest dues first; nothing is chosen here. One key per opened form, so a retry or a
+ * double tap records the payment once.
  */
-export function ReceivePaymentDialog({
+export function usePaymentForm({
   open,
-  onClose,
   accountKey,
   name,
   due,
@@ -125,8 +133,7 @@ export function ReceivePaymentDialog({
   onDone,
 }: {
   open: boolean;
-  onClose: () => void;
-  accountKey: string;
+  accountKey: string | null;
   name: string;
   due: number;
   bills: BillSummary[];
@@ -151,10 +158,10 @@ export function ReceivePaymentDialog({
     setDate(businessToday());
     setReference("");
     setError(null);
-  }, [open]);
+  }, [open, accountKey]);
 
   const value = amount.trim() === "" ? NaN : Number(amount);
-  const problem = !Number.isInteger(value) || value <= 0 ? "Enter the amount received." : value > due ? `${name} owes ${money(due)}. Enter ${money(due)} or less.` : null;
+  const problem = !accountKey ? "Choose who paid." : !Number.isInteger(value) || value <= 0 ? "Enter the amount received." : value > due ? `${name} owes ${money(due)}. Enter ${money(due)} or less.` : null;
   const left = Number.isInteger(value) && value > 0 ? Math.max(0, due - value) : due;
   const tooMuch = Number.isInteger(value) && value > due;
 
@@ -189,79 +196,97 @@ export function ReceivePaymentDialog({
     }
   };
 
+  const fields = (
+    <form onSubmit={submit} className="space-y-4 min-w-0" noValidate>
+      <div>
+        <label htmlFor="recv-amount" className="rn-t-label block mb-1.5">Amount</label>
+        <div className="flex items-center gap-2">
+          <input
+            id="recv-amount"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={due}
+            step={1}
+            value={amount}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setError(null);
+            }}
+            placeholder="0"
+            className="rn-input rn-money flex-1 min-w-0 h-12 text-[18px] font-semibold"
+            autoFocus
+          />
+          <button type="button" className="rn-btn shrink-0 h-12" onClick={() => setAmount(String(due))} disabled={due <= 0}>
+            Full {money(due)}
+          </button>
+        </div>
+      </div>
+      <div>
+        <span className="rn-t-label block mb-1.5">Paid by</span>
+        <Choice label="Paid by" size="sm" value={method} onChange={setMethod} options={METHODS.map((m) => ({ value: m.value, label: m.label }))} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="min-w-0">
+          <span className="rn-t-label block mb-1.5">Bill no.</span>
+          <AppSelect value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className="rn-input w-full" aria-label="Bill number">
+            <option value="">No bill</option>
+            {bills.map((b) => (
+              <option key={b.id} value={b.billNumber}>
+                {b.billNumber} · {money(b.total)}
+              </option>
+            ))}
+          </AppSelect>
+        </label>
+        <label className="min-w-0">
+          <span className="rn-t-label block mb-1.5">Date</span>
+          <input type="date" value={date} max={businessToday()} onChange={(e) => e.target.value && setDate(e.target.value)} className="rn-input w-full" aria-label="Payment date" />
+        </label>
+      </div>
+      {method !== "CASH" && (
+        <label className="block">
+          <span className="rn-t-label block mb-1.5">{method === "CHEQUE" ? "Cheque no." : "Reference"}</span>
+          <input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Optional" className="rn-input w-full" aria-label="Reference" />
+        </label>
+      )}
+      <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--rn-accent-tint,#EEF3EA)] px-4 py-3 text-[14.5px]">
+        <span className="text-[var(--rn-ink-2)]">Due after this</span>
+        <span className="tabular-nums font-semibold">{money(left)}</span>
+      </div>
+      {(error || tooMuch) && <p role="alert" className="rounded-2xl bg-[#FDECE8] px-4 py-3 text-[14px] text-[#A3311D]">{tooMuch ? problem : error}</p>}
+      <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
+    </form>
+  );
+  const button = (
+    <button type="button" className="rn-btn rn-btn-primary w-full sm:w-auto" disabled={busy || tooMuch || !accountKey} onClick={() => submit()}>
+      {busy ? "Recording…" : Number.isInteger(value) && value > 0 ? `Receive ${money(value)}` : "Receive payment"}
+    </button>
+  );
+  return { fields, button, busy };
+}
+
+/** Receive payment for one account (opened from that person's dues). */
+export function ReceivePaymentDialog({
+  open,
+  onClose,
+  accountKey,
+  name,
+  due,
+  bills,
+  onDone,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accountKey: string;
+  name: string;
+  due: number;
+  bills: BillSummary[];
+  onDone: (account: AccountDues | null, amount: number) => void;
+}) {
+  const form = usePaymentForm({ open, accountKey, name, due, bills, onDone });
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      busy={busy}
-      title="Receive payment"
-      description={`${name} · due ${money(due)}`}
-      size="sm"
-      footer={
-        <button type="button" className="rn-btn rn-btn-primary w-full sm:w-auto" disabled={busy || tooMuch} onClick={() => submit()}>
-          {busy ? "Recording…" : Number.isInteger(value) && value > 0 ? `Receive ${money(value)}` : "Receive payment"}
-        </button>
-      }
-    >
-      <form onSubmit={submit} className="space-y-4 min-w-0" noValidate>
-        <div>
-          <label htmlFor="recv-amount" className="rn-t-label block mb-1.5">Amount</label>
-          <div className="flex items-center gap-2">
-            <input
-              id="recv-amount"
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={due}
-              step={1}
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                setError(null);
-              }}
-              placeholder="0"
-              className="rn-input rn-money flex-1 min-w-0 h-12 text-[18px] font-semibold"
-              autoFocus
-            />
-            <button type="button" className="rn-btn shrink-0" onClick={() => setAmount(String(due))}>
-              Full {money(due)}
-            </button>
-          </div>
-        </div>
-        <div>
-          <span className="rn-t-label block mb-1.5">Paid by</span>
-          <Segmented label="Paid by" value={method} onChange={setMethod} className="w-full" options={METHODS.map((m) => ({ value: m.value, label: m.label }))} />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="min-w-0">
-            <span className="rn-t-label block mb-1.5">Bill no. (optional)</span>
-            <AppSelect value={billNumber} onChange={(e) => setBillNumber(e.target.value)} className="rn-input w-full" aria-label="Bill number">
-              <option value="">No bill</option>
-              {bills.map((b) => (
-                <option key={b.id} value={b.billNumber}>
-                  {b.billNumber} · {money(b.total)}
-                </option>
-              ))}
-            </AppSelect>
-          </label>
-          <label className="min-w-0">
-            <span className="rn-t-label block mb-1.5">Date</span>
-            <input type="date" value={date} max={businessToday()} onChange={(e) => e.target.value && setDate(e.target.value)} className="rn-input w-full" aria-label="Payment date" />
-          </label>
-        </div>
-        {method !== "CASH" && (
-          <label className="block">
-            <span className="rn-t-label block mb-1.5">{method === "CHEQUE" ? "Cheque no. (optional)" : "Reference (optional)"}</span>
-            <input value={reference} onChange={(e) => setReference(e.target.value)} className="rn-input w-full" aria-label="Reference" />
-          </label>
-        )}
-        <div className="flex items-center justify-between gap-3 rounded-2xl bg-[var(--rn-accent-tint,#EEF3EA)] px-4 py-3 text-[14.5px]">
-          <span className="text-[var(--rn-ink-2)]">Due after this</span>
-          <span className="tabular-nums font-semibold">{money(left)}</span>
-        </div>
-        {(error || tooMuch) && <p role="alert" className="rounded-2xl bg-[#FDECE8] px-4 py-3 text-[14px] text-[#A3311D]">{tooMuch ? problem : error}</p>}
-        <button type="submit" className="hidden" aria-hidden tabIndex={-1} />
-      </form>
+    <Dialog open={open} onClose={onClose} busy={form.busy} title="Receive payment" description={`${name} · due ${money(due)}`} size="sm" footer={form.button}>
+      {form.fields}
     </Dialog>
   );
 }
@@ -357,7 +382,7 @@ export function BillAllDialog({ open, onClose, accounts, label }: { open: boolea
           </button>
         ) : nextUnsent >= 0 ? (
           <button type="button" className="rn-btn rn-btn-primary w-full sm:w-auto" onClick={() => sendOne(nextUnsent)}>
-            <MessageCircle /> Send to {rows[nextUnsent].account.name} ({sentCount + 1} of {rows.filter((r) => r.bill && r.account.phone).length})
+            <WhatsAppIcon /> Send to {rows[nextUnsent].account.name} ({sentCount + 1} of {rows.filter((r) => r.bill && r.account.phone).length})
           </button>
         ) : (
           <button type="button" className="rn-btn rn-btn-primary w-full sm:w-auto" onClick={onClose}>
@@ -392,7 +417,7 @@ export function BillAllDialog({ open, onClose, accounts, label }: { open: boolea
                 </div>
                 {r.bill && r.account.phone ? (
                   <button type="button" className={`rn-btn rn-btn-sm shrink-0 ${r.sent ? "" : "rn-btn-primary"}`} onClick={() => sendOne(i)} aria-label={`Send ${r.account.name}'s bill on WhatsApp`}>
-                    {r.sent ? <Check /> : <MessageCircle />} {r.sent ? "Sent" : "Send"}
+                    {r.sent ? <Check /> : <WhatsAppIcon />} {r.sent ? "Sent" : "Send"}
                   </button>
                 ) : null}
               </li>

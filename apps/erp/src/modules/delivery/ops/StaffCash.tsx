@@ -86,7 +86,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
       // The server's figures replace the screen's (refreshed in the background).
       invalidateErpCache(["custody", "handover"]);
       void q.refetch().finally(() => setSent(null));
-      setMsg({ tone: "ok", text: `${rupees(amount)} given to the manager. Waiting for approval.` });
+      setMsg({ tone: "ok", text: `${rupees(amount)} given to the owner. Waiting for approval.` });
       setNote("");
     } catch (e: any) {
       setSent(null);
@@ -124,7 +124,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
           <div className="mt-4 flex items-center gap-3 rounded-xl bg-[#FBF1DE] px-4 py-3">
             <Hourglass className="w-5 h-5 text-[#8F6710] shrink-0" />
             <p className="text-[14px] text-[#5C430B]">
-              <span className="font-bold">{rupees(waiting.declaredCash)}</span> given to the manager · <span className="font-semibold">Waiting for manager approval</span>
+              <span className="font-bold">{rupees(waiting.declaredCash)}</span> given to the owner · <span className="font-semibold">Waiting for owner approval</span>
               {(waiting.shortfallCash ?? 0) > 0 && (
                 <span className="block text-[12.5px] mt-0.5">{rupees(waiting.shortfallCash ?? 0)} less than recorded{waiting.shortfallReason ? ` — ${waiting.shortfallReason}` : ""}</span>
               )}
@@ -167,8 +167,8 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
                 <input
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
-                  placeholder={differs ? "Reason for the shortfall (needed)" : "Note for the manager (optional)"}
-                  aria-label={differs ? "Reason" : "Note for the manager"}
+                  placeholder={differs ? "Reason for the shortfall (needed)" : "Note for the owner (optional)"}
+                  aria-label={differs ? "Reason" : "Note for the owner"}
                   className={`${K.soft} w-full h-12 px-4 text-[14px] outline-none ${differs && note.trim().length < 5 ? "ring-2 ring-[#9A3423]/40" : ""}`}
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -182,12 +182,12 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
               </div>
             ) : (
               <button type="button" onClick={startHandover} className={`${K.primaryBtn} w-full h-14 text-[15px]`}>
-                <HandCoins className="w-5 h-5" /> Hand over {rupees(cashWithYou)} to manager
+                <HandCoins className="w-5 h-5" /> Hand over {rupees(cashWithYou)} to owner
               </button>
             )}
           </div>
         )}
-        {cashWithYou > 0 && waiting && <p className="mt-3 text-[13px] text-[#5A6C5E]">You can hand over the rest once the manager approves the last handover.</p>}
+        {cashWithYou > 0 && waiting && <p className="mt-3 text-[13px] text-[#5A6C5E]">You can hand over the rest once the owner approves the last handover.</p>}
       </section>
 
       {/* UPI: information only */}

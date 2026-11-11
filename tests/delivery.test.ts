@@ -368,9 +368,10 @@ async function runDeliveryTests() {
   try {
     await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: accountantUser.id });
   } catch (err: any) {
-    nonDeliveryRoleBlocked = err.message.includes("Only active DELIVERY_PERSON staff");
+    nonDeliveryRoleBlocked = true;
   }
-  assert(nonDeliveryRoleBlocked, "Validation Guard: Rejects assignment to staff without DELIVERY_PERSON role");
+  // Any active staff member can take a delivery (owner decision, 2026-11-11).
+  assert(!nonDeliveryRoleBlocked, "Any active staff member (here an Accountant) can be assigned a delivery");
 
   // 4. Legitimate assignment to Ramesh Kumar
   const assignedTask = await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
@@ -939,9 +940,10 @@ async function runDeliveryTests() {
       taskIds: [extTask1.id, extTask2.id],
       assignedToStaffId: kitchenUser.id,
     });
-    assert(false, "batchAssignDeliveryTasks rejected KITCHEN_OPERATIONS staff");
+    // Any active staff member can take deliveries (owner decision, 2026-11-11).
+    assert(true, "batchAssignDeliveryTasks accepts any active staff member");
   } catch (err: any) {
-    assert(err.message.includes("Only active DELIVERY_PERSON"), "Staff without DELIVERY_PERSON role rejected");
+    assert(false, `Any active staff member can take deliveries (${err.message})`);
   }
 
   // 4. Successfully batch assigns multiple tasks to Ramesh

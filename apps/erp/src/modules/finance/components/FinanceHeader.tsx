@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { CreditCard, Receipt, Wallet, TrendingDown, Download, CalendarClock, MoreHorizontal } from "lucide-react";
+import { CreditCard, Wallet, TrendingDown, Download, MoreHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/ui/kit";
 import { RefreshButton } from "@/components/ui/states";
 
@@ -13,9 +13,6 @@ interface FinanceHeaderProps {
   onOpenPayment: () => void;
   /** Cashbook only: the entry actions. Dues, Bills and Daily closing show the title alone. */
   showActions?: boolean;
-  onOpenCharge: () => void;
-  /** Monthly rent for everyone (preview, then charge). */
-  onOpenRentRun?: () => void;
   onOpenDeposit: () => void;
   onOpenExpense: () => void;
   onExport: () => void;
@@ -32,8 +29,6 @@ export function FinanceHeader({
   isLoading,
   onOpenPayment,
   showActions = true,
-  onOpenCharge,
-  onOpenRentRun,
   onOpenDeposit,
   onOpenExpense,
   onExport,
@@ -56,8 +51,6 @@ export function FinanceHeader({
   }, [more]);
 
   const secondary: Array<{ key: string; label: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean }> = [
-    ...(onOpenRentRun ? [{ key: "rent-run", label: "Monthly rent", icon: <CalendarClock />, onClick: onOpenRentRun }] : []),
-    { key: "charge", label: "Rent charge", icon: <Receipt />, onClick: onOpenCharge },
     { key: "deposit", label: "Deposit", icon: <Wallet />, onClick: onOpenDeposit },
     { key: "expense", label: "Expense", icon: <TrendingDown />, onClick: onOpenExpense },
   ];
@@ -104,7 +97,7 @@ export function FinanceHeader({
             )}
           </div>
           <button type="button" onClick={onOpenPayment} className="rn-btn rn-btn-primary">
-            <CreditCard /> Receive payment
+            <CreditCard /> Receive
           </button>
         </>
       }

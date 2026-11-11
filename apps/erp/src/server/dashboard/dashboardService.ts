@@ -182,8 +182,8 @@ export async function getDashboardMetrics(
           COALESCE(SUM(CASE WHEN ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentCollected",
           COALESCE(SUM(CASE WHEN transaction_type = 'RENT_CHARGE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalRentBilled",
           COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalExpensesPaid",
-          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
-          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
+          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "pgExpensesPaid",
+          COALESCE(SUM(CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "tiffinExpensesPaid",
           COALESCE(SUM(CASE WHEN ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END), 0) as "totalTiffinCollected"
         FROM financial_transactions
       `),
@@ -202,7 +202,7 @@ export async function getDashboardMetrics(
         SELECT COALESCE(SUM(amount), 0) as "kitchenCost"
         FROM financial_transactions
         WHERE transaction_type = 'EXPENSE' AND status = 'POSTED' 
-          AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') 
+          AND category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') 
           AND transaction_date >= ? AND transaction_date <= ?
       `, [startDate, endDate]),
       db.queryOne<{ tiffinRev: number | string }>(`
@@ -290,10 +290,10 @@ export async function getDashboardMetrics(
 
     if (division === "PG") {
       collectedSql = `CASE WHEN ${RENT_SETTLEMENT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END`;
-      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
+      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND status = 'POSTED' THEN amount ELSE 0 END";
     } else if (division === "TIFFIN") {
       collectedSql = `CASE WHEN ${TIFFIN_RECEIPT_SQL} AND status = 'POSTED' THEN amount ELSE 0 END`;
-      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND status = 'POSTED' THEN amount ELSE 0 END";
+      expenseSql = "CASE WHEN transaction_type = 'EXPENSE' AND category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND status = 'POSTED' THEN amount ELSE 0 END";
     }
 
     const monthlyDbRows = await db.query<{ ym: string; collected: number | string; expenses: number | string }>(`

@@ -241,7 +241,7 @@ export async function createBill(actor: AuthenticatedUser, input: CreateBillInpu
 /** Bills kept on record, newest first: all of them, or one account's. */
 export async function listBills(
   actor: AuthenticatedUser,
-  query: { accountKey?: string; q?: string; kind?: "RESIDENT" | "CUSTOMER" | "ALL"; limit?: number; offset?: number } = {},
+  query: { accountKey?: string; q?: string; kind?: "RESIDENT" | "CUSTOMER" | "ALL"; type?: BillType | "ALL"; date?: string; limit?: number; offset?: number } = {},
   asyncDb?: AsyncDb
 ): Promise<{ bills: BillSummary[]; total: number; amount: number; limit: number; offset: number }> {
   requirePermission(actor, "finance.read");
@@ -257,6 +257,14 @@ export async function listBills(
   }
   if (query.kind === "RESIDENT") where.push("b.account_kind = 'RESIDENT'");
   if (query.kind === "CUSTOMER") where.push("b.account_kind <> 'RESIDENT'");
+  if (query.type === "GST" || query.type === "NON_GST") {
+    where.push("b.bill_type = ?");
+    params.push(query.type);
+  }
+  if (query.date && /^\d{4}-\d{2}-\d{2}$/.test(query.date)) {
+    where.push("b.issue_date = ?");
+    params.push(query.date);
+  }
   const q = (query.q || "").trim().toLowerCase();
   if (q) {
     where.push("(LOWER(b.account_name) LIKE ? OR LOWER(b.bill_number) LIKE ? OR COALESCE(b.account_phone, '') LIKE ?)");

@@ -42,6 +42,7 @@ import type { PendingOrderJob } from "@/modules/orders/components/NewOrderModal"
 const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModal");
 const NewOrderModal = dynamic(() => loadNewOrderModal().then((m) => m.NewOrderModal), { ssr: false });
 const loadEditOrderModal = () => import("@/modules/orders/components/EditOrderModal");
+const ReassignDialog = dynamic(() => import("@/modules/orders/components/AssignTo").then((m) => m.ReassignDialog), { ssr: false });
 const EditOrderModal = dynamic(() => loadEditOrderModal().then((m) => m.EditOrderModal), { ssr: false });
 const loadMenuCatalog = () => import("@/modules/delivery/ops/MenuCatalog");
 const MenuCatalog = dynamic(() => loadMenuCatalog().then((m) => m.MenuCatalog), { ssr: false });
@@ -64,6 +65,7 @@ export default function OrdersPage() {
   const [presetCustomer, setPresetCustomer] = useState<TiffinCustomer | null>(null);
   // Change / cancel one delivery order (only while it has not gone out and nothing was collected).
   const [editing, setEditing] = useState<{ order: UnifiedOrder; mode: "edit" | "cancel" } | null>(null);
+  const [reassigning, setReassigning] = useState<UnifiedOrder | null>(null);
   const [orderNotice, setOrderNotice] = useTimedMessage<string>();
   // Orders confirmed in the form and still being saved (the form closes at once). A failed save
   // stays here with its reason and a Retry that sends the same order again (same key: recorded once).
@@ -359,6 +361,11 @@ export default function OrdersPage() {
                 </button>
               </>
             )}
+            {isDelivery && order.deliveryTaskId && order.orderStatus !== "CANCELLED" && order.deliveryStatus !== "DELIVERED" && order.deliveryStatus !== "CANCELLED" && (
+              <button type="button" onClick={() => setReassigning(order)} className="h-9 px-3.5 rounded-full text-[13px] font-semibold text-[var(--rn-ink)] hover:bg-[var(--rn-accent-tint)]">
+                Assign to
+              </button>
+            )}
             {isDelivery && (
               <Link
                 href={`/delivery?tab=board&date=${order.serviceDate}&meal=${order.mealType}`}
@@ -536,6 +543,7 @@ export default function OrdersPage() {
   return (
     <div className="min-w-0">
       <PhoneOrDesktop phone={phone} mobile={mobile} desktop={desktop} />
+      {reassigning && <ReassignDialog order={reassigning as any} onClose={() => setReassigning(null)} />}
       {editing && (
         <EditOrderModal
           order={editing.order}

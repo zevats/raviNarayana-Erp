@@ -120,8 +120,12 @@ async function main() {
     const aud = await db.queryOne<any>("SELECT metadata FROM audit_logs WHERE action = 'delivery.task_reassigned' AND target_id = ? ORDER BY created_at DESC LIMIT 1", [s1.task.id]);
     const am = typeof aud?.metadata === "string" ? JSON.parse(aud.metadata) : aud?.metadata;
     assert(am?.selfFulfilment === true && am?.previousAssignedTo === D1.id, "Audit row marks the self-assignment and the previous assignee");
-    await rejects("A Manager cannot assign a delivery to another Manager", () => assignDeliveryTask(manager, s1.task.id, { assignedToStaffId: manager2.id }, IP, db), /Only Other Manager can take/);
-    await rejects("A Manager cannot assign a delivery to the Owner", () => assignDeliveryTask(manager, s1.task.id, { assignedToStaffId: owner.id }, IP, db), /Only Settings Owner can take/);
+    // Any active staff member can take a delivery (owner decision, 2026-11-11).
+    const s3 = await newOrder();
+    const toOther = await assignDeliveryTask(manager, s3.task.id, { assignedToStaffId: manager2.id }, IP, db);
+    assert(toOther.assignedTo === manager2.id, "A Manager can give a delivery to another Manager");
+    const toOwner = await assignDeliveryTask(manager, s3.task.id, { assignedToStaffId: owner.id }, IP, db);
+    assert(toOwner.assignedTo === owner.id, "A Manager can give a delivery to the Owner");
     const s2 = await newOrder();
     const batch = await batchAssignDeliveryTasks(owner, { taskIds: [s2.task.id], assignedToStaffId: owner.id }, IP, db);
     assert(batch.assignedCount === 1 && batch.assignedStaffId === owner.id, "Owner can take deliveries themselves (bulk)");

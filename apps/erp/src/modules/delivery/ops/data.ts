@@ -28,9 +28,13 @@ export async function postJson<T = any>(url: string, body: unknown): Promise<T> 
   return postJsonRequest<T>(url, body);
 }
 
-/** Every delivery of the date and meal, unfiltered (totals are computed from this, never from a search). */
-export function useDeliveryTasks(serviceDate: string, mealType: MealType, enabled = true) {
-  const key = enabled ? `/api/delivery/tasks?serviceDate=${serviceDate}&mealType=${mealType}&limit=500` : null;
+/**
+ * Every delivery of the date and meal, unfiltered (totals are computed from this, never from a
+ * search). `assignedTo` narrows it to one person's stops (an Owner or Manager using My deliveries;
+ * delivery staff only ever get their own from the server).
+ */
+export function useDeliveryTasks(serviceDate: string, mealType: MealType, enabled = true, assignedTo?: string) {
+  const key = enabled ? `/api/delivery/tasks?serviceDate=${serviceDate}&mealType=${mealType}&limit=500${assignedTo ? `&assignedTo=${encodeURIComponent(assignedTo)}` : ""}` : null;
   return useErpQuery<DeliveryTask[]>(
     key,
     async () => {

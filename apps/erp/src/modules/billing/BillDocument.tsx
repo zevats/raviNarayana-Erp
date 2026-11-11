@@ -170,12 +170,10 @@ export function BillDocument({ bill }: { bill: Bill }) {
         </div>
       )}
 
-      <div className="flex flex-wrap items-end justify-between gap-4 px-5 sm:px-8 pt-4 pb-6 sm:pb-8 border-t border-[#E6E9E3] text-[12px] text-[#6B716C]">
-        <p>Thank you. Dues are payable on receipt of this bill.</p>
-        <p className="text-right">
-          For {s.company.name}
-          <span className="block mt-0.5">Computer generated, no signature needed</span>
-        </p>
+      <div className="px-5 sm:px-8 pt-5 pb-6 sm:pb-8 border-t border-[#E6E9E3] text-center text-[12px] leading-relaxed text-[#6B716C]">
+        <p className="text-[13.5px] font-semibold text-[#1E3A2B]">Thank you</p>
+        <p>Dues are payable on receipt of this bill.</p>
+        <p className="mt-1">For {s.company.name} · Computer generated, no signature needed</p>
       </div>
     </article>
   );

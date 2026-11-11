@@ -405,7 +405,7 @@ async function runTask58Tests() {
   const collectedBefore = cashbookBefore.totalTiffinCollected || 0;
 
   // Accountant verifies banknotes and accepts exact ₹600
-  const acceptedHandover = await acceptCashHandover(accountantUser, declaredHandover.id, {
+  const acceptedHandover = await acceptCashHandover(superAdminUser, declaredHandover.id, {
     acceptedCash: 600,
     acceptedUpi: 400, // UPI from Order 3 confirmed in the business account
     notes: "Cash physically verified and placed in PG vault",
@@ -414,7 +414,7 @@ async function runTask58Tests() {
   assert(acceptedHandover.status === "ACCEPTED", "Handover transitioned to ACCEPTED");
   assert(acceptedHandover.acceptedCash === 600, "Accepted cash recorded as 600");
   assert(acceptedHandover.variance === 0, "Variance is 0 for exact count");
-  assert(acceptedHandover.acceptedBy === accountantUser.id, "AcceptedBy stamped with Accountant ID");
+  assert(acceptedHandover.acceptedBy === superAdminUser.id, "AcceptedBy stamped with the Owner ID");
   assert(acceptedHandover.transactionId !== null, "Authoritative transaction ID generated");
 
   // Verify delivery tasks transitioned to HANDED_OVER
@@ -442,7 +442,7 @@ async function runTask58Tests() {
   // Repeat acceptance guard: Cannot accept an already accepted handover
   let doubleAcceptRejected = false;
   try {
-    await acceptCashHandover(accountantUser, declaredHandover.id, { acceptedCash: 600, acceptedUpi: 400 }, undefined, asyncDb);
+    await acceptCashHandover(superAdminUser, declaredHandover.id, { acceptedCash: 600, acceptedUpi: 400 }, undefined, asyncDb);
   } catch (err: any) {
     doubleAcceptRejected = true;
   }
@@ -480,7 +480,7 @@ async function runTask58Tests() {
   // Without variance reason: MUST be rejected!
   let missingVarianceReasonRejected = false;
   try {
-    await acceptCashHandover(accountantUser, handoverSuresh.id, {
+    await acceptCashHandover(superAdminUser, handoverSuresh.id, {
       acceptedCash: 480,
     }, undefined, asyncDb);
   } catch (err: any) {
@@ -489,7 +489,7 @@ async function runTask58Tests() {
   assert(missingVarianceReasonRejected, "Validation Guard: Rejects variance without mandatory justification reason");
 
   // Shortage with justification: Accepted with variance recorded
-  const acceptedSuresh = await acceptCashHandover(accountantUser, handoverSuresh.id, {
+  const acceptedSuresh = await acceptCashHandover(superAdminUser, handoverSuresh.id, {
     acceptedCash: 480,
     varianceReason: "Customer gave 20 rupees coin which was worn out and rejected by bank counter; driver covered remaining next day",
   }, undefined, asyncDb);

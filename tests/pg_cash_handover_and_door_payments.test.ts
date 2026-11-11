@@ -81,7 +81,7 @@ async function main() {
   let c = await custodyAs(manager, d1.id);
   assert(h1.declaredCash === 300 && h1.recordedCash === 300 && h1.shortfallCash === 0 && c.cashAwaitingAcceptance === 300 && c.cashShort === 0,
     `Declared: recorded ₹${h1.recordedCash}, handed ₹${h1.declaredCash}, awaiting ₹${c.cashAwaitingAcceptance}, short ₹${c.cashShort}`);
-  await acceptCashHandover(manager, h1.id, { acceptedCash: 300 }, IP, db);
+  await acceptCashHandover(owner, h1.id, { acceptedCash: 300 }, IP, db);
   c = await custodyAs(manager, d1.id);
   assert(c.cashHandedOver === 300 && c.cashShort === 0 && c.cashOwed === 0 && (await handoverCash(h1.id)) === 300, "Accepted: ₹300 handed over, nothing short or owed, cashbook +₹300");
 
@@ -98,7 +98,7 @@ async function main() {
   assert(asManager.cashCollected === 300 && asManager.cashAwaitingAcceptance === 100 && asManager.cashShort === 200 && asManager.cashOwed === 200,
     `Manager sees: collected ₹${asManager.cashCollected}, awaiting verification ₹${asManager.cashAwaitingAcceptance} (not ₹300), unresolved short ₹${asManager.cashShort}`);
   assert(JSON.stringify(asDriver) === JSON.stringify(asManager) && JSON.stringify(asOwner) === JSON.stringify(asManager), "Driver, Manager and Owner see the same figures");
-  await acceptCashHandover(manager, h2.id, { acceptedCash: 100, expectedDeclaredCash: 100 }, IP, db);
+  await acceptCashHandover(owner, h2.id, { acceptedCash: 100, expectedDeclaredCash: 100 }, IP, db);
   c = await custodyAs(owner, d2.id);
   assert(c.cashHandedOver === 100 && c.cashShort === 200 && c.cashOwed === 200 && (await handoverCash(h2.id)) === 100 && c.status === "DISCREPANCY",
     `Verified ₹100: cashbook +₹${await handoverCash(h2.id)} only; ₹${c.cashShort} still owed by the driver (status ${c.status})`);
@@ -109,7 +109,7 @@ async function main() {
   assert(/at most ₹300/.test((await refused(() => createCashHandoverDeclaration(d2, { shiftDate: day, declaredCash: 350 }, IP, db))) || ""), "Handing over more than owed (₹100 new + ₹200 short) is refused");
   const h3 = await createCashHandoverDeclaration(d2, { shiftDate: day, declaredCash: 300 }, IP, db);
   assert(h3.recordedCash === 100 && h3.declaredCash === 300 && h3.shortfallCash === -200, "Second handover: ₹100 newly recorded + ₹200 earlier shortage handed over");
-  await acceptCashHandover(manager, h3.id, { acceptedCash: 300 }, IP, db);
+  await acceptCashHandover(owner, h3.id, { acceptedCash: 300 }, IP, db);
   c = await custodyAs(manager, d2.id);
   assert(c.cashCollected === 400 && c.cashHandedOver === 400 && c.cashShort === 0 && c.cashOwed === 0, `All settled: collected ₹${c.cashCollected} = handed over ₹${c.cashHandedOver}, short ₹0`);
 
@@ -117,7 +117,7 @@ async function main() {
   console.log("\n--- 4. Zero handed over with a reason ---");
   const d4 = await driverWith(300);
   const h4 = await createCashHandoverDeclaration(d4, { shiftDate: day, declaredCash: 0, notes: "Wallet lost on the way back" }, IP, db);
-  await acceptCashHandover(manager, h4.id, { acceptedCash: 0 }, IP, db);
+  await acceptCashHandover(owner, h4.id, { acceptedCash: 0 }, IP, db);
   c = await custodyAs(manager, d4.id);
   assert(h4.declaredCash === 0 && c.cashHandedOver === 0 && c.cashShort === 300 && (await handoverCash(h4.id)) === 0, "₹0 handed over: no cashbook entry, ₹300 stays owed");
 
@@ -125,8 +125,8 @@ async function main() {
   console.log("\n--- 5. Manager counts less than handed over ---");
   const d5 = await driverWith(300);
   const h5 = await createCashHandoverDeclaration(d5, { shiftDate: day, declaredCash: 300 }, IP, db);
-  assert(/variance explanation/.test((await refused(() => acceptCashHandover(manager, h5.id, { acceptedCash: 200 }, IP, db))) || ""), "A different count needs the manager's reason");
-  const v5 = await acceptCashHandover(manager, h5.id, { acceptedCash: 200, varianceReason: "Counted ₹200 in the envelope" }, IP, db);
+  assert(/variance explanation/.test((await refused(() => acceptCashHandover(owner, h5.id, { acceptedCash: 200 }, IP, db))) || ""), "A different count needs the manager's reason");
+  const v5 = await acceptCashHandover(owner, h5.id, { acceptedCash: 200, varianceReason: "Counted ₹200 in the envelope" }, IP, db);
   c = await custodyAs(d5, d5.id);
   assert(v5.status === "DISCREPANCY_FLAGGED" && c.cashHandedOver === 200 && c.cashShort === 100 && c.cashOwed === 100 && (await handoverCash(h5.id)) === 200,
     `Counted ₹200 of ₹300: flagged, cashbook +₹200, the ₹${c.cashOwed} difference is back on the driver`);
@@ -137,7 +137,7 @@ async function main() {
   const two = await Promise.allSettled([1, 2].map(() => createCashHandoverDeclaration(d6, { shiftDate: day, declaredCash: 300 }, IP, db)));
   assert(two.filter((r) => r.status === "fulfilled").length === 1 && (await num(db, "SELECT COUNT(*) AS n FROM driver_cash_handovers WHERE driver_id = ?", [d6.id])) === 1, "Two declarations at once: one recorded");
   const h6 = (two.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<any>).value;
-  const acc = await Promise.allSettled([1, 2, 3].map(() => acceptCashHandover(manager, h6.id, { acceptedCash: 300 }, IP, db)));
+  const acc = await Promise.allSettled([1, 2, 3].map(() => acceptCashHandover(owner, h6.id, { acceptedCash: 300 }, IP, db)));
   assert(acc.filter((r) => r.status === "fulfilled").length === 1 && (await handoverCash(h6.id)) === 300, "Three acceptances at once: one, cashbook +₹300 once");
 
   // ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ async function main() {
   const collectedAll = await num(db, "SELECT COALESCE(SUM(amount), 0) AS n FROM delivery_collections WHERE collected_by = ? AND payment_method = 'CASH'", [dd.id]);
   assert(cd.cashCollected === collectedAll && cd.cashOwed === collectedAll, `Driver custody ₹${cd.cashOwed} = all cash collected at the door ₹${collectedAll} (previous dues and advances included)`);
   const hd = await createCashHandoverDeclaration(dd, { shiftDate: day, declaredCash: collectedAll }, IP, db);
-  await acceptCashHandover(manager, hd.id, { acceptedCash: collectedAll }, IP, db);
+  await acceptCashHandover(owner, hd.id, { acceptedCash: collectedAll }, IP, db);
   const after = await custodyAs(owner, dd.id);
   assert(after.cashOwed === 0 && after.cashShort === 0 && (await handoverCash(hd.id)) === collectedAll, `Handover of ₹${collectedAll} accepted: cashbook +₹${collectedAll}, nothing owed`);
 

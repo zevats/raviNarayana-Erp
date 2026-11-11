@@ -10,9 +10,9 @@ import { UserAvatar } from "@/components/brand/BrandMark";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import type { NavGroup, NavLink } from "./nav";
 
-const BAR_KEYS = ["dashboard", "orders", "delivery", "residents"];
+const BAR_KEYS = ["dashboard", "orders", "delivery", "mydeliveries"];
 /** Short names for the bottom bar (the active tab shows its name next to the icon). */
-const BAR_LABEL: Record<string, string> = { dashboard: "Home", orders: "Orders", delivery: "Delivery", residents: "Residents" };
+const BAR_LABEL: Record<string, string> = { dashboard: "Home", orders: "Orders", delivery: "Delivery", mydeliveries: "My stops" };
 
 /**
  * Phone and tablet app for the Owner and Manager, in the delivery app's design: a flat bar with the

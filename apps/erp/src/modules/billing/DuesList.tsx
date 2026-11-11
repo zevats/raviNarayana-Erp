@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { ChevronRight, ReceiptText } from "lucide-react";
+import { CalendarDays, ChevronRight, ReceiptText, X } from "lucide-react";
+import { billDay } from "@/lib/bills";
 import type { BillSummary } from "@/lib/bills";
 import { SearchField } from "@/components/ui/kit";
 import { LoadError } from "@/components/ui/states";
@@ -166,20 +167,45 @@ export function DuesList({ scope }: { scope: DuesScope }) {
 export function BillsList() {
   const [search, setSearch] = useState("");
   const q = useDebouncedValue(search.trim(), 250);
+  const [type, setType] = useState<"ALL" | "GST" | "NON_GST">("ALL");
+  const [date, setDate] = useState("");
   const [limit, setLimit] = useState(40);
   const [open, setOpen] = useState<string | null>(null);
-  const url = `/api/finance/bills?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+  const url = `/api/finance/bills?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}${type !== "ALL" ? `&type=${type}` : ""}${date ? `&date=${date}` : ""}`;
   const list = useErpQuery<{ bills: BillSummary[]; total: number; amount: number }>(url, () => getJson(url), { tags: ["bills"], ttl: 15000 });
   const bills = list.data?.bills ?? [];
   return (
     <div className="space-y-4 min-w-0">
-      <div className="rn-dues-head">
-        <div className="min-w-0">
-          <p className="text-[12.5px] font-medium uppercase tracking-[0.08em] text-white/75">Bills on record</p>
-          <p className="mt-0.5 text-[30px] font-bold leading-none tabular-nums">{list.data ? list.data.total : "—"}</p>
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <SearchField value={search} onChange={setSearch} placeholder="Search name or bill no." className="flex-1 min-w-0" />
+          <label className={`rn-date-chip ${date ? "is-set" : ""}`} title="Bill date">
+            <CalendarDays aria-hidden />
+            <span>{date ? billDay(date).replace(/ \d{4}$/, "") : "Date"}</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" aria-label="Bill date" />
+          </label>
+          {date && (
+            <button type="button" className="rn-btn rn-btn-icon rn-btn-sm shrink-0" onClick={() => setDate("")} aria-label="Any date">
+              <X />
+            </button>
+          )}
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <Chips
+            label="Bill type"
+            value={type}
+            onChange={setType}
+            options={[
+              { value: "ALL", label: "All" },
+              { value: "GST", label: "GST" },
+              { value: "NON_GST", label: "Non-GST" },
+            ]}
+          />
+          <span className="shrink-0 text-[13px] tabular-nums text-[var(--rn-ink-2)]" data-testid="bills-count">
+            {list.data ? `${list.data.total} bill${list.data.total === 1 ? "" : "s"}` : ""}
+          </span>
         </div>
       </div>
-      <SearchField value={search} onChange={setSearch} placeholder="Search name, phone or bill no." className="w-full" />
       {!list.data ? (
         list.error ? (
           <LoadError message={list.error.message} onRetry={() => list.refetch()} />
@@ -191,7 +217,7 @@ export function BillsList() {
           </div>
         )
       ) : bills.length === 0 ? (
-        <p className="rn-card px-5 py-12 text-center text-[15px] text-[var(--rn-ink-2)]">{q ? "No bill matches." : "No bills yet."}</p>
+        <p className="rn-card px-5 py-12 text-center text-[15px] text-[var(--rn-ink-2)]">{q || date || type !== "ALL" ? "No bill matches." : "No bills yet."}</p>
       ) : (
         <>
           <ul className="rn-due-list" aria-label="Bills">

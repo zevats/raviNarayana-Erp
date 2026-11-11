@@ -18,6 +18,9 @@ import { createTiffinCustomer, createTiffinProduct, createTiffinSubscription, ca
 import { createUnifiedOrder } from "../apps/erp/src/server/orders/orderService";
 import { completeDeliveryTask } from "../apps/erp/src/server/delivery/deliveryService";
 import { prepareDeliveryManifest } from "../apps/erp/src/server/delivery/deliveryOps";
+import { recordOtherReceipt } from "../apps/erp/src/server/finance/otherReceiptService";
+import { recordExpense, getCashbookSummary } from "../apps/erp/src/server/finance/financeService";
+import { assignDeliveryTask } from "../apps/erp/src/server/delivery/deliveryService";
 import { listReceivables, getReceivableAccount, getAccountStatement, receiveAccountPayment, spreadOldestFirst } from "../apps/erp/src/server/finance/receivablesService";
 import { ensurePlanCharges, planMonthStart, planMonthEnd } from "../apps/erp/src/server/tiffin/planCharges";
 import { createBill, listBills, getBill, getBillByToken, BUSINESS_GSTIN } from "../apps/erp/src/server/finance/billService";
@@ -239,6 +242,44 @@ async function main() {
   assert(oneCorp.accounts.some((x) => x.accountKey === `C:${corp.id}` && x.total === 3500) && corporate.accounts.every((x) => x.customerType === "CORPORATE"), "Corporate filter shows corporate customers only");
   assert(individual.accounts.every((x) => x.customerType !== "CORPORATE") && corporate.summary.total + individual.summary.total === customers.summary.total, "Individual + corporate add up to all customer dues");
   assert(everyone.accounts.every((x) => x.reviews === 0), "No account is flagged for a Pay Later review");
+
+  // ---------------------------------------------------------------------------
+  console.log("\n--- 8. Cashbook: Other receipts, LPG, Assign to ---");
+  const tiffinBefore = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "TIFFIN" }, db);
+  const duesBefore8 = (await listReceivables(owner, { kind: "ALL", limit: 500 }, db)).summary.total;
+  const rkey = `d4r_${crypto.randomUUID()}`;
+  const other = await recordOtherReceipt(manager, { amount: 750, paymentMethod: "CASH", payerName: "Walk-in guest", note: "Party order advance", idempotencyKey: rkey }, IP, db);
+  const again2 = await recordOtherReceipt(manager, { amount: 750, paymentMethod: "CASH", payerName: "Walk-in guest", idempotencyKey: rkey }, IP, db);
+  assert(again2.id === other.id && again2.replayed === true, "The same Other receipt sent twice is recorded once");
+  assert((await refused(() => recordOtherReceipt(manager, { amount: 700, paymentMethod: "CASH", payerName: "Walk-in guest", idempotencyKey: rkey }, IP, db)))?.includes("already recorded") === true, "The same reference with another amount is refused");
+  assert((await refused(() => recordOtherReceipt(driver, { amount: 10, paymentMethod: "CASH", payerName: "X Y", idempotencyKey: `d4r_${rnd()}` }, IP, db))) !== null, "Delivery staff cannot record Other receipts");
+  assert(
+    (await refused(() => recordOtherReceipt(manager, { amount: 0, paymentMethod: "CASH", payerName: "X Y", idempotencyKey: `d4r_${rnd()}` }, IP, db))) !== null &&
+      (await refused(() => recordOtherReceipt(manager, { amount: 10, paymentMethod: "CASH", payerName: "", idempotencyKey: `d4r_${rnd()}` }, IP, db))) !== null,
+    "Amount and who paid are required"
+  );
+  await recordExpense(owner, { category: "LPG", amount: 1200, transactionDate: today, paymentMethod: "CASH", payeeVendor: "Gas agency", description: "LPG cylinder" } as any, IP, db);
+  const tiffinAfter = await getCashbookSummary(owner, { startDate: today, endDate: today, division: "TIFFIN" }, db);
+  const tb: any = tiffinBefore.breakdown;
+  const ta: any = tiffinAfter.breakdown;
+  assert(ta.tiffinReceipts - tb.tiffinReceipts === 750, `Other receipt counts as money in on the tiffin side (₹${ta.tiffinReceipts - tb.tiffinReceipts})`);
+  assert(ta.expensesPaid - tb.expensesPaid === 1200, `LPG counts as a tiffin (kitchen) expense (₹${ta.expensesPaid - tb.expensesPaid})`);
+  assert(Number(tiffinAfter.netCashMovementExact ?? 0) - Number(tiffinBefore.netCashMovementExact ?? 0) === 750 - 1200, "Tiffin net cash moves by +₹750 − ₹1,200");
+  assert((await listReceivables(owner, { kind: "ALL", limit: 500 }, db)).summary.total === duesBefore8, "An Other receipt changes nobody's dues");
+  const g = await customer("D4 Assign");
+  const orderFor = async (who: string) =>
+    (await createUnifiedOrder(manager, {
+      orderType: "DELIVERY", customerId: g.id, customerName: g.fullName, customerPhone: g.phone, deliveryAddress: "D4 Lane, Sector 4",
+      serviceDate: today, mealType: "DINNER", items: [{ productId: thali.id, productName: "D4 Thali", quantity: 1, unitPrice: 100 }], idempotencyKey: `d4o_${rnd()}`, assignToStaffId: who,
+    } as any, IP, db)) as any;
+  const mine = await orderFor(manager.id);
+  const at = await db.queryOne<any>("SELECT assigned_to FROM delivery_tasks WHERE id = ?", [mine.deliveryTaskId]);
+  assert(at?.assigned_to === manager.id, "Assign to chosen while taking the order: the Manager taking it gets the delivery");
+  const toOwner = await orderFor(owner.id);
+  const at2 = await db.queryOne<any>("SELECT assigned_to FROM delivery_tasks WHERE id = ?", [toOwner.deliveryTaskId]);
+  assert(at2?.assigned_to === owner.id, "Assign to another staff member (the Owner) while taking the order");
+  const re = await assignDeliveryTask(manager, toOwner.deliveryTaskId, { assignedToStaffId: driver.id }, IP, db);
+  assert(re.assignedTo === driver.id, "A taken order can be reassigned to someone else");
 
   console.log("\n================================================================================");
   console.log(`DUES & BILLS RESULTS: ${state.passed} PASSED, ${state.failed} FAILED`);

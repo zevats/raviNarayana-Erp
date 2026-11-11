@@ -375,7 +375,7 @@ async function runTestSuite() {
   assert(handover.status === "DECLARED", "Handover status is 'DECLARED'");
 
   // Manager accepts handover
-  const acceptedHandover = await acceptCashHandover(managerUser, handover.id, {
+  const acceptedHandover = await acceptCashHandover(ownerUser, handover.id, {
     acceptedCash: 120,
     notes: "Cash counted and verified in presence of driver",
   });

@@ -283,7 +283,7 @@ async function main() {
 
     const accepts = settled(
       await Promise.allSettled([
-        acceptCashHandover(manager, handover.id, { acceptedCash: collected }, IP, db),
+        acceptCashHandover(owner, handover.id, { acceptedCash: collected }, IP, db),
         acceptCashHandover(owner, handover.id, { acceptedCash: collected }, IP, db),
       ])
     );

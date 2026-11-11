@@ -28,6 +28,7 @@ const VALID_EXPENSE_CATEGORIES: readonly ExpenseCategory[] = [
   "MAINTENANCE",
   "STAFF_SALARY",
   "KITCHEN_SUPPLIES",
+  "LPG",
   "INTERNET",
   "MARKETING",
   "OTHER",
@@ -783,7 +784,7 @@ export async function recordExpense(
   const now = new Date().toISOString();
 
   await db.transaction(async (tx) => {
-    const expenseDivision = category === "GROCERY" || category === "KITCHEN_SUPPLIES" ? "TIFFIN" : "PG";
+    const expenseDivision = category === "GROCERY" || category === "KITCHEN_SUPPLIES" || category === "LPG" ? "TIFFIN" : "PG";
     await assertClosingDateNotFinalized(tx, transactionDate, expenseDivision);
 
     if (idempotencyKey) {
@@ -922,9 +923,9 @@ export async function listTransactions(
     params.push(options.endDate);
   }
   if (options?.division === "PG") {
-    conditions.push("(t.resident_id IS NOT NULL OR t.transaction_type IN ('RENT_PAYMENT', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND', 'RENT_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')))");
+    conditions.push("(t.resident_id IS NOT NULL OR t.transaction_type IN ('RENT_PAYMENT', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND', 'RENT_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')))");
   } else if (options?.division === "TIFFIN") {
-    conditions.push("(t.customer_id IS NOT NULL OR t.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES')))");
+    conditions.push("(t.customer_id IS NOT NULL OR t.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')))");
   }
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -1045,8 +1046,8 @@ export async function getCashbookSummary(
         COALESCE(SUM(CASE WHEN (t.transaction_type = 'TIFFIN_PAYMENT' OR (t.transaction_type = 'RENT_PAYMENT' AND (t.customer_id IS NOT NULL OR t.category = 'TIFFIN'))) AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinCollected,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as expensesPaid,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as allExpensesPaid,
-        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as pgExpensesPaid,
-        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinExpensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as pgExpensesPaid,
+        COALESCE(SUM(CASE WHEN t.transaction_type = 'EXPENSE' AND t.category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as tiffinExpensesPaid,
         COALESCE(SUM(CASE WHEN t.transaction_type = 'RENT_CHARGE' AND (t.status = 'POSTED' OR (t.status = 'REVERSED' AND rev.transaction_date > ?)) THEN t.amount ELSE 0 END), 0) as rentBilled,
         COUNT(*) as txCount
       FROM financial_transactions t
@@ -1059,8 +1060,8 @@ export async function getCashbookSummary(
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'SECURITY_DEPOSIT' THEN rev.amount ELSE 0 END), 0) as priorDepositRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'TIFFIN_PAYMENT' OR (orig.transaction_type = 'RENT_PAYMENT' AND (orig.customer_id IS NOT NULL OR orig.category = 'TIFFIN')) THEN rev.amount ELSE 0 END), 0) as priorTiffinRefunds,
         COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' THEN rev.amount ELSE 0 END), 0) as priorExpenseRefunds,
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorPgExpenseRefunds,
-        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category IN ('GROCERY', 'KITCHEN_SUPPLIES') THEN rev.amount ELSE 0 END), 0) as priorTiffinExpenseRefunds
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') THEN rev.amount ELSE 0 END), 0) as priorPgExpenseRefunds,
+        COALESCE(SUM(CASE WHEN orig.transaction_type = 'EXPENSE' AND orig.category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG') THEN rev.amount ELSE 0 END), 0) as priorTiffinExpenseRefunds
       FROM financial_transactions rev
       JOIN financial_transactions orig ON rev.reversal_of_id = orig.id
       WHERE rev.transaction_type = 'REVERSAL'
@@ -1239,7 +1240,7 @@ export async function reverseTransaction(
   const reversalDivision =
     current.transactionType === "TIFFIN_PAYMENT" ||
     current.transactionType === "TIFFIN_CHARGE" ||
-    (current.transactionType === "EXPENSE" && (current.category === "GROCERY" || current.category === "KITCHEN_SUPPLIES"))
+    (current.transactionType === "EXPENSE" && (current.category === "GROCERY" || current.category === "KITCHEN_SUPPLIES" || current.category === "LPG"))
       ? "TIFFIN"
       : "PG";
 

@@ -842,12 +842,10 @@ input.rn-money.rn-money[type="number"] { -moz-appearance: textfield; appearance:
    Date fields: the whole field opens the calendar (not only the small icon), and a field with no
    date yet says what it is for instead of showing an empty box on phones.
    ============================================================================ */
-.rn-app input[type="date"],
-.rn-app input[type="month"],
-.rn-app input[type="time"] { position: relative; min-width: 0; cursor: pointer; }
-.rn-app input[type="date"]::-webkit-calendar-picker-indicator,
-.rn-app input[type="month"]::-webkit-calendar-picker-indicator,
-.rn-app input[type="time"]::-webkit-calendar-picker-indicator {
+/* Only boxed date fields (rn-input, m-input, bordered fields). Hidden pickers laid over a
+   button (absolute, opacity 0) and the date pills keep their own look. */
+.rn-app input:is([type="date"], [type="month"], [type="time"]):is(.rn-input, .m-input, [class*="border"], [class*="rounded"]):not(.absolute):not(.opacity-0) { position: relative; min-width: 0; cursor: pointer; }
+.rn-app input:is([type="date"], [type="month"], [type="time"]):is(.rn-input, .m-input, [class*="border"], [class*="rounded"]):not(.absolute):not(.opacity-0)::-webkit-calendar-picker-indicator {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -857,8 +855,7 @@ input.rn-money.rn-money[type="number"] { -moz-appearance: textfield; appearance:
   opacity: 0;
   cursor: pointer;
 }
-.rn-app input[type="date"],
-.rn-app input[type="month"] {
+.rn-app input:is([type="date"], [type="month"]):is(.rn-input, .m-input, [class*="border"], [class*="rounded"]):not(.absolute):not(.opacity-0) {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%234A504B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='18' rx='3'/%3E%3Cpath d='M16 2v4M8 2v4M3 10h18'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
@@ -866,10 +863,8 @@ input.rn-money.rn-money[type="number"] { -moz-appearance: textfield; appearance:
   padding-right: 38px;
 }
 @media (pointer: coarse) {
-  .rn-app input[type="date"][data-empty]::-webkit-datetime-edit,
-  .rn-app input[type="month"][data-empty]::-webkit-datetime-edit { color: transparent; }
-  .rn-app input[type="date"][data-empty]::before,
-  .rn-app input[type="month"][data-empty]::before {
+  .rn-app input:is([type="date"], [type="month"]):is(.rn-input, .m-input, [class*="border"], [class*="rounded"]):not(.absolute):not(.opacity-0)[data-empty]::-webkit-datetime-edit { color: transparent; }
+  .rn-app input:is([type="date"], [type="month"]):is(.rn-input, .m-input, [class*="border"], [class*="rounded"]):not(.absolute):not(.opacity-0)[data-empty]::before {
     content: attr(data-empty);
     position: absolute;
     left: 14px;
@@ -974,3 +969,79 @@ button.rn-due-row:active { background: rgba(30, 58, 43, 0.09); }
 /* Bills print with their colours, on one A4 page. */
 .rn-bill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 @page { size: A4; margin: 10mm; }
+
+/* Equal-width choices (bill type, GST rate, how it was paid). */
+.rn-choice {
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 9999px;
+  background: var(--rn-m-track, #EEEAE2);
+}
+.rn-choice-item {
+  min-width: 0;
+  height: 44px;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--rn-ink-2, #4A504B);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+.rn-choice.is-sm .rn-choice-item { height: 38px; font-size: 13.5px; }
+.rn-choice-item[aria-checked="true"] {
+  background: #FFFFFF;
+  color: var(--rn-ink, #1E2320);
+  box-shadow: 0 1px 2px rgba(24, 33, 27, 0.08), 0 4px 12px -6px rgba(24, 33, 27, 0.18);
+}
+.rn-app .rn-modal .rn-choice-item { min-height: 0 !important; }
+
+/* Bill actions: Save and Share side by side, WhatsApp below on phones; one row on wide screens. */
+.rn-bill-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.rn-bill-actions > .rn-btn-whatsapp { grid-column: 1 / -1; }
+@media (min-width: 640px) {
+  .rn-bill-actions { display: flex; justify-content: flex-end; width: auto; }
+}
+.rn-bill-actions > button { min-width: 0; white-space: nowrap; }
+.rn-btn.rn-btn-whatsapp,
+.rn-app .rn-modal .rn-btn.rn-btn-whatsapp,
+.rn-app .rn-modal:not(.rn-own) .rn-btn.rn-btn-whatsapp:not(.rn-btn-primary) { background: #25D366 !important; color: #FFFFFF !important; border-color: transparent !important; }
+.rn-btn.rn-btn-whatsapp:hover { background: #1EBE5B !important; }
+
+/* Share choices (computers without a share list). */
+.rn-share-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 2px;
+  border-radius: 16px;
+  transition: background 0.12s ease;
+}
+.rn-share-tile:hover { background: rgba(30, 58, 43, 0.06); }
+.rn-app .rn-modal .rn-share-tile { min-height: 0 !important; }
+
+/* Small date card beside a search box: shows the chosen day, opens the calendar. */
+.rn-date-chip {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--rn-line, rgba(30, 35, 32, 0.12));
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rn-ink-2, #4A504B);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rn-date-chip > svg { width: 17px; height: 17px; }
+.rn-date-chip.is-set { background: var(--rn-accent, #1E3A2B); border-color: var(--rn-accent, #1E3A2B); color: #FFFFFF; }

@@ -1,4 +1,5 @@
 import {
+  Bike,
   LayoutDashboard,
   ShoppingBag,
   Truck,
@@ -44,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: "orders", label: "Orders", href: "/orders", icon: ShoppingBag, roles: OM, accent: "orange" },
       { key: "delivery", label: "Delivery", href: "/delivery", icon: Truck, roles: OM, accent: "orange" },
+      { key: "mydeliveries", label: "My Deliveries", href: "/my-deliveries", icon: Bike, roles: OM, accent: "orange" },
     ],
   },
   {
@@ -101,7 +103,7 @@ export function activeKey(links: NavLink[], pathname: string, tab: string | null
 
 /** Orders and Delivery are the orange edition; every other section is green. */
 export function sectionAccent(pathname: string): "green" | "orange" {
-  return pathname === "/orders" || pathname.startsWith("/orders/") || pathname === "/delivery" || pathname.startsWith("/delivery/") ? "orange" : "green";
+  return pathname === "/orders" || pathname.startsWith("/orders/") || pathname === "/delivery" || pathname.startsWith("/delivery/") || pathname === "/my-deliveries" ? "orange" : "green";
 }
 
 export function pageTitle(links: NavLink[], key: string | null, pathname: string, fullName?: string): string {

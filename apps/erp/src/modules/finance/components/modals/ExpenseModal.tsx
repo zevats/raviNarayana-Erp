@@ -17,7 +17,9 @@ interface ExpenseModalProps {
 const EXPENSE_CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: "GROCERY", label: "Grocery & Provisions" },
   { value: "KITCHEN_SUPPLIES", label: "Kitchen & Cooking Supplies" },
-  { value: "UTILITIES", label: "Utilities (Electricity, Water, Gas)" },
+  { value: "LPG", label: "LPG (cooking gas)" },
+  { value: "LPG", label: "LPG (cooking gas)" },
+  { value: "UTILITIES", label: "Utilities (Electricity, Water)" },
   { value: "MAINTENANCE", label: "Property Maintenance & Repairs" },
   { value: "STAFF_SALARY", label: "Staff Wages & Salaries" },
   { value: "INTERNET", label: "Internet & Telecommunications" },

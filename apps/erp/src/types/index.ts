@@ -460,6 +460,7 @@ export type ExpenseCategory =
   | "MAINTENANCE"
   | "STAFF_SALARY"
   | "KITCHEN_SUPPLIES"
+  | "LPG"
   | "INTERNET"
   | "MARKETING"
   | "OTHER";
@@ -1245,6 +1246,8 @@ export interface CreateOrderInput {
   idempotencyKey?: string;
   /** Delivery for a monthly-plan customer: the plan's thali for the meal is free. */
   subscriptionId?: string;
+  /** Delivery orders: who takes it (any active staff member); the default delivery person when left out. */
+  assignToStaffId?: string;
 }
 
 export interface ItemReconciliationRecord {

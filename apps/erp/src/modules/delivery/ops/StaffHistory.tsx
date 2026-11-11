@@ -30,15 +30,16 @@ function payText(t: DeliveryTask): { text: string; tone: string } {
 }
 
 /** History: this delivery partner's recorded stops for a day and meal (own records only). */
-export function StaffHistory({ user: _user }: { user: AuthenticatedUser }) {
+export function StaffHistory({ user }: { user: AuthenticatedUser }) {
   const today = businessToday();
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [filter, setFilter] = useState<Filter>("ALL");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const bq = useDeliveryTasks(date, "BREAKFAST");
-  const lq = useDeliveryTasks(date, "LUNCH");
-  const dq = useDeliveryTasks(date, "DINNER");
+  const mine = user.role === "DELIVERY_PERSON" ? undefined : user.id;
+  const bq = useDeliveryTasks(date, "BREAKFAST", true, mine);
+  const lq = useDeliveryTasks(date, "LUNCH", true, mine);
+  const dq = useDeliveryTasks(date, "DINNER", true, mine);
   const q = meal === "BREAKFAST" ? bq : meal === "LUNCH" ? lq : dq;
   const all = useMemo(() => (q.data ?? []).filter((t) => t.status !== "CANCELLED"), [q.data]);
   const numbers = useMemo(() => stopNumbers(all), [all]);

@@ -562,7 +562,9 @@ export async function createUnifiedOrder(
       // Automatic assignment to the default delivery person AND automatic dispatch (OUT_FOR_DELIVERY).
       // Errors propagate (no swallow inside a PostgreSQL transaction); dispatch is attempted only
       // when the actor may dispatch and the task is waiting in ASSIGNED.
-      const defaultDriver = await getDefaultDeliveryStaff(tx);
+      // "Assign to" chosen while taking the order (any active staff member) wins over the default.
+      const chosen = input.assignToStaffId ? String(input.assignToStaffId).trim() : "";
+      const defaultDriver = chosen ? { id: chosen } : await getDefaultDeliveryStaff(tx);
       if (defaultDriver) {
         // Only the new status is needed here; the order is reloaded in full once committed.
         const assigned = await assignDeliveryTask(actor, extTask.id, { assignedToStaffId: defaultDriver.id }, clientIp, tx, { detail: false });

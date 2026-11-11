@@ -150,7 +150,7 @@ export function MyCustody({ staffId }: { staffId: string }) {
             <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA]">
               <span className="block text-[11px] text-[#8E9F89]">Cash with me</span>
               <span className="text-lg font-bold text-[#1A2E20]">{inr(c.cashPending)}</span>
-              {c.cashAwaitingAcceptance > 0 && <span className="block text-[11px] text-amber-800">{inr(c.cashAwaitingAcceptance)} declared, awaiting manager</span>}
+              {c.cashAwaitingAcceptance > 0 && <span className="block text-[11px] text-amber-800">{inr(c.cashAwaitingAcceptance)} declared, awaiting the owner</span>}
             </div>
             <div className="p-3 rounded-2xl bg-[#FAF8F5] border border-[#E6E1DA]">
               <span className="block text-[11px] text-[#8E9F89]">UPI to be confirmed</span>
@@ -498,7 +498,7 @@ function StaffOverview() {
                     )}
                   </td>
                   <td data-m="actions" className="text-right">
-                    {waiting.length > 0 ? (
+                    {waiting.length > 0 && me?.role === "SUPER_ADMIN" ? (
                       <button type="button" className="rn-btn rn-btn-sm rn-btn-primary" onClick={() => setVerify(waiting[0])} aria-label={`Verify ${r.staffName}'s handover`}>
                         Verify{waiting.length > 1 ? ` (${waiting.length})` : ""}
                       </button>

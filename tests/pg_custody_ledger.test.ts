@@ -121,16 +121,17 @@ async function main() {
   console.log("\n--- 8–11, 17–18. Verification ---");
   const pending = await listDriverCashHandovers(manager, { status: "DECLARED" }, db);
   assert(pending.some((h) => h.id === hA.id && h.driverName === "Driver Asha"), "Manager sees A's declaration with A's name");
-  await rejects("A cannot verify her own handover (delivery staff cannot verify at all)", () => acceptCashHandover(A, hA.id, { acceptedCash: 260 }, IP, db), /permission|cannot accept their own/);
-  await rejects("Stale record (wrong employee on screen) rejected", () => acceptCashHandover(manager, hA.id, { acceptedCash: 260, expectedDriverId: B.id }, IP, db), /different employee/);
-  await rejects("Stale amounts rejected", () => acceptCashHandover(manager, hA.id, { acceptedCash: 260, expectedDeclaredCash: 250 }, IP, db), /differ from what is on your screen/);
-  await rejects("A UPI figure on a cash-only handover is rejected", () => acceptCashHandover(manager, hA.id, { acceptedCash: 260, acceptedUpi: 50 }, IP, db), /No UPI was declared/);
+  await rejects("A cannot verify her own handover (delivery staff cannot verify at all)", () => acceptCashHandover(A, hA.id, { acceptedCash: 260 }, IP, db), /owner|permission|cannot accept their own/);
+  await rejects("Stale record (wrong employee on screen) rejected", () => acceptCashHandover(owner, hA.id, { acceptedCash: 260, expectedDriverId: B.id }, IP, db), /different employee/);
+  await rejects("Stale amounts rejected", () => acceptCashHandover(owner, hA.id, { acceptedCash: 260, expectedDeclaredCash: 250 }, IP, db), /differ from what is on your screen/);
+  await rejects("A UPI figure on a cash-only handover is rejected", () => acceptCashHandover(owner, hA.id, { acceptedCash: 260, acceptedUpi: 50 }, IP, db), /No UPI was declared/);
   assert((await listDriverCashHandovers(manager, { status: "DECLARED" }, db)).some((h) => h.id === hA.id), "Failed attempts left the declaration untouched");
-  const acc = await Promise.allSettled([manager, manager2].map((v) => acceptCashHandover(v, hA.id, { acceptedCash: 260, expectedDriverId: A.id, expectedDeclaredCash: 260 }, IP, db)));
-  assert(acc.filter((r) => r.status === "fulfilled").length === 1, "Two managers accepting at once → exactly one succeeds");
+  await rejects("A Manager cannot accept a handover (cash goes to the Owner only)", () => acceptCashHandover(manager, hA.id, { acceptedCash: 260 }, IP, db), /Only the owner/);
+  const acc = await Promise.allSettled([owner, owner].map((v) => acceptCashHandover(v, hA.id, { acceptedCash: 260, expectedDriverId: A.id, expectedDeclaredCash: 260 }, IP, db)));
+  assert(acc.filter((r) => r.status === "fulfilled").length === 1, "Accepting twice at once → exactly one succeeds");
   const ledgerRows = await db.query<any>("SELECT payment_method, amount FROM financial_transactions WHERE reference_number = ? ORDER BY payment_method", [hA.id]);
   assert(ledgerRows.length === 1 && ledgerRows[0].payment_method === "CASH" && Number(ledgerRows[0].amount) === 260, `Books get exactly one cash entry of ₹260 for the handover (${ledgerRows.map((r) => `${r.payment_method} ₹${r.amount}`).join(", ")})`);
-  await rejects("Accepting again is rejected", () => acceptCashHandover(manager, hA.id, { acceptedCash: 260 }, IP, db), /already been accepted/);
+  await rejects("Accepting again is rejected", () => acceptCashHandover(owner, hA.id, { acceptedCash: 260 }, IP, db), /already been accepted/);
   const aDetail = await getStaffCustodyDetail(A, A.id, db);
   assert(aDetail.handovers[0].status === "ACCEPTED" && aDetail.custody.cashPending === 0 && aDetail.custody.cashHandedOver === 260, "A sees the handover accepted; nothing pending");
   const aTask = (await getDeliveryTaskById(owner, aCashOrder.deliveryTaskId!, db))!.task;
@@ -142,8 +143,8 @@ async function main() {
 
   console.log("\n--- 12–15. Discrepancy, Owner overview and totals ---");
   const hB = await createCashHandoverDeclaration(B, { shiftDate: day }, IP, db);
-  await rejects("Short cash without a reason is rejected", () => acceptCashHandover(manager, hB.id, { acceptedCash: 250 }, IP, db), /explanation/);
-  const flagged = await acceptCashHandover(manager, hB.id, { acceptedCash: 250, varianceReason: "₹50 short at counting; Bilal to explain", expectedDriverId: B.id }, IP, db);
+  await rejects("Short cash without a reason is rejected", () => acceptCashHandover(owner, hB.id, { acceptedCash: 250 }, IP, db), /explanation/);
+  const flagged = await acceptCashHandover(owner, hB.id, { acceptedCash: 250, varianceReason: "₹50 short at counting; Bilal to explain", expectedDriverId: B.id }, IP, db);
   assert(flagged.status === "DISCREPANCY_FLAGGED" && flagged.declaredCash === 300 && flagged.acceptedCash === 250 && flagged.variance === -50, "Discrepancy recorded; original ₹300 declaration kept, ₹250 received");
   const overview = await listStaffCustody(owner, db);
   b = overview.staff.find((r) => r.staffId === B.id);
@@ -160,13 +161,13 @@ async function main() {
   const ll = (await getDeliveryTaskById(owner, later.deliveryTaskId!, db))!.task.orderLines!;
   await completeDeliveryTask(A, later.deliveryTaskId!, { lines: [{ orderItemId: ll[0].orderItemId, deliveredQuantity: 1, undeliveredQuantity: 0 }], recipientName: "Front desk", collectedAmount: 70, paymentMethod: "CASH", idempotencyKey: `cu_del_${rnd()}` }, IP, db);
   const hA2 = await createCashHandoverDeclaration(A, { shiftDate: day }, IP, db);
-  await acceptCashHandover(manager, hA2.id, { acceptedCash: 70, expectedDriverId: A.id }, IP, db);
+  await acceptCashHandover(owner, hA2.id, { acceptedCash: 70, expectedDriverId: A.id }, IP, db);
   const paidLater = await recordDeliveryCollection(A, later.deliveryTaskId!, { collectedAmount: 30, paymentMethod: "UPI", idempotencyKey: `cu_late_${rnd()}` }, IP, db);
   a = await rowOf(owner, A.id);
   assert(paidLater.balanceDue === 0 && a?.upiUndeclared === 0 && a?.cashUndeclared === 0 && a?.cashPending === 0, `Balance paid by UPI after a handover goes straight to the books; A holds nothing (balance ₹${paidLater.balanceDue}, UPI held ₹${a?.upiUndeclared})`);
   const hM = await createCashHandoverDeclaration(manager, { shiftDate: day }, IP, db);
   assert(hM.declaredCash === 40 && hM.driverId === manager.id, "Manager declares the ₹40 they received");
-  await rejects("Manager cannot verify their own declaration", () => acceptCashHandover(manager, hM.id, { acceptedCash: 40 }, IP, db), /cannot accept their own/);
+  await rejects("Manager cannot accept their own declaration either", () => acceptCashHandover(manager, hM.id, { acceptedCash: 40 }, IP, db), /Only the owner/);
   const ownerAccepts = await acceptCashHandover(owner, hM.id, { acceptedCash: 40, expectedDriverId: manager.id }, IP, db);
   assert(ownerAccepts.status === "ACCEPTED" && ownerAccepts.acceptedBy === owner.id, "Owner verifies the Manager's custody");
 
@@ -176,7 +177,7 @@ async function main() {
   // Whichever of the two racing managers won is recorded as the verifier.
   assert(
     firstA.declaredCash === 260 && (firstA.declaredUpi || 0) === 0 && firstA.acceptedCash === 260 && (firstA.acceptedUpi || 0) === 0 &&
-      [manager.id, manager2.id].includes(firstA.acceptedBy || "") && ["Custody Manager", "Second Manager"].includes(firstA.acceptedByName || ""),
+      firstA.acceptedBy === owner.id && firstA.acceptedByName === "Custody Owner",
     `Earlier handover keeps its declared/accepted figures and verifier (${firstA.acceptedByName})`
   );
   const audit = await db.query<any>("SELECT action FROM audit_logs WHERE target_id = ? ORDER BY created_at", [hB.id]);

@@ -9,6 +9,7 @@ import { businessToday, businessMeal } from "@/lib/businessDate";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 import { PhoneError } from "@/components/forms/PhoneError";
+import { AssignToSelect } from "./AssignTo";
 interface NewOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -178,6 +179,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   const [reuseNotice, setReuseNotice] = useState<string | null>(null);
   // After Reuse: what was copied (shown at the top of the items step) and which items to point at.
   const [reused, setReused] = useState<{ ids: string[]; text: string } | null>(null);
+  // Delivery: who takes it (the default delivery person unless changed).
+  const [assignTo, setAssignTo] = useState("");
   const [flashIds, setFlashIds] = useState<string[]>([]);
   const scrollToReused = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -202,6 +205,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     setCart({});
     setMenuSearch("");
     setNotes("");
+    setAssignTo("");
     setErrorMessage(null);
     setReuseNotice(null);
     setReused(null);
@@ -606,6 +610,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
       paymentStatus: orderType === "DINE_IN" && (nothingToPay || paymentMethod !== "PAY_LATER") ? "PAID" : "PENDING",
       notes: notes.trim() || undefined,
       subscriptionId: forPlan && plan ? plan.id : undefined,
+      assignToStaffId: orderType === "DELIVERY" && assignTo ? assignTo : undefined,
       idempotencyKey: key,
     });
     const amount = totalAmount;
@@ -1229,6 +1234,12 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                   <span className={LABEL}>Meal</span>
                   <Segmented label="Meal" value={mealType} onChange={setMealType} options={MEALS.map((m) => ({ v: m.v, label: m.label }))} />
                 </div>
+                {orderType === "DELIVERY" && (
+                  <div>
+                    <span className={LABEL}>Assign to</span>
+                    <AssignToSelect value={assignTo} onChange={setAssignTo} className={FIELD} />
+                  </div>
+                )}
                 {orderType === "DINE_IN" && nothingToPay && (
                   <p className="rounded-xl px-3.5 py-2.5 text-[13.5px] bg-[#E6F4E1] text-[#1D4E16]">Nothing to pay: the plan covers this meal.</p>
                 )}

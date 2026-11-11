@@ -114,22 +114,28 @@ function txLook(tx: FinancialTransaction): { icon: React.ElementType; tone: MTon
   return { icon: ReceiptText, tone: "neutral", sign: "" };
 }
 
+/** What an entry is: "Rent received", "Tiffin payment", "Other receipt"… */
+function typeLabel(tx: FinancialTransaction): string {
+  if (tx.transactionType === "TIFFIN_PAYMENT" && tx.category === "OTHER_RECEIPT") return "Other receipt";
+  return TYPE_LABEL[tx.transactionType] || "";
+}
+
 function txParty(tx: FinancialTransaction) {
-  return tx.residentName || tx.customerName || tx.payeeVendor || TYPE_LABEL[tx.transactionType] || "Entry";
+  return tx.residentName || tx.customerName || tx.payeeVendor || typeLabel(tx) || "Entry";
 }
 
 function isPgTx(tx: FinancialTransaction) {
   return Boolean(
     tx.residentId ||
       ["RENT_PAYMENT", "SECURITY_DEPOSIT", "DEPOSIT_REFUND", "RENT_CHARGE"].includes(tx.transactionType) ||
-      (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+      (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES", "LPG"].includes(tx.category))
   );
 }
 function isTiffinTx(tx: FinancialTransaction) {
   return Boolean(
     tx.customerId ||
       ["TIFFIN_PAYMENT", "TIFFIN_CHARGE"].includes(tx.transactionType) ||
-      (tx.transactionType === "EXPENSE" && ["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+      (tx.transactionType === "EXPENSE" && ["GROCERY", "KITCHEN_SUPPLIES", "LPG"].includes(tx.category))
   );
 }
 
@@ -143,8 +149,6 @@ export function CashbookMobile({
   onPay,
   onExpense,
   onDeposit,
-  onCharge,
-  onRentRun,
   onExport,
   onReceipt,
   onReverse,
@@ -159,8 +163,6 @@ export function CashbookMobile({
   onPay: () => void;
   onExpense: () => void;
   onDeposit: () => void;
-  onCharge: () => void;
-  onRentRun?: () => void;
   onExport: () => void;
   onReceipt: (tx: FinancialTransaction) => void;
   onReverse?: (tx: FinancialTransaction) => void;
@@ -263,7 +265,7 @@ export function CashbookMobile({
         <MEmpty icon={Receipt} title={transactions.length === 0 ? "Nothing recorded in this period" : "No entries match"}>
           {transactions.length === 0 ? (
             <MButton kind="primary" icon={CreditCard} onClick={onPay}>
-              Receive payment
+              Receive
             </MButton>
           ) : (
             <MButton
@@ -295,7 +297,7 @@ export function CashbookMobile({
                       icon={look.icon}
                       tone={reversed ? "neutral" : look.tone}
                       title={txParty(tx)}
-                      sub={[txParty(tx) === TYPE_LABEL[tx.transactionType] ? "" : TYPE_LABEL[tx.transactionType] || plainCategory(tx.transactionType), tx.paymentMethod ? formatPaymentMethodLabel(tx.paymentMethod) : "", where].filter(Boolean).join(" · ")}
+                      sub={[txParty(tx) === typeLabel(tx) ? "" : typeLabel(tx) || plainCategory(tx.transactionType), tx.paymentMethod ? formatPaymentMethodLabel(tx.paymentMethod) : "", where].filter(Boolean).join(" · ")}
                       right={`${look.sign}${formatMoney(tx.amount)}`}
                       rightTone={reversed ? undefined : look.amountTone}
                       rightSub={reversed ? "Reversed" : undefined}
@@ -356,7 +358,7 @@ export function CashbookMobile({
                 {formatMoney(openTx.amount)}
               </p>
               <div className="mt-3 flex justify-center gap-2 flex-wrap">
-                <MPill tone={txLook(openTx).tone}>{TYPE_LABEL[openTx.transactionType] || plainCategory(openTx.transactionType)}</MPill>
+                <MPill tone={txLook(openTx).tone}>{typeLabel(openTx) || plainCategory(openTx.transactionType)}</MPill>
                 {openTx.status === "REVERSED" && <MPill tone="neutral">Reversed</MPill>}
               </div>
             </div>
@@ -433,26 +435,6 @@ export function CashbookMobile({
       {/* Other entries */}
       <MSheet open={moreOpen} onClose={() => setMoreOpen(false)} title="Add or export">
         <MGroup>
-          {onRentRun && (
-            <MRow
-              icon={CalendarClock}
-              tone="accent"
-              title="Monthly rent"
-              onClick={() => {
-                setMoreOpen(false);
-                onRentRun();
-              }}
-            />
-          )}
-          <MRow
-            icon={Receipt}
-            tone="amber"
-            title="Rent charge"
-            onClick={() => {
-              setMoreOpen(false);
-              onCharge();
-            }}
-          />
           <MRow
             icon={Download}
             tone="blue"

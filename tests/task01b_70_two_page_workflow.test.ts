@@ -453,7 +453,7 @@ async function runTestSuite() {
 
   // 4. Manager physically counts cash and accepts handover
   const acceptedHandover = await acceptCashHandover(
-    managerUser,
+    ownerUser,
     declaration.id,
     {
       acceptedCash: 300,

@@ -24,7 +24,7 @@ type Filter = "ALL" | "REMAINING" | "SUBSCRIPTION" | "COLLECT" | "COMPLETED";
  * The delivery partner's screens: My Stops (this file), My Cash and History. The shell's navbar
  * switches the view; the URL (?view=) opens one directly.
  */
-export function StaffDelivery({ user }: { user: AuthenticatedUser }) {
+export function StaffDelivery({ user, basePath = "/delivery" }: { user: AuthenticatedUser; basePath?: string }) {
   const [view, setView] = useState<StaffView>("stops");
   useEffect(() => {
     const fromUrl = new URLSearchParams(window.location.search).get("view");
@@ -35,7 +35,7 @@ export function StaffDelivery({ user }: { user: AuthenticatedUser }) {
   }, []);
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("erp:delivery-view-changed", { detail: view }));
-    const url = view === "stops" ? "/delivery" : `/delivery?view=${view}`;
+    const url = view === "stops" ? basePath : `${basePath}?view=${view}`;
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, "", url);
   }, [view]);
 
@@ -64,9 +64,10 @@ function StopsView({ user }: { user: AuthenticatedUser }) {
   // The selected meal loads first; the other meal's count is fetched once it is on screen.
   // One fixed list per meal (never "selected" vs "other"): switching meals only swaps which list is
   // shown, so the lists never mix and a stop is announced only when it really is new.
-  const breakfastQ = useDeliveryTasks(today, "BREAKFAST");
-  const lunchQ = useDeliveryTasks(today, "LUNCH");
-  const dinnerQ = useDeliveryTasks(today, "DINNER");
+  const mine = user.role === "DELIVERY_PERSON" ? undefined : user.id;
+  const breakfastQ = useDeliveryTasks(today, "BREAKFAST", true, mine);
+  const lunchQ = useDeliveryTasks(today, "LUNCH", true, mine);
+  const dinnerQ = useDeliveryTasks(today, "DINNER", true, mine);
   const byMeal = { BREAKFAST: breakfastQ, LUNCH: lunchQ, DINNER: dinnerQ } as const;
   const tasksQ = byMeal[meal];
   useManifest(today, meal); // opening the screen after 08:00 / 15:30 prepares that meal's list

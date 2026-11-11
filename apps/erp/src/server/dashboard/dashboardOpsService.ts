@@ -45,7 +45,7 @@ const n = (v: unknown) => Number(v || 0);
 const divisionCollectedSql = (division: ClosingDivision) =>
   division === "PG" ? RENT_RECEIPT_SQL : division === "TIFFIN" ? TIFFIN_RECEIPT_SQL : `(${RENT_RECEIPT_SQL} OR ${TIFFIN_RECEIPT_SQL})`;
 const divisionExpenseSql = (division: ClosingDivision) =>
-  division === "PG" ? "AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')" : division === "TIFFIN" ? "AND category IN ('GROCERY', 'KITCHEN_SUPPLIES')" : "";
+  division === "PG" ? "AND category NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')" : division === "TIFFIN" ? "AND category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')" : "";
 
 async function block<T>(name: string, failed: string[], fn: () => Promise<T>): Promise<T | null> {
   try {
@@ -242,9 +242,9 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
          LEFT JOIN tiffin_customers c ON c.id = ft.customer_id
          WHERE ft.status = 'POSTED' AND ft.transaction_type <> 'REVERSAL' ${
            division === "PG"
-             ? "AND (ft.transaction_type IN ('RENT_PAYMENT', 'RENT_CHARGE', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND') OR (ft.transaction_type = 'EXPENSE' AND COALESCE(ft.category, '') NOT IN ('GROCERY', 'KITCHEN_SUPPLIES')))"
+             ? "AND (ft.transaction_type IN ('RENT_PAYMENT', 'RENT_CHARGE', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND') OR (ft.transaction_type = 'EXPENSE' AND COALESCE(ft.category, '') NOT IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')))"
              : division === "TIFFIN"
-             ? "AND (ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (ft.transaction_type = 'EXPENSE' AND ft.category IN ('GROCERY', 'KITCHEN_SUPPLIES')))"
+             ? "AND (ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE') OR (ft.transaction_type = 'EXPENSE' AND ft.category IN ('GROCERY', 'KITCHEN_SUPPLIES', 'LPG')))"
              : ""
          }
          ORDER BY ft.created_at DESC

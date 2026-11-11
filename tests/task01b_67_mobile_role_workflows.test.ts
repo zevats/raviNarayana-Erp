@@ -349,7 +349,7 @@ async function runTask67Tests() {
   // and folded /kitchen into /orders, so the bottom bar prioritises Orders/Delivery (ISSUE-013).
   assert(
     navContent.includes('"OPERATIONS_MANAGER"') &&
-    mobileNavContent.includes('const BAR_KEYS = ["dashboard", "orders", "delivery", "residents"]'),
+    mobileNavContent.includes('const BAR_KEYS = ["dashboard", "orders", "delivery", "mydeliveries"]'),
     "Manager bottom nav prioritises Orders & Delivery"
   );
 

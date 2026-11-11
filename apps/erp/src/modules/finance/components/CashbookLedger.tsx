@@ -31,7 +31,6 @@ interface CashbookLedgerProps {
   /** Omitted for users without finance.manage: reversals are Owner-only. */
   onInitiateReversal?: (tx: FinancialTransaction) => void;
   onOpenPayment: () => void;
-  onOpenCharge: () => void;
   onOpenDeposit: () => void;
   onOpenExpense: () => void;
 }
@@ -50,7 +49,6 @@ export function CashbookLedger({
   onViewReceipt,
   onInitiateReversal,
   onOpenPayment,
-  onOpenCharge,
 }: CashbookLedgerProps) {
   const [searchQuery, setSearchQuery] = useState("");
   // The box updates at once; the (up to 500-row) list follows without blocking typing.
@@ -77,14 +75,14 @@ export function CashbookLedger({
         const isPg = Boolean(
           tx.residentId ||
           ["RENT_PAYMENT", "SECURITY_DEPOSIT", "DEPOSIT_REFUND", "RENT_CHARGE"].includes(tx.transactionType) ||
-          (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+          (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES", "LPG"].includes(tx.category))
         );
         if (!isPg) return false;
       } else if (divisionFilter === "TIFFIN") {
         const isTiffin = Boolean(
           tx.customerId ||
           ["TIFFIN_PAYMENT", "TIFFIN_CHARGE"].includes(tx.transactionType) ||
-          (tx.transactionType === "EXPENSE" && ["GROCERY", "KITCHEN_SUPPLIES"].includes(tx.category))
+          (tx.transactionType === "EXPENSE" && ["GROCERY", "KITCHEN_SUPPLIES", "LPG"].includes(tx.category))
         );
         if (!isTiffin) return false;
       }
@@ -591,13 +589,7 @@ export function CashbookLedger({
                   onClick={onOpenPayment}
                   className="px-4 py-2 rounded-xl bg-[#1A2E20] hover:bg-[#263B2D] text-white text-xs font-semibold shadow-xs"
                 >
-                  Record Payment
-                </button>
-                <button
-                  onClick={onOpenCharge}
-                  className="px-4 py-2 rounded-xl border border-[#B58A57]/40 bg-[#FAF8F5] hover:bg-[#FAF8F5]/80 text-[#654735] text-xs font-semibold shadow-2xs"
-                >
-                  Issue Rent Charge
+                  Receive
                 </button>
               </div>
             )}
