@@ -19,6 +19,7 @@ import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
+import { useInstantChoice } from "@/lib/useInstantChoice";
 
 type Tab = "board" | "problems" | "custody" | "history" | "rooms";
 const FILTERS: Array<DeliveryOutcome | "ALL"> = ["ALL", "WAITING", "OUT", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
@@ -63,6 +64,8 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   // Owner and Manager act directly; the server enforces every permission.
   const readOnly = !canManage;
   const [tab, setTab] = useState<Tab>(isOwner ? "history" : "board");
+  // The section switch lights up on the tap; the section itself follows as a background render.
+  const [shownTab, pickTab] = useInstantChoice<Tab>(tab, setTab);
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
   const [filter, setFilter] = useState<DeliveryOutcome | "ALL">("ALL");
@@ -327,7 +330,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
               ] as const).map((p) => {
                 const Icon = p.icon;
                 return (
-                  <button key={p.value} type="button" onClick={() => setTab(p.value as Tab)} aria-current={tab === p.value ? "page" : undefined} className="m-place m-press">
+                  <button key={p.value} type="button" onClick={() => pickTab(p.value as Tab)} aria-current={shownTab === p.value ? "page" : undefined} className="m-place m-press">
                     <Icon strokeWidth={1.9} />
                     <span>{p.label}</span>
                   </button>
@@ -421,6 +424,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
             filterCount={(filter !== "ALL" ? 1 : 0) + (person ? 1 : 0)}
           />
           <MSheet
+            warm
             open={filtersOpen}
             onClose={() => setFiltersOpen(false)}
             title="Filters"

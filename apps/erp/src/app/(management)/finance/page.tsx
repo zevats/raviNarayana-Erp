@@ -46,6 +46,7 @@ const EditEntryDialog = dynamic(() => loadEntryForms().then((m) => m.EditEntryDi
 const loadReceiptModal = () => import("@/modules/billing/ReceiptViewer");
 const ReceiptViewer = dynamic(() => loadReceiptModal().then((m) => m.ReceiptViewer), { ssr: false });
 import { hasReceipt } from "@/modules/billing/ReceiptViewer";
+import { financeBundleQuery } from "@/lib/pageQueries";
 // Dues and Bills are their own tabs: the code loads when a tab opens (preloaded when idle).
 const loadDues = () => import("@/modules/billing/DuesList");
 const duesLoading = () => (
@@ -93,44 +94,14 @@ export default function FinancePage() {
   const [endDate, setEndDate] = useState(toLocalDateString());
 
   // Cached data query with background revalidation and instant cache hit
-  const cacheKey = `/api/finance/bundle?startDate=${startDate}&endDate=${endDate}`;
+  const financeDef = financeBundleQuery(startDate, endDate);
   const {
     data: financeData,
     error: financeQueryError,
     isLoading: isFinanceLoading,
     isRevalidating: isFinanceRevalidating,
     refetch: refetchFinance,
-  } = useErpQuery<{
-    cashbook: CashbookSummary | null;
-    transactions: FinancialTransaction[];
-    residents: ResidentListItem[];
-  }>(
-    cacheKey,
-    async () => {
-      const [resSummary, resTx, resResidents] = await Promise.all([
-        fetch(`/api/finance/cashbook?startDate=${startDate}&endDate=${endDate}`, { cache: "no-store" }),
-        fetch(`/api/finance/transactions?startDate=${startDate}&endDate=${endDate}&limit=500`, { cache: "no-store" }),
-        fetch("/api/residents", { cache: "no-store" }),
-      ]);
-
-      const [dataSummary, dataTx, dataResidents] = await Promise.all([
-        resSummary.json(),
-        resTx.json(),
-        resResidents.json(),
-      ]);
-
-      if (!resSummary.ok) throw new Error(dataSummary.error || "Failed to load cashbook.");
-      if (!resTx.ok) throw new Error(dataTx.error || "Failed to load transactions.");
-
-      return {
-        cashbook: dataSummary.summary || null,
-        transactions: dataTx.transactions || [],
-        residents: dataResidents.residents || [],
-      };
-    },
-    // Balances can change through other staff (handovers, orders): reuse for 60s, never longer.
-    { ttl: 60000, tags: ["finance"] }
-  );
+  } = useErpQuery(financeDef.key, financeDef.fetcher, { ttl: financeDef.ttl, tags: financeDef.tags });
 
   const cashbook = financeData?.cashbook || null;
   const transactions = financeData?.transactions || [];

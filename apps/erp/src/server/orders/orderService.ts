@@ -276,7 +276,10 @@ async function insertOrderRows(
 
 /** Builds UnifiedOrder views from orders rows (joined with delivery task / ledger state). */
 async function loadOrders(db: AsyncDb, where: string, params: any[], limit?: number): Promise<UnifiedOrder[]> {
-  const rows = await db.query<any>(
+  // The orders and their items in one round trip: the items are picked by the same filter.
+  const limitSql = limit ? ` LIMIT ${Math.max(1, Math.floor(limit))}` : "";
+  const [rows, itemRows] = await Promise.all([
+    db.query<any>(
     `SELECT
        o.*,
        t.status AS task_status,
@@ -290,18 +293,18 @@ async function loadOrders(db: AsyncDb, where: string, params: any[], limit?: num
      LEFT JOIN staff_users u ON u.id = t.assigned_to
      LEFT JOIN financial_transactions ft ON ft.id = o.financial_transaction_id
      WHERE ${where}
-     ORDER BY o.created_at DESC${limit ? ` LIMIT ${Math.max(1, Math.floor(limit))}` : ""}`,
+     ORDER BY o.created_at DESC${limitSql}`,
     params
-  );
+    ),
+    db.query<any>(
+      `SELECT order_id, product_id, product_name, quantity, unit_price, line_total, delivered_quantity, undelivered_reason
+       FROM order_items
+       WHERE order_id IN (SELECT o.id FROM orders o WHERE ${where} ORDER BY o.created_at DESC${limitSql})
+       ORDER BY order_id, line_no`,
+      params
+    ),
+  ]);
   if (rows.length === 0) return [];
-
-  const itemRows = await db.query<any>(
-    `SELECT order_id, product_id, product_name, quantity, unit_price, line_total, delivered_quantity, undelivered_reason
-     FROM order_items
-     WHERE order_id IN (${rows.map(() => "?").join(", ")})
-     ORDER BY order_id, line_no`,
-    rows.map((r) => r.id)
-  );
   const itemsByOrder = new Map<string, OrderItem[]>();
   for (const it of itemRows) {
     const list = itemsByOrder.get(it.order_id) ?? [];
@@ -719,9 +722,12 @@ async function loadLegacyOrders(db: AsyncDb, serviceDate: string, orderTypeFilte
   // Subscription deliveries are not one-off orders (billed monthly, managed under Subscriptions);
   // they are excluded here, from a customer's order history and from the legacy backfill.
   const orders: UnifiedOrder[] = [];
-
-  if (orderTypeFilter === "ALL" || orderTypeFilter === "DELIVERY") {
-    const taskRows = await db.query<any>(`
+  const wantDelivery = orderTypeFilter === "ALL" || orderTypeFilter === "DELIVERY";
+  const wantDineIn = orderTypeFilter === "ALL" || orderTypeFilter === "DINE_IN";
+  // Both lookups at once (one round trip).
+  const [taskRows, txRows] = await Promise.all([
+    wantDelivery
+      ? db.query<any>(`
       SELECT t.*, u.full_name as assigned_to_name
       FROM delivery_tasks t
       LEFT JOIN staff_users u ON u.id = t.assigned_to
@@ -729,8 +735,21 @@ async function loadLegacyOrders(db: AsyncDb, serviceDate: string, orderTypeFilte
         AND t.service_date = ?
         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.delivery_task_id = t.id)
       ORDER BY t.created_at DESC
-    `, [serviceDate]);
+    `, [serviceDate])
+      : Promise.resolve([] as any[]),
+    wantDineIn
+      ? db.query<any>(`
+      SELECT ft.*
+      FROM financial_transactions ft
+      WHERE ft.category = 'TIFFIN_WALKIN_SALE'
+        AND ft.transaction_date = ?
+        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.financial_transaction_id = ft.id)
+      ORDER BY ft.created_at DESC
+    `, [serviceDate])
+      : Promise.resolve([] as any[]),
+  ]);
 
+  if (wantDelivery) {
     for (const r of taskRows) {
       const converted = legacyDeliveryToOrderParts(r);
       const collected = Number(r.collected_amount) || 0;
@@ -766,16 +785,7 @@ async function loadLegacyOrders(db: AsyncDb, serviceDate: string, orderTypeFilte
     }
   }
 
-  if (orderTypeFilter === "ALL" || orderTypeFilter === "DINE_IN") {
-    const txRows = await db.query<any>(`
-      SELECT ft.*
-      FROM financial_transactions ft
-      WHERE ft.category = 'TIFFIN_WALKIN_SALE'
-        AND ft.transaction_date = ?
-        AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.financial_transaction_id = ft.id)
-      ORDER BY ft.created_at DESC
-    `, [serviceDate]);
-
+  if (wantDineIn) {
     for (const r of txRows) {
       const converted = legacyDineInToOrderParts(r);
       orders.push({
@@ -834,8 +844,7 @@ export async function listUnifiedOrders(
 
   const typeClause = orderTypeFilter === "ALL" ? "" : " AND o.order_type = ?";
   const params: any[] = orderTypeFilter === "ALL" ? [serviceDate] : [serviceDate, orderTypeFilter];
-  const stored = await loadOrders(db, `o.service_date = ?${typeClause}`, params);
-  const legacy = await loadLegacyOrders(db, serviceDate, orderTypeFilter);
+  const [stored, legacy] = await Promise.all([loadOrders(db, `o.service_date = ?${typeClause}`, params), loadLegacyOrders(db, serviceDate, orderTypeFilter)]);
   const orders = [...stored, ...legacy].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
   // Search filter

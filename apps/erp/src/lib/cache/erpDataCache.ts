@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { beginBusy, beginSwitching } from "@/lib/busy";
 
 export interface CacheEntry<T = any> {
   data: T;
@@ -209,6 +210,11 @@ export interface UseErpQueryResult<T> {
   error: Error | null;
   isLoading: boolean;
   isRevalidating: boolean;
+  /**
+   * The rows on screen belong to the previous filter/date/page while the new ones load. Lists dim
+   * them (and the top bar runs) so a tap never looks ignored.
+   */
+  isSwitching: boolean;
   mutate: (newData?: T | ((current: T | undefined) => T), shouldRevalidate?: boolean) => Promise<void>;
   refetch: () => Promise<T | undefined>;
 }
@@ -242,6 +248,8 @@ export function useErpQuery<T = any>(
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!initialEntry && enabled && !!key);
   const [isRevalidating, setIsRevalidating] = useState<boolean>(false);
+  // Which key the data on screen belongs to (it lags behind `key` while a new key loads).
+  const [dataKey, setDataKey] = useState<string | null>(initialEntry ? key : null);
 
   const hasDataRef = useRef(false);
   hasDataRef.current = data !== undefined;
@@ -261,6 +269,8 @@ export function useErpQuery<T = any>(
       } else {
         setIsLoading(true);
       }
+      // Something the person asked for (not a background refresh): the top bar shows while it loads.
+      const endBusy = isBackground ? null : beginBusy();
 
       try {
         const result = await executeErpFetch<T>(key, () => fetcherRef.current(), { ttl, tags });
@@ -270,6 +280,7 @@ export function useErpQuery<T = any>(
         const current = cacheStore.get(key);
         if (current) {
           setData(current.data as T);
+          setDataKey(key);
           setError(null);
         }
         return result;
@@ -279,6 +290,7 @@ export function useErpQuery<T = any>(
         setError(errorObj);
         return undefined;
       } finally {
+        endBusy?.();
         // An overtaken request leaves the loading state to the request that replaced it.
         if (keyRef.current === key && !inflightPromises.has(key)) {
           setIsLoading(false);
@@ -305,6 +317,7 @@ export function useErpQuery<T = any>(
       const entry = cacheStore.get(key);
       if (entry) {
         setData(entry.data as T);
+        setDataKey(key);
         setIsLoading(false);
       } else {
         // Cache was invalidated: refresh. Rows already on screen stay there while the new data
@@ -324,6 +337,7 @@ export function useErpQuery<T = any>(
       performFetch(false);
     } else {
       setData(existing.data as T);
+      setDataKey(key);
       setIsLoading(false);
       const isStale = now - existing.timestamp >= ttl;
       if (isStale) {
@@ -362,6 +376,13 @@ export function useErpQuery<T = any>(
 
   const refetch = useCallback(() => performFetch(hasDataRef.current), [performFetch]);
 
+  // While the rows on screen belong to the previous key, the page dims its lists.
+  const switchingNow = data !== undefined && Boolean(key) && dataKey !== key && enabled;
+  useEffect(() => {
+    if (!switchingNow) return;
+    return beginSwitching();
+  }, [switchingNow]);
+
   // Visibility-aware background polling, skipped while the shared entry is still fresh.
   useEffect(() => {
     if (!key || !enabled || !pollIntervalMs) return;
@@ -387,6 +408,7 @@ export function useErpQuery<T = any>(
     error,
     isLoading,
     isRevalidating,
+    isSwitching: switchingNow,
     mutate,
     refetch,
   };

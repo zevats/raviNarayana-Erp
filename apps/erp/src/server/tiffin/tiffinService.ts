@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
 import { hasCustomerCodeSchema, hasAnyMealPlanSchema, hasCustomerContactSchema } from "../database/schemaFeatures";
-import { loadCustomerBalancesById } from "./customerBalance";
+import { loadCustomerBalancesById, loadCustomerBalancesFor } from "./customerBalance";
 import { ensurePlanCharges } from "./planCharges";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
@@ -174,7 +174,12 @@ export async function listTiffinCustomers(
     return { customers: rows.map(mapRowToCustomer), total: rows.length };
   }
 
-  // The count and the page are independent: one round trip for both.
+  // The count, the page and the page's balances are independent: one round trip for all three.
+  const balancesP = loadCustomerBalancesFor(db, {
+    sql: `SELECT c.id FROM tiffin_customers c ${whereClause} ORDER BY c.created_at DESC LIMIT ? OFFSET ?`,
+    params: [...params, limit, offset],
+  });
+  balancesP.catch(() => {});
   const [countRow, rows] = await Promise.all([
     db.queryOne<{ count: number | string }>(`
     SELECT COUNT(*) as count
@@ -197,7 +202,7 @@ export async function listTiffinCustomers(
   const total = Number(countRow?.count || 0);
 
   const customers = rows.map(mapRowToCustomer);
-  const balances = await loadCustomerBalancesById(db, customers.map((c) => c.id));
+  const balances = (await balancesP)(customers.map((c) => c.id));
   for (const c of customers) c.balance = balances.get(c.id) ?? null;
 
   return { customers, total };
@@ -1504,20 +1509,19 @@ export async function listTiffinSubscriptions(
 
   const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
-  const countRow = await db.queryOne<{ count: number | string }>(`
+  const limit = Math.min(Math.max(1, options.limit ?? 50), 200);
+  const offset = Math.max(0, options.offset ?? 0);
+
+  // The count and the page together (one round trip).
+  const [countRow, rows] = await Promise.all([
+    db.queryOne<{ count: number | string }>(`
     SELECT COUNT(*) as count
     FROM tiffin_subscriptions s
     JOIN tiffin_customers c ON s.customer_id = c.id
     JOIN tiffin_products p ON s.product_id = p.id
     ${whereClause}
-  `, params);
-
-  const total = Number(countRow?.count || 0);
-
-  const limit = Math.min(Math.max(1, options.limit ?? 50), 200);
-  const offset = Math.max(0, options.offset ?? 0);
-
-  const rows = await db.query<any>(`
+  `, params),
+    db.query<any>(`
     SELECT
       s.*,
       c.full_name as customer_name,
@@ -1540,7 +1544,9 @@ export async function listTiffinSubscriptions(
     ${whereClause}
     ORDER BY s.created_at DESC
     LIMIT ? OFFSET ?
-  `, [...params, limit, offset]);
+  `, [...params, limit, offset]),
+  ]);
+  const total = Number(countRow?.count || 0);
 
   const subscriptions = rows.map(mapRowToSubscription);
   return { subscriptions, total };

@@ -22,8 +22,12 @@ import { MobileTopBar, MobileBottomBar, MobileMoreSheet } from "./shell/MobileNa
 import { useStackedTables } from "./shell/useStackedTables";
 import { useInlineDialogs } from "./shell/useInlineDialogs";
 import { Toaster } from "@/components/ui/toast";
+import { BusyBar } from "@/components/feedback/BusyBar";
+import { useSwitching } from "@/lib/busy";
+import { DataPrefetch } from "@/components/layout/DataPrefetch";
+import { Prewarm } from "@/components/feedback/Prewarm";
 import { installActionFeedback } from "@/lib/actionFeedback";
-import { resetScrollLock } from "@/lib/scrollLock";
+import { resetScrollLock, installOverlayScrollLock } from "@/lib/scrollLock";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -81,6 +85,9 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
     };
   }, [user.role]);
 
+  // The page does not scroll behind any open pop-up (one cheap check per frame of changes).
+  useEffect(() => installOverlayScrollLock(), []);
+
   // A page change never leaves the page locked by a pop-up that the navigation closed.
   useEffect(() => {
     const t = window.setTimeout(resetScrollLock, 400);
@@ -105,7 +112,6 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
       if (timer) clearTimeout(timer);
     };
   }, [router]);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [liveState, setLiveState] = useState<"connecting" | "live" | "reconnecting">("connecting");
 
@@ -204,6 +210,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
   const currentHref = pathname + (tab ? `?tab=${tab}` : "");
   const arrivedAt = (href: string) => href === currentHref || (href.split("?")[0] === pathname && !href.includes("?"));
   const navPending = pendingHref !== null && !arrivedAt(pendingHref);
+  // New rows for a filter, date or tab on their way: the page's lists dim until they arrive.
+  const switching = useSwitching();
   const shownKey = navPending ? pendingKey ?? currentKey : currentKey;
   const accent = sectionAccent(navPending && pendingHref ? pendingHref.split("?")[0] : pathname);
   const title = pageTitle(links, currentKey, pathname, user.fullName);
@@ -230,7 +238,6 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
     });
 
   useEffect(() => {
-    setIsMobileMenuOpen(false);
     setPendingHref(null);
     setPendingKey(null);
     // A new page always opens at its top, never at the previous page's scroll position.
@@ -345,7 +352,6 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
     if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.button !== 0) {
       return;
     }
-    setIsMobileMenuOpen(false);
     const current = pathname + (tab ? `?tab=${tab}` : "");
     if (current === href || (pathname === href && !href.includes("?"))) {
       e.preventDefault();
@@ -418,6 +424,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
       <style>{"@view-transition { navigation: auto; }"}</style>
       <div className="rn-canvas" aria-hidden />
       <Toaster />
+      <BusyBar />
+      <DataPrefetch role={user.role} />
       {navPending && <div className="erp-nav-progress" role="progressbar" aria-label="Opening page" />}
 
       {isLoggingOut && <SignOutScreen />}
@@ -440,7 +448,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
         <div className="mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:pr-8 lg:pl-2">
           <TopBar user={user} title={shownKey === "dashboard" ? pageTitle(links, "dashboard", "/dashboard", user.fullName) : null} trail={trailFor(groups, shownKey, navPending && pendingHref ? pendingHref.split("?")[0] : pathname)} links={links} websiteUrl={websiteUrl} onLogout={handleLogout} isLoggingOut={isLoggingOut} />
           {/* While a section opens, its frame replaces the previous page at once (kept mounted, hidden). */}
-          <main ref={mainRef} className="rn-main min-w-0 pt-4 lg:pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12" data-nav-pending={navPending ? "" : undefined}>
+          <main ref={mainRef} className="rn-main min-w-0 pt-4 lg:pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12" data-nav-pending={navPending ? "" : undefined} data-switching={switching ? "" : undefined}>
             {/* Phones: every page opens with its name, large (the dashboard greets instead). */}
             {shownKey !== "dashboard" && (
               <h1 className="lg:hidden rn-m-title">{navPending && pendingHref ? pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName) : title}</h1>
@@ -452,18 +460,59 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
         </div>
       </div>
 
-      <MobileBottomBar links={links} active={shownKey} moreOpen={isMobileMenuOpen} onMore={() => setIsMobileMenuOpen(true)} onNavigate={handleNavClick} />
-      {isMobileMenuOpen && (
-        <MobileMoreSheet
-          user={user}
-          groups={groups}
-          active={shownKey}
-          onClose={() => setIsMobileMenuOpen(false)}
-          onNavigate={handleNavClick}
-          onLogout={handleLogout}
-          websiteUrl={websiteUrl}
-        />
-      )}
+      <MobileNavArea
+        links={links}
+        active={shownKey}
+        pathname={pathname}
+        user={user}
+        groups={groups}
+        onNavigate={handleNavClick}
+        onLogout={handleLogout}
+        websiteUrl={websiteUrl}
+      />
     </div>
   );
 }
+
+/**
+ * The phone's bottom bar and its More sheet. The sheet's open state lives here, so opening it
+ * redraws only the bar and the sheet (not the whole app around the page).
+ */
+function MobileNavArea({
+  links,
+  active,
+  pathname,
+  user,
+  groups,
+  onNavigate,
+  onLogout,
+  websiteUrl,
+}: {
+  links: React.ComponentProps<typeof MobileBottomBar>["links"];
+  active: React.ComponentProps<typeof MobileBottomBar>["active"];
+  pathname: string;
+  user: React.ComponentProps<typeof MobileMoreSheet>["user"];
+  groups: React.ComponentProps<typeof MobileMoreSheet>["groups"];
+  onNavigate: (e: React.MouseEvent<HTMLAnchorElement>, href: string, key?: string) => void;
+  onLogout: React.ComponentProps<typeof MobileMoreSheet>["onLogout"];
+  websiteUrl: React.ComponentProps<typeof MobileMoreSheet>["websiteUrl"];
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => setOpen(false), [pathname]);
+  // The bar and its sheet are drawn on phones only.
+  const [phone, setPhone] = useState(false);
+  useEffect(() => setPhone(!window.matchMedia("(min-width: 1024px)").matches), []);
+  const navigate = (e: React.MouseEvent<HTMLAnchorElement>, href: string, key?: string) => {
+    if (!(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.button !== 0)) setOpen(false);
+    onNavigate(e, href, key);
+  };
+  return (
+    <>
+      <MobileBottomBar links={links} active={active} moreOpen={open} onMore={() => setOpen(true)} onNavigate={navigate} />
+      {open && <MobileMoreSheet user={user} groups={groups} active={active} onClose={() => setOpen(false)} onNavigate={navigate} onLogout={onLogout} websiteUrl={websiteUrl} />}
+      <Prewarm when={phone && !open}>{() => <MobileMoreSheet user={user} groups={groups} active={active} onClose={noop} onNavigate={noop} onLogout={noop} websiteUrl={websiteUrl} />}</Prewarm>
+    </>
+  );
+}
+
+const noop = () => {};

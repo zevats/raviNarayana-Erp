@@ -1,4 +1,5 @@
 import { toast } from "@/components/ui/toast";
+import { beginBusy } from "@/lib/busy";
 
 /**
  * A message for every action. Screens that confirm or explain an action themselves keep doing so;
@@ -37,11 +38,33 @@ function watchable(input: RequestInfo | URL, init?: RequestInit): { method: stri
   }
 }
 
+/** Saves and other changes the person started (not background sync or live updates): the top bar runs. */
+const BACKGROUND = [/^\/api\/events/, /^\/api\/push\//, /^\/api\/health/, /^\/api\/delivery\/sync/, /^\/api\/account\/session/, /^\/api\/notifications\/(read|seen)/, /^\/api\/dev\//];
+function busyable(input: RequestInfo | URL, init?: RequestInit): boolean {
+  try {
+    const method = String(init?.method || (typeof input === "object" && "method" in input ? (input as Request).method : "GET")).toUpperCase();
+    if (method === "GET" || method === "HEAD") return false;
+    const raw = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+    const url = new URL(raw, window.location.origin);
+    return url.origin === window.location.origin && url.pathname.startsWith("/api/") && !BACKGROUND.some((r) => r.test(url.pathname));
+  } catch {
+    return false;
+  }
+}
+
 export function installActionFeedback(): () => void {
   if (typeof window === "undefined" || (window as any).__rnFeedback) return () => {};
   (window as any).__rnFeedback = true;
   const original = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const endBusy = busyable(input, init) ? beginBusy() : null;
+    try {
+      return await feedbackFetch(input, init);
+    } finally {
+      endBusy?.();
+    }
+  };
+  const feedbackFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const watched = watchable(input, init);
     if (!watched) return original(input, init);
     const startedAt = Date.now();

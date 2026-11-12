@@ -91,10 +91,10 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
       // Databases without the delivery update (migration 0014) have no resolution tracking and no
       // per-stop item lines: count every exception, and boxes from order lines only.
       const opsSchema = await hasDeliveryOpsSchema(db);
-      const row = await db.queryOne<any>(
+      const rowP = db.queryOne<any>(
         `SELECT
-           SUM(CASE WHEN status IN ('PENDING', 'ASSIGNED') THEN 1 ELSE 0 END) AS waiting,
-           SUM(CASE WHEN status = 'OUT_FOR_DELIVERY' THEN 1 ELSE 0 END) AS out_now,
+           SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS waiting,
+           SUM(CASE WHEN status IN ('ASSIGNED', 'OUT_FOR_DELIVERY') THEN 1 ELSE 0 END) AS out_now,
            SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) AS delivered,
            SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END) AS total,
            SUM(CASE WHEN status = 'EXCEPTION'${opsSchema ? " AND resolved_at IS NULL" : ""} THEN 1 ELSE 0 END) AS problems
@@ -102,7 +102,7 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
         [today]
       );
       // Boxes going out today: order lines plus subscription/resident stop lines (not cancelled).
-      const boxes = await db.query<any>(
+      const boxesP = db.query<any>(
         opsSchema
           ? `SELECT t.meal_type, COALESCE(SUM(COALESCE(oi.quantity, 0)), 0) + COALESCE(SUM(COALESCE(ti.quantity, 0)), 0) AS boxes
          FROM delivery_tasks t
@@ -119,6 +119,8 @@ export async function getDashboardOps(division: ClosingDivision = "COMBINED", as
          GROUP BY t.meal_type`,
         [today]
       );
+      // Both counts in one round trip.
+      const [row, boxes] = await Promise.all([rowP, boxesP]);
       const total = n(row?.total);
       const delivered = n(row?.delivered);
       const by = (m: string) => n(boxes.find((b) => b.meal_type === m)?.boxes);

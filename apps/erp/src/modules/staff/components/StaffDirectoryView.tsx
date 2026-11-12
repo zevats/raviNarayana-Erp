@@ -192,6 +192,7 @@ export function StaffDirectoryView({ currentUser }: { currentUser: Authenticated
             />
             <MSearch value={search} onChange={setSearch} placeholder="Search name, username or email" onFilter={() => setRolesOpen(true)} filterCount={selectedRole !== "ALL" ? 1 : 0} />
             <MSheet
+              warm
               open={rolesOpen}
               onClose={() => setRolesOpen(false)}
               title="Role"

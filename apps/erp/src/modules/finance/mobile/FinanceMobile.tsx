@@ -35,6 +35,7 @@ import { formatMoney, readableNote } from "@/lib/format";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { getLocalDaysAgo, getLocalFirstDayOfMonth, toLocalDateString } from "../utils/dateUtils";
+import { useInstantChoice } from "@/lib/useInstantChoice";
 import {
   MButton,
   MChips,
@@ -67,7 +68,8 @@ const PLACES: Array<{ value: FinanceTab; label: string; icon: React.ElementType 
 ];
 
 /** The finance places in one row. */
-export function FinancePlaces({ value, onChange }: { value: FinanceTab; onChange: (t: FinanceTab) => void }) {
+export function FinancePlaces({ value: given, onChange: commit }: { value: FinanceTab; onChange: (t: FinanceTab) => void }) {
+  const [value, onChange] = useInstantChoice(given, commit);
   return (
     <nav aria-label="Finance" className="m-places" style={{ gridTemplateColumns: `repeat(${PLACES.length}, minmax(0, 1fr))` }}>
       {PLACES.map((p) => {
@@ -397,6 +399,7 @@ export function CashbookMobile({
 
       {/* Filters */}
       <MSheet
+        warm
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Filters"

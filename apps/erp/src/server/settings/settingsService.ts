@@ -66,9 +66,12 @@ export function defaultSettings(): BusinessSettings {
   };
 }
 
-const CACHE_MS = 10_000;
+// Settings change only through updateSettingsSection, which clears this cache.
+const CACHE_MS = 60_000;
 let cached: { at: number; value: BusinessSettings } | null = null;
 let tableMissingUntil = 0;
+// Once the table is found it stays (migration 0016): no need to look for it on every read.
+let tableKnown = false;
 
 function isMissingTable(err: any): boolean {
   return /business_settings/.test(String(err?.message)) && /does not exist|no such table/i.test(String(err?.message));
@@ -83,12 +86,13 @@ export async function getSettings(asyncDb?: AsyncDb, fresh = false): Promise<Bus
   const db = asyncDb ?? getAsyncDb();
   let rows: Array<{ key: string; value: string }> = [];
   try {
-    if (db.isPostgres) {
+    if (db.isPostgres && !tableKnown) {
       const t = await db.queryOne<{ t: string | null }>("SELECT to_regclass('public.business_settings')::text AS t");
       if (!t?.t) {
         tableMissingUntil = now + 60_000;
         return merged;
       }
+      tableKnown = true;
     }
     rows = await db.query<{ key: string; value: string }>("SELECT key, value FROM business_settings");
   } catch (err) {
@@ -234,23 +238,25 @@ export async function updateSettingsSection(
 export async function getSettingsForAdmin(actor: AuthenticatedUser, asyncDb?: AsyncDb) {
   requirePermission(actor, "system.manage");
   const db = asyncDb ?? getAsyncDb();
-  const settings = await getSettings(db, true);
+  // The three reads are independent: one round trip.
+  const [settings, changedRows, drivers] = await Promise.all([
+    getSettings(db, true),
+    db
+      .query<{ key: string; updated_at: string; full_name: string | null }>("SELECT b.key, b.updated_at, s.full_name FROM business_settings b LEFT JOIN staff_users s ON s.id = b.updated_by")
+      .catch((err) => {
+        if (!isMissingTable(err)) throw err;
+        return [] as Array<{ key: string; updated_at: string; full_name: string | null }>;
+      }),
+    db.query<{ id: string; full_name: string; is_active: number | boolean }>("SELECT id, full_name, is_active FROM staff_users WHERE role = 'DELIVERY_PERSON' ORDER BY full_name ASC"),
+  ]);
   let lastChanged: Record<string, { at: string; by: string | null }> = {};
-  try {
-    const rows = await db.query<{ key: string; updated_at: string; full_name: string | null }>(
-      "SELECT b.key, b.updated_at, s.full_name FROM business_settings b LEFT JOIN staff_users s ON s.id = b.updated_by"
-    );
+  {
+    const rows = changedRows;
     for (const r of rows) {
       const section = r.key.split(".")[0];
       if (!lastChanged[section] || lastChanged[section].at < r.updated_at) lastChanged[section] = { at: r.updated_at, by: r.full_name };
     }
-  } catch (err) {
-    if (!isMissingTable(err)) throw err;
-    lastChanged = {};
   }
-  const drivers = await db.query<{ id: string; full_name: string; is_active: number | boolean }>(
-    "SELECT id, full_name, is_active FROM staff_users WHERE role = 'DELIVERY_PERSON' ORDER BY full_name ASC"
-  );
   return {
     settings,
     lastChanged,

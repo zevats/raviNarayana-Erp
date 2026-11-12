@@ -12,6 +12,8 @@ import React, { useEffect, useId, useRef, useState, useSyncExternalStore } from 
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { ChevronRight, MoreVertical, Search, SlidersHorizontal, X } from "lucide-react";
+import { useInstantChoice } from "@/lib/useInstantChoice";
+import { Prewarm } from "@/components/feedback/Prewarm";
 
 export type MTone = "green" | "red" | "amber" | "blue" | "orange" | "neutral" | "accent";
 
@@ -334,7 +336,8 @@ export function MButton({
 /* ------------------------------------------------------------------ choosing */
 
 /** Equal-width switch for two to four choices. */
-export function MSegment<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: React.ReactNode; count?: number }>; label: string }) {
+export function MSegment<T extends string>({ value: given, onChange: commit, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: React.ReactNode; count?: number }>; label: string }) {
+  const [value, onChange] = useInstantChoice(given, commit);
   return (
     <div role="radiogroup" aria-label={label} className="m-seg" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
       {options.map((o) => (
@@ -348,7 +351,8 @@ export function MSegment<T extends string>({ value, onChange, options, label }: 
 }
 
 /** Chips that wrap onto the next line (never a sideways strip). */
-export function MChips<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: React.ReactNode; count?: number }>; label: string }) {
+export function MChips<T extends string>({ value: given, onChange: commit, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: React.ReactNode; count?: number }>; label: string }) {
+  const [value, onChange] = useInstantChoice(given, commit);
   return (
     <div role="radiogroup" aria-label={label} className="m-chips">
       {options.map((o) => (
@@ -447,7 +451,11 @@ export function MNotice({ tone = "green", children, onClose }: { tone?: "green" 
  * Bottom sheet: details, filters and short forms. Tap outside, the close button or Back (Escape)
  * closes it. The page underneath does not scroll while it is open.
  */
-export function MSheet({ open, onClose, title, children, footer, tall, headerAction, rootClassName = "" }: { open: boolean; onClose: () => void; title?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tall?: boolean; headerAction?: React.ReactNode; rootClassName?: string }) {
+/**
+ * `warm`: the sheet is drawn once, hidden, while the phone is idle, so its first opening is as quick
+ * as later ones. Only for sheets whose content does nothing when drawn (filter choices, no loading).
+ */
+export function MSheet({ open, onClose, title, children, footer, tall, headerAction, rootClassName = "", warm = false }: { open: boolean; onClose: () => void; title?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode; tall?: boolean; headerAction?: React.ReactNode; rootClassName?: string; warm?: boolean }) {
   const [mounted, setMounted] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const labelId = useId();
@@ -476,15 +484,15 @@ export function MSheet({ open, onClose, title, children, footer, tall, headerAct
       clearTimeout(focusT);
     };
   }, [open, onClose]);
-  if (!mounted || !shown) return null;
-  return createPortal(
-    <div className={`m-sheet-root ${rootClassName} ${leaving && !open ? "is-leaving" : ""}`} role="dialog" aria-modal="true" aria-labelledby={title ? labelId : undefined}>
+  if (!mounted || (!shown && !warm)) return null;
+  const sheet = (real: boolean) => (
+    <div className={`m-sheet-root ${rootClassName} ${leaving && !open ? "is-leaving" : ""}`} role="dialog" aria-modal="true" aria-labelledby={title && real ? labelId : undefined}>
       <button type="button" aria-label="Close" className="m-sheet-scrim" onClick={onClose} />
-      <div ref={panel} tabIndex={-1} className={`m-sheet ${tall ? "m-sheet-tall" : ""}`}>
+      <div ref={real ? panel : undefined} tabIndex={-1} className={`m-sheet ${tall ? "m-sheet-tall" : ""}`}>
         <span className="m-sheet-grip" aria-hidden />
         {title && (
           <div className="m-sheet-head">
-            <h2 id={labelId} className="m-sheet-title">
+            <h2 id={real ? labelId : undefined} className="m-sheet-title">
               {title}
             </h2>
             <span className="flex items-center gap-2 shrink-0">
@@ -498,7 +506,13 @@ export function MSheet({ open, onClose, title, children, footer, tall, headerAct
         <div className="m-sheet-body">{children}</div>
         {footer && <div className="m-sheet-foot">{footer}</div>}
       </div>
-    </div>,
+    </div>
+  );
+  return createPortal(
+    <>
+      {shown && sheet(true)}
+      {warm && <Prewarm when={!shown}>{() => sheet(false)}</Prewarm>}
+    </>,
     // Inside the app shell (its colours and type), outside the page content.
     document.querySelector(".rn-app") ?? document.body
   );

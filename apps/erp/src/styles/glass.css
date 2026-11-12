@@ -744,7 +744,8 @@ html[data-rn-arrive] .rn-app { animation: rn-arrive-fade 360ms ease-out both; }
 }
 
 /* The sign-in page never scrolls: no reserved scrollbar strip. */
-html:has(.rn-login-shell) { scrollbar-gutter: auto; }
+/* html[data-rn-login] is set by the sign-in screen (no :has() on the whole page: it restyled every page on any change). */
+html[data-rn-login] { scrollbar-gutter: auto; }
 /* Sign-in: the app's type, light weights, and truly centred marks (the dot and the letter-spacing
    no longer push the words off centre). */
 .rn-login, .rn-login-enter { font-family: var(--font-rn-display), var(--font-sans); }
@@ -756,7 +757,7 @@ html:has(.rn-login-shell) { scrollbar-gutter: auto; }
   .rn-login .rn-login-card > h1, .rn-login .rn-login-card > h1 + p { text-align: center; }
   .rn-login .rn-login-card button[type="submit"] { font-weight: 600; }
 }
-@media (min-width: 1024px) { html:has(.rn-login-shell), html:has(.rn-login-shell) body { overflow: hidden; } }
+@media (min-width: 1024px) { html[data-rn-login], html[data-rn-login] body { overflow: hidden; } }
 
 /* Signing out (Owner and Manager): a soft blur over the app, the logo, one line of text and a thin
    moving line; it fades in and stays until the sign-in page replaces it. */

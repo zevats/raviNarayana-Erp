@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { StateMessage } from "./states";
+import { useInstantChoice } from "@/lib/useInstantChoice";
 
 /**
  * Shared building blocks of the manager ERP, taken from the dashboard (the approved reference):
@@ -84,7 +85,7 @@ export function StatStrip({ items, className }: { items: StatItem[]; className?:
 }
 
 /** The dashboard's pill switch, for tabs and filters. */
-export function Segmented<T extends string>({ value, onChange, options, label, className, size = "md" }: {
+export function Segmented<T extends string>({ value: given, onChange: commit, options, label, className, size = "md" }: {
   value: T;
   onChange: (v: T) => void;
   options: Array<{ value: T; label: React.ReactNode; count?: number }>;
@@ -92,6 +93,7 @@ export function Segmented<T extends string>({ value, onChange, options, label, c
   className?: string;
   size?: "sm" | "md";
 }) {
+  const [value, onChange] = useInstantChoice(given, commit);
   return (
     <div role="group" aria-label={label} className={cx("rn-seg", size === "sm" && "rn-seg-sm", className)}>
       {options.map((o) => (

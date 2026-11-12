@@ -22,6 +22,12 @@ function sanitizeNextUrl(rawUrl: string | null): string {
 
 export function LoginForm() {
 
+  // The sign-in page fills the window without page scrolling (html[data-rn-login] in glass.css).
+  useLayoutEffect(() => {
+    document.documentElement.setAttribute("data-rn-login", "");
+    return () => document.documentElement.removeAttribute("data-rn-login");
+  }, []);
+
   const searchParams = useSearchParams();
   const nextUrl = sanitizeNextUrl(searchParams.get("next"));
   const resetTokenParam = searchParams.get("token");

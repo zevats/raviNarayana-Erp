@@ -218,9 +218,10 @@ body::-webkit-scrollbar {
 
 /* While any sheet, drawer or menu sheet is open, the page behind it does not scroll: on phones a
    scrolling page collapses the browser bar and lifts bottom sheets off the screen edge. */
-html:has(.rn-sheet), html:has(.rn-sheet) body,
-html:has([aria-modal="true"]), html:has([aria-modal="true"]) body,
-html:has(.fixed.inset-0.z-50), html:has(.fixed.inset-0.z-50) body { overflow: hidden; overscroll-behavior: none; }
+/* The attribute is set by a small watcher (installOverlayScrollLock) instead of html:has(...): a
+   :has() on the whole page made every pop-up open and close recalculate the style of the entire
+   page (about 0.7 s on a mid-range phone). */
+html[data-rn-overlay], html[data-rn-overlay] body { overflow: hidden; overscroll-behavior: none; }
 .rn-sheet { overscroll-behavior: contain; }
 .rn-scrim { touch-action: none; }
 

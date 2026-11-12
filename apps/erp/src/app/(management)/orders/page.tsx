@@ -39,6 +39,7 @@ import { OrderCard } from "@/modules/orders/components/OrderCard";
 import { OrdersMobile } from "@/modules/orders/components/OrdersMobile";
 import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import type { PendingOrderJob } from "@/modules/orders/components/NewOrderModal";
+import { ordersQuery as pageOrdersQuery } from "@/lib/pageQueries";
 
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModal");
@@ -146,18 +147,9 @@ export default function OrdersPage() {
   // Orders are cached per date and type and reused across visits; refreshed every 20s while the
   // tab is visible (orders also change through delivery completion), on focus, and after mutations.
   // Search and status filter the loaded day in the browser: no request per keystroke.
-  const ordersKey = `/api/orders?${new URLSearchParams({ serviceDate, orderType: orderTypeFilter }).toString()}`;
+  const ordersDef = pageOrdersQuery(serviceDate, orderTypeFilter);
   const deferredSearch = useDeferredValue(searchQuery);
-  const ordersQuery = useErpQuery<{ orders: UnifiedOrder[]; counts: { today: number; active: number; completed: number } }>(
-    ordersKey,
-    async () => {
-      const res = await fetch(ordersKey);
-      if (!res.ok) throw new Error("Failed to load orders");
-      const data = await res.json();
-      return { orders: data.orders || [], counts: data.counts || { today: 0, active: 0, completed: 0 } };
-    },
-    { ttl: ORDERS_POLL_MS, tags: ["orders"], pollIntervalMs: ORDERS_POLL_MS }
-  );
+  const ordersQuery = useErpQuery(ordersDef.key, ordersDef.fetcher, { ttl: ordersDef.ttl, tags: ordersDef.tags, pollIntervalMs: ORDERS_POLL_MS });
   const orders = ordersQuery.data?.orders ?? [];
   const counts = ordersQuery.data?.counts ?? { today: 0, active: 0, completed: 0 };
   // First load shows the placeholder; background refreshes only spin the refresh icon.

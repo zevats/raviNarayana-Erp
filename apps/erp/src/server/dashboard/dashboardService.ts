@@ -328,52 +328,10 @@ export async function getDashboardMetrics(
     mealFulfillment: MealFulfillmentMetrics;
     deliverySummary: DeliverySummaryMetrics;
   }> => {
-    let targetKitchenDate = todayIsoDate;
-    let mealPlans = await db.query<{
-      meal_type: string;
-      status: string;
-      final_preparation_count: number | string;
-      planned_resident_count: number | string;
-      planned_tiffin_count: number | string;
-      cooked_count: number | string;
-    }>(`
-      SELECT
-        meal_type,
-        status,
-        final_preparation_count,
-        COALESCE(planned_resident_count, 0) as planned_resident_count,
-        COALESCE(planned_tiffin_count, 0) as planned_tiffin_count,
-        COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
-      FROM daily_meal_plans
-      WHERE service_date = ?
-    `, [targetKitchenDate]);
-
-    if (mealPlans.length === 0) {
-      const latestKitchenDate = await db.queryOne<{ service_date: string }>(`
-        SELECT service_date FROM daily_meal_plans ORDER BY service_date DESC LIMIT 1
-      `);
-      if (latestKitchenDate) {
-        targetKitchenDate = latestKitchenDate.service_date;
-        mealPlans = await db.query<{
-          meal_type: string;
-          status: string;
-          final_preparation_count: number | string;
-          planned_resident_count: number | string;
-          planned_tiffin_count: number | string;
-          cooked_count: number | string;
-        }>(`
-          SELECT
-            meal_type,
-            status,
-            final_preparation_count,
-            COALESCE(planned_resident_count, 0) as planned_resident_count,
-            COALESCE(planned_tiffin_count, 0) as planned_tiffin_count,
-            COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
-          FROM daily_meal_plans
-          WHERE service_date = ?
-        `, [targetKitchenDate]);
-      }
-    }
+    // The kitchen day shown: today when it has a plan, else the latest planned day, else today.
+    // Every read below picks that day itself, so all of them go out together in one round trip.
+    const kitchenDateSql = `COALESCE((SELECT service_date FROM daily_meal_plans WHERE service_date = ? LIMIT 1), (SELECT MAX(service_date) FROM daily_meal_plans), ?)`;
+    const kitchenDateParams = [todayIsoDate, todayIsoDate];
 
     let delOrderFilter = "";
     if (division === "PG") {
@@ -382,7 +340,26 @@ export async function getDashboardMetrics(
       delOrderFilter = "AND order_type = 'EXTERNAL'";
     }
 
-    const [deliveryMealStats, delStatsRow] = await Promise.all([
+    const [kitchenDateRow, mealPlans, deliveryMealStats, delStatsRow] = await Promise.all([
+      db.queryOne<{ d: string }>(`SELECT ${kitchenDateSql} AS d`, kitchenDateParams),
+      db.query<{
+        meal_type: string;
+        status: string;
+        final_preparation_count: number | string;
+        planned_resident_count: number | string;
+        planned_tiffin_count: number | string;
+        cooked_count: number | string;
+      }>(`
+        SELECT
+          meal_type,
+          status,
+          final_preparation_count,
+          COALESCE(planned_resident_count, 0) as planned_resident_count,
+          COALESCE(planned_tiffin_count, 0) as planned_tiffin_count,
+          COALESCE(actual_cooked_count, final_preparation_count) as cooked_count
+        FROM daily_meal_plans
+        WHERE service_date = ${kitchenDateSql}
+      `, kitchenDateParams),
       db.query<{
         meal_type: string;
         total_tasks: number | string;
@@ -395,18 +372,19 @@ export async function getDashboardMetrics(
           COALESCE(SUM(CASE WHEN dispatched_at IS NOT NULL OR status IN ('OUT_FOR_DELIVERY', 'DELIVERED', 'EXCEPTION') THEN 1 ELSE 0 END), 0) as dispatched_count,
           COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered_count
         FROM delivery_tasks
-        WHERE service_date = ? ${delOrderFilter}
+        WHERE service_date = ${kitchenDateSql} ${delOrderFilter}
         GROUP BY meal_type
-      `, [targetKitchenDate]),
+      `, kitchenDateParams),
       db.queryOne<{ total_tasks: number | string; delivered: number | string; exceptions: number | string }>(`
         SELECT
           COUNT(*) as total_tasks,
           COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered,
           COALESCE(SUM(CASE WHEN status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exceptions
         FROM delivery_tasks
-        WHERE service_date = ? ${delOrderFilter}
-      `, [targetKitchenDate]),
+        WHERE service_date = ${kitchenDateSql} ${delOrderFilter}
+      `, kitchenDateParams),
     ]);
+    const targetKitchenDate = kitchenDateRow?.d || todayIsoDate;
 
     const deliveryMealMap: Record<string, { dispatched: number; delivered: number; total: number }> = {};
     for (const d of deliveryMealStats) {

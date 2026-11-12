@@ -106,8 +106,10 @@ export async function getManifestStatus(
   await refreshMealSchedule(db);
   const now = clock?.now ?? new Date();
   const schemaReady = await hasDeliveryOpsSchema(db);
-  const plan = schemaReady
-    ? await db.queryOne<any>(
+  // The plan and the counts together (one round trip).
+  const [plan, counts] = await Promise.all([
+    schemaReady
+    ? db.queryOne<any>(
         `SELECT p.id, p.status, p.manifest_prepared_at, p.manifest_trigger, p.manifest_last_run_at,
                 pb.full_name AS prepared_by_name, lb.full_name AS last_run_by_name
          FROM daily_meal_plans p
@@ -116,13 +118,14 @@ export async function getManifestStatus(
          WHERE p.service_date = ? AND p.meal_type = ?`,
         [serviceDate, mealType]
       )
-    : null;
-  const counts = await db.queryOne<any>(
+    : Promise.resolve(null),
+    db.queryOne<any>(
     `SELECT COALESCE(SUM(CASE WHEN status <> 'CANCELLED' THEN 1 ELSE 0 END), 0) AS task_count,
             COALESCE(SUM(CASE WHEN assigned_to IS NULL AND status IN ('PENDING', 'ASSIGNED', 'OUT_FOR_DELIVERY') THEN 1 ELSE 0 END), 0) AS unassigned
      FROM delivery_tasks WHERE service_date = ? AND meal_type = ?${actor.role === "DELIVERY_PERSON" ? " AND assigned_to = ?" : ""}`,
     actor.role === "DELIVERY_PERSON" ? [serviceDate, mealType, actor.id] : [serviceDate, mealType]
-  );
+    ),
+  ]);
   const prepared = Boolean(plan?.manifest_prepared_at);
   return {
     schemaReady,
@@ -660,7 +663,9 @@ export async function listSubscriptionDay(
   const db = asyncDb || getAsyncDb();
   await refreshMealSchedule(db);
   const schemaReady = await hasDeliveryOpsSchema(db);
-  const subs = await db.query<any>(
+  // Plans, the day's overrides and the day's stops together (one round trip).
+  const [subs, overrideRows, taskRows] = await Promise.all([
+    db.query<any>(
     `SELECT s.id, s.status, s.meal_types, s.service_days, s.quantity_per_meal, s.start_date, s.end_date,
             s.pause_start_date, s.pause_resume_date, s.customer_id, c.full_name, c.phone, c.delivery_address AS customer_address, c.status AS customer_status,
             p.name AS product_name, p.status AS product_status
@@ -669,20 +674,19 @@ export async function listSubscriptionDay(
      JOIN tiffin_products p ON p.id = s.product_id
      WHERE s.status IN ('ACTIVE', 'PAUSED')
      ORDER BY c.full_name ASC`
-  );
-  const overrides = new Map<string, any>();
-  if (schemaReady) {
-    for (const o of await db.query<any>("SELECT * FROM subscription_day_overrides WHERE service_date = ? AND meal_type = ?", [serviceDate, mealType])) {
-      overrides.set(o.subscription_id, o);
-    }
-  }
-  const tasks = new Map<string, any>();
-  for (const t of await db.query<any>(
+    ),
+    schemaReady ? db.query<any>("SELECT * FROM subscription_day_overrides WHERE service_date = ? AND meal_type = ?", [serviceDate, mealType]) : Promise.resolve([] as any[]),
+    db.query<any>(
     `SELECT t.id, t.subscription_id, t.status, t.assigned_to_name${schemaReady ? ", (SELECT SUM(quantity) FROM delivery_task_items i WHERE i.task_id = t.id) AS quantity" : ", NULL AS quantity"}
      FROM delivery_tasks t WHERE t.subscription_id IS NOT NULL AND t.service_date = ? AND t.meal_type = ?
      ORDER BY CASE WHEN t.status = 'CANCELLED' THEN 1 ELSE 0 END, t.created_at DESC`,
     [serviceDate, mealType]
-  )) {
+    ),
+  ]);
+  const overrides = new Map<string, any>();
+  for (const o of overrideRows) overrides.set(o.subscription_id, o);
+  const tasks = new Map<string, any>();
+  for (const t of taskRows) {
     if (!tasks.has(t.subscription_id)) tasks.set(t.subscription_id, t);
   }
   const rows: SubscriptionDayRow[] = subs.map((s) => {
@@ -974,7 +978,42 @@ export async function getDeliveryCloseout(
   const mealType = mealTypeIn === "ALL" ? "ALL" : checkDateMeal(serviceDate, mealTypeIn).mealType;
   const db = asyncDb || getAsyncDb();
   await refreshMealSchedule(db);
-  const tasks = await listDeliveryTasks(actor, { serviceDate, mealType: mealType === "ALL" ? undefined : mealType, limit: 500 }, db);
+  // The stops and both money summaries load side by side (one round trip less each).
+  const mealCond = mealType === "ALL" ? "" : " AND t.meal_type = ?";
+  const params = mealType === "ALL" ? [serviceDate] : [serviceDate, mealType];
+  // A collection whose cashbook entry was reversed is no longer money received (cash is unaffected).
+  const activeCond = (await hasDeliveryOpsSchema(db)) ? ` AND ${activeCollectionSql("dc")}` : "";
+  const collectionsP = db.query<any>(
+    `SELECT dc.collected_by AS staff_id, u.full_name AS staff_name,
+            SUM(CASE WHEN dc.payment_method = 'CASH' THEN dc.amount ELSE 0 END) AS cash,
+            SUM(CASE WHEN dc.payment_method <> 'CASH' THEN dc.amount ELSE 0 END) AS upi,
+            SUM(CASE WHEN dc.handover_id IS NULL THEN dc.amount ELSE 0 END) AS undeclared,
+            SUM(CASE WHEN h.status = 'DECLARED' THEN dc.amount ELSE 0 END) AS awaiting,
+            SUM(CASE WHEN h.status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN dc.amount ELSE 0 END) AS handed_over
+     FROM delivery_collections dc
+     JOIN delivery_tasks t ON t.id = dc.delivery_task_id
+     JOIN staff_users u ON u.id = dc.collected_by
+     LEFT JOIN driver_cash_handovers h ON h.id = dc.handover_id
+     WHERE t.service_date = ?${mealCond}${activeCond}
+     GROUP BY dc.collected_by, u.full_name
+     ORDER BY u.full_name`,
+    params
+  );
+  const handoversP = db.query<any>(
+    `SELECT h.id, u.full_name AS staff_name, h.declared_cash, h.declared_upi, h.accepted_cash, h.accepted_upi, h.status,
+            h.variance_reason, a.full_name AS accepted_by_name, h.accepted_at
+     FROM driver_cash_handovers h
+     JOIN staff_users u ON u.id = h.driver_id
+     LEFT JOIN staff_users a ON a.id = h.accepted_by
+     WHERE h.accepted_at IS NOT NULL
+     ORDER BY h.accepted_at DESC
+     LIMIT 200`
+  );
+  const [tasks, collections, handovers] = await Promise.all([
+    listDeliveryTasks(actor, { serviceDate, mealType: mealType === "ALL" ? undefined : mealType, limit: 500 }, db),
+    collectionsP,
+    handoversP,
+  ]);
   const summary = summarizeDeliveries(tasks);
 
   const items = new Map<string, DeliveryCloseout["items"][number]>();
@@ -1014,36 +1053,6 @@ export async function getDeliveryCloseout(
     }
   }
 
-  const mealCond = mealType === "ALL" ? "" : " AND t.meal_type = ?";
-  const params = mealType === "ALL" ? [serviceDate] : [serviceDate, mealType];
-  // A collection whose cashbook entry was reversed is no longer money received (cash is unaffected).
-  const activeCond = (await hasDeliveryOpsSchema(db)) ? ` AND ${activeCollectionSql("dc")}` : "";
-  const collections = await db.query<any>(
-    `SELECT dc.collected_by AS staff_id, u.full_name AS staff_name,
-            SUM(CASE WHEN dc.payment_method = 'CASH' THEN dc.amount ELSE 0 END) AS cash,
-            SUM(CASE WHEN dc.payment_method <> 'CASH' THEN dc.amount ELSE 0 END) AS upi,
-            SUM(CASE WHEN dc.handover_id IS NULL THEN dc.amount ELSE 0 END) AS undeclared,
-            SUM(CASE WHEN h.status = 'DECLARED' THEN dc.amount ELSE 0 END) AS awaiting,
-            SUM(CASE WHEN h.status IN ('ACCEPTED', 'DISCREPANCY_FLAGGED') THEN dc.amount ELSE 0 END) AS handed_over
-     FROM delivery_collections dc
-     JOIN delivery_tasks t ON t.id = dc.delivery_task_id
-     JOIN staff_users u ON u.id = dc.collected_by
-     LEFT JOIN driver_cash_handovers h ON h.id = dc.handover_id
-     WHERE t.service_date = ?${mealCond}${activeCond}
-     GROUP BY dc.collected_by, u.full_name
-     ORDER BY u.full_name`,
-    params
-  );
-  const handovers = await db.query<any>(
-    `SELECT h.id, u.full_name AS staff_name, h.declared_cash, h.declared_upi, h.accepted_cash, h.accepted_upi, h.status,
-            h.variance_reason, a.full_name AS accepted_by_name, h.accepted_at
-     FROM driver_cash_handovers h
-     JOIN staff_users u ON u.id = h.driver_id
-     LEFT JOIN staff_users a ON a.id = h.accepted_by
-     WHERE h.accepted_at IS NOT NULL
-     ORDER BY h.accepted_at DESC
-     LIMIT 200`
-  );
   const n = (v: any) => Number(v || 0);
   return {
     serviceDate,
@@ -1081,6 +1090,9 @@ export async function getDeliveryCloseout(
 }
 
 /** One row per date and meal over a date range (at most 62 days), newest first. */
+/** The order tables exist (migration 0012); looked up once per server process. */
+let orderTablesSeen = false;
+
 export async function getDeliveryHistory(
   actor: AuthenticatedUser,
   fromDate: string,
@@ -1093,9 +1105,13 @@ export async function getDeliveryHistory(
   if (span > 62) throw new Error("Choose at most two months.");
   const db = asyncDb || getAsyncDb();
   const schemaReady = await hasDeliveryOpsSchema(db);
-  const orderTables = await db.queryOne<{ t: string | null }>(
-    db.isPostgres ? "SELECT to_regclass('public.order_items')::text AS t" : "SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name = 'order_items'"
-  );
+  if (!orderTablesSeen) {
+    const found = await db.queryOne<{ t: string | null }>(
+      db.isPostgres ? "SELECT to_regclass('public.order_items')::text AS t" : "SELECT name AS t FROM sqlite_master WHERE type = 'table' AND name = 'order_items'"
+    );
+    orderTablesSeen = Boolean(found?.t);
+  }
+  const orderTables = { t: orderTablesSeen ? "order_items" : null };
   const shortExpr = [
     orderTables?.t ? "(SELECT COUNT(*) FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE o.delivery_task_id = t.id AND oi.delivered_quantity < oi.quantity)" : "0",
     schemaReady ? "(SELECT COUNT(*) FROM delivery_task_items i WHERE i.task_id = t.id AND i.delivered_quantity < i.quantity)" : "0",

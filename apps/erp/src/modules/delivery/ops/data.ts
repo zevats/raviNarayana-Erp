@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { requestJson, postJsonRequest } from "@/lib/http/requestJson";
+import { deliveryTasksQuery, manifestQuery } from "@/lib/pageQueries";
 import type {
   DeliveryTask,
   DeliveryTaskEvent,
@@ -34,15 +35,8 @@ export async function postJson<T = any>(url: string, body: unknown): Promise<T> 
  * delivery staff only ever get their own from the server).
  */
 export function useDeliveryTasks(serviceDate: string, mealType: MealType, enabled = true, assignedTo?: string) {
-  const key = enabled ? `/api/delivery/tasks?serviceDate=${serviceDate}&mealType=${mealType}&limit=500${assignedTo ? `&assignedTo=${encodeURIComponent(assignedTo)}` : ""}` : null;
-  return useErpQuery<DeliveryTask[]>(
-    key,
-    async () => {
-      const data = await getJson<{ tasks: DeliveryTask[] }>(key as string);
-      return Array.isArray(data.tasks) ? data.tasks : [];
-    },
-    { ttl: LIVE_MS, tags: ["delivery"], pollIntervalMs: LIVE_MS }
-  );
+  const def = deliveryTasksQuery(serviceDate, mealType, assignedTo);
+  return useErpQuery<DeliveryTask[]>(enabled ? def.key : null, def.fetcher, { ttl: LIVE_MS, tags: def.tags, pollIntervalMs: LIVE_MS });
 }
 
 /**
@@ -51,8 +45,8 @@ export function useDeliveryTasks(serviceDate: string, mealType: MealType, enable
  * screen prepares it. Asked once per date and meal per screen; the server decides and is idempotent.
  */
 export function useManifest(serviceDate: string, mealType: MealType, enabled = true) {
-  const key = enabled ? `/api/delivery/manifest?serviceDate=${serviceDate}&mealType=${mealType}` : null;
-  const q = useErpQuery<DeliveryManifestStatus>(key, () => getJson<DeliveryManifestStatus>(key as string), {
+  const mdef = manifestQuery(serviceDate, mealType);
+  const q = useErpQuery<DeliveryManifestStatus>(enabled ? mdef.key : null, mdef.fetcher, {
     ttl: LIVE_MS,
     tags: ["delivery"],
     pollIntervalMs: LIVE_MS,

@@ -118,6 +118,7 @@ export function RoomsMobile<R extends MobileRoom>({
       />
       <MSearch value={search} onChange={setSearch} placeholder="Search room or resident" onFilter={floors.length > 1 ? () => setFloorsOpen(true) : undefined} filterCount={floor !== "ALL" ? 1 : 0} />
       <MSheet
+        warm
         open={floorsOpen}
         onClose={() => setFloorsOpen(false)}
         title="Floor"

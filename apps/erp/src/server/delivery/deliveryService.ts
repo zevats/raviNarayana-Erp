@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission, AuthorizationError } from "../authorization/authorize";
 import { hasPermission } from "../authorization/permissions";
-import { loadOrderLedgers, applyOldestFirst } from "./orderLedger";
+import { loadOrderLedgers, applyOldestFirst, type CustomerOrderLedger } from "./orderLedger";
 import { recordAuditEventAsync } from "../audit/audit";
 import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateString } from "../finance/financeService";
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
@@ -423,7 +423,9 @@ type CustomerHint = {
 async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Map<string, CustomerHint>> {
   const hints = new Map<string, CustomerHint>();
   const subIds = Array.from(new Set(tasks.map((t) => t.subscriptionId).filter(Boolean))) as string[];
-  const orderIds = Array.from(new Set(tasks.map((t) => t.orderId).filter(Boolean))) as string[];
+  // Orders are found by their delivery stop, so this runs alongside the order lines (it does not
+  // wait for them to learn the order ids).
+  const taskIds = tasks.filter((t) => t.orderType === "EXTERNAL").map((t) => t.id);
   // The subscription lookup runs alongside the order lookup below.
   const subRowsP = subIds.length > 0
     ? db.query<any>(
@@ -433,15 +435,15 @@ async function loadCustomerHints(db: AsyncDb, tasks: DeliveryTask[]): Promise<Ma
         subIds
       )
     : Promise.resolve([] as any[]);
-  if (orderIds.length > 0) {
+  if (taskIds.length > 0) {
     // With migration 0021: whether the customer may pay later (only this yes/no reaches the
     // delivery app, never a balance), and what was chosen at the door.
     const pay = await hasPayLaterSchema(db);
     const rows = await db.query<any>(
       `SELECT o.id, o.customer_id, c.landmark, c.delivery_instructions AS instructions${pay ? ", c.pay_later_enabled, o.payment_choice, o.payment_review, o.payment_reviewed_at" : ""}
        FROM orders o LEFT JOIN tiffin_customers c ON c.id = o.customer_id
-       WHERE o.id IN (${orderIds.map(() => "?").join(", ")})`,
-      orderIds
+       WHERE o.delivery_task_id IN (${taskIds.map(() => "?").join(", ")})`,
+      taskIds
     );
     for (const r of rows) {
       hints.set(`ord:${r.id}`, {
@@ -470,22 +472,32 @@ type CustomerBalance = { previous: number; earlierOrders: number; bills: number;
  * never both show), plus open tiffin bills and unallocated tiffin payments. Also returns what each
  * delivered order itself still owes on that rule (an order covered by the customer's credit owes 0).
  */
-async function loadCustomerBalances(
-  db: AsyncDb,
-  orderCustomer: Map<string, string>
-): Promise<{ before: Map<string, CustomerBalance>; orderOpen: Map<string, number> }> {
-  const before = new Map<string, CustomerBalance>();
-  const orderOpen = new Map<string, number>();
-  const customers = Array.from(new Set(orderCustomer.values()));
-  if (customers.length === 0) return { before, orderOpen };
-  const marks = customers.map(() => "?").join(", ");
+type BalanceData = {
+  ledgers: Map<string, CustomerOrderLedger>;
+  bills: Array<{ customer_id: string; due: number | string }>;
+  credits: Array<{ customer_id: string; credit: number | string }>;
+  dine: Array<{ customer_id: string; owed: number | string }>;
+};
+
+/**
+ * The balance figures of the customers behind these delivery stops. The customers are picked by a
+ * subquery on the stops, so this runs in the same round trip as the stops' order lines.
+ */
+async function loadBalanceDataForTasks(db: AsyncDb, taskIds: string[]): Promise<BalanceData> {
+  if (taskIds.length === 0) return { ledgers: new Map(), bills: [], credits: [], dine: [] };
+  const sub = `SELECT o.customer_id FROM orders o WHERE o.delivery_task_id IN (${taskIds.map(() => "?").join(", ")}) AND o.customer_id IS NOT NULL`;
+  return loadBalanceData(db, { sql: sub, params: taskIds });
+}
+
+async function loadBalanceData(db: AsyncDb, customers: { sql: string; params: any[] }): Promise<BalanceData> {
+  const marks = customers.sql;
   const [ledgers, bills, credits, dine] = await Promise.all([
-    loadOrderLedgers(db, customers),
+    loadOrderLedgers(db, [], { customerSql: customers }),
     db.query<{ customer_id: string; due: number | string }>(
       `SELECT customer_id, SUM(balance_due) AS due FROM invoices
        WHERE invoice_category = 'TIFFIN' AND status IN ('ISSUED', 'PARTIALLY_PAID') AND balance_due > 0 AND customer_id IN (${marks})
        GROUP BY customer_id`,
-      customers
+      customers.params
     ),
     db.query<{ customer_id: string; credit: number | string }>(
       `SELECT t.customer_id, SUM(t.amount - COALESCE(a.allocated, 0)) AS credit
@@ -493,7 +505,7 @@ async function loadCustomerBalances(
        LEFT JOIN (SELECT payment_transaction_id, SUM(amount) AS allocated FROM invoice_payment_allocations GROUP BY payment_transaction_id) a ON a.payment_transaction_id = t.id
        WHERE t.transaction_type = 'TIFFIN_PAYMENT' AND t.status = 'POSTED' AND t.amount > COALESCE(a.allocated, 0) AND t.customer_id IN (${marks})
        GROUP BY t.customer_id`,
-      customers
+      customers.params
     ),
     // Dine-in orders on Pay Later, not paid yet (migration 0024): earlier dues too.
     hasDineInPayLaterSchema(db).then((ok) =>
@@ -502,11 +514,22 @@ async function loadCustomerBalances(
             `SELECT customer_id, SUM(total_amount) AS owed FROM orders
              WHERE order_type = 'DINE_IN' AND payment_choice = 'PAY_LATER' AND financial_transaction_id IS NULL AND status <> 'CANCELLED' AND customer_id IN (${marks})
              GROUP BY customer_id`,
-            customers
+            customers.params
           )
         : []
     ),
   ]);
+  return { ledgers, bills, credits, dine };
+}
+
+/** Balances from before each order, and what each delivered order still owes (see below). */
+function computeBalances(
+  data: BalanceData,
+  orderCustomer: Map<string, string>
+): { before: Map<string, CustomerBalance>; orderOpen: Map<string, number> } {
+  const before = new Map<string, CustomerBalance>();
+  const orderOpen = new Map<string, number>();
+  const { ledgers, bills, credits, dine } = data;
   const dineBy = new Map(dine.map((r) => [r.customer_id, Number(r.owed)]));
   const billBy = new Map(bills.map((b) => [b.customer_id, Number(b.due)]));
   const creditBy = new Map(credits.map((c) => [c.customer_id, Number(c.credit)]));
@@ -531,8 +554,15 @@ function expectedAmountFor(task: DeliveryTask, lines: DeliveryOrderLine[]): numb
 /** Adds the structured order, its value, the amount due and the balance to each task. */
 async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<DeliveryTask[]> {
   const ids = tasks.map((t) => t.id);
-  // Independent reads run side by side (one database round trip instead of three).
-  const [orders, items, collected] = await Promise.all([loadTaskOrders(db, ids), loadTaskItems(db, ids), loadCollectedTotals(db, ids)]);
+  // Everything about these stops in one round trip: order lines, items, money collected, customer
+  // details and the customers' balances.
+  const [orders, items, collected, hints, balanceData] = await Promise.all([
+    loadTaskOrders(db, ids),
+    loadTaskItems(db, ids),
+    loadCollectedTotals(db, ids),
+    loadCustomerHints(db, tasks),
+    loadBalanceDataForTasks(db, tasks.filter((t) => t.orderType === "EXTERNAL").map((t) => t.id)),
+  ]);
   for (const task of tasks) {
     // Money collected comes from the collection records; the task's copied total is a fallback
     // only for databases without the custody ledger.
@@ -567,13 +597,12 @@ async function attachOrderData(db: AsyncDb, tasks: DeliveryTask[]): Promise<Deli
       task.balanceDue = null;
     }
   }
-  const hints = await loadCustomerHints(db, tasks);
   const orderCustomer = new Map<string, string>();
   for (const task of tasks) {
     const h = task.orderId ? hints.get(`ord:${task.orderId}`) : null;
     if (task.orderId && h?.customerId) orderCustomer.set(task.orderId, h.customerId);
   }
-  const { before: balances, orderOpen } = await loadCustomerBalances(db, orderCustomer);
+  const { before: balances, orderOpen } = computeBalances(balanceData, orderCustomer);
   for (const task of tasks) {
     if (task.orderId) task.customerBalance = balances.get(task.orderId) ?? null;
     // A delivered order of a customer owes what the customer's pool of payments has not covered
@@ -2269,17 +2298,31 @@ async function completeLinedDelivery(
  * it is declared and accepted in full straight away (cash and UPI booked to the cashbook exactly as
  * an accepted handover). Also clears any earlier own handover still waiting. Never fails the caller.
  */
+let ownerCatchUpAt = 0;
+
+/** The catch-up on the cash screens: at most every 5 minutes (a delivery the owner completes settles at once). */
+export async function settleOwnerCashSoon(owner: AuthenticatedUser, asyncDb?: AsyncDb): Promise<void> {
+  if (owner.role !== "SUPER_ADMIN" || Date.now() - ownerCatchUpAt < 5 * 60_000) return;
+  ownerCatchUpAt = Date.now();
+  await settleOwnerCash(owner, undefined, asyncDb);
+}
+
 export async function settleOwnerCash(owner: AuthenticatedUser, clientIp?: string, asyncDb?: AsyncDb): Promise<number> {
   if (owner.role !== "SUPER_ADMIN") return 0;
   const db = asyncDb || getAsyncDb();
   let settled = 0;
   try {
     const opsSchema = await hasDeliveryOpsSchema(db);
-    const open = await db.queryOne<{ n: number | string }>(
-      `SELECT COUNT(*) AS n FROM delivery_collections WHERE collected_by = ? AND handover_id IS NULL${opsSchema ? " AND transaction_id IS NULL" : ""}`,
-      [owner.id]
+    // Both checks in one round trip.
+    const state = await db.queryOne<{ n: number | string; pid: string | null; pcash: number | string | null; pupi: number | string | null }>(
+      `SELECT (SELECT COUNT(*) FROM delivery_collections WHERE collected_by = ? AND handover_id IS NULL${opsSchema ? " AND transaction_id IS NULL" : ""}) AS n,
+              p.id AS pid, p.declared_cash AS pcash, p.declared_upi AS pupi
+       FROM (SELECT 1) one
+       LEFT JOIN LATERAL (SELECT id, declared_cash, declared_upi FROM driver_cash_handovers WHERE driver_id = ? AND status = 'DECLARED' LIMIT 1) p ON true`,
+      [owner.id, owner.id]
     );
-    let pending = await db.queryOne<any>("SELECT id, declared_cash, declared_upi FROM driver_cash_handovers WHERE driver_id = ? AND status = 'DECLARED' LIMIT 1", [owner.id]);
+    const open = { n: state?.n ?? 0 };
+    let pending: any = state?.pid ? { id: state.pid, declared_cash: state.pcash, declared_upi: state.pupi } : null;
     if (!pending && Number(open?.n || 0) > 0) {
       const declared = await createCashHandoverDeclaration(owner, { driverId: owner.id, notes: "Collected by the owner" } as any, clientIp, db);
       pending = { id: declared.id, declared_cash: declared.declaredCash, declared_upi: declared.declaredUpi };
@@ -3353,7 +3396,7 @@ export async function listStaffCustody(
     throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
   }
   const db = asyncDb || getAsyncDb();
-  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCashSoon(actor, db);
   const own = !canSeeAllCustody(actor);
   const rows = await db.query<any>(
     `${await custodyRowSql(db)}
@@ -3868,7 +3911,7 @@ export async function getFleetCustodySummary(
     throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
   }
   const db = asyncDb || getAsyncDb();
-  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCashSoon(actor, db);
   const day = await db.queryOne<any>(
     `SELECT COALESCE(SUM(dc.amount), 0) AS total
      FROM delivery_collections dc JOIN delivery_tasks t ON t.id = dc.delivery_task_id
@@ -3912,7 +3955,7 @@ export async function listDriverCashHandovers(
   }
 
   const db = asyncDb || getAsyncDb();
-  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCashSoon(actor, db);
 
   const conditions: string[] = [];
   const params: any[] = [];

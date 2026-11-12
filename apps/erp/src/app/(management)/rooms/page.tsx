@@ -50,6 +50,9 @@ import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
 
 import { PhoneError } from "@/components/forms/PhoneError";
+import { roomsQuery } from "@/lib/pageQueries";
+
+const ROOMS_Q = roomsQuery();
 const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   SINGLE: "Single Occupancy",
   DOUBLE_SHARING: "Double Sharing",
@@ -73,19 +76,7 @@ export default function RoomsPage() {
     isLoading: isQueryLoading,
     isRevalidating,
     refetch,
-  } = useErpQuery<RoomWithOccupancy[]>(
-    "/api/rooms",
-    async () => {
-      const res = await fetch("/api/rooms", { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load rooms");
-      }
-      return data.rooms || [];
-    },
-    // Reference data: reused across visits for 5 min; room/resident mutations invalidate it at once.
-    { ttl: 300000, tags: ["rooms"] }
-  );
+  } = useErpQuery(ROOMS_Q.key, ROOMS_Q.fetcher, { ttl: ROOMS_Q.ttl, tags: ROOMS_Q.tags });
 
   const rooms = cachedRooms || [];
   const loading = isQueryLoading && rooms.length === 0;

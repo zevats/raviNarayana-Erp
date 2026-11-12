@@ -11,6 +11,7 @@ import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { StateMessage } from "@/components/ui/states";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { formatDateTime } from "@/lib/format";
+import { Prewarm } from "@/components/feedback/Prewarm";
 
 // The shell renders a bell in both the desktop and the mobile header. They share this cached
 // query, so a single poll every 30s (while visible) serves both instead of two polling loops.
@@ -107,6 +108,8 @@ export function NotificationBell() {
   const [actionError, setActionError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [onScreen, setOnScreen] = useState(false);
+  useEffect(() => setOnScreen(Boolean(triggerRef.current?.getClientRects().length)), []);
 
   // Close on outside click or Escape (focus goes back to the bell).
   useEffect(() => {
@@ -179,34 +182,79 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div role="dialog" aria-label="Notifications" className="rn-pop rn-menu rn-bell-pop rounded-3xl z-50 overflow-hidden">
-          <div className="px-5 py-4 border-b border-[var(--rn-line)] flex items-center justify-between gap-3">
-            <p className="rn-t-card">Notifications{unreadCount > 0 && <span className="rn-t-meta font-normal"> · {unreadCount} unread</span>}</p>
-            {unreadCount > 0 && (
-              <button type="button" onClick={markAll} disabled={busy} className="rn-btn rn-btn-sm">
-                <CheckCheck /> Mark all read
-              </button>
-            )}
-          </div>
-          {actionError && <p role="alert" className="rn-notice rn-notice-bad m-3">{actionError}</p>}
-          <div className="max-h-[min(420px,60dvh)] overflow-y-auto px-2 py-1">
-            {feed.error && !feed.data ? (
-              <StateMessage kind="error" title="Notifications could not be loaded" compact action={<button type="button" className="rn-btn rn-btn-sm" onClick={() => feed.refetch()}>Try again</button>} />
-            ) : feed.isLoading && !feed.data ? (
-              <BikeLoader label="Loading notifications" size="sm" className="py-8" />
-            ) : notifications.length === 0 ? (
-              <StateMessage kind="empty" title="No notifications" compact />
-            ) : (
-              <NotificationRows items={notifications} onOpen={open} onMarkRead={markOne} />
-            )}
-          </div>
-          <div className="p-2 border-t border-[var(--rn-line)]">
-            <Link href="/notifications" onClick={() => setIsOpen(false)} className="rn-menu-item justify-center">
-              All notifications
-            </Link>
-          </div>
-        </div>
+        <BellPanel
+          unreadCount={unreadCount}
+          notifications={notifications}
+          state={feed.error && !feed.data ? "error" : feed.isLoading && !feed.data ? "loading" : "ready"}
+          busy={busy}
+          actionError={actionError}
+          onMarkAll={markAll}
+          onRetry={() => feed.refetch()}
+          onOpen={open}
+          onMarkRead={markOne}
+          onClose={() => setIsOpen(false)}
+        />
       )}
+      {/* Only the bell that is on screen (phone or desktop header) warms its panel. */}
+      <Prewarm when={onScreen && Boolean(feed.data) && !isOpen}>
+        {() => <BellPanel unreadCount={unreadCount} notifications={notifications} state="ready" busy={false} actionError={null} onMarkAll={noop} onRetry={noop} onOpen={noop} onMarkRead={noop} onClose={noop} />}
+      </Prewarm>
+    </div>
+  );
+}
+
+const noop = () => {};
+
+function BellPanel({
+  unreadCount,
+  notifications,
+  state,
+  busy,
+  actionError,
+  onMarkAll,
+  onRetry,
+  onOpen,
+  onMarkRead,
+  onClose,
+}: {
+  unreadCount: number;
+  notifications: NotificationItem[];
+  state: "error" | "loading" | "ready";
+  busy: boolean;
+  actionError: string | null;
+  onMarkAll: () => void;
+  onRetry: () => void;
+  onOpen: (n: NotificationItem) => void;
+  onMarkRead: (n: NotificationItem) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div role="dialog" aria-label="Notifications" className="rn-pop rn-menu rn-bell-pop rounded-3xl z-50 overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--rn-line)] flex items-center justify-between gap-3">
+        <p className="rn-t-card">Notifications{unreadCount > 0 && <span className="rn-t-meta font-normal"> · {unreadCount} unread</span>}</p>
+        {unreadCount > 0 && (
+          <button type="button" onClick={onMarkAll} disabled={busy} className="rn-btn rn-btn-sm">
+            <CheckCheck /> Mark all read
+          </button>
+        )}
+      </div>
+      {actionError && <p role="alert" className="rn-notice rn-notice-bad m-3">{actionError}</p>}
+      <div className="max-h-[min(420px,60dvh)] overflow-y-auto px-2 py-1">
+        {state === "error" ? (
+          <StateMessage kind="error" title="Notifications could not be loaded" compact action={<button type="button" className="rn-btn rn-btn-sm" onClick={onRetry}>Try again</button>} />
+        ) : state === "loading" ? (
+          <BikeLoader label="Loading notifications" size="sm" className="py-8" />
+        ) : notifications.length === 0 ? (
+          <StateMessage kind="empty" title="No notifications" compact />
+        ) : (
+          <NotificationRows items={notifications} onOpen={onOpen} onMarkRead={onMarkRead} />
+        )}
+      </div>
+      <div className="p-2 border-t border-[var(--rn-line)]">
+        <Link href="/notifications" onClick={onClose} className="rn-menu-item justify-center">
+          All notifications
+        </Link>
+      </div>
     </div>
   );
 }

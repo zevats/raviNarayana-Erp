@@ -74,20 +74,26 @@ const empty = (): CustomerOrderLedger => ({ orders: [], due: 0, collected: 0, ow
 export async function loadOrderLedgers(
   db: AsyncDb,
   customerIds: string[],
-  opts: { excludeOrderId?: string | null } = {}
+  opts: {
+    excludeOrderId?: string | null;
+    /** Customers chosen by a subquery instead of a list (e.g. the customers behind some delivery stops), so the caller need not look them up first. */
+    customerSql?: { sql: string; params: any[] };
+  } = {}
 ): Promise<Map<string, CustomerOrderLedger>> {
   const out = new Map<string, CustomerOrderLedger>();
   const ids = Array.from(new Set(customerIds.filter(Boolean)));
-  if (ids.length === 0) return out;
+  if (ids.length === 0 && !opts.customerSql) return out;
   const active = (await hasDeliveryOpsSchema(db)) ? ` AND ${activeCollectionSql("dc")}` : "";
+  const who = opts.customerSql ? `o.customer_id IN (${opts.customerSql.sql})` : `o.customer_id IN (${ids.map(() => "?").join(", ")})`;
+  const whoParams = opts.customerSql ? opts.customerSql.params : ids;
   const rows = await db.query<Row & { customer_id: string }>(
     `SELECT o.id, o.customer_id, o.delivery_task_id, o.service_date, o.created_at,
             (SELECT COALESCE(SUM(COALESCE(oi.delivered_quantity, oi.quantity) * oi.unit_price), 0) FROM order_items oi WHERE oi.order_id = o.id) AS due,
             (SELECT COALESCE(SUM(dc.amount), 0) FROM delivery_collections dc WHERE dc.delivery_task_id = o.delivery_task_id${active}) AS collected
      FROM orders o JOIN delivery_tasks t ON t.id = o.delivery_task_id AND t.status = 'DELIVERED'
-     WHERE o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND o.customer_id IN (${ids.map(() => "?").join(", ")}) AND o.id <> ?
+     WHERE o.order_type = 'DELIVERY' AND o.status = 'COMPLETED' AND ${who} AND o.id <> ?
      ORDER BY o.customer_id, o.service_date, o.created_at, o.id`,
-    [...ids, opts.excludeOrderId || ""]
+    [...whoParams, opts.excludeOrderId || ""]
   );
   const by = new Map<string, Array<{ id: string; deliveryTaskId: string; serviceDate: string; due: number; collected: number }>>();
   for (const r of rows) {
@@ -96,5 +102,6 @@ export async function loadOrderLedgers(
     by.set(r.customer_id, list);
   }
   for (const id of ids) out.set(id, by.has(id) ? applyOldestFirst(by.get(id)!) : empty());
+  for (const [id, list] of by) if (!out.has(id)) out.set(id, applyOldestFirst(list));
   return out;
 }

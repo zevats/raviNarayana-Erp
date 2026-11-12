@@ -57,7 +57,10 @@ export async function loadBedState(
   const out = new Map<string, { beds: RoomBed[]; maintenance: RoomMaintenanceRecord | null }>();
   if (!(await hasBedsSchema(db))) return out;
   const filter = roomIds && roomIds.length > 0 ? `WHERE b.room_id IN (${roomIds.map(() => "?").join(", ")})` : "";
-  const beds = await db.query<any>(
+  const mFilter = roomIds && roomIds.length > 0 ? `AND m.room_id IN (${roomIds.map(() => "?").join(", ")})` : "";
+  // Beds and open maintenance together (one round trip).
+  const [beds, open] = await Promise.all([
+    db.query<any>(
     `SELECT b.id, b.room_id, b.label, b.status, b.notes,
             s.id AS stay_id, res.id AS resident_id, res.full_name AS resident_name
      FROM room_beds b
@@ -66,14 +69,14 @@ export async function loadBedState(
      ${filter}
      ORDER BY b.room_id, length(b.label), b.label`,
     roomIds ?? []
-  );
-  const mFilter = roomIds && roomIds.length > 0 ? `AND m.room_id IN (${roomIds.map(() => "?").join(", ")})` : "";
-  const open = await db.query<any>(
+    ),
+    db.query<any>(
     `SELECT m.*, su.full_name AS started_by_name FROM room_maintenance m
      LEFT JOIN staff_users su ON su.id = m.started_by
      WHERE m.status = 'OPEN' ${mFilter}`,
     roomIds ?? []
-  );
+    ),
+  ]);
   for (const b of beds) {
     const entry = out.get(b.room_id) ?? { beds: [], maintenance: null };
     entry.beds.push({

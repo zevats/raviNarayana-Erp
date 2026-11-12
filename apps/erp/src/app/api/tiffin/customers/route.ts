@@ -104,9 +104,10 @@ export async function GET(request: NextRequest) {
     }
 
     // PG residents who are not yet tiffin customers are added first (only missing ones).
-    await syncResidentCustomers(user);
-    // Customers with no order for three months leave the list (set inactive, never deleted).
-    await archiveIdleCustomersSoon(getAsyncDb(), user);
+    // Housekeeping runs in the background (throttled): the list never waits for it.
+    void syncResidentCustomers(user).catch(() => {});
+    // Customers with no order for 25 days leave the list (set inactive, never deleted).
+    void archiveIdleCustomersSoon(getAsyncDb(), user).catch(() => {});
     const result = await listTiffinCustomers(user, {
       search,
       status,

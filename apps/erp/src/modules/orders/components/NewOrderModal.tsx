@@ -2,7 +2,7 @@
 
 import { planMealsLabel, planCoversMeal } from "@/lib/planMeals";
 import { friendlyError } from "@/lib/friendlyError";
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { X, Truck, Utensils, Search, Plus, Minus, Check, AlertCircle, RotateCcw, User, MapPin, ChevronLeft, ArrowRight } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType, TiffinSubscription } from "@/types";
 import { businessToday, businessMeal } from "@/lib/businessDate";
@@ -340,11 +340,16 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     };
   }, [customerSearch, customerMode, isOpen]);
 
+  // Typing never waits for the list: the list follows the search a moment later, and only the first
+  // 60 matches are drawn (search narrows to anyone).
+  const deferredCustomerSearch = useDeferredValue(customerSearch);
   const shownCustomers = useMemo(() => {
-    const q = customerSearch.trim().toLowerCase();
+    const q = deferredCustomerSearch.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
-    return customers.filter((c) => !q || [c.fullName, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q)) || (digits.length >= 2 && [c.phone, c.alternatePhone].some((v) => String(v || "").replace(/\D/g, "").includes(digits))));
-  }, [customers, customerSearch]);
+    return customers
+      .filter((c) => !q || [c.fullName, c.customerCode, c.deliveryAddress, c.landmark].some((v) => String(v || "").toLowerCase().includes(q)) || (digits.length >= 2 && [c.phone, c.alternatePhone].some((v) => String(v || "").replace(/\D/g, "").includes(digits))))
+      .slice(0, 60);
+  }, [customers, deferredCustomerSearch]);
 
   // Check for duplicate customer phone when in NEW customer mode
   useEffect(() => {

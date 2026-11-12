@@ -271,8 +271,10 @@ export async function listBills(
     params.push(`%${q}%`, `%${q}%`, `%${q.replace(/\s+/g, "")}%`);
   }
   const cond = where.length ? `WHERE ${where.join(" AND ")}` : "";
-  const head = await db.queryOne<any>(`SELECT COUNT(*) AS c, COALESCE(SUM(b.total_amount), 0) AS amount FROM bills b ${cond}`, params);
-  const rows = await db.query<any>(
+  // The count and the page together (one round trip).
+  const [head, rows] = await Promise.all([
+    db.queryOne<any>(`SELECT COUNT(*) AS c, COALESCE(SUM(b.total_amount), 0) AS amount FROM bills b ${cond}`, params),
+    db.query<any>(
     `SELECT b.id, b.bill_number, b.share_token, b.account_key, b.account_kind, b.account_name, b.account_phone, b.bill_type, b.gst_rate, b.issue_date,
             b.total_amount, b.taxable_amount, b.cgst_amount, b.sgst_amount, b.created_at, u.full_name AS created_by_name,
             COALESCE((SELECT SUM(p.amount) FROM bill_payments p WHERE p.bill_id = b.id), 0) AS received_total
@@ -280,7 +282,8 @@ export async function listBills(
      ${cond}
      ORDER BY b.created_at DESC, b.bill_number DESC LIMIT ${limit} OFFSET ${offset}`,
     params
-  );
+    ),
+  ]);
   return {
     bills: rows.map((r) => {
       const { snapshot: _s, received: _r, ...rest } = mapBill({ ...r, snapshot: "{}" });

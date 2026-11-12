@@ -205,12 +205,15 @@ async function wrongCode(id: string, which: string, db: AsyncDb): Promise<never>
 
 export async function getMyAccount(user: AuthenticatedUser, sessionTokenHash: string | null, asyncDb?: AsyncDb): Promise<MyAccount> {
   const db = asyncDb || getAsyncDb();
-  const row = await db.queryOne<any>("SELECT id, username, email, full_name, role, created_at, last_login_at FROM staff_users WHERE id = ?", [user.id]);
-  if (!row) throw new AccountError("Account not found.", 404);
-  const sessions = await db.query<any>(
+  // The account and its sessions together (one round trip).
+  const [row, sessions] = await Promise.all([
+    db.queryOne<any>("SELECT id, username, email, full_name, role, created_at, last_login_at FROM staff_users WHERE id = ?", [user.id]),
+    db.query<any>(
     "SELECT id, token_hash, user_agent, created_at FROM sessions WHERE staff_id = ? AND expires_at > ? ORDER BY created_at DESC",
     [user.id, new Date().toISOString()]
-  );
+  ),
+  ]);
+  if (!row) throw new AccountError("Account not found.", 404);
   const devices = sessions.map((s) => ({ id: s.id as string, label: deviceLabel(s.user_agent), current: Boolean(sessionTokenHash) && s.token_hash === sessionTokenHash, signedInAt: s.created_at as string }));
   devices.sort((a, b) => Number(b.current) - Number(a.current));
   const today = getBusinessDateString();

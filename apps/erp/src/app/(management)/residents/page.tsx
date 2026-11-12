@@ -63,6 +63,9 @@ import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { useDues } from "@/modules/billing/DuesList";
 import { AccountSheet } from "@/modules/billing/AccountSheet";
 import { BillAllDialog } from "@/modules/billing/BillDialogs";
+import { residentsAndRoomsQuery } from "@/lib/pageQueries";
+
+const RESIDENTS_Q = residentsAndRoomsQuery();
 /**
  * Maps database floor integer to human-readable full label.
  */
@@ -79,25 +82,7 @@ export default function ResidentsPage() {
     isLoading: isResidentsLoading,
     isRevalidating: isResidentsRevalidating,
     refetch: refetchResidents,
-  } = useErpQuery<{ residents: ResidentListItem[]; rooms: RoomWithOccupancy[] }>(
-    "/api/residents-and-rooms",
-    async () => {
-      const [resResidents, resRooms] = await Promise.all([
-        fetch("/api/residents", { cache: "no-store" }),
-        fetch("/api/rooms", { cache: "no-store" }),
-      ]);
-      const dataResidents = await resResidents.json();
-      const dataRooms = await resRooms.json();
-      if (!resResidents.ok) throw new Error(dataResidents.error || "Failed to load residents");
-      if (!resRooms.ok) throw new Error(dataRooms.error || "Failed to load rooms");
-      return {
-        residents: dataResidents.residents || [],
-        rooms: dataRooms.rooms || [],
-      };
-    },
-    // Reference data: reused across visits for 5 min; resident/room mutations invalidate it at once.
-    { ttl: 300000, tags: ["residents", "rooms"] }
-  );
+  } = useErpQuery(RESIDENTS_Q.key, RESIDENTS_Q.fetcher, { ttl: RESIDENTS_Q.ttl, tags: RESIDENTS_Q.tags });
 
   const residents = residentsData?.residents || [];
   const rooms = residentsData?.rooms || [];

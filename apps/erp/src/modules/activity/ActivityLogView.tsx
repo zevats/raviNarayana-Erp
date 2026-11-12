@@ -131,6 +131,7 @@ export function ActivityLogView() {
         </div>
       )}
       <MSheet
+        warm
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Filters"

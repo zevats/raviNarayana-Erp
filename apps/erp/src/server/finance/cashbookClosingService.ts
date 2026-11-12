@@ -79,14 +79,34 @@ async function computeOpeningBalances(
   closingDate: string,
   division: ClosingDivision
 ): Promise<{ openingBalance: number; openingCashBalance: number }> {
-  // 1. Check prior finalized closing
-  const priorClosing = await db.queryOne<any>(`
+  // Without a finalized closing before this date the opening is the whole ledger before it. Both
+  // are read together (one round trip) and the ledger is summed in the database (the same rule as
+  // movementDirection below), instead of sending every historical entry to the server.
+  let divisionFilter = "";
+  if (division === "PG") {
+    divisionFilter = "AND (ft.resident_id IS NOT NULL OR ft.transaction_type IN ('RENT_PAYMENT', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND', 'RENT_CHARGE'))";
+  } else if (division === "TIFFIN") {
+    divisionFilter = "AND (ft.customer_id IS NOT NULL OR ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE'))";
+  }
+  const dir = movementDirectionSql("ft", "orig");
+  const [priorClosing, sums] = await Promise.all([
+    db.queryOne<any>(`
     SELECT *
     FROM daily_cashbook_closings
     WHERE closing_date < ? AND division = ? AND status = 'FINALIZED'
     ORDER BY closing_date DESC
     LIMIT 1
-  `, [closingDate, division]);
+  `, [closingDate, division]),
+    db.queryOne<{ total: number | string | null; cash: number | string | null }>(`
+    SELECT
+      COALESCE(SUM(ft.amount * (${dir})), 0) AS total,
+      COALESCE(SUM(CASE WHEN ft.payment_method = 'CASH' THEN ft.amount * (${dir}) ELSE 0 END), 0) AS cash
+    FROM financial_transactions ft
+    LEFT JOIN financial_transactions orig ON ft.reversal_of_id = orig.id
+    WHERE ft.transaction_date < ?
+      ${divisionFilter}
+  `, [closingDate]),
+  ]);
 
   if (priorClosing) {
     const openingBal = priorClosing.actual_total_balance !== null && priorClosing.actual_total_balance !== undefined
@@ -103,51 +123,25 @@ async function computeOpeningBalances(
     };
   }
 
-  // 2. Initial day / no prior closing: aggregate historical ledger before closingDate
-  let divisionFilter = "";
-  const params: any[] = [closingDate];
-
-  if (division === "PG") {
-    divisionFilter = "AND (ft.resident_id IS NOT NULL OR ft.transaction_type IN ('RENT_PAYMENT', 'SECURITY_DEPOSIT', 'DEPOSIT_REFUND', 'RENT_CHARGE'))";
-  } else if (division === "TIFFIN") {
-    divisionFilter = "AND (ft.customer_id IS NOT NULL OR ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE'))";
-  }
-
-  // Cumulative inflows and outflows
-  const rows = await db.query<any>(`
-    SELECT
-      ft.id,
-      ft.transaction_type,
-      ft.amount,
-      ft.payment_method,
-      ft.category,
-      ft.status,
-      ft.reversal_of_id,
-      orig.transaction_type as orig_tx_type,
-      orig.category as orig_category
-    FROM financial_transactions ft
-    LEFT JOIN financial_transactions orig ON ft.reversal_of_id = orig.id
-    WHERE ft.transaction_date < ?
-      ${divisionFilter}
-  `, params);
-
-  let totalBal = 0;
-  let cashBal = 0;
-
-  for (const row of rows) {
-    const amt = Number(row.amount || 0);
-    const method = row.payment_method;
-    const isCash = method === "CASH";
-
-    const dir = movementDirection(row);
-    totalBal += dir * amt;
-    if (isCash) cashBal += dir * amt;
-  }
-
   return {
-    openingBalance: totalBal,
-    openingCashBalance: cashBal,
+    openingBalance: Number(sums?.total || 0),
+    openingCashBalance: Number(sums?.cash || 0),
   };
+}
+
+/** receiptOrPaymentDirection as SQL for a type/category pair of columns. */
+function receiptOrPaymentDirectionSql(type: string, category: string): string {
+  return `CASE WHEN (${type} = 'RENT_PAYMENT' AND COALESCE(${category}, '') <> 'DEPOSIT_APPLICATION') OR ${type} IN ('SECURITY_DEPOSIT', 'TIFFIN_PAYMENT') THEN 1
+               WHEN ${type} IN ('EXPENSE', 'DEPOSIT_REFUND') THEN -1 ELSE 0 END`;
+}
+
+/** movementDirection as SQL: `t` is the entry, `o` the entry a reversal reverses. */
+function movementDirectionSql(t: string, o: string): string {
+  return `CASE
+    WHEN ${t}.status = 'POSTED' AND ${t}.transaction_type = 'REVERSAL' THEN -(${receiptOrPaymentDirectionSql(`COALESCE(${o}.transaction_type, '')`, `${o}.category`)})
+    WHEN ${t}.status = 'POSTED' THEN ${receiptOrPaymentDirectionSql(`${t}.transaction_type`, `${t}.category`)}
+    WHEN ${t}.status = 'REVERSED' AND ${t}.reversal_of_id IS NULL THEN ${receiptOrPaymentDirectionSql(`${t}.transaction_type`, `${t}.category`)}
+    ELSE 0 END`;
 }
 
 /** +1 money came in, -1 money went out, 0 a charge or other bookkeeping entry. */
@@ -189,8 +183,9 @@ export async function previewDailyClosing(
 
   const db = asyncDb ?? getAsyncDb();
 
-  // 1. Calculate opening balances
-  const { openingBalance, openingCashBalance } = await computeOpeningBalances(db, closingDate, division);
+  // Opening balances, the day's entries, the day's deliveries and any saved closing are independent:
+  // they are read together (one round trip).
+  const openingP = computeOpeningBalances(db, closingDate, division);
 
   // 2. Fetch all transactions for closingDate
   let divisionFilter = "";
@@ -202,7 +197,7 @@ export async function previewDailyClosing(
     divisionFilter = "AND (ft.customer_id IS NOT NULL OR ft.transaction_type IN ('TIFFIN_PAYMENT', 'TIFFIN_CHARGE'))";
   }
 
-  const txRows = await db.query<any>(`
+  const txRowsP = db.query<any>(`
     SELECT
       ft.id,
       ft.transaction_type,
@@ -232,6 +227,32 @@ export async function previewDailyClosing(
       ${divisionFilter}
     ORDER BY ft.created_at ASC
   `, params);
+  // 3. Delivery operational summary
+  const deliveryRowsP = db.query<any>(`
+    SELECT
+      COUNT(*) as total_tasks,
+      COALESCE(SUM(CASE WHEN order_type = 'RESIDENT' THEN 1 ELSE 0 END), 0) as resident_tasks,
+      COALESCE(SUM(CASE WHEN order_type = 'EXTERNAL' THEN 1 ELSE 0 END), 0) as external_tasks,
+      COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered_count,
+      COALESCE(SUM(CASE WHEN status IN ('PENDING', 'ASSIGNED', 'DISPATCHED') THEN 1 ELSE 0 END), 0) as pending_count,
+      COALESCE(SUM(CASE WHEN status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exception_count
+    FROM delivery_tasks
+    WHERE service_date = ?
+  `, [closingDate]);
+  // 4. Check existing closing record
+  const existingClosingRowP = db.queryOne<any>(`
+    SELECT
+      dcc.*,
+      p.full_name as prepared_by_name,
+      f.full_name as finalized_by_name,
+      r.full_name as reopened_by_name
+    FROM daily_cashbook_closings dcc
+    LEFT JOIN staff_users p ON dcc.prepared_by = p.id
+    LEFT JOIN staff_users f ON dcc.finalized_by = f.id
+    LEFT JOIN staff_users r ON dcc.reopened_by = r.id
+    WHERE dcc.closing_date = ? AND dcc.division = ?
+  `, [closingDate, division]);
+  const [{ openingBalance, openingCashBalance }, txRows, deliveryRows, existingClosingRow] = await Promise.all([openingP, txRowsP, deliveryRowsP, existingClosingRowP]);
 
   // Initialize channel breakdown
   const channelBreakdown: Record<PaymentMethod, ChannelMovementBreakdown> = {
@@ -284,18 +305,6 @@ export async function previewDailyClosing(
   const expectedClosingBalance = openingBalance + netMovement;
   const expectedCashBalance = openingCashBalance + (channelBreakdown.CASH.inflow - channelBreakdown.CASH.outflow);
 
-  // 3. Delivery operational summary
-  const deliveryRows = await db.query<any>(`
-    SELECT
-      COUNT(*) as total_tasks,
-      COALESCE(SUM(CASE WHEN order_type = 'RESIDENT' THEN 1 ELSE 0 END), 0) as resident_tasks,
-      COALESCE(SUM(CASE WHEN order_type = 'EXTERNAL' THEN 1 ELSE 0 END), 0) as external_tasks,
-      COALESCE(SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END), 0) as delivered_count,
-      COALESCE(SUM(CASE WHEN status IN ('PENDING', 'ASSIGNED', 'DISPATCHED') THEN 1 ELSE 0 END), 0) as pending_count,
-      COALESCE(SUM(CASE WHEN status = 'EXCEPTION' THEN 1 ELSE 0 END), 0) as exception_count
-    FROM delivery_tasks
-    WHERE service_date = ?
-  `, [closingDate]);
 
   const delRow = deliveryRows[0] || {};
   const deliverySummary: DeliveryReconciliationSummary = {
@@ -307,19 +316,6 @@ export async function previewDailyClosing(
     exceptionCount: Number(delRow.exception_count || 0),
   };
 
-  // 4. Check existing closing record
-  const existingClosingRow = await db.queryOne<any>(`
-    SELECT
-      dcc.*,
-      p.full_name as prepared_by_name,
-      f.full_name as finalized_by_name,
-      r.full_name as reopened_by_name
-    FROM daily_cashbook_closings dcc
-    LEFT JOIN staff_users p ON dcc.prepared_by = p.id
-    LEFT JOIN staff_users f ON dcc.finalized_by = f.id
-    LEFT JOIN staff_users r ON dcc.reopened_by = r.id
-    WHERE dcc.closing_date = ? AND dcc.division = ?
-  `, [closingDate, division]);
 
   const existingClosing = existingClosingRow ? mapRowToClosingRecord(existingClosingRow) : null;
 

@@ -1,4 +1,7 @@
-import { getCachedSession, cacheSession, invalidateSessionCache } from "./sessionCache";
+import { getCachedSession, cacheSession, invalidateSessionCache, forgetCachedSession } from "./sessionCache";
+
+// One background re-check per session at a time.
+const rechecking = new Set<string>();
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { getAsyncDb, AsyncDb } from "../database/db";
@@ -407,9 +410,26 @@ export async function validateSessionDetailed(
 
   const db = asyncDb || getAsyncDb();
   const tokenHash = crypto.createHash("sha256").update(sessionToken).digest("hex");
-  const now = new Date().toISOString();
   const cached = getCachedSession(tokenHash);
-  if (cached) return { user: cached };
+  if (cached) {
+    if (cached.stale && !rechecking.has(tokenHash)) {
+      // Checked again in the background; the next request uses the result.
+      rechecking.add(tokenHash);
+      lookupSession(db, tokenHash)
+        .then((r) => {
+          if (!r.user) forgetCachedSession(tokenHash);
+        })
+        .catch(() => forgetCachedSession(tokenHash))
+        .finally(() => rechecking.delete(tokenHash));
+    }
+    return { user: cached.user };
+  }
+  return lookupSession(db, tokenHash);
+}
+
+/** The session and its staff member from the database (and caches a valid one). */
+async function lookupSession(db: AsyncDb, tokenHash: string): Promise<{ user: AuthenticatedUser | null; isPreempted?: boolean }> {
+  const now = new Date().toISOString();
 
   const row = await db.queryOne<AuthenticatedUser & { isActive: number; expiresAt: string }>(
     `SELECT

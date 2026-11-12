@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { CalendarDays, ChevronRight, Download, ReceiptText, X } from "lucide-react";
 import { exportBillsCsv, exportDuesCsv } from "@/modules/finance/utils/financeCsv";
 import { billDay } from "@/lib/bills";
@@ -15,6 +15,8 @@ import { DueAccount, DuesList as DuesData, getJson, money } from "./api";
 import { AccountSheet } from "./AccountSheet";
 import { BillAllDialog, BillRow } from "./BillDialogs";
 import { BillViewer } from "./BillViewer";
+import { duesQuery } from "@/lib/pageQueries";
+import { useInstantChoice } from "@/lib/useInstantChoice";
 
 export type DuesScope = "ALL" | "CUSTOMER" | "RESIDENT";
 type Who = "ALL" | "RESIDENT" | "CUSTOMER" | "INDIVIDUAL" | "CORPORATE";
@@ -29,11 +31,12 @@ const initials = (name: string) =>
 
 /** The dues of a scope, loaded once and shared by every screen that shows them. */
 export function useDues(scope: DuesScope, enabled = true) {
-  const url = `/api/finance/receivables?kind=${scope}&limit=500&sort=total`;
-  return useErpQuery<DuesData>(enabled ? url : null, () => getJson<DuesData>(url), { tags: ["finance", "receivables", "delivery", "tiffin", "residents"], ttl: 15000 });
+  const def = duesQuery(scope);
+  return useErpQuery<DuesData>(enabled ? def.key : null, def.fetcher, { tags: def.tags, ttl: def.ttl });
 }
 
-function Chips<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string; count?: number }>; label: string }) {
+function Chips<T extends string>({ value: given, onChange: commit, options, label }: { value: T; onChange: (v: T) => void; options: Array<{ value: T; label: string; count?: number }>; label: string }) {
+  const [value, onChange] = useInstantChoice(given, commit);
   return (
     <div className="rn-chips" role="group" aria-label={label}>
       {options.map((o) => (
@@ -61,16 +64,22 @@ export function DuesList({ scope }: { scope: DuesScope }) {
   const [billAll, setBillAll] = useState(false);
 
   const owing = useMemo(() => (list.data?.accounts ?? []).filter((a) => a.total > 0), [list.data]);
+  // The chip and search answer at once; the long list follows a moment later (it never blocks a tap).
+  const whoNow = useDeferredValue(who);
+  const qNow = useDeferredValue(q);
+  // A long list is drawn 60 at a time.
+  const [limit, setLimit] = useState(60);
+  useEffect(() => setLimit(60), [whoNow, qNow, scope]);
   const isCorporate = (a: DueAccount) => a.customerType === "CORPORATE";
   const byWho = (a: DueAccount, w: Who) =>
     w === "ALL" || (w === "RESIDENT" && a.kind === "RESIDENT") || (w === "CUSTOMER" && a.kind !== "RESIDENT") || (w === "CORPORATE" && a.kind !== "RESIDENT" && isCorporate(a)) || (w === "INDIVIDUAL" && a.kind !== "RESIDENT" && !isCorporate(a));
   const shown = useMemo(
     () =>
       owing
-        .filter((a) => byWho(a, who))
-        .filter((a) => !q || a.name.toLowerCase().includes(q) || (a.phone || "").includes(q.replace(/\s+/g, "")) || (a.place || "").toLowerCase().includes(q)),
+        .filter((a) => byWho(a, whoNow))
+        .filter((a) => !qNow || a.name.toLowerCase().includes(qNow) || (a.phone || "").includes(qNow.replace(/\s+/g, "")) || (a.place || "").toLowerCase().includes(qNow)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [owing, who, q]
+    [owing, whoNow, qNow]
   );
   const total = shown.reduce((s, a) => s + a.total, 0);
   const count = (w: Who) => owing.filter((a) => byWho(a, w)).length;
@@ -142,8 +151,9 @@ export function DuesList({ scope }: { scope: DuesScope }) {
           )}
         </div>
       ) : (
+        <>
         <ul className="rn-due-list" aria-label="Dues">
-          {shown.map((a) => {
+          {shown.slice(0, limit).map((a) => {
             const parts = [a.pg > 0 ? `Rent ${money(a.pg)}` : "", a.tiffin > 0 ? `Plan ${money(a.tiffin)}` : "", a.delivery > 0 ? `Orders ${money(a.delivery)}` : ""].filter(Boolean);
             return (
               <li key={a.accountKey}>
@@ -162,6 +172,12 @@ export function DuesList({ scope }: { scope: DuesScope }) {
             );
           })}
         </ul>
+        {shown.length > limit && (
+          <button type="button" className="rn-btn w-full" onClick={() => setLimit((l) => l + 60)}>
+            Show more ({shown.length - limit})
+          </button>
+        )}
+        </>
       )}
 
       <AccountSheet accountKey={open?.accountKey ?? null} preview={open ? { name: open.name, total: open.total } : null} onClose={() => setOpen(null)} />

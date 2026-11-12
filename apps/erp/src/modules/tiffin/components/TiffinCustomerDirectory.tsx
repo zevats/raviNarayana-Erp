@@ -31,6 +31,9 @@ import { CustomerDetailModal } from "./modals/CustomerDetailModal";
 import { AccountSheet } from "@/modules/billing/AccountSheet";
 import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { MButton, MChips, MEmpty, MGroup, MHero, MMore, MNotice, MRow, MSearch, MSheet, MSkeletonRows, MStack, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
+import { tiffinCustomersQuery } from "@/lib/pageQueries";
+
+const CUSTOMERS_Q = tiffinCustomersQuery();
 
 const ITEMS_PER_PAGE = 10;
 
@@ -76,25 +79,13 @@ export function TiffinCustomerDirectory() {
   };
 
   // Data fetching with SWR caching
-  const cacheKey = "/api/tiffin/customers";
   const {
     data: customersData,
     error: customersError,
     isLoading,
     isRevalidating,
     refetch,
-  } = useErpQuery<{ customers: TiffinCustomer[] }>(
-    cacheKey,
-    async () => {
-      const res = await fetch("/api/tiffin/customers", { cache: "no-store" });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || err.message || "Failed to load tiffin customers");
-      }
-      return res.json();
-    },
-    { ttl: 15000, tags: ["tiffin_customers", "customers"] }
-  );
+  } = useErpQuery(CUSTOMERS_Q.key, CUSTOMERS_Q.fetcher, { ttl: CUSTOMERS_Q.ttl, tags: CUSTOMERS_Q.tags });
 
   const customers = customersData?.customers || [];
 
@@ -305,6 +296,7 @@ export function TiffinCustomerDirectory() {
               </>
             )}
             <MSheet
+              warm
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
               title="Filters"

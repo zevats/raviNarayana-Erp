@@ -46,9 +46,9 @@ export function isValidRoomType(type: string): type is RoomType {
  * maintenance offers no beds for new residents; otherwise free = in-service beds − residents.
  * Without the migration rooms are returned unchanged (capacity − residents).
  */
-async function withBeds(db: AsyncDb, rooms: RoomWithOccupancy[]): Promise<RoomWithOccupancy[]> {
+async function withBeds(db: AsyncDb, rooms: RoomWithOccupancy[], preloaded?: Promise<Awaited<ReturnType<typeof loadBedState>>>): Promise<RoomWithOccupancy[]> {
   if (rooms.length === 0 || !(await hasBedsSchema(db))) return rooms;
-  const state = await loadBedState(db, rooms.length <= 50 ? rooms.map((r) => r.id) : undefined);
+  const state = preloaded ? await preloaded : await loadBedState(db, rooms.length <= 50 ? rooms.map((r) => r.id) : undefined);
   return rooms.map((room) => {
     const st = state.get(room.id);
     if (!st) return room;
@@ -109,7 +109,9 @@ export async function listRooms(
     ORDER BY r.floor ASC, r.room_number ASC
   `;
 
-  // Single parallel execution to eliminate N+1 occupant queries per room
+  // Rooms, occupants and every room's beds side by side (one round trip).
+  const bedsP = loadBedState(db);
+  bedsP.catch(() => {});
   const [rows, allOccupants] = await Promise.all([
     db.query<any>(query, params),
     db.query<{
@@ -168,7 +170,7 @@ export async function listRooms(
     };
   });
 
-  const decorated = await withBeds(db, results);
+  const decorated = await withBeds(db, results, bedsP);
   if (options?.status === "VACANT") {
     return decorated.filter((r) => r.isActive && r.availableBeds > 0);
   }
