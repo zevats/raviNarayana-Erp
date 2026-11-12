@@ -12,6 +12,7 @@ import { Segmented, SearchField, EmptyState } from "@/components/ui/kit";
 import { formatNumberIN } from "@/lib/format";
 import { MSkeletonRows, useIsPhone } from "@/components/app/m";
 import { ReportsMobile } from "./ReportsMobile";
+import { usePrefetchChoices } from "@/lib/pageQueries";
 
 interface ReportInfo { key: string; title: string; description: string; divisions: boolean }
 interface Column { key: string; label: string; type: "text" | "date" | "money" | "number" | "percent" }
@@ -36,6 +37,14 @@ const fmt = (v: unknown, type: Column["type"]) => {
   return String(v);
 };
 
+const REPORT_TAGS = ["finance", "delivery", "rooms", "residents"];
+async function runReport(url: string): Promise<{ report: Report }> {
+  const res = await fetch(url, { cache: "no-store" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Could not run the report.");
+  return body;
+}
+
 export function ReportsView() {
   const list = useErpQuery<{ reports: ReportInfo[] }>("/api/reports", async () => (await fetch("/api/reports", { cache: "no-store" })).json(), { ttl: 300000 });
   const reports = list.data?.reports ?? [];
@@ -58,22 +67,25 @@ export function ReportsView() {
   }, [key, reports]);
 
   const info = reports.find((r) => r.key === key);
-  const params = useMemo(() => {
+  const paramsFor = (d: string) => {
     const p = new URLSearchParams({ key, from, to, limit: String(PAGE), offset: String(page * PAGE) });
-    if (info?.divisions) p.set("division", division);
+    if (info?.divisions) p.set("division", d);
     if (searchTerm) p.set("search", searchTerm);
     return p;
-  }, [key, from, to, division, searchTerm, page, info?.divisions]);
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const params = useMemo(() => paramsFor(division), [key, from, to, division, searchTerm, page, info?.divisions]);
   const url = key ? `/api/reports?${params.toString()}` : null;
-  const q = useErpQuery<{ report: Report }>(
-    url,
-    async () => {
-      const res = await fetch(url as string, { cache: "no-store" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || "Could not run the report.");
-      return body;
-    },
-    { ttl: 15000, tags: ["finance", "delivery", "rooms", "residents"] }
+  const q = useErpQuery<{ report: Report }>(url, () => runReport(url as string), { ttl: 15000, tags: REPORT_TAGS });
+  // All / PG / Tiffin: the other two load right after, so switching is instant.
+  usePrefetchChoices(
+    info?.divisions && key
+      ? ["COMBINED", "PG", "TIFFIN"].filter((d) => d !== division).map((d) => {
+          const u = `/api/reports?${paramsFor(d).toString()}`;
+          return { key: u, fetcher: () => runReport(u), ttl: 15000, tags: REPORT_TAGS };
+        })
+      : [],
+    Boolean(q.data) && !q.isSwitching
   );
   const r = q.data?.report;
   const csvUrl = useMemo(() => {

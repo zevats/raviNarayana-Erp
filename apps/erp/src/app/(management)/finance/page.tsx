@@ -29,6 +29,7 @@ import { Segmented } from "@/components/ui/kit";
 import {
   toLocalDateString,
   getLocalFirstDayOfMonth,
+  getLocalDaysAgo,
 } from "@/modules/finance/utils/dateUtils";
 import { exportCashbookCsv } from "@/modules/finance/utils/financeCsv";
 import dynamic from "next/dynamic";
@@ -46,7 +47,7 @@ const EditEntryDialog = dynamic(() => loadEntryForms().then((m) => m.EditEntryDi
 const loadReceiptModal = () => import("@/modules/billing/ReceiptViewer");
 const ReceiptViewer = dynamic(() => loadReceiptModal().then((m) => m.ReceiptViewer), { ssr: false });
 import { hasReceipt } from "@/modules/billing/ReceiptViewer";
-import { financeBundleQuery } from "@/lib/pageQueries";
+import { financeBundleQuery, usePrefetchChoices } from "@/lib/pageQueries";
 // Dues and Bills are their own tabs: the code loads when a tab opens (preloaded when idle).
 const loadDues = () => import("@/modules/billing/DuesList");
 const duesLoading = () => (
@@ -102,6 +103,15 @@ export default function FinancePage() {
     isRevalidating: isFinanceRevalidating,
     refetch: refetchFinance,
   } = useErpQuery(financeDef.key, financeDef.fetcher, { ttl: financeDef.ttl, tags: financeDef.tags });
+  // The other periods (this month, last 30 days, all time) load right after, so switching is instant.
+  usePrefetchChoices(
+    [
+      financeBundleQuery(getLocalFirstDayOfMonth(), toLocalDateString()),
+      financeBundleQuery(getLocalDaysAgo(30), toLocalDateString()),
+      financeBundleQuery("2026-01-01", toLocalDateString()),
+    ],
+    Boolean(financeData) && activeTab === "cashbook"
+  );
 
   const cashbook = financeData?.cashbook || null;
   const transactions = financeData?.transactions || [];

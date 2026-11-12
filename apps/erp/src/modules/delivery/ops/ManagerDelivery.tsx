@@ -20,6 +20,7 @@ import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
 import { useInstantChoice } from "@/lib/useInstantChoice";
+import { deliveryTasksQuery, manifestQuery, usePrefetchChoices } from "@/lib/pageQueries";
 
 type Tab = "board" | "problems" | "custody" | "history" | "rooms";
 const FILTERS: Array<DeliveryOutcome | "ALL"> = ["ALL", "WAITING", "OUT", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
@@ -106,6 +107,11 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
 
   const tasksQ = useDeliveryTasks(date, meal);
   const manifest = useManifest(date, meal);
+  // The other two meals of the day load right after, so Breakfast / Lunch / Dinner switch at once.
+  usePrefetchChoices(
+    (["BREAKFAST", "LUNCH", "DINNER"] as MealType[]).filter((m) => m !== meal).flatMap((m) => [deliveryTasksQuery(date, m), manifestQuery(date, m)]),
+    Boolean(tasksQ.data) && !tasksQ.isSwitching
+  );
   const staffQ = useDeliveryStaff(canManage);
   // Delivery staff, plus the signed-in Owner/Manager to take a delivery themselves (one-off; the
   // default delivery partner is unchanged).

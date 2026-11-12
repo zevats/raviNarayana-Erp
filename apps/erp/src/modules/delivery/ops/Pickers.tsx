@@ -142,12 +142,15 @@ export function OptionMenu<T extends string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${label}: ${current.label}`}
-        className={`${TRIGGER} ${value === options[0].key ? "w-11 justify-center sm:w-auto sm:px-3" : "px-3"} ${value !== options[0].key ? "border-[#C9501C]/50 bg-[#FCE9DD]/60" : ""}`}
+        className={`${TRIGGER} relative w-11 justify-center sm:w-auto sm:px-3 ${value !== options[0].key ? "!border-[#C9501C]/50 !bg-[#FCE9DD]" : ""}`}
       >
         {icon}
-        {/* Nothing chosen: just the icon on phones; a choice shows its name and count. */}
-        <span className={value === options[0].key ? "hidden sm:inline" : ""}>{current.short ?? current.label}</span>
-        {value !== options[0].key && current.count !== undefined && <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#EFEAE1] text-[11px] font-bold text-[#3E4540] flex items-center justify-center">{current.count}</span>}
+        {/* Phones: always the icon only, so the meal buttons beside it keep their room; a choice
+            tints it and shows its count on the corner. Wider screens also show the name. */}
+        <span className="hidden sm:inline">{current.short ?? current.label}</span>
+        {value !== options[0].key && current.count !== undefined && (
+          <span className="absolute -top-1.5 -right-1.5 sm:static min-w-[20px] h-5 px-1.5 rounded-full bg-[#C9501C] sm:bg-[#EFEAE1] text-[11px] font-bold text-white sm:text-[#3E4540] flex items-center justify-center tabular-nums">{current.count}</span>
+        )}
       </button>
       {open && (
         <ul role="listbox" aria-label={label} className="rn-enter absolute z-30 right-0 top-full mt-1.5 w-48 rounded-2xl bg-white border border-[#ECE6DB] shadow-[0_12px_32px_rgba(31,35,32,0.14)] p-1">

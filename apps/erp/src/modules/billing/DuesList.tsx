@@ -15,7 +15,7 @@ import { DueAccount, DuesList as DuesData, getJson, money } from "./api";
 import { AccountSheet } from "./AccountSheet";
 import { BillAllDialog, BillRow } from "./BillDialogs";
 import { BillViewer } from "./BillViewer";
-import { duesQuery } from "@/lib/pageQueries";
+import { duesQuery, usePrefetchChoices } from "@/lib/pageQueries";
 import { useInstantChoice } from "@/lib/useInstantChoice";
 
 export type DuesScope = "ALL" | "CUSTOMER" | "RESIDENT";
@@ -194,8 +194,14 @@ export function BillsList() {
   const [date, setDate] = useState("");
   const [limit, setLimit] = useState(40);
   const [open, setOpen] = useState<string | null>(null);
-  const url = `/api/finance/bills?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}${type !== "ALL" ? `&type=${type}` : ""}${date ? `&date=${date}` : ""}`;
+  const billsUrl = (t: "ALL" | "GST" | "NON_GST") => `/api/finance/bills?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}${t !== "ALL" ? `&type=${t}` : ""}${date ? `&date=${date}` : ""}`;
+  const url = billsUrl(type);
   const list = useErpQuery<{ bills: BillSummary[]; total: number; amount: number }>(url, () => getJson(url), { tags: ["bills"], ttl: 15000 });
+  // All / GST / Non-GST: the other two load right after, so the chips switch at once.
+  usePrefetchChoices(
+    (["ALL", "GST", "NON_GST"] as const).filter((t) => t !== type).map((t) => ({ key: billsUrl(t), fetcher: () => getJson(billsUrl(t)), ttl: 15000, tags: ["bills"] })),
+    Boolean(list.data) && !list.isSwitching
+  );
   const bills = list.data?.bills ?? [];
   const [exporting, setExporting] = useState(false);
   // Every bill that matches the filters (not just the ones loaded on screen), 200 at a time.

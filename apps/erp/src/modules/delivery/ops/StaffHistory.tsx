@@ -54,9 +54,12 @@ export function StaffHistory({ user }: { user: AuthenticatedUser }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-[26px] md:text-[30px] font-extrabold tracking-[-0.02em]">Delivery History</h1>
-      </div>
+      {/* In the Owner/Manager app the page is already titled My deliveries, with History chosen. */}
+      {!mine && (
+        <div>
+          <h1 className="text-[26px] md:text-[30px] font-extrabold tracking-[-0.02em]">Delivery History</h1>
+        </div>
+      )}
 
       {/* One row: meal first, then the day (custom calendar), then what to show (custom menu). */}
       <div className="relative grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex">

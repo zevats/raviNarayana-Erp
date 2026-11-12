@@ -5,9 +5,10 @@ import type { MealType } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import { businessToday } from "@/lib/businessDate";
-import { useResidentDay, postJson } from "./data";
+import { useResidentDay, residentDayQuery, postJson } from "./data";
 import { Card } from "@/components/ui/kit";
 import { SkeletonRows } from "@/components/ui/states";
+import { usePrefetchChoices } from "@/lib/pageQueries";
 
 /**
  * Delivery → Room meals: which residents have their lunch or dinner taken to the room (a standing
@@ -16,6 +17,10 @@ import { SkeletonRows } from "@/components/ui/states";
 export function RoomMeals({ canChange, date, meal }: { canChange: boolean; date: string; meal: MealType }) {
   const today = date;
   const q = useResidentDay(date, meal);
+  usePrefetchChoices(
+    (["BREAKFAST", "LUNCH", "DINNER"] as MealType[]).filter((m) => m !== meal).map((m) => residentDayQuery(date, m)),
+    Boolean(q.data) && !q.isSwitching
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useTimedMessage<{ tone: "ok" | "error"; text: string }>();
 

@@ -568,7 +568,7 @@ export interface MMenuItem {
 }
 
 /** A ⋮ button that opens a short list of actions right under it (tap outside or Escape closes it). */
-export function MMenu({ items, label = "More actions" }: { items: MMenuItem[]; label?: string }) {
+export function MMenu({ items, label = "More actions", buttonClassName = "m-sheet-x m-press" }: { items: MMenuItem[]; label?: string; buttonClassName?: string }) {
   const [open, setOpen] = useState(false);
   const [up, setUp] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
@@ -590,7 +590,7 @@ export function MMenu({ items, label = "More actions" }: { items: MMenuItem[]; l
   if (shown.length === 0) return null;
   return (
     <span ref={box} className="relative inline-flex">
-      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className="m-sheet-x m-press">
+      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className={buttonClassName}>
         <MoreVertical className="w-5 h-5" />
       </button>
       {open && (

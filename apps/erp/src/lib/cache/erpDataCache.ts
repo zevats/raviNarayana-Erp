@@ -376,8 +376,13 @@ export function useErpQuery<T = any>(
 
   const refetch = useCallback(() => performFetch(hasDataRef.current), [performFetch]);
 
+  // A filter/date/tab switched to data already loaded (or loaded ahead): show it in this very
+  // render, not one frame later (the effect above then records it as the data on screen).
+  const cachedNow = key && enabled && dataKey !== key ? cacheStore.get(key) : undefined;
+  const shownData = cachedNow ? (cachedNow.data as T) : data;
+
   // While the rows on screen belong to the previous key, the page dims its lists.
-  const switchingNow = data !== undefined && Boolean(key) && dataKey !== key && enabled;
+  const switchingNow = !cachedNow && data !== undefined && Boolean(key) && dataKey !== key && enabled;
   useEffect(() => {
     if (!switchingNow) return;
     return beginSwitching();
@@ -404,9 +409,9 @@ export function useErpQuery<T = any>(
   }, [key, enabled, pollIntervalMs, performFetch]);
 
   return {
-    data,
+    data: shownData,
     error,
-    isLoading,
+    isLoading: cachedNow ? false : isLoading,
     isRevalidating,
     isSwitching: switchingNow,
     mutate,

@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { executeErpFetch, getCacheAgeMs } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
 import { getLocalFirstDayOfMonth, toLocalDateString } from "@/modules/finance/utils/dateUtils";
-import type { UnifiedOrder, DeliveryTask, DeliveryManifestStatus, ResidentListItem, RoomWithOccupancy, TiffinCustomer, CashbookSummary, FinancialTransaction } from "@/types";
+import type { UnifiedOrder, DeliveryTask, DeliveryManifestStatus, ResidentListItem, RoomWithOccupancy, TiffinCustomer, CashbookSummary, FinancialTransaction, DailyClosingPreview } from "@/types";
 
 /**
  * The main data of each page, defined once: the page reads it with these keys and fetchers, and
@@ -107,11 +108,50 @@ export function billsQuery(): PageQuery<any> {
   return { key, fetcher: () => json(key, "Could not load. Please try again."), ttl: 15000, tags: ["bills"] };
 }
 
+/** Daily closing for one day and one part of the business (All, PG or Tiffin). */
+export function closingPreviewQuery(closingDate: string, division: string): PageQuery<DailyClosingPreview> {
+  const key = `/api/finance/closing/preview?closingDate=${closingDate}&division=${division}`;
+  return {
+    key,
+    fetcher: async () => (await json(key, "Failed to load closing preview.")).preview,
+    ttl: 20000,
+    tags: ["finance", "closing"],
+  };
+}
+
 /** Loads a query ahead of time when it is missing or stale (quietly: no loading bar). */
-export function prefetchQuery(q: PageQuery<any>): void {
+export function prefetchQuery(q: PageQuery<any>): Promise<void> {
   const age = getCacheAgeMs(q.key);
-  if (age !== null && age < q.ttl) return;
-  executeErpFetch(q.key, q.fetcher, { ttl: q.ttl, tags: q.tags }).catch(() => {});
+  if (age !== null && age < q.ttl) return Promise.resolve();
+  return executeErpFetch(q.key, q.fetcher, { ttl: q.ttl, tags: q.tags }).then(
+    () => {},
+    () => {}
+  );
+}
+
+/**
+ * Once the data on screen has loaded, loads the other choices of the same filter (the other
+ * meals, divisions, periods...) quietly, one after another, so switching to any of them shows
+ * its data at once. Choices already loaded and still fresh are skipped.
+ */
+export function usePrefetchChoices(queries: Array<PageQuery<any> | null | false | undefined>, ready: boolean): void {
+  const keys = queries.map((q) => (q ? q.key : "")).join("|");
+  const latest = useRef(queries);
+  latest.current = queries;
+  useEffect(() => {
+    if (!ready || !keys) return;
+    let stopped = false;
+    const timer = window.setTimeout(async () => {
+      for (const q of latest.current) {
+        if (stopped) return;
+        if (q) await prefetchQuery(q);
+      }
+    }, 400);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [keys, ready]);
 }
 
 /** What each section shows first, for loading it ahead of time. */

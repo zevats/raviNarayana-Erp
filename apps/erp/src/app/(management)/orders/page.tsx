@@ -28,7 +28,7 @@ import { UnifiedOrder, TiffinCustomer } from "@/types";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import Link from "next/link";
-import { businessToday } from "@/lib/businessDate";
+import { businessToday, addBusinessDays } from "@/lib/businessDate";
 import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { PageHeader, Segmented, StatStrip, SearchField, EmptyState } from "@/components/ui/kit";
 import dynamic from "next/dynamic";
@@ -39,7 +39,7 @@ import { OrderCard } from "@/modules/orders/components/OrderCard";
 import { OrdersMobile } from "@/modules/orders/components/OrdersMobile";
 import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import type { PendingOrderJob } from "@/modules/orders/components/NewOrderModal";
-import { ordersQuery as pageOrdersQuery } from "@/lib/pageQueries";
+import { ordersQuery as pageOrdersQuery, usePrefetchChoices } from "@/lib/pageQueries";
 
 // Dialogs and secondary views load on demand, off the navigation path.
 const loadNewOrderModal = () => import("@/modules/orders/components/NewOrderModal");
@@ -150,6 +150,15 @@ export default function OrdersPage() {
   const ordersDef = pageOrdersQuery(serviceDate, orderTypeFilter);
   const deferredSearch = useDeferredValue(searchQuery);
   const ordersQuery = useErpQuery(ordersDef.key, ordersDef.fetcher, { ttl: ordersDef.ttl, tags: ordersDef.tags, pollIntervalMs: ORDERS_POLL_MS });
+  // The other order types, and the day before and after, load right after: those switches are instant.
+  usePrefetchChoices(
+    [
+      ...(["ALL", "DELIVERY", "DINE_IN"] as const).filter((t) => t !== orderTypeFilter).map((t) => pageOrdersQuery(serviceDate, t)),
+      pageOrdersQuery(addBusinessDays(serviceDate, -1), orderTypeFilter),
+      pageOrdersQuery(addBusinessDays(serviceDate, 1), orderTypeFilter),
+    ],
+    Boolean(ordersQuery.data) && !ordersQuery.isSwitching
+  );
   const orders = ordersQuery.data?.orders ?? [];
   const counts = ordersQuery.data?.counts ?? { today: 0, active: 0, completed: 0 };
   // First load shows the placeholder; background refreshes only spin the refresh icon.

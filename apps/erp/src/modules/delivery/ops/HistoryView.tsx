@@ -5,12 +5,13 @@ import React, { useState } from "react";
 import type { MealType } from "@/types";
 import { addBusinessDays, businessToday } from "@/lib/businessDate";
 import { DISPOSITION_LABEL } from "@/lib/delivery/outcome";
-import { useCloseout, useHistory } from "./data";
+import { useCloseout, useHistory, closeoutQuery } from "./data";
 import { rupees, dayLabel } from "./ui";
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { Segmented, StatStrip, Badge } from "@/components/ui/kit";
 import { LoadError, StateMessage } from "@/components/ui/states";
 import { formatDateTime } from "@/lib/format";
+import { usePrefetchChoices } from "@/lib/pageQueries";
 
 const shortDay = (iso: string, today: string) => {
   if (iso === today) return "Today";
@@ -32,6 +33,11 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
   const today = businessToday();
   const close = useCloseout(date, scope);
   const c = close.data;
+  // Breakfast / Lunch / Dinner / Day: the others load right after, so the switch is instant.
+  usePrefetchChoices(
+    (["BREAKFAST", "LUNCH", "DINNER", "ALL"] as const).filter((m) => m !== scope).map((m) => closeoutQuery(date, m)),
+    Boolean(c) && !close.isSwitching
+  );
 
   return (
     <div className="space-y-5">

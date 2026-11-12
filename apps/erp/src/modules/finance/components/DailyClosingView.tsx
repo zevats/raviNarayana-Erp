@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { StatStrip } from "@/components/ui/kit";
 import {
   Calendar,
@@ -32,6 +32,8 @@ import { formatNumberIN, formatMoney } from "@/lib/format";
 import { useIsPhone } from "@/components/app/m";
 import { ClosingMobile } from "../mobile/FinanceMobileMore";
 import { exportClosingsCsv } from "../utils/financeCsv";
+import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
+import { closingPreviewQuery, usePrefetchChoices } from "@/lib/pageQueries";
 import { Download } from "lucide-react";
 
 interface DailyClosingViewProps {
@@ -48,9 +50,7 @@ export function DailyClosingView({
   const phone = useIsPhone();
   const [selectedDate, setSelectedDate] = useState<string>(toLocalDateString());
   const [selectedDivision, setSelectedDivision] = useState<ClosingDivision>("COMBINED");
-  const [preview, setPreview] = useState<DailyClosingPreview | null>(null);
   const [historicalClosings, setHistoricalClosings] = useState<DailyClosingRecord[]>([]);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -64,38 +64,49 @@ export function DailyClosingView({
   const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState("");
 
-  // Load preview data for selected date & division
-  const fetchPreview = useCallback(async (date: string, division: ClosingDivision) => {
-    setIsLoadingPreview(true);
-    try {
-      const res = await fetch(`/api/finance/closing/preview?closingDate=${date}&division=${division}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to load closing preview.");
-      }
-      setPreview(data.preview);
+  // The day's closing for the chosen part of the business, from the shared cache: All, PG and
+  // Tiffin are all loaded (the other two quietly, right after the first), so switching between
+  // them shows the figures at once.
+  const previewDef = closingPreviewQuery(selectedDate, selectedDivision);
+  const previewQuery = useErpQuery<DailyClosingPreview>(previewDef.key, previewDef.fetcher, { ttl: previewDef.ttl, tags: previewDef.tags });
+  // While another day loads, the previous figures stay (dimmed) instead of blanking.
+  const preview: DailyClosingPreview | null = previewQuery.data ?? null;
+  const currentPreview = previewQuery.isSwitching ? null : preview;
+  const isLoadingPreview = previewQuery.isLoading && !preview;
+  usePrefetchChoices(
+    (["COMBINED", "PG", "TIFFIN"] as ClosingDivision[]).filter((d) => d !== selectedDivision).map((d) => closingPreviewQuery(selectedDate, d)),
+    Boolean(currentPreview)
+  );
+  useEffect(() => {
+    if (previewQuery.error && onMutationError) onMutationError(previewQuery.error.message || "Failed to load closing preview.");
+  }, [previewQuery.error, onMutationError]);
 
-      // Pre-fill fields if existing record exists
-      if (data.preview.existingClosing) {
-        const ec = data.preview.existingClosing;
-        setActualCashCounted(ec.actualCashCounted !== null ? String(ec.actualCashCounted) : "");
-        setActualBankVerified(ec.actualBankVerified !== null ? String(ec.actualBankVerified) : "");
-        setDiscrepancyReason(ec.discrepancyReason || "");
-        setNotes(ec.notes || "");
-      } else {
-        setActualCashCounted(String(data.preview.expectedCashBalance));
-        setActualBankVerified("");
-        setDiscrepancyReason("");
-        setNotes("");
-      }
-    } catch (err: any) {
-      if (onMutationError) onMutationError(err.message);
-    } finally {
-      setIsLoadingPreview(false);
+  // The form starts from the saved closing (or the expected cash) when the day or the part of the
+  // business changes, and after a save; a quiet refresh never overwrites what is being typed.
+  const prefilledFor = useRef<string | null>(null);
+  useEffect(() => {
+    const preview = currentPreview;
+    if (!preview || prefilledFor.current === previewDef.key) return;
+    prefilledFor.current = previewDef.key;
+    if (preview.existingClosing) {
+      const ec = preview.existingClosing;
+      setActualCashCounted(ec.actualCashCounted !== null ? String(ec.actualCashCounted) : "");
+      setActualBankVerified(ec.actualBankVerified !== null ? String(ec.actualBankVerified) : "");
+      setDiscrepancyReason(ec.discrepancyReason || "");
+      setNotes(ec.notes || "");
+    } else {
+      setActualCashCounted(String(preview.expectedCashBalance));
+      setActualBankVerified("");
+      setDiscrepancyReason("");
+      setNotes("");
     }
-  }, [onMutationError]);
+  }, [currentPreview, previewDef.key]);
+
+  // After a draft, finalize or reopen: every division's figures for the day are loaded again.
+  const reloadPreview = useCallback(async () => {
+    prefilledFor.current = null;
+    invalidateErpCache(["closing"]);
+  }, []);
 
   // Load historical closings
   const fetchHistory = useCallback(async () => {
@@ -112,10 +123,6 @@ export function DailyClosingView({
       setIsLoadingHistory(false);
     }
   }, []);
-
-  useEffect(() => {
-    fetchPreview(selectedDate, selectedDivision);
-  }, [selectedDate, selectedDivision, fetchPreview]);
 
   useEffect(() => {
     fetchHistory();
@@ -152,7 +159,7 @@ export function DailyClosingView({
       if (!res.ok) throw new Error(data.error || "Failed to save closing draft.");
 
       if (onMutationSuccess) onMutationSuccess("Daily closing draft saved successfully.");
-      await fetchPreview(selectedDate, selectedDivision);
+      await reloadPreview();
       await fetchHistory();
     } catch (err: any) {
       if (onMutationError) onMutationError(err.message);
@@ -195,7 +202,7 @@ export function DailyClosingView({
       if (!res.ok) throw new Error(data.error || "Failed to finalize closing.");
 
       if (onMutationSuccess) onMutationSuccess(`Daily closing for ${selectedDate} finalized and locked successfully.`);
-      await fetchPreview(selectedDate, selectedDivision);
+      await reloadPreview();
       await fetchHistory();
     } catch (err: any) {
       if (onMutationError) onMutationError(err.message);
@@ -226,7 +233,7 @@ export function DailyClosingView({
       if (onMutationSuccess) onMutationSuccess(`Daily closing for ${selectedDate} has been reopened.`);
       setIsReopenModalOpen(false);
       setReopenReason("");
-      await fetchPreview(selectedDate, selectedDivision);
+      await reloadPreview();
       await fetchHistory();
     } catch (err: any) {
       if (onMutationError) onMutationError(err.message);

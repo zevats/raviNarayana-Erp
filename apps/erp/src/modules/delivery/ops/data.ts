@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { requestJson, postJsonRequest } from "@/lib/http/requestJson";
-import { deliveryTasksQuery, manifestQuery } from "@/lib/pageQueries";
+import { deliveryTasksQuery, manifestQuery, type PageQuery } from "@/lib/pageQueries";
 import type {
   DeliveryTask,
   DeliveryTaskEvent,
@@ -96,11 +96,16 @@ export function useDeliveryStaff(enabled: boolean) {
   );
 }
 
+export function closeoutQuery(serviceDate: string, mealType: MealType | "ALL"): PageQuery<DeliveryCloseout> {
+  const key = `/api/delivery/closeout?serviceDate=${serviceDate}&mealType=${mealType}`;
+  return { key, fetcher: () => getJson<DeliveryCloseout>(key), ttl: LIVE_MS, tags: ["delivery", "custody", "handover"] };
+}
+
 export function useCloseout(serviceDate: string, mealType: MealType | "ALL", enabled = true) {
-  const key = enabled ? `/api/delivery/closeout?serviceDate=${serviceDate}&mealType=${mealType}` : null;
-  return useErpQuery<DeliveryCloseout>(key, () => getJson<DeliveryCloseout>(key as string), {
-    ttl: LIVE_MS,
-    tags: ["delivery", "custody", "handover"],
+  const def = closeoutQuery(serviceDate, mealType);
+  return useErpQuery<DeliveryCloseout>(enabled ? def.key : null, def.fetcher, {
+    ttl: def.ttl,
+    tags: def.tags,
     pollIntervalMs: LIVE_MS,
   });
 }
@@ -123,11 +128,16 @@ export function useSubscriptionDay(serviceDate: string, mealType: MealType, enab
   });
 }
 
+export function residentDayQuery(serviceDate: string, mealType: MealType): PageQuery<DeliveryDayListing<ResidentMealDeliveryRow>> {
+  const key = `/api/delivery/residents-day?serviceDate=${serviceDate}&mealType=${mealType}`;
+  return { key, fetcher: () => getJson(key), ttl: LIVE_MS, tags: ["residents", "delivery"] };
+}
+
 export function useResidentDay(serviceDate: string, mealType: MealType, enabled = true) {
-  const key = enabled ? `/api/delivery/residents-day?serviceDate=${serviceDate}&mealType=${mealType}` : null;
-  return useErpQuery<DeliveryDayListing<ResidentMealDeliveryRow>>(key, () => getJson(key as string), {
-    ttl: LIVE_MS,
-    tags: ["residents", "delivery"],
+  const def = residentDayQuery(serviceDate, mealType);
+  return useErpQuery<DeliveryDayListing<ResidentMealDeliveryRow>>(enabled ? def.key : null, def.fetcher, {
+    ttl: def.ttl,
+    tags: def.tags,
     pollIntervalMs: LIVE_MS,
   });
 }

@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import { X, Phone, MapPin, Navigation, Pencil, Wallet, Power, CalendarDays, StickyNote, UtensilsCrossed, ReceiptText } from "lucide-react";
 import { TiffinCustomer, TiffinSubscription } from "@/types";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
+import { MMenu } from "@/components/app/m";
 import { formatINR } from "@/modules/finance/utils/formatUtils";
 import type { CustomerMonth } from "@/server/orders/orderService";
 
@@ -118,15 +119,25 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
       >
         {/* Header */}
         <header className="relative px-5 sm:px-6 pt-4 pb-3 text-[#18211B]">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="absolute right-4 top-3.5 w-[38px] h-[38px] rounded-full bg-[#ECE8DF] text-[#18211B] flex items-center justify-center transition-colors"
-          >
-            <X className="w-[18px] h-[18px]" />
-          </button>
-          <div className="flex items-center gap-3.5 pr-10">
+          <div className="absolute right-4 top-3.5 flex items-center gap-2">
+            <MMenu
+              label={`More for ${customer.fullName}`}
+              buttonClassName="m-press w-10 h-10 !min-w-10 rounded-full bg-[#ECE8DF] text-[#18211B] flex items-center justify-center"
+              items={[
+                { label: "Edit details", icon: Pencil, onSelect: () => { onClose(); onEdit?.(customer); }, hidden: !onEdit },
+                { label: isActive ? "Deactivate" : "Reactivate", icon: Power, danger: isActive, onSelect: () => { onClose(); onToggleStatus?.(customer); }, hidden: !onToggleStatus },
+              ]}
+            />
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="m-press w-10 h-10 !min-w-10 rounded-full bg-[#ECE8DF] text-[#18211B] flex items-center justify-center transition-colors"
+            >
+              <X className="w-[18px] h-[18px]" />
+            </button>
+          </div>
+          <div className={`flex items-center gap-3.5 ${onEdit || onToggleStatus ? "pr-[92px]" : "pr-10"}`}>
             <div className="w-14 h-14 rounded-full bg-[#FCE8DB] text-[#BF521E] flex items-center justify-center text-[17px] font-semibold shrink-0">{initialsOf(customer.fullName)}</div>
             <div className="min-w-0">
               <h2 id="customer-detail-title" className="text-[20px] leading-tight font-semibold tracking-[-0.015em] text-[#18211B] truncate">
@@ -148,7 +159,7 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-4 pb-6 space-y-3">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 pt-4 pb-[max(1.5rem,calc(env(safe-area-inset-bottom)+1rem))] space-y-3">
           {/* Balance */}
           <section className="rounded-2xl bg-white border border-[#ECE6DB] p-4" aria-label="Balance">
             <div className="flex items-end justify-between gap-3">
@@ -328,38 +339,6 @@ export function CustomerDetailModal({ isOpen, onClose, customer, onEdit, onToggl
           </p>
         </div>
 
-        {/* Actions */}
-        <footer className="shrink-0 px-5 sm:px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-white border-t border-[#ECE6DB] flex items-center gap-3">
-          {onToggleStatus && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onToggleStatus(customer);
-              }}
-              className={`inline-flex items-center gap-1.5 h-11 px-4 rounded-full border text-[13.5px] font-semibold transition-colors ${
-                isActive ? "border-[#E8C4BA] text-[#9A3423] hover:bg-[#FBE9E4]" : "border-[#BFDDB6] text-[#2F6B24] hover:bg-[#E4F2E0]"
-              }`}
-            >
-              <Power className="w-4 h-4" />
-              {isActive ? "Deactivate" : "Reactivate"}
-            </button>
-          )}
-          <div className="flex-1" />
-          {onEdit && (
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onEdit(customer);
-              }}
-              className="inline-flex items-center gap-1.5 h-11 px-5 rounded-full bg-[#1A2E20] text-white text-[13.5px] font-semibold hover:bg-[#263B2D] transition-colors"
-            >
-              <Pencil className="w-4 h-4 text-[#E4C9A4]" />
-              Edit details
-            </button>
-          )}
-        </footer>
       </div>
     </div>
   );
