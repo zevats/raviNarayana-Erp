@@ -9,6 +9,7 @@ import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
 import { summarizeDeliveries, deliveryOutcome, needsFollowUp, DeliveryOutcome, DISPOSITION_LABEL, undeliveredOf, OUTCOME_LABEL } from "@/lib/delivery/outcome";
 import { CustodyPanel } from "../components/CustodyPanel";
+import { ThaliDesk } from "./Thalis";
 import { useDeliveryTasks, useManifest, useDeliveryStaff, postJson, StaffOption } from "./data";
 import { MealSwitch, DateStepper, HeroDayStepper, OutcomeBadge, Notice, Count, btn, rupees, timeOf, displayName, placeLine, itemSummary } from "./ui";
 import { TaskPanel } from "./TaskPanel";
@@ -302,8 +303,10 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
               }
               action={<HeroDayStepper value={date} today={today} onChange={setDate} />}
               items={[
-                { label: "Waiting", value: summary.waiting, onClick: () => { setTab("board"); setFilter(filter === "WAITING" ? "ALL" : "WAITING"); } },
                 { label: "Out now", value: summary.out, onClick: () => { setTab("board"); setFilter(filter === "OUT" ? "ALL" : "OUT"); } },
+                summary.waiting > 0
+                  ? { label: "Not assigned", value: summary.waiting, onClick: () => { setTab("board"); setFilter(filter === "WAITING" ? "ALL" : "WAITING"); } }
+                  : { label: "Delivered", value: summary.delivered, onClick: () => { setTab("board"); setFilter(filter === "DELIVERED" ? "ALL" : "DELIVERED"); } },
                 { label: "Problems", value: summary.partial + summary.notDelivered, onClick: () => setTab("problems") },
                 { label: "To collect", value: rupees(summary.money.outstanding) },
               ]}
@@ -380,7 +383,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
 
       {/* Totals for the whole day and meal (search and filters never change them) */}
       <section aria-label="Summary" className="rn-card rn-stats grid grid-cols-3 sm:grid-cols-6">
-        {figure("Waiting", summary.waiting, "WAITING")}
+        {figure("Not assigned", summary.waiting, "WAITING")}
         {figure("Out", summary.out, "OUT", "text-status-info-text")}
         {figure("Delivered", summary.delivered, "DELIVERED", "text-status-success-text")}
         {figure("Partial", summary.partial, "PARTIAL", "text-status-warning-text")}
@@ -563,8 +566,9 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
       )}
 
       {tab === "custody" && (
-        <section className="rn-enter">
+        <section className="rn-enter space-y-4">
           <CustodyPanel />
+          <ThaliDesk canManage={!readOnly} />
         </section>
       )}
 

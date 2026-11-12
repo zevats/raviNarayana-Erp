@@ -262,14 +262,15 @@ export async function prepareDeliveryManifest(
            id, order_type, meal_record_id, plan_id, subscription_id, service_date, meal_type,
            resident_id, resident_name, room_number, floor, stay_id,
            customer_name, customer_phone, delivery_address, delivery_notes,
-           status, assigned_to, assigned_to_name, assigned_by, assigned_at, created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           status, assigned_to, assigned_to_name, assigned_by, assigned_at, dispatched_at, dispatched_by, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           taskId, t.kind, t.mealRecordId ?? null, plan.id, t.subscriptionId ?? null, serviceDate, mealType,
           t.residentId ?? null, t.residentName ?? t.customerName, t.roomNumber ?? null, t.floor ?? null, t.stayId ?? null,
           t.customerName, t.customerPhone ?? null, t.address ?? null, t.notes ?? null,
-          assignee ? "ASSIGNED" : "PENDING", assignee?.staff.id ?? null, assignee?.staff.full_name ?? null,
-          assignee ? actor.id : null, assignee ? at : null, at, at,
+          // No waiting phase: a stop with someone to take it is out for delivery at once.
+          assignee ? "OUT_FOR_DELIVERY" : "PENDING", assignee?.staff.id ?? null, assignee?.staff.full_name ?? null,
+          assignee ? actor.id : null, assignee ? at : null, assignee ? at : null, assignee ? actor.id : null, at, at,
         ]
       );
       await tx.execute(
@@ -280,6 +281,7 @@ export async function prepareDeliveryManifest(
       await insertEvent(tx, taskId, "CREATED", null, "PENDING", actor, createdNote, at);
       if (assignee) {
         await insertEvent(tx, taskId, "ASSIGNED", "PENDING", "ASSIGNED", actor, `Assigned to ${assignee.staff.full_name} (${assignee.why})`, at);
+        await insertEvent(tx, taskId, "DISPATCHED", "ASSIGNED", "OUT_FOR_DELIVERY", actor, "Out for delivery", new Date(Date.parse(at) + 1).toISOString());
         result.autoAssigned++;
       } else {
         result.unassigned++;

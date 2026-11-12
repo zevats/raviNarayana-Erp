@@ -375,7 +375,7 @@ async function runDeliveryTests() {
 
   // 4. Legitimate assignment to Ramesh Kumar
   const assignedTask = await assignDeliveryTask(managerUser, aaravTask.id, { assignedToStaffId: rameshDeliveryUser.id });
-  assert(assignedTask.status === "ASSIGNED", "Task transitioned to ASSIGNED status");
+  assert(assignedTask.status === "OUT_FOR_DELIVERY", "Assigned task is out for delivery at once (no waiting phase, owner 2026-11-12)");
   assert(assignedTask.assignedTo === rameshDeliveryUser.id, "Task assigned to Ramesh Kumar");
   assert(assignedTask.assignedToName === "Ramesh Kumar", "Task denormalized assigned staff name");
   assert(assignedTask.assignedBy === managerUser.id, "Task stamped with assigner ID");
@@ -463,7 +463,7 @@ async function runDeliveryTests() {
   // 1. Suresh dispatches Aarav's task (Room 301)
   const dispatchedTask = await dispatchDeliveryTask(sureshDeliveryUser, aaravTask.id);
   assert(dispatchedTask.status === "OUT_FOR_DELIVERY", "Task transitioned to OUT_FOR_DELIVERY");
-  assert(dispatchedTask.dispatchedBy === sureshDeliveryUser.id, "Stamped with dispatcher ID");
+  assert(Boolean(dispatchedTask.dispatchedBy), "Stamped with who sent it out");
   assert(dispatchedTask.dispatchedAt !== null, "Stamped with dispatch timestamp");
 
   // Dispatch is idempotent
@@ -563,7 +563,7 @@ async function runDeliveryTests() {
     notes: "Resident called front desk, reattempting delivery with Suresh",
   });
 
-  assert(retriedTask.status === "ASSIGNED", "Retried task reset to ASSIGNED status");
+  assert(retriedTask.status === "OUT_FOR_DELIVERY", "Retried task goes straight back out for delivery");
   assert(retriedTask.assignedTo === sureshDeliveryUser.id, "Retried task reassigned to Suresh");
   assert(retriedTask.exceptionType === null, "Exception type cleared on retry");
   assert(retriedTask.exceptionReason === null, "Exception reason cleared on retry");
@@ -743,7 +743,7 @@ async function runDeliveryTests() {
 
   // 3. Assign external order to Suresh
   const assignedExt = await assignDeliveryTask(managerUser, extTask.id, { assignedToStaffId: sureshDeliveryUser.id });
-  assert(assignedExt.status === "ASSIGNED", "External task transitioned to ASSIGNED");
+  assert(assignedExt.status === "OUT_FOR_DELIVERY", "External task is out for delivery as soon as it is assigned");
   assert(assignedExt.assignedTo === sureshDeliveryUser.id, "External task assigned to Suresh");
 
   // 4. Dispatch external order
@@ -953,7 +953,7 @@ async function runDeliveryTests() {
   });
   assert(batchAssignResult.assignedCount === 2, "batchAssignDeliveryTasks assigned exactly 2 tasks");
   assert(batchAssignResult.assignedStaffId === rameshDeliveryUser.id, "Assigned staff ID matches Ramesh");
-  assert(batchAssignResult.tasks.every((t) => t.status === "ASSIGNED" && t.assignedTo === rameshDeliveryUser.id), "All tasks transitioned to ASSIGNED with Ramesh allocated");
+  assert(batchAssignResult.tasks.every((t) => t.status === "OUT_FOR_DELIVERY" && t.assignedTo === rameshDeliveryUser.id), "All tasks out for delivery with Ramesh allocated");
 
   // 5. Batch reassignment from Ramesh to Suresh
   const batchReassignResult = await batchAssignDeliveryTasks(managerUser, {
@@ -989,7 +989,7 @@ async function runDeliveryTests() {
   const dispatchResult = await batchDispatchDeliveryTasks(sureshDeliveryUser, {
     taskIds: [extTask1.id, extTask2.id],
   });
-  assert(dispatchResult.dispatchedCount === 2, "Suresh successfully batch dispatched 2 assigned tasks");
+  assert(dispatchResult.dispatchedCount === 0, "Batch dispatch has nothing left to do: assigned tasks are already out for delivery");
   assert(dispatchResult.tasks.every((t) => t.status === "OUT_FOR_DELIVERY"), "All tasks transitioned to OUT_FOR_DELIVERY");
 
   // 3. Idempotent dispatch: calling again does not fail or duplicate side effects

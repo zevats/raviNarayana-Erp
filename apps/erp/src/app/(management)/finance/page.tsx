@@ -30,7 +30,7 @@ import {
   toLocalDateString,
   getLocalFirstDayOfMonth,
 } from "@/modules/finance/utils/dateUtils";
-import { exportCashbookToCsv } from "@/modules/finance/utils/exportCsv";
+import { exportCashbookCsv } from "@/modules/finance/utils/financeCsv";
 import dynamic from "next/dynamic";
 import { preloadWhenIdle } from "@/lib/preloadWhenIdle";
 import { MNotice, PhoneOrDesktop, useIsPhone } from "@/components/app/m";
@@ -46,8 +46,6 @@ const EditEntryDialog = dynamic(() => loadEntryForms().then((m) => m.EditEntryDi
 const loadReceiptModal = () => import("@/modules/billing/ReceiptViewer");
 const ReceiptViewer = dynamic(() => loadReceiptModal().then((m) => m.ReceiptViewer), { ssr: false });
 import { hasReceipt } from "@/modules/billing/ReceiptViewer";
-const loadReversalModal = () => import("@/modules/finance/components/modals/ReversalModal");
-const ReversalModal = dynamic(() => loadReversalModal().then((m) => m.ReversalModal), { ssr: false });
 // Dues and Bills are their own tabs: the code loads when a tab opens (preloaded when idle).
 const loadDues = () => import("@/modules/billing/DuesList");
 const duesLoading = () => (
@@ -64,8 +62,8 @@ const BillsList = dynamic(() => loadDues().then((m) => m.BillsList), { ssr: fals
 
 export default function FinancePage() {
   // Fetch the dialog and tab code in the background so the first click opens at once.
-  useEffect(() => preloadWhenIdle([loadReceive, loadEntryForms, loadReceiptModal, loadReversalModal, loadDues]), []);
-  // Owner-level actions (reversal, closings, invoices) are hidden for roles the server would reject.
+  useEffect(() => preloadWhenIdle([loadReceive, loadEntryForms, loadReceiptModal, loadDues]), []);
+  // Owner-level actions (closings, invoices) are hidden for roles the server would reject.
   const canManageFinance = useHasPermission("finance.manage");
   const phone = useIsPhone();
   type FinanceTab = "cashbook" | "receivables" | "invoices" | "closing";
@@ -153,7 +151,6 @@ export default function FinancePage() {
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
 
   const [receiptTx, setReceiptTx] = useState<FinancialTransaction | null>(null);
-  const [reversalTarget, setReversalTarget] = useState<FinancialTransaction | null>(null);
 
   // Refetch financial data for selected date range and invalidate cache
   const fetchData = useCallback(async () => {
@@ -183,10 +180,7 @@ export default function FinancePage() {
 
   // Export cashbook handler
   const handleExportCashbook = () => {
-    exportCashbookToCsv(transactions, {
-      startDate,
-      endDate,
-    });
+    void exportCashbookCsv(transactions, { startDate, endDate });
   };
 
   // Receive: rent, tiffin or other money, straight from the cashbook.
@@ -198,12 +192,6 @@ export default function FinancePage() {
     fetchData();
     // Money received opens its receipt (ready to share); an expense has none.
     if (tx && hasReceipt(tx)) setReceiptTx(tx);
-    setTimeout(() => setActionSuccess(null), 5000);
-  };
-
-  const handleReversalSuccess = (message: string) => {
-    setActionSuccess(message);
-    fetchData();
     setTimeout(() => setActionSuccess(null), 5000);
   };
 
@@ -238,11 +226,7 @@ export default function FinancePage() {
           onClose={() => setReceiptTx(null)}
         />
 
-        <ReversalModal
-          transaction={reversalTarget}
-          onClose={() => setReversalTarget(null)}
-          onSuccess={handleReversalSuccess}
-        />
+
     </>
   );
 
@@ -270,7 +254,6 @@ export default function FinancePage() {
             onDeposit={() => setIsDepositOpen(true)}
             onExport={handleExportCashbook}
             onReceipt={(tx) => setReceiptTx(tx)}
-            onReverse={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
             onEdit={(tx) => setEditingTx(tx)}
             onOwed={() => setActiveTab("receivables")}
           />
@@ -381,7 +364,6 @@ export default function FinancePage() {
             transactions={transactions}
             isLoading={loading}
             onViewReceipt={(tx) => setReceiptTx(tx)}
-            onInitiateReversal={canManageFinance ? (tx) => setReversalTarget(tx) : undefined}
             onEdit={(tx) => setEditingTx(tx)}
             onOpenPayment={openReceive}
             onOpenDeposit={() => setIsDepositOpen(true)}

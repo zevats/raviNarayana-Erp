@@ -154,7 +154,6 @@ export function CashbookMobile({
   onDeposit,
   onExport,
   onReceipt,
-  onReverse,
   onEdit,
   onOwed,
 }: {
@@ -169,7 +168,6 @@ export function CashbookMobile({
   onDeposit: () => void;
   onExport: () => void;
   onReceipt: (tx: FinancialTransaction) => void;
-  onReverse?: (tx: FinancialTransaction) => void;
   onEdit?: (tx: FinancialTransaction) => void;
   onOwed: () => void;
 }) {
@@ -339,36 +337,20 @@ export function CashbookMobile({
         open={Boolean(openTx)}
         onClose={() => setOpenTx(null)}
         title={openTx ? txParty(openTx) : ""}
-        headerAction={
-          openTx && onEdit && canEditEntry(openTx) ? (
-            <button
-              type="button"
-              aria-label="Edit entry"
-              className="m-sheet-x m-press"
-              onClick={() => {
-                const t = openTx;
-                setOpenTx(null);
-                onEdit(t);
-              }}
-            >
-              <Pencil className="w-[18px] h-[18px]" />
-            </button>
-          ) : undefined
-        }
         footer={
           openTx ? (
             <>
-              {onReverse && openTx.status !== "REVERSED" && openTx.transactionType !== "REVERSAL" && (
+              {onEdit && canEditEntry(openTx) && (
                 <MButton
-                  kind="danger"
-                  icon={RotateCcw}
+                  kind="soft"
+                  icon={Pencil}
                   onClick={() => {
                     const t = openTx;
                     setOpenTx(null);
-                    onReverse(t);
+                    onEdit(t);
                   }}
                 >
-                  Reverse
+                  Edit
                 </MButton>
               )}
               {hasReceipt(openTx) && (

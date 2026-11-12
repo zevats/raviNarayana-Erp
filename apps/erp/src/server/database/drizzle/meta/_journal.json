@@ -204,6 +204,20 @@
       "when": 1793594400000,
       "tag": "0028_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793680800000,
+      "tag": "0029_customer_contacts",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793767200000,
+      "tag": "0030_thali_custody",
+      "breakpoints": true
     }
   ]
 }

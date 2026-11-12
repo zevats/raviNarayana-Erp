@@ -54,11 +54,9 @@ async function main() {
 
   console.log("\n--- 2. Dine-in on Pay Later ---");
   assert(/guest phone/i.test((await refused(() => dineIn({ customerName: "No Phone", payLater: true }))) || ""), "Pay Later without a phone is refused");
-  // A name is optional (owner, 2026-11-11): a nameless guest is a one-time customer, never added to Customers.
-  const custBefore = await num(db, "SELECT COUNT(*)::int AS n FROM tiffin_customers");
-  const nameless: any = await dineIn({ customerPhone: phone(), payLater: true });
-  const namelessRow = await db.queryOne<any>("SELECT customer_name, customer_id, payment_choice FROM orders WHERE id = ?", [nameless.orderId]);
-  assert(namelessRow.payment_choice === "PAY_LATER" && namelessRow.customer_id === null && (await num(db, "SELECT COUNT(*)::int AS n FROM tiffin_customers")) === custBefore, `Pay Later without a name is taken for a one-time guest (${namelessRow.customer_name}); no customer is added`);
+  // Pay Later needs a name (owner, 2026-11-12): the order form asks for it when Pay Later is chosen.
+  assert(/guest name/i.test((await refused(() => dineIn({ customerPhone: phone(), payLater: true }))) || ""), "Pay Later without a name is refused");
+  assert(/guest name/i.test((await refused(() => dineIn({ customerName: "A", customerPhone: phone(), payLater: true }))) || ""), "Pay Later with a one-letter name is refused");
   const ledgerBefore = await num(db, "SELECT COUNT(*)::int AS n FROM financial_transactions");
   const guestPhone = phone();
   const later: any = await dineIn({ customerName: "Later Guest", customerPhone: guestPhone, payLater: true });

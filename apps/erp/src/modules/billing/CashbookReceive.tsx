@@ -10,6 +10,7 @@ import { businessToday } from "@/lib/businessDate";
 import { DueAccount, METHODS, Method, listAccountBills, methodLabel, money, refreshMoney, send } from "./api";
 import { Choice, usePaymentForm } from "./BillDialogs";
 import { useDues } from "./DuesList";
+import { uniqueId } from "@/lib/uniqueId";
 
 type Kind = "RENT" | "TIFFIN" | "OTHER";
 
@@ -141,7 +142,7 @@ function useOtherForm(open: boolean, onDone: () => void) {
   const inFlight = useRef(false);
   useEffect(() => {
     if (!open) return;
-    key.current = `rcpt_${crypto.randomUUID()}`;
+    key.current = `rcpt_${uniqueId()}`;
     setPayer("");
     setNote("");
     setAmount("");

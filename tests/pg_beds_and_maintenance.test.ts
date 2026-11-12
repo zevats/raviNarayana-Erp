@@ -64,7 +64,7 @@ async function main() {
   v = await room(r1.id);
   assert(v.availableBeds === 0 && v.occupants?.find((o) => o.residentId === B)?.bedId === null, "Without a bed choice B still checks in (bed to be chosen later); the room is full");
   const C = await resident();
-  await rejects("Full room refuses a third resident", () => assignResidentToRoom(manager, { residentId: C, roomId: r1.id, checkInDate: day, monthlyRent: 7000 }, IP, db), /full capacity|no free bed/i);
+  await rejects("Full room refuses a third resident", () => assignResidentToRoom(manager, { residentId: C, roomId: r1.id, checkInDate: day, monthlyRent: 7000 }, IP, db), /full capacity|no free bed|is full/i);
 
   console.log("\n--- 3. Concurrent check-ins for one bed ---");
   const r2 = await mkRoom(2);
@@ -90,8 +90,9 @@ async function main() {
   await rejects("An occupied bed cannot go out of service", () => updateBed(manager, lBed2, { status: "OUT_OF_SERVICE" }, IP, db), /is in this bed/);
   await updateBed(manager, v.beds![0].id, { status: "OUT_OF_SERVICE", notes: "Broken frame" }, IP, db);
   v = await room(legacy.id);
-  assert(v.inServiceBeds === 1 && v.availableBeds === 0, "Free bed out of service: no bed left to offer");
-  await rejects("No check-in when the only free bed is out of service", () => assignResidentToRoom(manager, { residentId: C, roomId: legacy.id, checkInDate: day, monthlyRent: 7000 }, IP, db), /no free bed/i);
+  // Owner, 2026-11-12: beds and maintenance are no longer managed on screen; an old out-of-service
+  // mark no longer closes a bed (the room takes residents up to its capacity).
+  assert(v.inServiceBeds === 2 && v.availableBeds === 1, "An old out-of-service mark no longer closes the free bed");
   await rejects("Removing a bed with history is refused", () => removeBed(manager, lBed2, IP, db), /history/);
 
   console.log("\n--- 5. Capacity follows the beds ---");
@@ -108,25 +109,23 @@ async function main() {
   await startRoomMaintenance(manager, r1.id, { reason: "Bathroom repair", startDate: day }, IP, db);
   v = await room(r1.id);
   const stays = await db.query<any>("SELECT status FROM resident_stays WHERE room_id = ? AND status = 'ACTIVE'", [r1.id]);
-  assert(Boolean(v.maintenance) && v.availableBeds === 0 && stays.length === 2, "Under maintenance: no beds offered, and both residents still live there (stays unchanged)");
-  await rejects("No check-in into a room under maintenance", () => assignResidentToRoom(manager, { residentId: C, roomId: r1.id, checkInDate: day, monthlyRent: 7000 }, IP, db), /under maintenance/);
+  assert(v.maintenance === null && v.availableBeds === 1 && stays.length === 2, "An open maintenance record no longer closes the room: the free bed is still offered, both residents stay");
   const T = await resident();
   await assignResidentToRoom(manager, { residentId: T, roomId: other.id, checkInDate: day, monthlyRent: 7000 }, IP, db);
-  await rejects("No transfer into a room under maintenance", () => transferResidentRoom(manager, { residentId: T, targetRoomId: r1.id, transferDate: day, reason: "Wants a bigger room" }, IP, db), /under maintenance/);
+  await transferResidentRoom(manager, { residentId: T, targetRoomId: r1.id, transferDate: day, reason: "Wants a bigger room", bedId: (await room(r1.id)).beds![2].id }, IP, db);
+  v = await room(r1.id);
+  assert(v.beds![2].occupant?.residentId === T, "A transfer into the room works while an old maintenance record is open");
   await rejects("A second open maintenance is refused", () => startRoomMaintenance(manager, r1.id, { reason: "Paint" }, IP, db), /already under maintenance/);
   await completeRoomMaintenance(manager, r1.id, { endDate: day, note: "Tiles replaced" }, IP, db);
   const hist = await listRoomMaintenance(manager, r1.id, db);
   assert(hist.length === 1 && hist[0].status === "COMPLETED" && hist[0].completionNote === "Tiles replaced", "History keeps the completed maintenance with its note");
-  await transferResidentRoom(manager, { residentId: T, targetRoomId: r1.id, transferDate: day, reason: "Wants a bigger room", bedId: (await room(r1.id)).beds![2].id }, IP, db);
-  v = await room(r1.id);
-  assert(v.beds![2].occupant?.residentId === T, "After maintenance a transfer into Bed 3 works");
   await rejects("A room with maintenance history cannot be deleted", async () => {
     await db.execute("UPDATE resident_stays SET status = 'COMPLETED', check_out_date = ? WHERE room_id = ? AND status = 'ACTIVE'", [day, other.id]);
     const empty = await mkRoom(1);
     await startRoomMaintenance(manager, empty.id, { reason: "Wiring" }, IP, db);
     await completeRoomMaintenance(manager, empty.id, {}, IP, db);
     await deleteRoom(owner, empty.id, IP, db);
-  }, /maintenance history/);
+  }, /older records/);
   const unused = await mkRoom(2);
   await deleteRoom(owner, unused.id, IP, db);
   const left = await db.queryOne<any>("SELECT COUNT(*) AS n FROM room_beds WHERE room_id = ?", [unused.id]);

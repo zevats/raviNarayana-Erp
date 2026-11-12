@@ -115,7 +115,8 @@ async function main() {
   await rejects("Missing lines rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { collectedAmount: 0 }, IP, db), /every item/);
   await rejects("Missing a line rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: full1.slice(0, 1) }, IP, db), /every item/);
   await rejects("Negative delivered rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: -1, undeliveredQuantity: undefined as any }, full1[1]] }, IP, db), /0 or more/);
-  await rejects("Delivered above ordered rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: 3, undeliveredQuantity: undefined as any }, full1[1]] }, IP, db), /cannot be more/);
+  // Extras at the door are allowed on orders (owner, 2026-11-12), up to 20 more than ordered.
+  await rejects("Delivered far above ordered rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: full1[0].deliveredQuantity + 21, undeliveredQuantity: undefined as any }, full1[1]] }, IP, db), /at most/);
   await rejects("Delivered + undelivered ≠ ordered rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: 1, undeliveredQuantity: 0 }, full1[1]] }, IP, db), /add up/);
   await rejects("Shortfall without reason rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ ...full1[0], deliveredQuantity: 1, undeliveredQuantity: 1 }, full1[1]] }, IP, db), /reason is required/);
   await rejects("Unknown line rejected", () => completeDeliveryTask(suresh, o1.deliveryTaskId!, { lines: [{ orderItemId: "oi_fake", deliveredQuantity: 1 }, full1[1]] }, IP, db), /do not match/);

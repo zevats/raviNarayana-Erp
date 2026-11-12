@@ -777,16 +777,27 @@
 .rn-filter-tile[aria-checked="true"] span { color: inherit; }
 .rn-filter-tile[aria-checked="true"] svg { color: #FFFFFF; }
 
-/* File picker (bill photo): a soft drop box with the chosen name. */
+/* File picker (bill photo): a real upload button; once chosen, the file with a remove button. */
 .rn-file {
-  position: relative; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 14px;
-  border-radius: 14px; border: 1.5px dashed #D9D2C4; background: #FBFAF7; color: var(--rn-ink-2, #4A4F4B);
-  font-size: 14px; cursor: pointer; min-width: 0;
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 54px; padding: 8px 10px 8px 8px;
+  border-radius: 16px; border: 1.5px solid color-mix(in srgb, var(--rn-accent, #1F4D33) 35%, #E3DED3);
+  background: color-mix(in srgb, var(--rn-accent, #1F4D33) 7%, #FFFFFF); color: var(--rn-accent, #1F4D33);
+  font-size: 14.5px; cursor: pointer; min-width: 0; text-align: left;
 }
-.rn-file:hover, .rn-file:focus-within { border-color: var(--rn-accent); background: var(--rn-accent-tint, #F1F6F2); }
-.rn-file input[type="file"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.rn-file:hover, .rn-file:focus-visible { background: color-mix(in srgb, var(--rn-accent, #1F4D33) 12%, #FFFFFF); }
+.rn-file-ico { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--rn-accent, #1F4D33); color: #FFFFFF; flex: 0 0 auto; }
+.rn-file.is-chosen { cursor: default; color: var(--rn-ink, #1A2E20); background: #FFFFFF; border-color: #CFE3C8; padding-left: 14px; }
+.rn-file.is-chosen > svg { color: #2E7D32; }
+.rn-file-x { width: 34px; height: 34px; border-radius: 9999px; display: grid; place-items: center; background: #F1EEE7; color: var(--rn-ink-2, #4A4F4B); border: 0; flex: 0 0 auto; }
 
 /* Receipts print and save with their colours. */
 .rn-receipt { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 /* Bills and receipts use the brand font everywhere, including the shared link page and the PDF. */
 .rn-bill, .rn-receipt, .rn-public-doc { font-family: var(--font-rn-display), var(--font-sans); }
+/* Bills and receipts never push past the screen edge, whatever the phone's text size. */
+.rn-bill, .rn-receipt, .rn-public-doc { overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.rn-public-doc { overflow-x: clip; }
+/* Dues header: the total, then CSV and Bill all (they move under the total on narrow phones). */
+.rn-dues-head { flex-wrap: wrap; row-gap: 14px; }
+.rn-dues-csv { background: rgba(255, 255, 255, 0.14); color: #FFFFFF; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); padding: 0 14px; }
+button.rn-date-chip:disabled { opacity: 0.45; cursor: default; }

@@ -81,6 +81,10 @@ export async function hasAnyMealPlanSchema(db: AsyncDb): Promise<boolean> {
 
 /** Migration 0023 is installed: readable tiffin customer codes (TC-0001). */
 export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "customer_code");
+/** Migration 0029: corporate contact person and default thali on customers. */
+export const hasCustomerContactSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "default_product_id");
+/** Migration 0030: thalis carried by staff (extras, returns, damage, spare stock). */
+export const hasThaliCustodySchema = (db: AsyncDb) => hasColumn(db, "thali_moves", "staff_delta");
 
 /** Migration 0027 is installed: bills kept as documents, and the bill a payment was made against. */
 export const hasBillsSchema = (db: AsyncDb) => hasColumn(db, "bills", "share_token");

@@ -406,6 +406,22 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     };
   }, [selectedCustomer]);
 
+  // A company's default thali goes in the cart when it is chosen (only to save time: one portion at
+  // today's menu price, changed or removed like any other item; nothing else is affected).
+  const defaultFilledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedCustomer || forPlan) {
+      defaultFilledFor.current = null;
+      return;
+    }
+    const pid = selectedCustomer.defaultProductId;
+    if (!pid || defaultFilledFor.current === selectedCustomer.id) return;
+    const product = products.find((p) => p.id === pid);
+    if (!product) return;
+    defaultFilledFor.current = selectedCustomer.id;
+    setCart((prev) => (Object.keys(prev).length > 0 ? prev : { [product.id]: { product, quantity: 1 } }));
+  }, [selectedCustomer, products, forPlan]);
+
   // Copies a previous order into a new draft (the old order is never changed). Items are matched to
   // today's menu and priced at today's menu price; items no longer on the menu are left out.
   const handleReuseOrder = (pastOrder: any) => {
@@ -517,16 +533,20 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     return products.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
   }, [products, menuSearch]);
 
+  /** Pay Later at the counter: the guest must be identifiable to be asked for the money later. The
+   * name and phone are asked on the payment step, right under Pay later. */
+  const payLaterProblem = (): string | null => {
+    if (orderType !== "DINE_IN" || forPlan || paymentMethod !== "PAY_LATER" || nothingToPay) return null;
+    if (newCustomerName.trim().length < 2) return "For Pay Later, enter the guest name.";
+    if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
+    return null;
+  };
+
   /** What is wrong with the customer step, or null when it is complete. */
   const customerProblem = (): string | null => {
     // A plan customer (delivery or dine in): the plan holds the name, phone and address.
     if (forPlan) return plan ? null : "Choose the subscription customer.";
-    if (orderType !== "DELIVERY") {
-      // Pay Later at the counter: the guest must be identifiable to be asked for the money later.
-      if (paymentMethod !== "PAY_LATER") return null;
-      if (newCustomerPhone.replace(/\D/g, "").length < 7) return "For Pay Later, enter the guest phone number.";
-      return null;
-    }
+    if (orderType !== "DELIVERY") return null;
     if (customerMode === "EXISTING") {
       return selectedCustomer ? null : "Choose the delivery customer, or switch to New customer.";
     }
@@ -574,6 +594,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     if (problem) {
       setStep(1);
       setErrorMessage(problem);
+      return;
+    }
+    const laterProblem = payLaterProblem();
+    if (laterProblem) {
+      setErrorMessage(laterProblem);
+      const id = newCustomerName.trim().length < 2 ? "no-later-name" : "no-later-phone";
+      window.setTimeout(() => (document.getElementById(id) as HTMLInputElement | null)?.focus(), 0);
       return;
     }
     if (cartItems.length === 0) {
@@ -1270,15 +1297,19 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         { v: "PAY_LATER", label: "Pay later" },
                       ]}
                     />
-                    {paymentMethod === "PAY_LATER" && (
-                      <p className={`mt-2 text-[13px] ${INK2}`}>
-                        Nothing is collected now: {rupees(totalAmount)} goes on {(forPlan ? selectedCustomer?.fullName : newCustomerName.trim()) || "the guest"}&apos;s account (Finance → Receivables).
-                        {!forPlan && newCustomerPhone.replace(/\D/g, "").length < 7 && (
-                          <button type="button" onClick={() => goTo(1)} className="ml-1 font-semibold text-[var(--rn-accent)] underline underline-offset-2">
-                            Add the guest phone
-                          </button>
-                        )}
-                      </p>
+                    {paymentMethod === "PAY_LATER" && !forPlan && (
+                      // Pay Later needs to know who owes: the name and phone are asked right here.
+                      <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="no-later-name" className={LABEL}>Guest name *</label>
+                          <input id="no-later-name" type="text" autoComplete="off" placeholder="Who will pay later" value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} className={FIELD} />
+                        </div>
+                        <div>
+                          <label htmlFor="no-later-phone" className={LABEL}>Guest phone *</label>
+                          <input id="no-later-phone" type="tel" inputMode="tel" placeholder="e.g. 9812345678" value={newCustomerPhone} onChange={(e) => setNewCustomerPhone(e.target.value)} className={FIELD} />
+                          <PhoneError value={newCustomerPhone} required={false} />
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

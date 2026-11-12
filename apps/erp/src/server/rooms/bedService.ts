@@ -107,11 +107,9 @@ export async function claimBedForStay(
   activeStaysInRoom: number
 ): Promise<string | null> {
   if (!(await hasBedsSchema(tx))) return null;
-  const maintenance = await tx.queryOne<any>("SELECT reason FROM room_maintenance WHERE room_id = ? AND status = 'OPEN'", [room.id]);
-  if (maintenance) {
-    throw new Error(`Room ${room.roomNumber} is under maintenance (${maintenance.reason}) and cannot take a new resident until the work is marked complete.`);
-  }
-  const inService = await tx.queryOne<{ n: number | string }>("SELECT COUNT(*) AS n FROM room_beds WHERE room_id = ? AND status = 'IN_SERVICE'", [room.id]);
+  // Beds and maintenance are no longer managed on screen (owner, 2026-11-12): a room takes residents
+  // up to its capacity. Maintenance records and out-of-service marks are kept but no longer block.
+  const inService = await tx.queryOne<{ n: number | string }>("SELECT COUNT(*) AS n FROM room_beds WHERE room_id = ?", [room.id]);
   const inServiceBeds = Number(inService?.n || 0);
   if (bedId) {
     const bed = await tx.queryOne<any>(
@@ -121,12 +119,11 @@ export async function claimBedForStay(
       [bedId]
     );
     if (!bed || bed.room_id !== room.id) throw new Error(`That bed is not in Room ${room.roomNumber}.`);
-    if (bed.status !== "IN_SERVICE") throw new Error(`${bed.label} in Room ${room.roomNumber} is out of service.`);
     if (Number(bed.taken) > 0) throw new Error(`${bed.label} in Room ${room.roomNumber} is already taken.`);
     return bed.id;
   }
   if (activeStaysInRoom >= inServiceBeds) {
-    throw new Error(`Room ${room.roomNumber} has no free bed in service (${activeStaysInRoom} of ${inServiceBeds} in-service beds taken).`);
+    throw new Error(`Room ${room.roomNumber} is full (${activeStaysInRoom} of ${inServiceBeds} beds taken).`);
   }
   return null;
 }

@@ -423,8 +423,8 @@ async function runTask67Tests() {
     "CashbookLedger implements dual-mode responsive layout (mobile cards vs desktop table)"
   );
   assert(
-    cashbookContent.includes("onViewReceipt") && cashbookContent.includes("onInitiateReversal"),
-    "CashbookLedger mobile cards provide direct receipt view and reversal actions"
+    cashbookContent.includes("onViewReceipt") && cashbookContent.includes("onEdit") && !cashbookContent.includes("onInitiateReversal"),
+    "CashbookLedger cards give the receipt and Edit (owner, 2026-11-12: no Reverse button)"
   );
 
   const invoiceLedgerPath = path.resolve(ROOT, "apps/erp/src/modules/finance/components/InvoiceLedgerView.tsx");

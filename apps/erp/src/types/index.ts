@@ -1425,6 +1425,10 @@ export interface TiffinCustomer {
   dietaryPreference: DietaryPreference;
   status: CustomerStatus;
   notes: string | null;
+  /** Corporate: the person the PG staff deal with (migration 0029). */
+  contactPerson?: string | null;
+  /** Pre-fills the order form only; the price comes from the menu when ordering (migration 0029). */
+  defaultProductId?: string | null;
   createdBy: string;
   createdByName?: string | null;
   updatedBy: string | null;
@@ -1444,6 +1448,8 @@ export interface CreateTiffinCustomerInput {
   dietaryPreference?: DietaryPreference;
   notes?: string | null;
   confirmDuplicate?: boolean;
+  contactPerson?: string | null;
+  defaultProductId?: string | null;
 }
 
 export interface UpdateTiffinCustomerInput {
@@ -1456,6 +1462,8 @@ export interface UpdateTiffinCustomerInput {
   customerType?: CustomerType;
   dietaryPreference?: DietaryPreference;
   notes?: string | null;
+  contactPerson?: string | null;
+  defaultProductId?: string | null;
 }
 
 export type ProductCategory =

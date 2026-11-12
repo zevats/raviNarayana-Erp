@@ -10,7 +10,7 @@ import type { DeliveryDisposition, DeliveryLine, DeliveryTask } from "@/types";
 export type DeliveryOutcome = "WAITING" | "OUT" | "DELIVERED" | "PARTIAL" | "NOT_DELIVERED" | "CANCELLED";
 
 export const OUTCOME_LABEL: Record<DeliveryOutcome, string> = {
-  WAITING: "Waiting",
+  WAITING: "Not assigned",
   OUT: "Out for delivery",
   DELIVERED: "Delivered",
   PARTIAL: "Partial",
@@ -20,8 +20,8 @@ export const OUTCOME_LABEL: Record<DeliveryOutcome, string> = {
 
 export const DISPOSITION_LABEL: Record<DeliveryDisposition, string> = {
   RETURNED: "Returned to PG",
-  WITH_STAFF: "With delivery staff",
-  DISCARDED: "Discarded",
+  WITH_STAFF: "Brought back by delivery staff",
+  DISCARDED: "Damaged",
 };
 
 export function deliveryOutcome(task: Pick<DeliveryTask, "status" | "lines">): DeliveryOutcome {
@@ -29,6 +29,7 @@ export function deliveryOutcome(task: Pick<DeliveryTask, "status" | "lines">): D
     case "CANCELLED":
       return "CANCELLED";
     case "OUT_FOR_DELIVERY":
+    case "ASSIGNED": // no waiting phase: an assigned stop is out for delivery (owner, 2026-11-12)
       return "OUT";
     case "EXCEPTION":
       return "NOT_DELIVERED";

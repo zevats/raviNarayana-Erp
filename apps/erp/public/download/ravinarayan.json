@@ -1,7 +1,7 @@
 {
-  "version": "1.4.0",
-  "versionCode": 5,
-  "bytes": 5287902,
-  "sha256": "ec71d9a84bfc0812c7c5c3c5f60b97f659791107056765f148a85d2678be19ca",
-  "builtAt": "2026-11-11T18:25:55.517Z"
+  "version": "1.4.1",
+  "versionCode": 6,
+  "bytes": 5288306,
+  "sha256": "78888480ea9d1319905401fd08a6a11628ebe5ccd055b34a49016eda89516a6f",
+  "builtAt": "2026-11-12T05:16:18.324Z"
 }

@@ -2251,22 +2251,6 @@ export default function ResidentsPage() {
                   )}
                 </div>
 
-                {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds?.length ?? 0) > 0 && (
-                  <div>
-                    <label htmlFor="transfer-bed" className="block text-xs font-semibold text-[#1A2E20] mb-1">Bed in the new room</label>
-                    <AppSelect
-                      id="transfer-bed"
-                      value={transferForm.bedId}
-                      onChange={(e) => setTransferForm({ ...transferForm, bedId: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
-                    >
-                      <option value="">Any free bed (choose later)</option>
-                      {(rooms.find((r) => r.id === transferForm.targetRoomId)?.beds ?? []).filter((b) => b.status === "IN_SERVICE" && !b.occupant).map((b) => (
-                        <option key={b.id} value={b.id}>{b.label}</option>
-                      ))}
-                    </AppSelect>
-                  </div>
-                )}
 
                 {/* Transfer Date */}
                 <div>

@@ -33,7 +33,6 @@ interface CashbookLedgerProps {
   isLoading: boolean;
   onViewReceipt: (tx: FinancialTransaction) => void;
   /** Omitted for users without finance.manage: reversals are Owner-only. */
-  onInitiateReversal?: (tx: FinancialTransaction) => void;
   /** Edit a received payment or an expense. */
   onEdit?: (tx: FinancialTransaction) => void;
   onOpenPayment: () => void;
@@ -53,7 +52,6 @@ export function CashbookLedger({
   transactions,
   isLoading,
   onViewReceipt,
-  onInitiateReversal,
   onEdit,
   onOpenPayment,
 }: CashbookLedgerProps) {
@@ -299,24 +297,13 @@ export function CashbookLedger({
                             <span>Edit</span>
                           </button>
                         )}
-
-                        {onInitiateReversal && !isReversed && !isReversal && (
-                          <button
-                            type="button"
-                            onClick={() => onInitiateReversal?.(tx)}
-                            className="min-h-[36px] px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-medium flex items-center gap-1 shadow-2xs"
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            <span>Reverse</span>
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
                 );
               }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paginated, copiedId, onViewReceipt, onInitiateReversal, onEdit]
+    [paginated, copiedId, onViewReceipt, onEdit]
   );
   const tableRows = useMemo(
     () =>
@@ -498,24 +485,13 @@ export function CashbookLedger({
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                             )}
-
-                            {onInitiateReversal && !isReversed && !isReversal && (
-                              <button
-                                type="button"
-                                onClick={() => onInitiateReversal?.(tx)}
-                                className="p-1.5 rounded-lg border border-[#8E9F89]/30 bg-white hover:bg-rose-50 text-stone-600 hover:text-rose-700 transition-colors shadow-2xs"
-                                title="Reverse transaction"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              </button>
-                            )}
                           </div>
                         </td>
                       </tr>
                     );
                   }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [paginated, copiedId, onViewReceipt, onInitiateReversal, onEdit]
+    [paginated, copiedId, onViewReceipt, onEdit]
   );
 
   return (

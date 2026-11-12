@@ -6,9 +6,9 @@
  */
 
 import React, { useState } from "react";
-import { BedDouble, DoorOpen, Edit3, LogOut, Plus, Trash2, UserCog, UserPlus, Wrench } from "lucide-react";
+import { DoorOpen, Edit3, LogOut, Plus, Trash2, UserCog, UserPlus } from "lucide-react";
 import { formatMoney } from "@/lib/format";
-import { MButton, MChips, MEmpty, MField, MGroup, MHero, MNotice, MRow, MSearch, MSection, MSegment, MSheet, MSkeletonRows, MStack, initials } from "@/components/app/m";
+import { MButton, MChips, MEmpty, MField, MGroup, MHero, MMenu, MNotice, MRow, MSearch, MSection, MSegment, MSheet, MSkeletonRows, MStack, initials } from "@/components/app/m";
 
 interface Occupant {
   stayId: string;
@@ -54,7 +54,6 @@ export function RoomsMobile<R extends MobileRoom>({
   onAdd,
   onEditRoom,
   onDeleteRoom,
-  onBeds,
   onAddTenant,
   onEditResident,
   onCheckOut,
@@ -77,7 +76,6 @@ export function RoomsMobile<R extends MobileRoom>({
   onAdd: () => void;
   onEditRoom: (r: R) => void;
   onDeleteRoom: (r: R) => void;
-  onBeds: (id: string) => void;
   onAddTenant: (r: R) => void;
   onEditResident: (o: Occupant, r: R) => void;
   onCheckOut: (o: Occupant, r: R) => void;
@@ -153,11 +151,11 @@ export function RoomsMobile<R extends MobileRoom>({
             <MRow
               key={r.id}
               avatar={r.roomNumber.length <= 4 ? r.roomNumber : initials(r.roomNumber)}
-              tone={r.maintenance ? "amber" : r.availableBeds === 0 ? "accent" : r.occupiedBeds === 0 ? "green" : "blue"}
+              tone={r.availableBeds === 0 ? "accent" : r.occupiedBeds === 0 ? "green" : "blue"}
               title={`Room ${r.roomNumber}`}
               sub={[floorLabel(r.floor), typeLabel(r.type), r.occupants && r.occupants.length ? r.occupants.map((o) => o.fullName.split(" ")[0]).join(", ") : ""].filter(Boolean).join(" · ")}
               right={`${r.occupiedBeds}/${r.capacity}`}
-              rightSub={r.maintenance ? "Repairs" : r.availableBeds === 0 ? "Full" : `${r.availableBeds} free`}
+              rightSub={r.availableBeds === 0 ? "Full" : `${r.availableBeds} free`}
               onClick={() => setOpenId(r.id)}
             />
           ))}
@@ -169,6 +167,17 @@ export function RoomsMobile<R extends MobileRoom>({
         onClose={() => setOpenId(null)}
         title={open ? `Room ${open.roomNumber}` : ""}
         tall
+        headerAction={
+          open ? (
+            <MMenu
+              label={`Actions for room ${open.roomNumber}`}
+              items={[
+                { label: "Edit room", icon: Edit3, onSelect: () => act(() => onEditRoom(open)) },
+                { label: "Delete room", icon: Trash2, danger: true, onSelect: () => act(() => onDeleteRoom(open)) },
+              ]}
+            />
+          ) : undefined
+        }
         footer={
           open && open.availableBeds > 0 ? (
             <MButton kind="primary" icon={UserPlus} onClick={() => act(() => onAddTenant(open))}>
@@ -184,53 +193,34 @@ export function RoomsMobile<R extends MobileRoom>({
               <MField label="Kind">{typeLabel(open.type)}</MField>
               <MField label="Beds">{`${open.occupiedBeds}/${open.capacity} filled`}</MField>
               <MField label="Rent">{`${formatMoney(open.baseRentMonthly)} a bed`}</MField>
-              {Boolean(open.maintenance) && <MField label="Repairs" tone="amber">Under maintenance</MField>}
             </div>
-            {open.beds && open.beds.length > 0 && (
-              <MSection title="Beds">
-                <div className="m-card">
-                  <div className="flex flex-wrap gap-1.5">
-                    {open.beds.map((bed) => {
-                      const state = bed.occupant ? "occupied" : bed.status === "OUT_OF_SERVICE" ? "off" : open.maintenance ? "maintenance" : "free";
-                      return (
-                        <span
-                          key={bed.id}
-                          className={`inline-flex items-center gap-1 h-8 px-3 rounded-full text-[12.5px] font-medium ${
-                            state === "occupied" ? "bg-[var(--rn-accent)] text-white" : state === "off" ? "bg-black/[0.06] text-[var(--m-ink-3)] line-through" : state === "maintenance" ? "bg-[#FBF0D5] text-[#885807]" : "bg-[#E6F2E2] text-[#2D6A24]"
-                          }`}
-                        >
-                          <BedDouble className="w-3.5 h-3.5" />
-                          {bed.label.replace(/^Bed\s*/i, "")}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              </MSection>
-            )}
             <MSection title="People">
               {open.occupants && open.occupants.length > 0 ? (
                 <MGroup>
                   {open.occupants.map((o) => (
-                    <MRow key={o.stayId} avatar={initials(o.fullName)} tone="accent" title={o.fullName} sub={o.phone} chevron={false}>
-                      <MButton kind="soft" icon={UserCog} className="m-btn-sm" onClick={() => act(() => onEditResident(o, open))}>
-                        Edit
-                      </MButton>
-                      <MButton kind="danger" icon={LogOut} className="m-btn-sm" onClick={() => act(() => onCheckOut(o, open))}>
-                        Check out
-                      </MButton>
-                    </MRow>
+                    <MRow
+                      key={o.stayId}
+                      avatar={initials(o.fullName)}
+                      tone="accent"
+                      title={o.fullName}
+                      sub={o.phone}
+                      chevron={false}
+                      right={
+                        <MMenu
+                          label={`Actions for ${o.fullName}`}
+                          items={[
+                            { label: "Edit resident", icon: UserCog, onSelect: () => act(() => onEditResident(o, open)) },
+                            { label: "Check out", icon: LogOut, danger: true, onSelect: () => act(() => onCheckOut(o, open)) },
+                          ]}
+                        />
+                      }
+                    />
                   ))}
                 </MGroup>
               ) : (
                 <MEmpty title="No one in this room" />
               )}
             </MSection>
-            <MGroup>
-              {(open.beds?.length ?? 0) > 0 && <MRow icon={Wrench} tone="amber" title="Beds and repairs" onClick={() => act(() => onBeds(open.id))} />}
-              <MRow icon={Edit3} tone="neutral" title="Edit room" onClick={() => act(() => onEditRoom(open))} />
-              <MRow icon={Trash2} tone="red" title="Delete room" onClick={() => act(() => onDeleteRoom(open))} />
-            </MGroup>
           </>
         )}
       </MSheet>

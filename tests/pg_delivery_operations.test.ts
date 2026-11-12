@@ -184,7 +184,7 @@ async function main() {
   assert(bulk.assignedCount === 4, "Manager bulk-assigns the 4 lunch stops to Asha");
   await assignDeliveryTask(manager, bySub(day1, S2)!.id, { assignedToStaffId: B.id }, IP, db);
   day1 = await listDeliveryTasks(manager, { serviceDate: DAY1, mealType: "LUNCH" }, db);
-  assert(bySub(day1, S2)!.assignedTo === B.id && bySub(day1, S2)!.status === "ASSIGNED", "S2 reassigned to Bilal by staff id");
+  assert(bySub(day1, S2)!.assignedTo === B.id && bySub(day1, S2)!.status === "OUT_FOR_DELIVERY", "S2 reassigned to Bilal by staff id (still out for delivery: no waiting phase)");
   await rejects("Asha cannot record Bilal's stop", () => completeDeliveryTask(A, bySub(day1, S2)!.id, { lines: [] }, IP, db), /not assigned/i);
   const asA = await listDeliveryTasks(A, { serviceDate: DAY1, mealType: "LUNCH" }, db);
   assert(asA.length === 3 && asA.every((t) => t.assignedTo === A.id), "Asha sees only her 3 stops");
@@ -270,7 +270,7 @@ async function main() {
   await rejects("Delivery staff cannot cancel", () => cancelDeliveryTask(A, o2Task.id, { reason: "x y z" }, IP, db), /permission|not allowed|forbidden/i);
   await rejects("Delivery staff cannot resolve", () => resolveDeliveryProblem(A, o2Task.id, { note: "done" }, IP, db), /permission|not allowed|forbidden/i);
   const retried = await retryDeliveryTask(manager, o2Task.id, { reassignToStaffId: B.id, notes: "Customer asked for redelivery" }, IP, db);
-  assert(retried.status === "ASSIGNED" && retried.assignedTo === B.id, "Retry puts the failed delivery back with Bilal");
+  assert(retried.status === "OUT_FOR_DELIVERY" && retried.assignedTo === B.id, "Retry puts the failed delivery back out with Bilal");
   await rejects("Retrying a delivery that is not failed is refused", () => retryDeliveryTask(manager, o2Task.id, {}, IP, db), /EXCEPTION/);
   await rejects("Cancelling a delivery with money collected is refused", () => cancelDeliveryTask(manager, o1Task.id, { reason: "Wrong order" }, IP, db), /delivered|collected/i);
   await rejects("Cancel needs a reason", () => cancelDeliveryTask(manager, o2Task.id, { reason: "" }, IP, db), /reason/i);
@@ -287,7 +287,7 @@ async function main() {
   const searched = await listDeliveryTasks(manager, { serviceDate: DAY1, mealType: "LUNCH", search: "Walk" }, db);
   assert(searched.length < all.length && summarizeDeliveries(all).total === sum.total, "Search narrows the list; totals come from the whole day");
   assert(sum.cancelled === 1 && sum.total === all.length - 1, "Cancelled delivery is counted apart, not as waiting or delivered");
-  assert(sum.partial === 2 && sum.notDelivered === 1 && sum.delivered === 1 && sum.waiting === 1, `Outcomes: 2 partial, 1 not delivered, 1 delivered, 1 waiting (got ${JSON.stringify({ p: sum.partial, n: sum.notDelivered, d: sum.delivered, w: sum.waiting })})`);
+  assert(sum.partial === 2 && sum.notDelivered === 1 && sum.delivered === 1 && sum.waiting === 0 && sum.out === 1, `Outcomes: 2 partial, 1 not delivered, 1 delivered, 1 out, none waiting (got ${JSON.stringify({ p: sum.partial, n: sum.notDelivered, d: sum.delivered, o: sum.out, w: sum.waiting })})`);
   assert(sum.items.byDisposition.RETURNED === 1 && sum.items.byDisposition.WITH_STAFF === 2, "Undelivered by disposition: 1 returned, 2 with staff");
   assert(sum.money.due === 100 && sum.money.collected === 100 && sum.money.outstanding === 0, "Doorstep money: ₹100 due, ₹100 collected, nothing outstanding");
   const close = await getDeliveryCloseout(owner, DAY1, "LUNCH", db);

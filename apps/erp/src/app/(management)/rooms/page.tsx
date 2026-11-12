@@ -44,7 +44,7 @@ import { FullPageLoader } from "@/components/feedback/FullPageLoader";
 import { PageHeader, StatStrip, Card, SearchField, EmptyState } from "@/components/ui/kit";
 import { PhoneOrDesktop, useIsPhone } from "@/components/app/m";
 import { RoomsMobile } from "@/modules/rooms/RoomsMobile";
-import { RoomBedsPanel } from "@/modules/rooms/RoomBedsPanel";
+import { ActionMenu } from "@/components/ui/ActionMenu";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { RefreshButton } from "@/components/ui/states";
 import { formatNumberIN } from "@/lib/format";
@@ -179,8 +179,6 @@ export default function RoomsPage() {
   // Bed chosen in the check-in form ("" = any free bed).
   const [assignBedId, setAssignBedId] = useState("");
 
-  // Beds & maintenance panel (migration 0017)
-  const [bedsRoomId, setBedsRoomId] = useState<string | null>(null);
   const canManageRooms = useHasPermission("rooms.manage");
 
   // ---------------------------------------------------------------------------
@@ -677,7 +675,6 @@ export default function RoomsPage() {
             onAdd={handleOpenAddModal}
             onEditRoom={handleOpenEditRoom}
             onDeleteRoom={handleOpenDeleteRoom}
-            onBeds={(id) => setBedsRoomId(id)}
             onAddTenant={handleOpenAddTenant}
             onEditResident={(o, r) => handleOpenEditResident(o as any, r)}
             onCheckOut={(o, r) => handleOpenCheckOutResident(o as any, r)}
@@ -796,46 +793,6 @@ export default function RoomsPage() {
                       </span>
                     </div>
 
-                    {/* One chip per bed from the bed records: occupied, free, out of service, room under maintenance */}
-                    {room.beds && room.beds.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5" aria-label="Beds">
-                        {room.beds.map((bed) => {
-                          const state = bed.occupant ? "occupied" : bed.status === "OUT_OF_SERVICE" ? "off" : room.maintenance ? "maintenance" : "free";
-                          return (
-                            <span
-                              key={bed.id}
-                              title={`${bed.label}: ${bed.occupant ? bed.occupant.fullName : state === "off" ? "out of service" : state === "maintenance" ? "under maintenance" : "free"}`}
-                              className={`inline-flex items-center gap-1 h-7 px-2.5 rounded-full text-[11px] font-medium ${
-                                state === "occupied"
-                                  ? "bg-[var(--rn-accent)] text-white"
-                                  : state === "off"
-                                  ? "bg-black/[0.06] text-[var(--rn-ink-3)] line-through"
-                                  : state === "maintenance"
-                                  ? "bg-amber-100 text-amber-900"
-                                  : "bg-white border border-dashed border-[var(--rn-accent-mid)]/50 text-[var(--rn-accent-mid)]"
-                              }`}
-                            >
-                              <BedDouble className="w-3 h-3" />
-                              {bed.label.replace(/^Bed\s*/i, "")}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 pt-0.5">
-                        {Array.from({ length: room.capacity }).map((_, idx) => {
-                          const isOccupied = idx < room.occupiedBeds;
-                          return (
-                            <div
-                              key={idx}
-                              className={`h-2.5 flex-1 rounded-sm transition-all ${isOccupied ? "bg-[#1A2E20]" : "bg-[#8E9F89]/25 border border-dashed border-[#8E9F89]/50"}`}
-                              title={isOccupied ? `Bed ${idx + 1}: Occupied` : `Bed ${idx + 1}: Vacant`}
-                            />
-                          );
-                        })}
-                      </div>
-                    )}
-
                     {/* Availability description beneath capacity value */}
                     <div className="pt-0.5">
                       {room.availableBeds === 0 ? (
@@ -851,17 +808,7 @@ export default function RoomsPage() {
                           {room.availableBeds} {room.availableBeds === 1 ? "bed" : "beds"} free
                         </span>
                       )}
-                      {room.maintenance && <span className="ml-2 text-xs text-amber-800">· Under maintenance</span>}
                     </div>
-                    {(room.beds?.length ?? 0) > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setBedsRoomId(room.id)}
-                        className="mt-1 inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--rn-accent-mid)] hover:underline underline-offset-2"
-                      >
-                        <BedDouble className="w-3.5 h-3.5" /> Beds &amp; maintenance
-                      </button>
-                    )}
                   </div>
 
                   {/* COLUMN 3: Current Occupants & Prominent Add/Assign Tenant Action (lg:col-span-4) */}
@@ -893,23 +840,13 @@ export default function RoomsPage() {
                               </div>
                             </div>
 
-                            {/* Direct Resident Actions */}
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                onClick={() => handleOpenEditResident(occ, room)}
-                                className="p-1.5 rounded-lg text-[#5A6C5E] hover:text-[#1A2E20] hover:bg-white border border-transparent hover:border-[#8E9F89]/30 transition-all"
-                                title="Edit resident profile"
-                              >
-                                <UserCog className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleOpenCheckOutResident(occ, room)}
-                                className="p-1.5 rounded-lg text-amber-700 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all"
-                                title="Check out resident"
-                              >
-                                <LogOut className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            <ActionMenu
+                              label={`Actions for ${occ.fullName}`}
+                              items={[
+                                { label: "Edit resident", icon: UserCog, onSelect: () => handleOpenEditResident(occ, room) },
+                                { label: "Check out", icon: LogOut, tone: "danger", onSelect: () => handleOpenCheckOutResident(occ, room) },
+                              ]}
+                            />
                           </div>
                         ))}
 
@@ -958,28 +895,21 @@ export default function RoomsPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleOpenEditRoom(room)}
-                        className="px-3 py-1.5 rounded-xl border border-[#8E9F89]/30 bg-white hover:bg-[#FAF8F5] text-xs font-semibold text-[#1A2E20] inline-flex items-center justify-center gap-1.5 transition-colors shadow-2xs"
-                        title="Edit room configuration"
-                      >
-                        <Edit3 className="w-3.5 h-3.5 text-[#B58A57]" />
-                        <span>Edit</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenDeleteRoom(room)}
-                        className="p-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 transition-colors shadow-2xs"
-                        title={
-                          room.occupiedBeds > 0
-                            ? "Cannot delete: room is occupied"
-                            : "Delete room"
-                        }
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <ActionMenu
+                      label={`Actions for room ${room.roomNumber}`}
+                      items={[
+                        { label: "Edit room", icon: Edit3, onSelect: () => handleOpenEditRoom(room) },
+                        ...(room.availableBeds > 0 ? [{ label: "Add tenant", icon: UserPlus, onSelect: () => handleOpenAddTenant(room) }] : []),
+                        {
+                          label: "Delete room",
+                          icon: Trash2,
+                          tone: "danger" as const,
+                          disabled: room.occupiedBeds > 0,
+                          hint: room.occupiedBeds > 0 ? "Check out the residents first" : undefined,
+                          onSelect: () => handleOpenDeleteRoom(room),
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
               </div>
@@ -992,14 +922,6 @@ export default function RoomsPage() {
         }
       />
 
-      {bedsRoomId && rooms.find((r) => r.id === bedsRoomId) && (
-        <RoomBedsPanel
-          room={rooms.find((r) => r.id === bedsRoomId)!}
-          canManage={canManageRooms}
-          onClose={() => setBedsRoomId(null)}
-          onChanged={() => refetch()}
-        />
-      )}
 
       {/* ============================================================== */}
       {/* MODAL: ADD TENANT DIRECTLY TO AVAILABLE BED                    */}
@@ -1265,22 +1187,6 @@ export default function RoomsPage() {
                     </div>
                   </div>
 
-                  {(assigningRoom.beds?.length ?? 0) > 0 && (
-                    <div>
-                      <label htmlFor="assign-bed" className="block text-xs font-semibold text-[#1A2E20] mb-1">Bed</label>
-                      <AppSelect
-                        id="assign-bed"
-                        value={assignBedId}
-                        onChange={(e) => setAssignBedId(e.target.value)}
-                        className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#8E9F89]/35 rounded-xl text-xs text-[#1A2E20] focus:outline-hidden focus:border-[#1A2E20]"
-                      >
-                        <option value="">Any free bed (choose later)</option>
-                        {(assigningRoom.beds ?? []).filter((b) => b.status === "IN_SERVICE" && !b.occupant).map((b) => (
-                          <option key={b.id} value={b.id}>{b.label}</option>
-                        ))}
-                      </AppSelect>
-                    </div>
-                  )}
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-2.5">

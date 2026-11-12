@@ -11,7 +11,7 @@ import { loadCustomerBalancesById } from "./customerBalance";
  *   - anyone on a running monthly plan;
  *   - anyone added in the last three months.
  */
-const DAYS = 90;
+const DAYS = 25;
 let lastRunAt = 0;
 
 export async function archiveIdleCustomers(db: AsyncDb, actor: { id: string; username?: string | null }, now = new Date()): Promise<number> {

@@ -52,14 +52,16 @@ async function withBeds(db: AsyncDb, rooms: RoomWithOccupancy[]): Promise<RoomWi
   return rooms.map((room) => {
     const st = state.get(room.id);
     if (!st) return room;
-    const inService = st.beds.filter((b) => b.status === "IN_SERVICE").length;
+    // Beds and maintenance are no longer managed (owner, 2026-11-12): every bed counts, and an old
+    // maintenance record no longer closes the room.
+    const inService = st.beds.length;
     const bedOfStay = new Map(st.beds.filter((b) => b.occupant).map((b) => [b.occupant!.stayId, b]));
     return {
       ...room,
       beds: st.beds,
-      maintenance: st.maintenance,
-      inServiceBeds: st.maintenance ? 0 : inService,
-      availableBeds: st.maintenance ? 0 : Math.max(0, inService - room.occupiedBeds),
+      maintenance: null,
+      inServiceBeds: inService,
+      availableBeds: Math.max(0, inService - room.occupiedBeds),
       occupants: (room.occupants || []).map((o) => {
         const bed = bedOfStay.get(o.stayId);
         return { ...o, bedId: bed?.id ?? null, bedLabel: bed?.label ?? null };
@@ -525,7 +527,7 @@ export async function deleteRoom(
     if (await hasBedsSchema(tx)) {
       const history = await tx.queryOne<{ n: number | string }>("SELECT COUNT(*) AS n FROM room_maintenance WHERE room_id = ?", [roomId]);
       if (Number(history?.n || 0) > 0) {
-        throw new Error("This room has maintenance history and cannot be deleted. Deactivate it instead.");
+        throw new Error("This room has older records and cannot be deleted. Deactivate it instead.");
       }
       // The room has no stays (checked above), so none of its beds was ever used.
       await tx.execute("DELETE FROM room_beds WHERE room_id = ?", [roomId]);

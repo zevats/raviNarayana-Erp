@@ -31,6 +31,8 @@ import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { formatNumberIN, formatMoney } from "@/lib/format";
 import { useIsPhone } from "@/components/app/m";
 import { ClosingMobile } from "../mobile/FinanceMobileMore";
+import { exportClosingsCsv } from "../utils/financeCsv";
+import { Download } from "lucide-react";
 
 interface DailyClosingViewProps {
   onMutationSuccess?: (message: string) => void;
@@ -635,9 +637,14 @@ export function DailyClosingView({
 
       {/* 5. Historical Daily Closings Register */}
       <div className="bg-white border border-[#8E9F89]/20 rounded-2xl shadow-2xs p-5 space-y-4">
-        <h3 className="text-sm font-bold text-[#1A2E20] flex items-center gap-2">
-          Past closings
-        </h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-bold text-[#1A2E20] flex items-center gap-2">
+            Past closings
+          </h3>
+          <button type="button" className="rn-btn rn-btn-sm" disabled={historicalClosings.length === 0} onClick={() => void exportClosingsCsv(historicalClosings)} aria-label="Download past closings as CSV">
+            <Download /> CSV
+          </button>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse rn-mcards rn-mcards-soft max-lg:[&_tbody]:!px-0">

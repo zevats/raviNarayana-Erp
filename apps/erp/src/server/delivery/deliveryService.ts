@@ -8,6 +8,7 @@ import { assertClosingDateNotFinalized, acquireLedgerKeyLock, getBusinessDateStr
 import { hasDeliveryOpsSchema, DISPOSITIONS, subscriptionDayEligibility, activeCollectionSql } from "./deliveryRules";
 import { hasPayLaterSchema } from "../database/schemaFeatures";
 import { notifyStopsAssigned } from "../notifications/pushService";
+import { recordDoorThalis } from "./thaliService";
 import { hasCashShortfallSchema, hasDineInPayLaterSchema } from "../database/schemaFeatures";
 import { getSettings } from "../settings/settingsService";
 import {
@@ -1130,6 +1131,29 @@ export async function createExternalDeliveryTask(
  * Assigns or reassigns a delivery task to an active delivery staff member.
  * Requires delivery.manage permission.
  */
+/**
+ * No waiting phase (owner, 2026-11-12): a stop is out for delivery the moment it has someone to take
+ * it. Called inside the same transaction right after a stop is assigned, reassigned or retried.
+ */
+async function sendOutNow(tx: AsyncDb, taskId: string, actor: AuthenticatedUser, now: string): Promise<boolean> {
+  const at = new Date(Date.parse(now) + 1).toISOString();
+  const r = await tx.execute(
+    "UPDATE delivery_tasks SET status = 'OUT_FOR_DELIVERY', dispatched_at = ?, dispatched_by = ?, updated_at = ? WHERE id = ? AND status = 'ASSIGNED' AND assigned_to IS NOT NULL",
+    [at, actor.id, at, taskId]
+  );
+  if (r.changes === 0) return false;
+  await tx.execute(
+    `INSERT INTO delivery_task_events (id, task_id, event_type, from_status, to_status, actor_id, actor_name, notes, created_at)
+     VALUES (?, ?, 'DISPATCHED', 'ASSIGNED', 'OUT_FOR_DELIVERY', ?, ?, ?, ?)`,
+    [`devt_${crypto.randomUUID()}`, taskId, actor.id, actor.fullName, "Out for delivery", at]
+  );
+  await recordAuditEventAsync(
+    { actorId: actor.id, actorUsername: actor.username, action: "delivery.task_dispatched", targetType: "delivery_task", targetId: taskId, metadata: { automatic: true, reason: "no waiting phase" } },
+    tx
+  );
+  return true;
+}
+
 export async function assignDeliveryTask(
   actor: AuthenticatedUser,
   taskId: string,
@@ -1245,11 +1269,12 @@ export async function assignDeliveryTask(
       ipAddress: clientIp,
     }, tx);
     await eventWrite;
+    await sendOutNow(tx, taskId, actor, now);
   });
 
   // The phone alert is for delivery staff; someone taking a delivery themselves needs none.
   if (currentTask.assignedTo !== staff.id && !staff.selfFulfilment) notifyStopsAssigned([taskId], staff.id);
-  if (opts.detail === false) return { ...currentTask, status: "ASSIGNED", assignedTo: staff.id, assignedToName: staff.fullName };
+  if (opts.detail === false) return { ...currentTask, status: "OUT_FOR_DELIVERY", assignedTo: staff.id, assignedToName: staff.fullName };
   const taskDetail = await getDeliveryTaskById(actor, taskId, db);
   return taskDetail!.task;
 }
@@ -1366,6 +1391,7 @@ export async function batchAssignDeliveryTasks(
           : `Batch assigned to ${staff.fullName}`,
         now,
       ]);
+      await sendOutNow(tx, currentTask.id, actor, now);
     }
 
     await recordAuditEventAsync({
@@ -1935,19 +1961,26 @@ async function completeLinedDelivery(
     if (!Number.isInteger(delivered) || delivered < 0) {
       throw new Error(`Delivered quantity for '${line.productName}' must be a whole number, 0 or more.`);
     }
-    if (delivered > line.quantity) {
-      throw new Error(`Delivered quantity for '${line.productName}' cannot be more than the ${line.quantity} ordered.`);
+    // More than ordered may be handed over on an order (owner, 2026-11-12): the extra is charged on
+    // the order at the same price. Meals without an order (plans, residents) cannot take extras.
+    const maxExtra = line.source === "ORDER" ? 20 : 0;
+    if (delivered > line.quantity + maxExtra) {
+      throw new Error(
+        maxExtra > 0
+          ? `Delivered quantity for '${line.productName}' can be at most ${line.quantity + maxExtra} (${line.quantity} ordered).`
+          : `Delivered quantity for '${line.productName}' cannot be more than the ${line.quantity} ordered.`
+      );
     }
     if (s.undeliveredQuantity !== undefined && s.undeliveredQuantity !== null) {
       const undelivered = Number(s.undeliveredQuantity);
       if (!Number.isInteger(undelivered) || undelivered < 0) {
         throw new Error(`Undelivered quantity for '${line.productName}' must be a whole number, 0 or more.`);
       }
-      if (delivered + undelivered !== line.quantity) {
+      if (delivered + undelivered !== Math.max(line.quantity, delivered)) {
         throw new Error(`Delivered and undelivered for '${line.productName}' must add up to the ${line.quantity} ordered.`);
       }
     }
-    const undelivered = line.quantity - delivered;
+    const undelivered = Math.max(0, line.quantity - delivered);
     const reason = undelivered > 0 ? s.reason?.trim() || fallbackReason : "";
     if (undelivered > 0 && !reason) {
       throw new Error(`A reason is required when any item is not fully delivered ('${line.productName}': ${undelivered} not delivered).`);
@@ -1955,11 +1988,11 @@ async function completeLinedDelivery(
     let disposition: DeliveryDisposition | null = null;
     if (undelivered > 0 && opsSchema) {
       if (!s.disposition || !(DISPOSITIONS as readonly string[]).includes(s.disposition)) {
-        throw new Error(`Choose what happened to the ${undelivered} '${line.productName}' not delivered: returned, with delivery staff, or discarded.`);
+        throw new Error(`Choose what happened to the ${undelivered} '${line.productName}' not delivered: brought back or damaged.`);
       }
       disposition = s.disposition;
     }
-    return { line, delivered, undelivered, reason: undelivered > 0 ? reason : null, disposition };
+    return { line, delivered, undelivered, extra: Math.max(0, delivered - line.quantity), reason: undelivered > 0 ? reason : null, disposition };
   });
   if (seen.size !== source.lines.length) {
     throw new Error(`Enter the delivered quantity for every item on this ${noun}.`);
@@ -2116,6 +2149,26 @@ async function completeLinedDelivery(
     // These writes do not depend on each other: they go to the database together (one round trip)
     // inside the same transaction, which still commits or rolls back as a whole.
     const writes: Promise<unknown>[] = [];
+    // Extras at the door: the order line grows to what was handed over (same price), and so does the
+    // order, so dues, bills and the amount to collect all include them.
+    const extraLines = outcomes.filter((o) => o.extra > 0 && o.line.source === "ORDER");
+    for (const o of extraLines) {
+      await tx.execute("UPDATE order_items SET quantity = ?, line_total = ? WHERE id = ?", [o.delivered, o.delivered * (o.line.unitPrice ?? 0), o.line.lineId]);
+    }
+    if (extraLines.length > 0 && source.orderId) {
+      const addQty = extraLines.reduce((s, o) => s + o.extra, 0);
+      const addAmount = extraLines.reduce((s, o) => s + o.extra * (o.line.unitPrice ?? 0), 0);
+      await tx.execute("UPDATE orders SET total_quantity = total_quantity + ?, total_amount = total_amount + ?, updated_at = ? WHERE id = ?", [addQty, addAmount, now, source.orderId]);
+    }
+    // Thalis at the door: brought back, damaged, or extra (migration 0030).
+    await recordDoorThalis(tx, {
+      staffId: currentTask.assignedTo || actor.id,
+      actor,
+      taskId: currentTask.id,
+      orderId: source.orderId,
+      at: now,
+      lines: outcomes.map((o) => ({ productName: o.line.productName, extra: o.extra, undelivered: o.undelivered, disposition: o.disposition })),
+    });
     for (const o of outcomes) {
       if (o.line.source === "ORDER") {
         writes.push(tx.execute(
@@ -2204,8 +2257,47 @@ async function completeLinedDelivery(
     );
   });
 
+  // The owner keeps what they collect: it counts as handed over at once (no hand over to themselves).
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, clientIp, db);
+
   const detail = await getDeliveryTaskById(actor, currentTask.id, db);
   return detail!.task;
+}
+
+/**
+ * Owner decision (2026-11-12): money the Owner collects on a delivery is already with the Owner, so
+ * it is declared and accepted in full straight away (cash and UPI booked to the cashbook exactly as
+ * an accepted handover). Also clears any earlier own handover still waiting. Never fails the caller.
+ */
+export async function settleOwnerCash(owner: AuthenticatedUser, clientIp?: string, asyncDb?: AsyncDb): Promise<number> {
+  if (owner.role !== "SUPER_ADMIN") return 0;
+  const db = asyncDb || getAsyncDb();
+  let settled = 0;
+  try {
+    const opsSchema = await hasDeliveryOpsSchema(db);
+    const open = await db.queryOne<{ n: number | string }>(
+      `SELECT COUNT(*) AS n FROM delivery_collections WHERE collected_by = ? AND handover_id IS NULL${opsSchema ? " AND transaction_id IS NULL" : ""}`,
+      [owner.id]
+    );
+    let pending = await db.queryOne<any>("SELECT id, declared_cash, declared_upi FROM driver_cash_handovers WHERE driver_id = ? AND status = 'DECLARED' LIMIT 1", [owner.id]);
+    if (!pending && Number(open?.n || 0) > 0) {
+      const declared = await createCashHandoverDeclaration(owner, { driverId: owner.id, notes: "Collected by the owner" } as any, clientIp, db);
+      pending = { id: declared.id, declared_cash: declared.declaredCash, declared_upi: declared.declaredUpi };
+    }
+    if (pending) {
+      await acceptCashHandover(
+        owner,
+        pending.id,
+        { acceptedCash: Number(pending.declared_cash || 0), acceptedUpi: Number(pending.declared_upi || 0), notes: "Collected by the owner: already with the owner" } as any,
+        clientIp,
+        db
+      );
+      settled++;
+    }
+  } catch (e) {
+    console.warn("[custody] owner cash not settled:", (e as Error)?.message);
+  }
+  return settled;
 }
 
 /**
@@ -2430,6 +2522,7 @@ export async function retryDeliveryTask(
       notes,
       now,
     ]);
+    await sendOutNow(tx, taskId, actor, now);
 
     await recordAuditEventAsync({
       actorId: actor.id,
@@ -3260,6 +3353,7 @@ export async function listStaffCustody(
     throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
   }
   const db = asyncDb || getAsyncDb();
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
   const own = !canSeeAllCustody(actor);
   const rows = await db.query<any>(
     `${await custodyRowSql(db)}
@@ -3774,6 +3868,7 @@ export async function getFleetCustodySummary(
     throw new AuthorizationError(403, "Access denied. Insufficient permissions.");
   }
   const db = asyncDb || getAsyncDb();
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
   const day = await db.queryOne<any>(
     `SELECT COALESCE(SUM(dc.amount), 0) AS total
      FROM delivery_collections dc JOIN delivery_tasks t ON t.id = dc.delivery_task_id
@@ -3817,6 +3912,7 @@ export async function listDriverCashHandovers(
   }
 
   const db = asyncDb || getAsyncDb();
+  if (actor.role === "SUPER_ADMIN") await settleOwnerCash(actor, undefined, db);
 
   const conditions: string[] = [];
   const params: any[] = [];

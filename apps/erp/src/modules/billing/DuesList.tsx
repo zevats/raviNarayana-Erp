@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { CalendarDays, ChevronRight, ReceiptText, X } from "lucide-react";
+import { CalendarDays, ChevronRight, Download, ReceiptText, X } from "lucide-react";
+import { exportBillsCsv, exportDuesCsv } from "@/modules/finance/utils/financeCsv";
 import { billDay } from "@/lib/bills";
 import type { BillSummary } from "@/lib/bills";
 import { SearchField } from "@/components/ui/kit";
 import { LoadError } from "@/components/ui/states";
+import { toast } from "@/components/ui/toast";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 import { useDebouncedValue } from "@/lib/useDebouncedValue";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
@@ -96,11 +98,16 @@ export function DuesList({ scope }: { scope: DuesScope }) {
           <p className="mt-0.5 text-[30px] font-bold leading-none tabular-nums" data-testid="dues-total">{list.data ? money(total) : "—"}</p>
           <p className="mt-1.5 text-[13.5px] text-white/85">{list.data ? `${shown.length} ${shown.length === 1 ? "person" : "people"}` : " "}</p>
         </div>
-        {canRecord && (
-          <button type="button" className="rn-dues-billall" disabled={shown.length === 0} onClick={() => setBillAll(true)}>
-            <ReceiptText /> Bill all
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" className="rn-dues-billall rn-dues-csv" disabled={shown.length === 0} onClick={() => void exportDuesCsv(shown, label)} aria-label="Download these dues as CSV">
+            <Download /> CSV
           </button>
-        )}
+          {canRecord && (
+            <button type="button" className="rn-dues-billall" disabled={shown.length === 0} onClick={() => setBillAll(true)}>
+              <ReceiptText /> Bill all
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2.5">
@@ -174,6 +181,27 @@ export function BillsList() {
   const url = `/api/finance/bills?limit=${limit}${q ? `&q=${encodeURIComponent(q)}` : ""}${type !== "ALL" ? `&type=${type}` : ""}${date ? `&date=${date}` : ""}`;
   const list = useErpQuery<{ bills: BillSummary[]; total: number; amount: number }>(url, () => getJson(url), { tags: ["bills"], ttl: 15000 });
   const bills = list.data?.bills ?? [];
+  const [exporting, setExporting] = useState(false);
+  // Every bill that matches the filters (not just the ones loaded on screen), 200 at a time.
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const base = `/api/finance/bills?limit=200${q ? `&q=${encodeURIComponent(q)}` : ""}${type !== "ALL" ? `&type=${type}` : ""}${date ? `&date=${date}` : ""}`;
+      const all: BillSummary[] = [];
+      for (let offset = 0; offset < 20000; offset += 200) {
+        const page = await getJson<{ bills: BillSummary[]; total: number }>(`${base}&offset=${offset}`);
+        all.push(...page.bills);
+        if (page.bills.length < 200 || all.length >= page.total) break;
+      }
+      const label = [type === "GST" ? "GST" : type === "NON_GST" ? "Non-GST" : "All", date ? billDay(date) : "", q ? `search ${q}` : ""].filter(Boolean).join(" · ");
+      await exportBillsCsv(all, label);
+    } catch (e: any) {
+      toast.error(e?.message || "The bills could not be downloaded. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
   return (
     <div className="space-y-4 min-w-0">
       <div className="space-y-2.5">
@@ -189,6 +217,10 @@ export function BillsList() {
               <X />
             </button>
           )}
+          <button type="button" className="rn-date-chip" onClick={() => void exportCsv()} disabled={exporting || !list.data || list.data.total === 0} aria-label="Download these bills as CSV">
+            <Download aria-hidden />
+            <span>{exporting ? "…" : "CSV"}</span>
+          </button>
         </div>
         <div className="flex items-center justify-between gap-3">
           <Chips

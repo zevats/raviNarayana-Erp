@@ -3,7 +3,7 @@
 import { useTimedMessage } from "@/lib/useTimedMessage";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Phone, Send, Info, ChevronRight, PlayCircle, PencilLine, Banknote, CloudOff } from "lucide-react";
+import { Phone, Send, Info, ChevronRight, PencilLine, Banknote, CloudOff } from "lucide-react";
 import type { AuthenticatedUser, DeliveryTask, MealType } from "@/types";
 import { invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { businessToday, businessMeal } from "@/lib/businessDate";
@@ -415,11 +415,6 @@ function NextUp({ task, stopNo, selected, starting, onStart, onDeliver, queueTot
                 <Send className="w-4 h-4" /> Get Directions
               </a>
             )}
-            {task.status === "ASSIGNED" && (
-              <button type="button" onClick={onStart} disabled={starting} className={`${K.greyBtn} h-11 px-4 text-[13px]`}>
-                <PlayCircle className="w-4 h-4" /> {starting ? "Starting…" : "Start Delivery"}
-              </button>
-            )}
             <div className="flex-1" />
             <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-11 px-5 text-[13px]`}>
               <PencilLine className="w-4 h-4" /> Mark as delivered
@@ -463,11 +458,6 @@ function OpenStopCard({ task, label, starting, onStart, onDeliver }: { task: Del
           </div>
         )}
         <div className="flex gap-2">
-          {task.status === "ASSIGNED" && (
-            <button type="button" onClick={onStart} disabled={starting} className={`${K.greyBtn} h-12 text-[14px] flex-1`}>
-              <PlayCircle className="w-4 h-4" /> {starting ? "Starting…" : "Start"}
-            </button>
-          )}
           <button type="button" onClick={onDeliver} className={`${K.primaryBtn} h-12 text-[15px] flex-1`}>
             Mark as delivered
           </button>

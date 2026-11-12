@@ -329,7 +329,7 @@ async function runTestSuite() {
   const assigned = await assignDeliveryTask(managerUser, testTaskId, {
     assignedToStaffId: driverUser.id,
   });
-  assert(assigned.status === "ASSIGNED", "Task status is 'ASSIGNED'");
+  assert(assigned.status === "OUT_FOR_DELIVERY", "Task is out for delivery as soon as it is assigned");
   assert(assigned.assignedTo === driverUser.id, "Task assigned to delivery boy");
 
   // Delivery boy dispatches task

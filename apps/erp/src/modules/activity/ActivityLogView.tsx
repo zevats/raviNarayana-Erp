@@ -33,7 +33,7 @@ const AREAS: Array<{ value: string; label: string }> = [
   { value: "settings", label: "Settings" },
   { value: "resident", label: "Residents" },
   { value: "room", label: "Rooms" },
-  { value: "rooms", label: "Beds & maintenance" },
+  { value: "rooms", label: "Rooms" },
   { value: "finance", label: "Finance" },
   { value: "orders", label: "Orders" },
   { value: "delivery", label: "Delivery" },

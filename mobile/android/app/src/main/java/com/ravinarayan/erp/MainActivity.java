@@ -75,6 +75,13 @@ public class MainActivity extends BridgeActivity {
         boolean delivery = "delivery".equals(getSharedPreferences(PREFS, MODE_PRIVATE).getString("brand", "standard"));
         if (delivery) setTheme(R.style.AppTheme_NoActionBarLaunch_Delivery);
         super.onCreate(savedInstanceState);
+        // The app sets its own text sizes: the phone's system font size must not enlarge the pages
+        // (it pushed the top bar and wide content off screen, with sideways scrolling).
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) getBridge().getWebView().getSettings().setTextZoom(100);
+        } catch (Throwable ignored) {
+            // The WebView keeps its default.
+        }
         applyTaskDescription(delivery);
         createChannels();
         if (savedInstanceState == null) {
@@ -99,17 +106,24 @@ public class MainActivity extends BridgeActivity {
      * editions (without this some phones showed no name or logo for the Owner/Manager app).
      */
     private void applyTaskDescription(boolean delivery) {
+        int color = delivery ? Color.parseColor("#C9501C") : Color.parseColor("#173A29");
         try {
-            int iconRes = delivery ? R.drawable.anim_logo_delivery : R.drawable.anim_logo_home;
-            int color = delivery ? Color.parseColor("#C9501C") : Color.parseColor("#173A29");
-            if (Build.VERSION.SDK_INT >= 28) {
-                setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", iconRes, color));
-            } else {
-                Bitmap icon = BitmapFactory.decodeResource(getResources(), iconRes);
-                setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", icon, color));
+            // The same icon as on the home screen (logo on its own background), drawn into a bitmap:
+            // a bare transparent logo did not show on the Owner/Manager card on some phones.
+            android.graphics.drawable.Drawable d = getResources().getDrawable(delivery ? R.mipmap.ic_launcher_delivery : R.mipmap.ic_launcher, getTheme());
+            int size = Math.round(96 * getResources().getDisplayMetrics().density);
+            Bitmap icon = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas = new android.graphics.Canvas(icon);
+            d.setBounds(0, 0, size, size);
+            d.draw(canvas);
+            setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", icon, color));
+        } catch (Throwable first) {
+            try {
+                Bitmap logo = BitmapFactory.decodeResource(getResources(), delivery ? R.drawable.anim_logo_delivery : R.drawable.anim_logo_home);
+                setTaskDescription(new ActivityManager.TaskDescription("Ravinarayan", logo, color));
+            } catch (Throwable ignored) {
+                // The system's default card is kept.
             }
-        } catch (Throwable ignored) {
-            // The system's default card is kept.
         }
     }
 

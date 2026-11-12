@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { hasCustomerCodeSchema, hasAnyMealPlanSchema } from "../database/schemaFeatures";
+import { hasCustomerCodeSchema, hasAnyMealPlanSchema, hasCustomerContactSchema } from "../database/schemaFeatures";
 import { loadCustomerBalancesById } from "./customerBalance";
 import { ensurePlanCharges } from "./planCharges";
 import { recordAuditEventAsync } from "../audit/audit";
@@ -72,6 +72,8 @@ function mapRowToCustomer(row: any): TiffinCustomer {
   return {
     id: row.id,
     customerCode: row.customer_code || null,
+    contactPerson: row.contact_person || null,
+    defaultProductId: row.default_product_id || null,
     fullName: row.full_name,
     phone: row.phone,
     alternatePhone: row.alternate_phone || null,
@@ -264,6 +266,21 @@ export async function findPotentialDuplicateCustomers(
 /**
  * Creates a new Tiffin customer with duplicate checking and phone normalization.
  */
+/**
+ * Corporate details (migration 0029): the contact person of a company (the form asks for it; older
+ * companies without one still save), and a default thali that must be on the menu.
+ */
+async function customerContactValues(db: AsyncDb, customerType: CustomerType, contactPerson: string | null | undefined, defaultProductId: string | null | undefined) {
+  const person = customerType === "CORPORATE" ? String(contactPerson ?? "").trim() || null : null;
+  if (person !== null && person.length < 2) throw new Error("Enter the contact person's name (at least 2 letters).");
+  const productId = String(defaultProductId ?? "").trim() || null;
+  if (productId) {
+    const p = await db.queryOne<{ id: string }>("SELECT id FROM tiffin_products WHERE id = ?", [productId]);
+    if (!p) throw new Error("The default thali is not on the menu. Choose another one.");
+  }
+  return { person, productId };
+}
+
 export async function createTiffinCustomer(
   actor: AuthenticatedUser,
   input: CreateTiffinCustomerInput,
@@ -308,6 +325,9 @@ export async function createTiffinCustomer(
     throw new Error(`Invalid dietary preference '${dietaryPreference}'.`);
   }
 
+  const contact = await customerContactValues(db, customerType, input.contactPerson, input.defaultProductId);
+  const contactSchema = await hasCustomerContactSchema(db);
+
   // Duplicate Check
   const duplicates = await findPotentialDuplicateCustomers(normalizedPhone, undefined, db);
   if (duplicates.length > 0 && !input.confirmDuplicate) {
@@ -346,6 +366,9 @@ export async function createTiffinCustomer(
       now,
       now,
     ]);
+    if (contactSchema) {
+      await tx.execute("UPDATE tiffin_customers SET contact_person = ?, default_product_id = ? WHERE id = ?", [contact.person, contact.productId, id]);
+    }
     if (tx.isPostgres && (await hasCustomerCodeSchema(tx))) {
       // Next readable code (TC-0001 ...), one customer at a time.
       await tx.execute("SELECT pg_advisory_xact_lock(4203, hashtext('tiffin-customer-code'))");
@@ -433,6 +456,15 @@ export async function updateTiffinCustomer(
     ? (input.deliveryInstructions?.trim() || null)
     : current.deliveryInstructions;
   const notes = input.notes !== undefined ? (input.notes?.trim() || null) : current.notes;
+  const contactSchema = await hasCustomerContactSchema(db);
+  const contact = contactSchema
+    ? await customerContactValues(
+        db,
+        customerType,
+        input.contactPerson !== undefined ? input.contactPerson : current.contactPerson,
+        input.defaultProductId !== undefined ? input.defaultProductId : current.defaultProductId
+      )
+    : null;
 
   const now = new Date().toISOString();
 
@@ -465,6 +497,9 @@ export async function updateTiffinCustomer(
       now,
       id,
     ]);
+    if (contact) {
+      await tx.execute("UPDATE tiffin_customers SET contact_person = ?, default_product_id = ? WHERE id = ?", [contact.person, contact.productId, id]);
+    }
 
     await recordAuditEventAsync({
       actorId: actor.id,

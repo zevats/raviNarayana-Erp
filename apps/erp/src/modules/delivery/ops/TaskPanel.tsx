@@ -11,6 +11,7 @@ import { Sheet, Notice, OutcomeBadge, btn, rupees, timeOf, displayName, placeLin
 import { BikeLoader } from "@/components/feedback/BikeLoader";
 import { CallLink } from "./DeliverySheet";
 import { SelectMenu } from "@/components/forms/SelectMenu";
+import { uniqueId } from "@/lib/uniqueId";
 
 const EVENT_LABEL: Record<string, string> = {
   CREATED: "Added to the list",
@@ -86,7 +87,7 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
     setStaffId(t?.assignedTo || "");
     setAmount(t?.balanceDue ? String(t.balanceDue) : "");
     setMsg(null);
-    if (a === "collect") collectKey.current = `bal_${t?.id}_${crypto.randomUUID()}`;
+    if (a === "collect") collectKey.current = `bal_${t?.id}_${uniqueId()}`;
   };
   const run = async (url: string, body: unknown, done: string) => {
     if (busy || inFlight.current) return;
@@ -294,7 +295,7 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                         else if (action === "cancel") run(`/api/delivery/tasks/${t.id}/cancel`, { reason: text, overrideCutoff: override }, "Cancelled.");
                         else if (action === "resolve") run(`/api/delivery/tasks/${t.id}/resolve`, { note: text }, "Resolved.");
                         else if (action === "collect")
-                          run(`/api/delivery/tasks/${t.id}/collect`, { collectedAmount: Number(amount), paymentMethod: method, idempotencyKey: collectKey.current ?? (collectKey.current = `bal_${t.id}_${crypto.randomUUID()}`) }, "Payment recorded.");
+                          run(`/api/delivery/tasks/${t.id}/collect`, { collectedAmount: Number(amount), paymentMethod: method, idempotencyKey: collectKey.current ?? (collectKey.current = `bal_${t.id}_${uniqueId()}`) }, "Payment recorded.");
                       }}
                     >
                       {busy ? "Saving…" : "Confirm"}

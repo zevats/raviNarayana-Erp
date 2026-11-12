@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { businessToday } from "@/lib/businessDate";
 import { AccountDues, DueAccount, METHODS, Method, createBill, methodLabel, money, refreshMoney, send } from "./api";
 import { WhatsAppIcon, shareOnWhatsApp } from "./BillViewer";
+import { uniqueId } from "@/lib/uniqueId";
 
 const GSTIN = "06AAEFZ6389H1ZL";
 const RATES = [5, 12, 18];
@@ -151,7 +152,7 @@ export function usePaymentForm({
 
   useEffect(() => {
     if (!open) return;
-    key.current = `recv_${crypto.randomUUID()}`;
+    key.current = `recv_${uniqueId()}`;
     setAmount("");
     setMethod("CASH");
     setBillNumber("");
@@ -326,7 +327,7 @@ export function BillAllDialog({ open, onClose, accounts, label }: { open: boolea
     if (running || targets.length === 0) return;
     setRunning(true);
     kind.remember();
-    const batchId = `batch_${crypto.randomUUID()}`;
+    const batchId = `batch_${uniqueId()}`;
     const out: BatchRow[] = targets.map((account) => ({ account }));
     setRows([...out]);
     let next = 0;

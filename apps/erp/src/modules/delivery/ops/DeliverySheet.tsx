@@ -44,7 +44,11 @@ import { useSheetDrag } from "@/components/feedback/useSheetDrag";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 
 const REASONS = ["Customer not available", "Took fewer", "Cancelled at door", "Damaged in transit", "Wrong address"];
-const DISPOSITIONS: DeliveryDisposition[] = ["RETURNED", "WITH_STAFF", "DISCARDED"];
+// Thalis not delivered are brought back to the PG (and handed in like cash) or were damaged.
+const DISPOSITIONS: DeliveryDisposition[] = ["WITH_STAFF", "DISCARDED"];
+const DISPOSITION_TEXT: Partial<Record<DeliveryDisposition, string>> = { WITH_STAFF: "Bringing back", DISCARDED: "Damaged" };
+/** How many more than ordered may be handed over on an order (charged at the same price). */
+const MAX_EXTRA = 20;
 
 interface LineState {
   delivered: number;
@@ -251,7 +255,7 @@ export function DeliveryForm({
         ? {
             lines: lines.map((l) => {
               const st = state[l.lineId];
-              const short = l.quantity - st.delivered;
+              const short = Math.max(0, l.quantity - st.delivered);
               return {
                 lineId: l.lineId,
                 ...(l.source === "ORDER" ? { orderItemId: l.lineId } : {}),
@@ -366,7 +370,8 @@ export function DeliveryForm({
           </div>
           {lines.map((l) => {
             const st = state[l.lineId] || { delivered: l.quantity, reason: "", disposition: null };
-            const short = l.quantity - st.delivered;
+            const short = Math.max(0, l.quantity - st.delivered);
+            const extraHere = Math.max(0, st.delivered - l.quantity);
             return (
               <div key={l.lineId} className={panel ? `rounded-xl px-4 py-3 ${short > 0 ? "bg-[#FBF3E6]" : "bg-[#F4F0E8]"}` : `rounded-2xl border bg-white px-4 py-3 ${short > 0 ? "border-[#ECD8AB]" : "border-[#ECE6DB]"}`}>
                 <div className="flex items-center justify-between gap-3">
@@ -375,9 +380,14 @@ export function DeliveryForm({
                     <p className="text-[12px] text-[#6E7F70]">
                       Expected: {l.quantity} · Delivered: <span className="font-bold text-[#1A2E20]">{st.delivered}</span>
                       {short > 0 && <span className="text-[#8F6710]"> · {short} short</span>}
+                      {extraHere > 0 && (
+                        <span className="text-[#2F6B24] font-semibold">
+                          {" "}· {extraHere} extra{l.unitPrice ? ` (+${rupees(extraHere * l.unitPrice)})` : ""}
+                        </span>
+                      )}
                     </p>
                   </div>
-                  <Stepper value={st.delivered} max={l.quantity} label={`${l.productName} delivered`} onChange={(v) => setLine(l.lineId, { delivered: v })} variant={variant} />
+                  <Stepper value={st.delivered} max={l.source === "ORDER" ? l.quantity + MAX_EXTRA : l.quantity} label={`${l.productName} delivered`} onChange={(v) => setLine(l.lineId, { delivered: v })} variant={variant} />
                 </div>
                 {short > 0 && (
                   <div className="rn-enter mt-3 pt-3 border-t border-[#E6DFD2] space-y-2.5">
@@ -390,10 +400,10 @@ export function DeliveryForm({
                     </div>
                     <input value={st.reason} onChange={(e) => setLine(l.lineId, { reason: e.target.value })} placeholder="Or type the reason" aria-label={`Reason for ${l.productName}`} className="w-full h-11 px-3 rounded-lg border border-[#E2DBCE] bg-white text-sm" />
                     <p className="text-[12px] font-semibold text-[#5A6C5E]">Where are the {short} undelivered?</p>
-                    <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label={`Where the undelivered ${l.productName} went`}>
+                    <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={`Where the undelivered ${l.productName} went`}>
                       {DISPOSITIONS.map((d) => (
-                        <button key={d} type="button" role="radio" aria-checked={st.disposition === d} onClick={() => setLine(l.lineId, { disposition: d })} className={`rn-press h-11 rounded-full text-[12px] font-semibold ${st.disposition === d ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}>
-                          {d === "WITH_STAFF" ? "With me" : DISPOSITION_LABEL[d]}
+                        <button key={d} type="button" role="radio" aria-checked={st.disposition === d} onClick={() => setLine(l.lineId, { disposition: d })} className={`rn-press h-11 rounded-full text-[12.5px] font-semibold ${st.disposition === d ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}>
+                          {DISPOSITION_TEXT[d] || DISPOSITION_LABEL[d]}
                         </button>
                       ))}
                     </div>

@@ -6,7 +6,8 @@
  */
 
 import React, { useState } from "react";
-import { FileText, Plus, Printer, CreditCard, Send, XCircle, Lock, Unlock, Save, AlertTriangle, CheckCircle2, CalendarDays } from "lucide-react";
+import { FileText, Plus, Printer, CreditCard, Send, XCircle, Lock, Unlock, Save, AlertTriangle, CheckCircle2, CalendarDays, Download } from "lucide-react";
+import { exportClosingsCsv } from "../utils/financeCsv";
 import type { DailyClosingPreview, DailyClosingRecord, ClosingDivision, Invoice, PaymentMethod } from "@/types";
 import { formatMoney } from "@/lib/format";
 import { MButton, MChips, MEmpty, MField, MGroup, MHero, MNotice, MPill, MRow, MSearch, MSection, MSegment, MSheet, MSkeletonRows, MStack, MStats, initials, type MTone } from "@/components/app/m";
@@ -201,7 +202,16 @@ export function ClosingMobile({
         </div>
       </MSection>
 
-      <MSection title="Past closings">
+      <MSection
+        title="Past closings"
+        action={
+          history.length > 0 ? (
+            <MButton kind="soft" className="m-btn-sm" icon={Download} onClick={() => void exportClosingsCsv(history)}>
+              CSV
+            </MButton>
+          ) : undefined
+        }
+      >
         {history.length === 0 ? (
           <MEmpty title="No past closings" />
         ) : (

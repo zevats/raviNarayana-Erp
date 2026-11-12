@@ -4,7 +4,8 @@ import { friendlyError } from "@/lib/friendlyError";
 import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { TiffinCustomer, CustomerType, DietaryPreference } from "@/types";
+import { TiffinCustomer, CustomerType, DietaryPreference, TiffinProduct } from "@/types";
+import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 import { PhoneError } from "@/components/forms/PhoneError";
 interface CustomerModalProps {
@@ -31,6 +32,20 @@ export function CustomerModal({
   const [customerType, setCustomerType] = useState<CustomerType>("INDIVIDUAL");
   const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference>("VEG");
   const [notes, setNotes] = useState("");
+  const [contactPerson, setContactPerson] = useState("");
+  const [defaultProductId, setDefaultProductId] = useState("");
+  const corporate = customerType === "CORPORATE";
+  // Thalis on the menu, for the default thali of a company (it only pre-fills the order form).
+  const menu = useErpQuery<TiffinProduct[]>(
+    "/api/tiffin/products?status=ACTIVE",
+    async () => {
+      const res = await fetch("/api/tiffin/products?status=ACTIVE");
+      const d = await res.json().catch(() => ({}));
+      return Array.isArray(d.products) ? d.products : [];
+    },
+    { enabled: isOpen }
+  );
+  const thalis = (menu.data ?? []).filter((p) => String(p.category).endsWith("_MEAL"));
 
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
@@ -58,6 +73,8 @@ export function CustomerModal({
         setCustomerType(customer.customerType);
         setDietaryPreference(customer.dietaryPreference);
         setNotes(customer.notes || "");
+        setContactPerson(customer.contactPerson || "");
+        setDefaultProductId(customer.defaultProductId || "");
       } else {
         setFullName("");
         setPhone("");
@@ -68,6 +85,8 @@ export function CustomerModal({
         setCustomerType("INDIVIDUAL");
         setDietaryPreference("VEG");
         setNotes("");
+        setContactPerson("");
+        setDefaultProductId("");
       }
     }
   }, [isOpen, customer]);
@@ -77,7 +96,11 @@ export function CustomerModal({
     setError(null);
 
     if (!fullName.trim() || fullName.trim().length < 2) {
-      setError("Customer full name must be at least 2 characters long.");
+      setError(corporate ? "Enter the company name." : "Customer full name must be at least 2 characters long.");
+      return;
+    }
+    if (corporate && contactPerson.trim().length < 2) {
+      setError("Enter the contact person for this company.");
       return;
     }
 
@@ -110,6 +133,8 @@ export function CustomerModal({
         customerType,
         dietaryPreference,
         notes: notes.trim() || undefined,
+        contactPerson: corporate ? contactPerson.trim() : null,
+        defaultProductId: defaultProductId || null,
       };
 
       if (!isEditing && confirmDuplicate) {
@@ -210,25 +235,61 @@ export function CustomerModal({
             </div>
           )}
 
-          {/* Full Name & Phone */}
+          {/* Customer type first: it decides what is asked next */}
+          <div>
+            <span className="block text-xs font-semibold text-[#1A2E20] mb-1.5">Customer type</span>
+            <div role="radiogroup" aria-label="Customer type" className="grid grid-cols-2 gap-2">
+              {(customerType === "RESIDENTIAL_PG" ? (["INDIVIDUAL", "CORPORATE", "RESIDENTIAL_PG"] as CustomerType[]) : (["INDIVIDUAL", "CORPORATE"] as CustomerType[])).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  role="radio"
+                  aria-checked={customerType === t}
+                  onClick={() => setCustomerType(t)}
+                  className={`h-11 rounded-xl border text-[13.5px] font-semibold transition-colors ${
+                    customerType === t ? "bg-[#1A2E20] border-[#1A2E20] text-white" : "bg-white border-[#8E9F89]/40 text-[#1A2E20] hover:bg-[#F4F1EA]"
+                  }`}
+                >
+                  {t === "INDIVIDUAL" ? "Individual" : t === "CORPORATE" ? "Corporate" : "PG resident"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Name and phone; for a company: company name, contact person and their phone */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
+            <div className={corporate ? "sm:col-span-2" : ""}>
               <label htmlFor="cust-name" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Full Name <span className="text-red-500">*</span>
+                {corporate ? "Company name" : "Full Name"} <span className="text-red-500">*</span>
               </label>
               <input
                 id="cust-name"
                 type="text"
-                placeholder="e.g. Ramesh Kumar"
+                placeholder={corporate ? "e.g. Shree Ram Industries" : "e.g. Ramesh Kumar"}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
               />
             </div>
+            {corporate && (
+              <div>
+                <label htmlFor="cust-contact" className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                  Contact person <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="cust-contact"
+                  type="text"
+                  placeholder="e.g. Suresh, canteen in-charge"
+                  value={contactPerson}
+                  onChange={(e) => setContactPerson(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="cust-phone" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Primary Phone <span className="text-red-500">*</span>
+                {corporate ? "Contact phone" : "Primary Phone"} <span className="text-red-500">*</span>
               </label>
               <input
                 id="cust-phone"
@@ -243,7 +304,7 @@ export function CustomerModal({
             </div>
           </div>
 
-          {/* Alternate Phone & Customer Type */}
+          {/* Alternate phone and default thali */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="cust-alt-phone" className="block text-xs font-semibold text-[#1A2E20] mb-1">
@@ -260,18 +321,22 @@ export function CustomerModal({
               <PhoneError value={alternatePhone} required={false} />
             </div>
             <div>
-              <label htmlFor="cust-type" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Customer Type
+              <label htmlFor="cust-thali" className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                Default thali (Optional)
               </label>
               <AppSelect
-                id="cust-type"
-                value={customerType}
-                onChange={(e) => setCustomerType(e.target.value as CustomerType)}
+                id="cust-thali"
+                value={defaultProductId}
+                onChange={(e) => setDefaultProductId(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
               >
-                <option value="INDIVIDUAL">Individual Client</option>
-                <option value="CORPORATE">Corporate / Factory Group</option>
-                <option value="RESIDENTIAL_PG">Residential PG Tenant</option>
+                <option value="">None</option>
+                {thalis.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+                {defaultProductId && !thalis.some((p) => p.id === defaultProductId) && <option value={defaultProductId}>Current thali</option>}
               </AppSelect>
             </div>
           </div>

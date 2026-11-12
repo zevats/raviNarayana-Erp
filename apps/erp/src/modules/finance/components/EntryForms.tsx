@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Upload, FileCheck2, X } from "lucide-react";
 import type { FinancialTransaction, ResidentListItem } from "@/types";
 import { Dialog } from "@/components/ui/Dialog";
 import { SearchField } from "@/components/ui/kit";
@@ -9,6 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { businessToday } from "@/lib/businessDate";
 import { Choice } from "@/modules/billing/BillDialogs";
 import { METHODS, Method, methodLabel, money, refreshMoney, send } from "@/modules/billing/api";
+import { uniqueId } from "@/lib/uniqueId";
 
 export const EXPENSE_CATEGORIES: Array<{ value: string; label: string }> = [
   { value: "GROCERY", label: "Grocery" },
@@ -72,7 +74,7 @@ export function ExpenseDialog({ isOpen, onClose, onSuccess }: { isOpen: boolean;
   const key = useRef("");
   useEffect(() => {
     if (!isOpen) return;
-    key.current = `exp_${crypto.randomUUID()}`;
+    key.current = `exp_${uniqueId()}`;
     setFile(null);
     setAmount("");
     setPayee("");
@@ -175,7 +177,7 @@ export function DepositDialog({ isOpen, onClose, residents, onSuccess }: { isOpe
   const key = useRef("");
   useEffect(() => {
     if (!isOpen) return;
-    key.current = `dep_${crypto.randomUUID()}`;
+    key.current = `dep_${uniqueId()}`;
     setPicked(null);
     setSearch("");
     setAmount("");
@@ -295,14 +297,41 @@ export async function uploadEntryFile(transactionId: string, file: File, note: s
 }
 
 function FileField({ file, setFile }: { file: File | null; setFile: (f: File | null) => void }) {
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <label className="block">
+    <div>
       <span className="rn-t-label block mb-1.5">Bill photo</span>
-      <span className="rn-file">
-        <input type="file" accept="image/*,application/pdf" onChange={(e) => setFile(e.target.files?.[0] ?? null)} aria-label="Bill photo" />
-        <span className="truncate">{file ? file.name : "Add a photo or PDF (optional)"}</span>
-      </span>
-    </label>
+      <input
+        ref={input}
+        type="file"
+        accept="image/*,application/pdf"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          setFile(e.target.files?.[0] ?? null);
+          e.target.value = "";
+        }}
+      />
+      {file ? (
+        <div className="rn-file is-chosen">
+          <FileCheck2 className="w-5 h-5 shrink-0" aria-hidden />
+          <span className="flex-1 min-w-0 truncate">{file.name}</span>
+          <button type="button" className="rn-file-x" onClick={() => setFile(null)} aria-label="Remove the bill photo">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="rn-file" onClick={() => input.current?.click()}>
+          <span className="rn-file-ico" aria-hidden>
+            <Upload className="w-[18px] h-[18px]" />
+          </span>
+          <span className="flex-1 min-w-0 text-left">
+            <span className="block font-semibold">Upload photo or PDF</span>
+          </span>
+        </button>
+      )}
+    </div>
   );
 }
 

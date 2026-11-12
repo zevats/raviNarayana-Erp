@@ -114,7 +114,7 @@ async function main() {
     const s1 = await newOrder();
     await assignDeliveryTask(manager, s1.task.id, { assignedToStaffId: manager.id, reason: "Driver busy, I am going that way" }, IP, db);
     const s1d = (await getDeliveryTaskById(owner, s1.task.id, db))!;
-    assert(s1d.task.assignedTo === manager.id && s1d.task.status === "ASSIGNED", "Manager takes the delivery themselves");
+    assert(s1d.task.assignedTo === manager.id && s1d.task.status === "OUT_FOR_DELIVERY", "Manager takes the delivery themselves (out for delivery at once)");
     const ev = s1d.events.find((e) => e.eventType === "REASSIGNED");
     assert(Boolean(ev && /from Default Dinesh to Settings Manager \(handling it personally\)\. Reason: Driver busy/.test(ev.notes || "")), "History keeps the original assignee, who changed it and why");
     const aud = await db.queryOne<any>("SELECT metadata FROM audit_logs WHERE action = 'delivery.task_reassigned' AND target_id = ? ORDER BY created_at DESC LIMIT 1", [s1.task.id]);

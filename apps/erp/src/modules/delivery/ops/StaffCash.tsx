@@ -11,6 +11,7 @@ import { businessToday } from "@/lib/businessDate";
 import { getJson, LIVE_MS } from "./data";
 import { rupees } from "./ui";
 import { K, Pill, PageLoader, LoadError, EmptyState, initials, clock, shortDay } from "./staffKit";
+import { StaffThalis } from "./Thalis";
 
 type Detail = { custody: StaffCustodyRow; collections: StaffCustodyCollection[]; handovers: DriverCashHandover[] };
 const bizDate = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(iso));
@@ -107,6 +108,7 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
       </div>
 
       {msg && <p role={msg.tone === "error" ? "alert" : "status"} className={`rn-enter rounded-xl px-4 py-3 text-sm font-medium ${msg.tone === "ok" ? "bg-[#DDF1D6] text-[#2F6B24]" : "bg-[#FBE3DD] text-[#9A3423]"}`}>{msg.text}</p>}
+
 
       {/* Cash with you */}
       <section className={`${K.card} p-4`}>
@@ -226,6 +228,9 @@ export function StaffCash({ user }: { user: AuthenticatedUser }) {
           <p className="text-[13px] text-[#5A6C5E]">Paid to the PG account</p>
         </div>
       </section>
+
+      {/* Thalis carried back, handed in to the PG like cash */}
+      <StaffThalis />
 
       {/* Cash still to settle */}
       <section className="space-y-2.5">

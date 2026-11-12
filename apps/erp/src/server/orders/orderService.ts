@@ -616,6 +616,7 @@ export async function createUnifiedOrder(
   const payLater = !inPlanFree && ((input as any).payLater === true || String(input.paymentMethod || "").toUpperCase() === "PAY_LATER");
   if (payLater) {
     if (!(await hasDineInPayLaterSchema(db))) throw new Error("Pay Later for dine-in needs the latest database update, which is not installed yet.");
+    if (!input.customerName?.trim() || input.customerName.trim().length < 2) throw new Error("Enter the guest name for a Pay Later order.");
     if (!customerPhone || customerPhone.replace(/\D/g, "").length < 7) throw new Error("Enter the guest phone number for a Pay Later order.");
   }
   const paymentMethod: PaymentMethod = normalizePaymentMethod(payLater ? "CASH" : input.paymentMethod || "CASH");

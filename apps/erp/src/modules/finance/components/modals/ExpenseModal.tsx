@@ -7,6 +7,7 @@ import { X, TrendingDown, AlertCircle } from "lucide-react";
 import { ExpenseCategory, PaymentMethod, FinancialTransaction } from "@/types";
 import { toLocalDateString } from "../../utils/dateUtils";
 import { formatINR } from "../../utils/formatUtils";
+import { uniqueId } from "@/lib/uniqueId";
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -45,7 +46,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
   const inFlight = useRef(false);
   useEffect(() => {
     if (isOpen) {
-      entryKey.current = `exp_${crypto.randomUUID()}`;
+      entryKey.current = `exp_${uniqueId()}`;
       setError(null);
       setTransactionDate(toLocalDateString());
     }
@@ -69,7 +70,7 @@ export function ExpenseModal({ isOpen, onClose, onSuccess }: ExpenseModalProps) 
     inFlight.current = true;
     setSubmitting(true);
     try {
-      const idempotencyKey = entryKey.current || `exp_${crypto.randomUUID()}`;
+      const idempotencyKey = entryKey.current || `exp_${uniqueId()}`;
       const res = await fetch("/api/finance/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

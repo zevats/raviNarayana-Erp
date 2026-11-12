@@ -1,5 +1,6 @@
 "use client";
 
+import { downloadCsvText } from "@/lib/csvFile";
 import React, { useState } from "react";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import { Download, Printer, FileText, X, Check } from "lucide-react";
@@ -45,16 +46,10 @@ export function ExportReportModal({ summary, division, startDate, endDate }: Exp
 
       const res = await fetch(`/api/reports/executive${queryString}`);
       if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
+      const text = await res.text();
       const todayIso = businessToday();
-      a.download = `ravinarayan_executive_report_${division ? division.toLowerCase() + "_" : ""}${todayIso}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      // The same saving as every other CSV: Downloads in the phone app, a normal download in a browser.
+      await downloadCsvText(`ravinarayan_executive_report_${division ? division.toLowerCase() + "_" : ""}${todayIso}.csv`, text);
     } catch (err) {
       console.error("Failed to download CSV report:", err);
       alert("The report could not be prepared. Please try again.");
