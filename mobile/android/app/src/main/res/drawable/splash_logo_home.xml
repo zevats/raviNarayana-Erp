@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The logo on the system launch screen (the same picture the opening animation then continues
+     from). The system draws it 1.5x (150dp), the size the opening animation starts from. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="100dp" android:height="100dp" android:gravity="center">
+        <bitmap android:src="@drawable/anim_logo_home" android:gravity="fill" android:filter="true" />
+    </item>
+</layer-list>

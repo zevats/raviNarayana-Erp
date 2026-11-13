@@ -11,6 +11,8 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Whatever shows before the page draws is the app's own cream, never grey or black. -->
+        <item name="android:windowBackground">@color/rnSplash</item>
         <item name="android:statusBarColor">@color/rnGreen</item>
         <item name="android:navigationBarColor">@color/rnCream</item>
         <item name="android:windowLightNavigationBar">true</item>
@@ -19,11 +21,11 @@
         <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
     </style>
 
-    <!-- Launch: the system splash is only the brand background; MainActivity then plays the opening
-         animation (house for the ERP, rider for delivery) over the loading app. -->
+    <!-- Launch: the app opens straight onto its own screen (brand background and logo, never a
+         blank or black one); MainActivity's opening animation continues from that same logo. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/rnSplash</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_home</item>
         <item name="windowSplashScreenAnimationDuration">100</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
         <item name="android:statusBarColor">@color/rnGreen</item>
@@ -32,7 +34,7 @@
     <!-- Launch (splash): Delivery edition, used once a delivery partner has signed in on this phone -->
     <style name="AppTheme.NoActionBarLaunch.Delivery">
         <item name="windowSplashScreenBackground">@color/rnOrange</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_blank</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_delivery</item>
         <item name="android:statusBarColor">@color/rnOrange</item>
     </style>
 </resources>

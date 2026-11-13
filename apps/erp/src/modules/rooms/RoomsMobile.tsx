@@ -167,7 +167,6 @@ export function RoomsMobile<R extends MobileRoom>({
         open={Boolean(open)}
         onClose={() => setOpenId(null)}
         title={open ? `Room ${open.roomNumber}` : ""}
-        tall
         headerAction={
           open ? (
             <MMenu

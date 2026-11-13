@@ -28,6 +28,7 @@ import { DataPrefetch } from "@/components/layout/DataPrefetch";
 import { Prewarm } from "@/components/feedback/Prewarm";
 import { installActionFeedback } from "@/lib/actionFeedback";
 import { resetScrollLock, installOverlayScrollLock } from "@/lib/scrollLock";
+import { installOutsideTapClose } from "@/lib/outsideClose";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -87,6 +88,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
 
   // The page does not scroll behind any open pop-up (one cheap check per frame of changes).
   useEffect(() => installOverlayScrollLock(), []);
+  // Tapping outside any pop-up closes it (the same for every pop-up).
+  useEffect(() => installOutsideTapClose(), []);
 
   // A page change never leaves the page locked by a pop-up that the navigation closed.
   useEffect(() => {

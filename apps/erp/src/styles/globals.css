@@ -251,6 +251,6 @@ html[data-rn-overlay], html[data-rn-overlay] body { overflow: hidden; overscroll
 @media (max-width: 1023.98px) {
   html .rn-app :is(.rn-modal, .m-sheet, .rn-sheet, .rn-dialog, .rn-order-sheet) { margin-bottom: var(--rn-kb, 0px) !important; max-height: calc(94dvh - var(--rn-kb, 0px)) !important; }
   :is(.rn-modal, .m-sheet-body, .rn-sheet, .rn-dialog, .rn-order-sheet), :is(.rn-modal, .rn-dialog, .rn-order-sheet) :is(.overflow-y-auto, .overflow-auto) { scroll-padding-bottom: 120px; scroll-padding-top: 16px; }
-  html .rn-app .m-sheet.m-sheet-tall { height: calc(92dvh - var(--rn-kb, 0px)) !important; max-height: calc(92dvh - var(--rn-kb, 0px)) !important; }
+  html .rn-app .m-sheet.m-sheet-tall { max-height: calc(92dvh - var(--rn-kb, 0px)) !important; }
   html .rn-app .rn-select-sheet .m-sheet { max-height: calc(72dvh - var(--rn-kb, 0px)) !important; }
 }

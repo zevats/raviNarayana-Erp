@@ -569,52 +569,75 @@ export interface MMenuItem {
 
 /** A ⋮ button that opens a short list of actions right under it (tap outside or Escape closes it). */
 export function MMenu({ items, label = "More actions", buttonClassName = "m-sheet-x m-press" }: { items: MMenuItem[]; label?: string; buttonClassName?: string }) {
-  const [open, setOpen] = useState(false);
-  const [up, setUp] = useState(false);
-  const box = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; right: number; up: boolean } | null>(null);
+  const open = pos !== null;
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLSpanElement>(null);
+  const shown = items.filter((i) => !i.hidden);
+  const toggle = () => {
+    if (open) return setPos(null);
+    const r = button.current?.getBoundingClientRect();
+    if (!r) return;
+    // Drawn above everything (lists and cards clip what overflows them), under the button, or
+    // above it when there is no room below (a row near the bottom of the screen or a sheet).
+    const up = window.innerHeight - r.bottom < Math.min(360, shown.length * 52 + 24);
+    const right = Math.max(8, window.innerWidth - r.right);
+    setPos(up ? { bottom: window.innerHeight - r.top + 8, right, up } : { top: r.bottom + 8, right, up });
+  };
   useEffect(() => {
     if (!open) return;
-    // Opens upwards when there is no room below (a sheet near the bottom of the screen).
-    const r = box.current?.getBoundingClientRect();
-    if (r) setUp(window.innerHeight - r.bottom < Math.min(360, items.filter((i) => !i.hidden).length * 52 + 24));
-    const away = (e: Event) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const inside = (t: EventTarget | null) => t instanceof Node && (button.current?.contains(t) || menu.current?.contains(t));
+    const away = (e: Event) => !inside(e.target) && setPos(null);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setPos(null);
+    // The menu stays where it was drawn: scrolling the page or a sheet closes it.
+    const scrolled = (e: Event) => !inside(e.target) && setPos(null);
     document.addEventListener("pointerdown", away, true);
     window.addEventListener("keydown", esc);
+    window.addEventListener("scroll", scrolled, true);
+    window.addEventListener("resize", away);
     return () => {
       document.removeEventListener("pointerdown", away, true);
       window.removeEventListener("keydown", esc);
+      window.removeEventListener("scroll", scrolled, true);
+      window.removeEventListener("resize", away);
     };
   }, [open]);
-  const shown = items.filter((i) => !i.hidden);
   if (shown.length === 0) return null;
   return (
-    <span ref={box} className="relative inline-flex">
-      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} className={buttonClassName}>
+    <span className="relative inline-flex">
+      <button ref={button} type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={toggle} className={buttonClassName}>
         <MoreVertical className="w-5 h-5" />
       </button>
-      {open && (
-        <span role="menu" className={`m-menu ${up ? "is-up" : ""}`}>
-          {shown.map((it) => {
-            const Icon = it.icon;
-            return (
-              <button
-                key={it.label}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  it.onSelect();
-                }}
-                className={`m-menu-item ${it.danger ? "is-danger" : ""}`}
-              >
-                {Icon && <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={1.9} />}
-                <span className="truncate">{it.label}</span>
-              </button>
-            );
-          })}
-        </span>
-      )}
+      {pos &&
+        createPortal(
+          <span
+            ref={menu}
+            role="menu"
+            aria-label={label}
+            className={`m-menu m-menu-fixed ${pos.up ? "is-up" : ""}`}
+            style={{ top: pos.top, bottom: pos.bottom, right: pos.right }}
+          >
+            {shown.map((it) => {
+              const Icon = it.icon;
+              return (
+                <button
+                  key={it.label}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setPos(null);
+                    it.onSelect();
+                  }}
+                  className={`m-menu-item ${it.danger ? "is-danger" : ""}`}
+                >
+                  {Icon && <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={1.9} />}
+                  <span className="truncate">{it.label}</span>
+                </button>
+              );
+            })}
+          </span>,
+          document.querySelector(".rn-app") ?? document.body
+        )}
     </span>
   );
 }

@@ -55,7 +55,7 @@ public class MainActivity extends BridgeActivity {
     public static final String CHANNEL_ALERTS = "delivery_alerts";
     public static final String CHANNEL_UPDATES = "delivery_updates";
     private static final long MIN_SHOW_MS = 1400;
-    private static final long MAX_SHOW_MS = 10000;
+    private static final long MAX_SHOW_MS = 12000;
     private static volatile boolean webReady = false;
 
     /** Called by RnAppPlugin.ready(): the web app has drawn its first screen. */
@@ -83,6 +83,7 @@ public class MainActivity extends BridgeActivity {
             // The WebView keeps its default.
         }
         applyTaskDescription(delivery);
+        applySplashTheme(this, delivery);
         createChannels();
         if (savedInstanceState == null) {
             webReady = false;
@@ -131,6 +132,19 @@ public class MainActivity extends BridgeActivity {
     public void onStop() {
         super.onStop();
         applyLauncherIcon(this);
+    }
+
+    /**
+     * The launch screen the system shows before the app starts (Android 13+): orange with the rider
+     * on a delivery partner's phone, cream with the house otherwise. Applies from the next launch.
+     */
+    public static void applySplashTheme(android.app.Activity activity, boolean delivery) {
+        if (Build.VERSION.SDK_INT < 33) return;
+        try {
+            activity.getSplashScreen().setSplashScreenTheme(delivery ? R.style.AppTheme_NoActionBarLaunch_Delivery : R.style.AppTheme_NoActionBarLaunch);
+        } catch (Throwable ignored) {
+            // The default launch screen is kept.
+        }
     }
 
     /** Enables the launcher entry that matches the remembered edition (house or rider). */
@@ -229,13 +243,8 @@ public class MainActivity extends BridgeActivity {
         logo.setImageResource(R.drawable.anim_logo_home);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         stage.addView(logo, new FrameLayout.LayoutParams(dp(150), dp(150), Gravity.CENTER));
-        logo.setAlpha(0f);
-        logo.setScaleX(0.72f);
-        logo.setScaleY(0.72f);
-        logo.setTranslationY(dp(26));
-        logo.animate().alpha(1f).scaleX(1f).scaleY(1f).translationY(0).setStartDelay(120).setDuration(720)
-            .setInterpolator(new OvershootInterpolator(1.4f))
-            .withEndAction(() -> {
+        // It starts exactly where the launch screen's logo is (same place and size), then settles.
+        fromLaunchScreen(logo, 1f, 640, new OvershootInterpolator(1.2f), () -> {
                 ObjectAnimator bx = ObjectAnimator.ofFloat(logo, "scaleX", 1f, 1.04f);
                 ObjectAnimator by = ObjectAnimator.ofFloat(logo, "scaleY", 1f, 1.04f);
                 for (ObjectAnimator o : new ObjectAnimator[] { bx, by }) {
@@ -246,8 +255,36 @@ public class MainActivity extends BridgeActivity {
                     o.start();
                     loops.add(o);
                 }
-            })
-            .start();
+            });
+    }
+
+    /**
+     * Places the logo over the launch screen's logo (centre of the screen, at its size) before the
+     * first frame, then moves it to its own place: the launch screen hands over without a jump.
+     */
+    private void fromLaunchScreen(View logo, float startScale, long duration, android.animation.TimeInterpolator interpolator, Runnable then) {
+        logo.setScaleX(startScale);
+        logo.setScaleY(startScale);
+        logo.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                logo.getViewTreeObserver().removeOnPreDrawListener(this);
+                View decor = getWindow().getDecorView();
+                int[] at = new int[2];
+                logo.getLocationOnScreen(at);
+                int[] d = new int[2];
+                decor.getLocationOnScreen(d);
+                float dx = (d[0] + decor.getWidth() / 2f) - (at[0] + logo.getWidth() / 2f);
+                float dy = (d[1] + decor.getHeight() / 2f) - (at[1] + logo.getHeight() / 2f);
+                logo.setTranslationX(dx);
+                logo.setTranslationY(dy);
+                logo.animate().translationX(0).translationY(0).scaleX(1f).scaleY(1f).setStartDelay(60).setDuration(duration)
+                    .setInterpolator(interpolator)
+                    .withEndAction(then)
+                    .start();
+                return true;
+            }
+        });
     }
 
     /** Rider: sweeps in from the left behind streaking speed lines, then rides with a gentle bob. */
@@ -283,20 +320,15 @@ public class MainActivity extends BridgeActivity {
         FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(dp(176), dp(176), Gravity.CENTER);
         llp.leftMargin = dp(36);
         stage.addView(logo, llp);
-        logo.setAlpha(0f);
-        logo.setTranslationX(-dp(260));
-        logo.setRotation(-6f);
-        logo.animate().alpha(1f).translationX(0).rotation(0).setStartDelay(80).setDuration(760)
-            .setInterpolator(new OvershootInterpolator(1.1f))
-            .withEndAction(() -> {
-                ObjectAnimator bob = ObjectAnimator.ofFloat(logo, "translationY", 0f, -dp(5), 0f, dp(2), 0f);
-                bob.setDuration(700);
-                bob.setRepeatCount(ValueAnimator.INFINITE);
-                bob.setInterpolator(new LinearInterpolator());
-                bob.start();
-                loops.add(bob);
-            })
-            .start();
+        // From the launch screen's rider (same place and size), it rides into its place.
+        fromLaunchScreen(logo, 150f / 176f, 680, new OvershootInterpolator(1.1f), () -> {
+            ObjectAnimator bob = ObjectAnimator.ofFloat(logo, "translationY", 0f, -dp(5), 0f, dp(2), 0f);
+            bob.setDuration(700);
+            bob.setRepeatCount(ValueAnimator.INFINITE);
+            bob.setInterpolator(new LinearInterpolator());
+            bob.start();
+            loops.add(bob);
+        });
     }
 
     private void buildWordmark(boolean delivery) {
@@ -370,9 +402,10 @@ public class MainActivity extends BridgeActivity {
         } catch (Throwable ignored) {
             progress = 100;
         }
-        // Ends when the web app says it is ready (after a short minimum), or as a fallback once the
-        // page has loaded for a while, and never later than MAX_SHOW_MS.
-        if ((webReady && elapsed >= MIN_SHOW_MS) || (progress >= 100 && elapsed >= 4500) || elapsed >= MAX_SHOW_MS) {
+        // Ends when the web app says its first screen is drawn (after a short minimum): never onto a
+        // blank page. Fallbacks: a page that never says so (offline page) once it has loaded for a
+        // while, and in any case by MAX_SHOW_MS.
+        if ((webReady && elapsed >= MIN_SHOW_MS) || (progress >= 100 && elapsed >= 8000) || elapsed >= MAX_SHOW_MS) {
             closing = true;
             overlay.animate().alpha(0f).scaleX(1.04f).scaleY(1.04f).setDuration(320).setInterpolator(new DecelerateInterpolator())
                 .setListener(new AnimatorListenerAdapter() {

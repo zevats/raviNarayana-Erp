@@ -37,6 +37,8 @@ public class RnAppPlugin extends Plugin {
     public void setBrand(PluginCall call) {
         String brand = "delivery".equals(call.getString("brand", "standard")) ? "delivery" : "standard";
         getContext().getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE).edit().putString("brand", brand).apply();
+        // The next launch screen follows the edition at once (orange rider or cream house).
+        if (getActivity() != null) MainActivity.applySplashTheme(getActivity(), "delivery".equals(brand));
         call.resolve();
     }
 

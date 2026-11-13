@@ -411,21 +411,9 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     };
   }, [selectedCustomer]);
 
-  // A company's default thali goes in the cart when it is chosen (only to save time: one portion at
-  // today's menu price, changed or removed like any other item; nothing else is affected).
-  const defaultFilledFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!selectedCustomer || forPlan) {
-      defaultFilledFor.current = null;
-      return;
-    }
-    const pid = selectedCustomer.defaultProductId;
-    if (!pid || defaultFilledFor.current === selectedCustomer.id) return;
-    const product = products.find((p) => p.id === pid);
-    if (!product) return;
-    defaultFilledFor.current = selectedCustomer.id;
-    setCart((prev) => (Object.keys(prev).length > 0 ? prev : { [product.id]: { product, quantity: 1 } }));
-  }, [selectedCustomer, products, forPlan]);
+  // A company's default thali is its usual thali type: it is shown first on the menu, marked, so it
+  // is one tap away. Nothing is put in the order by itself; the quantity is always entered.
+  const defaultThaliId = !forPlan ? selectedCustomer?.defaultProductId || null : null;
 
   // Copies a previous order into a new draft (the old order is never changed). Items are matched to
   // today's menu and priced at today's menu price; items no longer on the menu are left out.
@@ -533,10 +521,11 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   const nothingToPay = Boolean(forPlan && plan && totalAmount <= 0 && cartItems.length > 0);
 
   const filteredProducts = useMemo(() => {
-    if (!menuSearch.trim()) return products;
     const q = menuSearch.toLowerCase().trim();
-    return products.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
-  }, [products, menuSearch]);
+    const list = q ? products.filter((p) => p.name.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)) : products;
+    const usual = defaultThaliId ? list.find((p) => p.id === defaultThaliId) : undefined;
+    return usual ? [usual, ...list.filter((p) => p !== usual)] : list;
+  }, [products, menuSearch, defaultThaliId]);
 
   /** Pay Later at the counter: the guest must be identifiable to be asked for the money later. The
    * name and phone are asked on the payment step, right under Pay later. */
@@ -1216,6 +1205,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
                         <span className={`block text-[15px] font-semibold leading-snug ${INK}`}>{p.name}</span>
                         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                           <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full bg-[#EFEBE6] text-[#3D3631]">{categoryLabel(p.category)}</span>
+                          {p.id === defaultThaliId && <span className="text-[11.5px] font-semibold px-2 py-0.5 rounded-full bg-[var(--rn-accent-tint)] text-[#B4440F]">Default</span>}
                           {inPlan ? (
                             <span className="text-[12px] font-semibold px-2 py-0.5 rounded-full bg-[#E6F4E1] text-[#1D4E16]">In plan</span>
                           ) : (
