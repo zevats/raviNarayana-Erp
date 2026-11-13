@@ -176,6 +176,11 @@ public class MainActivity extends BridgeActivity {
         if (root == null) return;
         overlay = new FrameLayout(this);
         overlay.setClickable(true);
+        // Drawn in the app's own colours even when the phone is in dark mode.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            overlay.setForceDarkAllowed(false);
+            getWindow().getDecorView().setForceDarkAllowed(false);
+        }
         overlay.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         if (delivery) {
             GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[] { Color.parseColor("#E07434"), Color.parseColor("#C9501C"), Color.parseColor("#9E3A10") });

@@ -2,12 +2,16 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
 
     <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- The app has its own colours: phones in dark mode must not darken it ("force dark"
+             turned the cream launch screen black). -->
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
     <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
@@ -24,6 +28,8 @@
     <!-- Launch: the app opens straight onto its own screen (brand background and logo, never a
          blank or black one); MainActivity's opening animation continues from that same logo. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
+        <item name="android:windowBackground">@color/rnSplash</item>
         <item name="windowSplashScreenBackground">@color/rnSplash</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_home</item>
         <item name="windowSplashScreenAnimationDuration">100</item>
