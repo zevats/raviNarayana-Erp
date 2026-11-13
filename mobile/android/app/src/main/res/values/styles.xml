@@ -28,6 +28,10 @@
     <!-- Launch: the app opens straight onto its own screen (brand background and logo, never a
          blank or black one); MainActivity's opening animation continues from that same logo. -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- No system launch screen at all: some phones draw their own (the icon on black in dark
+             mode) whatever colours the app asks for. The app's first frame is its own opening
+             screen, so that is the first and only thing shown. -->
+        <item name="android:windowDisablePreview">true</item>
         <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
         <item name="android:windowBackground">@color/rnSplash</item>
         <item name="windowSplashScreenBackground">@color/rnSplash</item>
@@ -39,6 +43,8 @@
 
     <!-- Launch (splash): Delivery edition, used once a delivery partner has signed in on this phone -->
     <style name="AppTheme.NoActionBarLaunch.Delivery">
+        <!-- The orange launch screen shows correctly on every phone: kept. -->
+        <item name="android:windowDisablePreview">false</item>
         <item name="windowSplashScreenBackground">@color/rnOrange</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo_delivery</item>
         <item name="android:statusBarColor">@color/rnOrange</item>
