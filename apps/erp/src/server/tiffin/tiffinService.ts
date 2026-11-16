@@ -1,9 +1,9 @@
 import crypto from "crypto";
 import { getAsyncDb, AsyncDb } from "../database/db";
 import { requirePermission } from "../authorization/authorize";
-import { hasCustomerCodeSchema, hasAnyMealPlanSchema, hasCustomerContactSchema } from "../database/schemaFeatures";
+import { hasCustomerCodeSchema, hasAnyMealPlanSchema, hasCustomerContactSchema, hasCustomerThaliQuantitySchema } from "../database/schemaFeatures";
 import { loadCustomerBalancesById, loadCustomerBalancesFor } from "./customerBalance";
-import { ensurePlanCharges } from "./planCharges";
+import { ensurePlanCharges, chargeNewPlanSoon } from "./planCharges";
 import { recordAuditEventAsync } from "../audit/audit";
 import {
   AuthenticatedUser,
@@ -74,6 +74,7 @@ function mapRowToCustomer(row: any): TiffinCustomer {
     customerCode: row.customer_code || null,
     contactPerson: row.contact_person || null,
     defaultProductId: row.default_product_id || null,
+    defaultThaliQuantity: row.default_thali_quantity != null && Number(row.default_thali_quantity) > 0 ? Number(row.default_thali_quantity) : null,
     fullName: row.full_name,
     phone: row.phone,
     alternatePhone: row.alternate_phone || null,
@@ -286,6 +287,14 @@ async function customerContactValues(db: AsyncDb, customerType: CustomerType, co
   return { person, productId };
 }
 
+/** A company's usual number of thalis (migration 0031): a whole number from 1 to 5000, or none. */
+function defaultThaliQuantityValue(customerType: CustomerType, value: number | string | null | undefined): number | null {
+  if (customerType !== "CORPORATE" || value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 5000) throw new Error("Default thalis must be a whole number from 1 to 5000.");
+  return n;
+}
+
 export async function createTiffinCustomer(
   actor: AuthenticatedUser,
   input: CreateTiffinCustomerInput,
@@ -331,6 +340,7 @@ export async function createTiffinCustomer(
   }
 
   const contact = await customerContactValues(db, customerType, input.contactPerson, input.defaultProductId);
+  const thaliQuantity = defaultThaliQuantityValue(customerType, input.defaultThaliQuantity);
   const contactSchema = await hasCustomerContactSchema(db);
 
   // Duplicate Check
@@ -373,6 +383,9 @@ export async function createTiffinCustomer(
     ]);
     if (contactSchema) {
       await tx.execute("UPDATE tiffin_customers SET contact_person = ?, default_product_id = ? WHERE id = ?", [contact.person, contact.productId, id]);
+    }
+    if (thaliQuantity !== null && (await hasCustomerThaliQuantitySchema(tx))) {
+      await tx.execute("UPDATE tiffin_customers SET default_thali_quantity = ? WHERE id = ?", [thaliQuantity, id]);
     }
     if (tx.isPostgres && (await hasCustomerCodeSchema(tx))) {
       // Next readable code (TC-0001 ...), one customer at a time.
@@ -470,6 +483,7 @@ export async function updateTiffinCustomer(
         input.defaultProductId !== undefined ? input.defaultProductId : current.defaultProductId
       )
     : null;
+  const thaliQuantity = defaultThaliQuantityValue(customerType, input.defaultThaliQuantity !== undefined ? input.defaultThaliQuantity : current.defaultThaliQuantity);
 
   const now = new Date().toISOString();
 
@@ -504,6 +518,9 @@ export async function updateTiffinCustomer(
     ]);
     if (contact) {
       await tx.execute("UPDATE tiffin_customers SET contact_person = ?, default_product_id = ? WHERE id = ?", [contact.person, contact.productId, id]);
+    }
+    if (await hasCustomerThaliQuantitySchema(tx)) {
+      await tx.execute("UPDATE tiffin_customers SET default_thali_quantity = ? WHERE id = ?", [thaliQuantity, id]);
     }
 
     await recordAuditEventAsync({
@@ -1252,7 +1269,9 @@ export async function createTiffinSubscription(
   actor: AuthenticatedUser,
   input: CreateTiffinSubscriptionInput,
   clientIpOrDb?: string | AsyncDb,
-  asyncDb?: AsyncDb
+  asyncDb?: AsyncDb,
+  /** The website answers at once and adds the first month's charge right after (see chargeNewPlanSoon). */
+  options?: { chargeInBackground?: boolean }
 ): Promise<TiffinSubscription> {
   let clientIp: string | undefined;
   let dbInstance = asyncDb;
@@ -1269,7 +1288,11 @@ export async function createTiffinSubscription(
   if (!input.customerId?.trim()) {
     throw new Error("Customer ID is required.");
   }
-  const customer = await getTiffinCustomerById(actor, input.customerId.trim(), db);
+  // The customer and the plan are read together (one round trip, not two).
+  const [customer, productFound] = await Promise.all([
+    getTiffinCustomerById(actor, input.customerId.trim(), db),
+    input.productId?.trim() ? getTiffinProductById(actor, input.productId.trim(), db) : Promise.resolve(null),
+  ]);
   if (!customer) {
     throw new Error(`Customer '${input.customerId}' not found.`);
   }
@@ -1280,7 +1303,7 @@ export async function createTiffinSubscription(
   if (!input.productId?.trim()) {
     throw new Error("Product ID is required.");
   }
-  const product = await getTiffinProductById(actor, input.productId.trim(), db);
+  const product = productFound;
   if (!product) {
     throw new Error(`Product '${input.productId}' not found.`);
   }
@@ -1403,10 +1426,14 @@ export async function createTiffinSubscription(
   });
 
   // A monthly plan is owed from the day it starts: the first month goes on the customer's dues now.
-  try {
-    await ensurePlanCharges(db, actor, { subscriptionId: id });
-  } catch (e) {
-    console.warn("[plan charges] first month not added yet:", (e as Error)?.message);
+  if (options?.chargeInBackground) {
+    chargeNewPlanSoon(db, actor, id);
+  } else {
+    try {
+      await ensurePlanCharges(db, actor, { subscriptionId: id });
+    } catch (e) {
+      console.warn("[plan charges] first month not added yet:", (e as Error)?.message);
+    }
   }
 
   return (await getTiffinSubscriptionById(actor, id, db))!;

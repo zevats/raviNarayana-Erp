@@ -187,7 +187,26 @@ export async function ensurePlanCharges(db: AsyncDb, actor: { id: string; userna
  * The lazy check used by the screens that show dues: at most once per interval per server, and
  * never more than one run at a time. A failure never breaks the screen that asked.
  */
+/** First-month charges being added right now for plans created a moment ago. */
+const starting = new Set<Promise<unknown>>();
+
+/**
+ * A new plan's first month, added without holding up the answer to "create subscription" (about a
+ * dozen database steps). Every screen that shows dues waits for it (ensurePlanChargesSoon), so the
+ * charge is always there when the dues are next read; a failure is retried by the regular check.
+ */
+export function chargeNewPlanSoon(db: AsyncDb, actor: { id: string; username?: string | null }, subscriptionId: string): void {
+  const p = ensurePlanCharges(db, actor, { subscriptionId })
+    .catch((e) => {
+      console.warn("[plan charges] first month not added yet:", (e as Error)?.message);
+      lastRunAt = 0;
+    })
+    .finally(() => starting.delete(p));
+  starting.add(p);
+}
+
 export async function ensurePlanChargesSoon(db: AsyncDb, actor: { id: string; username?: string | null }): Promise<void> {
+  if (starting.size > 0) await Promise.allSettled(Array.from(starting));
   if (Date.now() - lastRunAt < intervalMs()) return;
   if (!running) {
     lastRunAt = Date.now();

@@ -83,6 +83,8 @@ export async function hasAnyMealPlanSchema(db: AsyncDb): Promise<boolean> {
 export const hasCustomerCodeSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "customer_code");
 /** Migration 0029: corporate contact person and default thali on customers. */
 export const hasCustomerContactSchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "default_product_id");
+/** Migration 0031: a company's usual number of thalis. */
+export const hasCustomerThaliQuantitySchema = (db: AsyncDb) => hasColumn(db, "tiffin_customers", "default_thali_quantity");
 /** Migration 0030: thalis carried by staff (extras, returns, damage, spare stock). */
 export const hasThaliCustodySchema = (db: AsyncDb) => hasColumn(db, "thali_moves", "staff_delta");
 

@@ -361,8 +361,9 @@ export function DashboardView({
           <div className="flex flex-col gap-5 min-w-0">
             {ops.money ? (
               <section className="rn-dash-money rounded-[28px] p-6 text-white relative overflow-hidden" style={{ background: "linear-gradient(150deg, #263B2D 0%, #1A2E20 70%)", boxShadow: "0 30px 60px -32px rgba(10,20,14,0.7)" }}>
-                <span className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-white/5" aria-hidden />
-                <div className="flex items-center gap-3 min-h-[44px]">
+                {/* Decoration only: it must not sit over the arrow link and swallow its clicks. */}
+                <span className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-white/5 pointer-events-none" aria-hidden />
+                <div className="relative flex items-center gap-3 min-h-[44px]">
                   <span className="flex-1 text-[14.5px] font-medium">
                     Collected this month{division !== "COMBINED" && <span className="text-white/55"> · {DIVISION_LABEL[division]}</span>}
                   </span>

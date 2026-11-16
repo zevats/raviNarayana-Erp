@@ -97,9 +97,9 @@ const TYPE_LABEL: Record<string, string> = {
   EXPENSE: "Expense",
   REVERSAL: "Reversal",
 };
-const MONEY_IN = new Set(["RENT_PAYMENT", "SECURITY_DEPOSIT", "TIFFIN_PAYMENT"]);
-const MONEY_OUT = new Set(["EXPENSE", "DEPOSIT_REFUND"]);
-const CHARGES = new Set(["RENT_CHARGE", "TIFFIN_CHARGE"]);
+export const MONEY_IN = new Set(["RENT_PAYMENT", "SECURITY_DEPOSIT", "TIFFIN_PAYMENT"]);
+export const MONEY_OUT = new Set(["EXPENSE", "DEPOSIT_REFUND"]);
+export const CHARGES = new Set(["RENT_CHARGE", "TIFFIN_CHARGE"]);
 
 type Kind = "ALL" | "IN" | "OUT" | "CHARGE" | "REVERSAL";
 type Division = "ALL" | "PG" | "TIFFIN";
@@ -107,12 +107,12 @@ type Method = "ALL" | "CASH" | "UPI" | "BANK_TRANSFER" | "CHEQUE" | "OTHER";
 type TxStatus = "ALL" | "POSTED" | "REVERSED";
 type Period = "MONTH" | "30" | "ALL" | "CUSTOM";
 
-const plainCategory = (c: string) => {
+export const plainCategory = (c: string) => {
   const s = String(c || "").replace(/_/g, " ").toLowerCase().trim();
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
 };
 
-function txLook(tx: FinancialTransaction): { icon: React.ElementType; tone: MTone; sign: "+" | "−" | ""; amountTone?: MTone } {
+export function txLook(tx: FinancialTransaction): { icon: React.ElementType; tone: MTone; sign: "+" | "−" | ""; amountTone?: MTone } {
   if (tx.transactionType === "REVERSAL") return { icon: RotateCcw, tone: "neutral", sign: "" };
   if (MONEY_IN.has(tx.transactionType)) return { icon: ArrowDownLeft, tone: "green", sign: "+", amountTone: "green" };
   if (MONEY_OUT.has(tx.transactionType)) return { icon: ArrowUpRight, tone: "red", sign: "−", amountTone: "red" };
@@ -120,23 +120,23 @@ function txLook(tx: FinancialTransaction): { icon: React.ElementType; tone: MTon
 }
 
 /** What an entry is: "Rent received", "Tiffin payment", "Other receipt"… */
-function typeLabel(tx: FinancialTransaction): string {
+export function typeLabel(tx: FinancialTransaction): string {
   if (tx.transactionType === "TIFFIN_PAYMENT" && tx.category === "OTHER_RECEIPT") return "Other receipt";
   return TYPE_LABEL[tx.transactionType] || "";
 }
 
-function txParty(tx: FinancialTransaction) {
+export function txParty(tx: FinancialTransaction) {
   return tx.residentName || tx.customerName || tx.payeeVendor || typeLabel(tx) || "Entry";
 }
 
-function isPgTx(tx: FinancialTransaction) {
+export function isPgTx(tx: FinancialTransaction) {
   return Boolean(
     tx.residentId ||
       ["RENT_PAYMENT", "SECURITY_DEPOSIT", "DEPOSIT_REFUND", "RENT_CHARGE"].includes(tx.transactionType) ||
       (tx.transactionType === "EXPENSE" && !["GROCERY", "KITCHEN_SUPPLIES", "LPG"].includes(tx.category))
   );
 }
-function isTiffinTx(tx: FinancialTransaction) {
+export function isTiffinTx(tx: FinancialTransaction) {
   return Boolean(
     tx.customerId ||
       ["TIFFIN_PAYMENT", "TIFFIN_CHARGE"].includes(tx.transactionType) ||

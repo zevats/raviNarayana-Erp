@@ -124,7 +124,29 @@
   /* Fully round ends (half the collapsed width), the same open and collapsed. Concentric with the
      48px circles inside it: 18px inset + 24px radius = 42px, so the curves run parallel. */
   border-radius: 42px;
-  transition: width var(--rn-med) var(--rn-ease);
+  width: 256px;
+  transition: width var(--rn-side-time) var(--rn-side-ease);
+  will-change: width;
+}
+/* Collapsing and expanding: one motion. The panel's width changes and everything else follows it:
+   icons, the active pill and the avatar keep their place (they are laid out from the left edge),
+   labels are clipped by the panel and fade, and the page's left edge moves with the same timing. */
+.rn-app { --rn-side-time: 340ms; --rn-side-ease: cubic-bezier(0.32, 0.72, 0, 1); }
+.rn-sidebar.rn-sidebar-rail { width: 74px; }
+.rn-side-fade { transition: opacity 180ms linear; }
+.rn-sidebar-rail .rn-side-fade { opacity: 0; pointer-events: none; transition-duration: 120ms; }
+.rn-rail-fade { opacity: 0; pointer-events: none; transition: opacity 140ms linear; }
+.rn-sidebar-rail .rn-rail-fade { opacity: 1; pointer-events: auto; transition: opacity 200ms linear 120ms; }
+.rn-side-foot { height: 68px; transition: height var(--rn-side-time) var(--rn-side-ease); }
+.rn-sidebar-rail .rn-side-foot { height: 108px; }
+.rn-side-account { width: calc(100% - 28px - 44px); transition: width var(--rn-side-time) var(--rn-side-ease); }
+.rn-sidebar-rail .rn-side-account { width: 44px; }
+.rn-side-logout { left: calc(100% - 54px); top: 16px; transition: top var(--rn-side-time) var(--rn-side-ease), color var(--rn-fast) linear, background-color var(--rn-fast) linear; }
+.rn-sidebar-rail .rn-side-logout { top: 60px; }
+.rn-shell-body { transition: padding-left var(--rn-side-time) var(--rn-side-ease); }
+@media (min-width: 1024px) {
+  .rn-shell-body { padding-left: 288px; }
+  .rn-app[data-rail="collapsed"] .rn-shell-body { padding-left: 106px; }
 }
 /* Collapsed: the initial is the expand button, centred over the icon column below it. */
 .rn-brand-initial {
@@ -148,7 +170,7 @@
 .rn-brandmark-name::after { content: ""; display: inline-block; width: 5px; height: 5px; margin-left: 3px; border-radius: 9999px; background: var(--rn-highlight); vertical-align: baseline; }
 .rn-brandmark-sub { margin-top: 5px; font-size: 10.5px; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); }
 .rn-nav-indicator {
-  transition: transform var(--rn-med) var(--rn-ease-out), height var(--rn-med) var(--rn-ease-out), left var(--rn-med) var(--rn-ease), width var(--rn-med) var(--rn-ease), opacity var(--rn-fast) linear;
+  transition: transform var(--rn-med) var(--rn-ease-out), height var(--rn-med) var(--rn-ease-out), opacity var(--rn-fast) linear;
 }
 .rn-nav-item { transition: color var(--rn-fast) linear, background-color var(--rn-fast) linear; }
 .rn-nav-item .rn-nav-icon { transition: background-color var(--rn-med) var(--rn-ease), color var(--rn-med) var(--rn-ease), transform var(--rn-fast) var(--rn-ease); }
@@ -368,7 +390,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .rn-page, .rn-rise, .rn-main .fixed.inset-0 > *, .rn-tip[data-tip]:hover::after { animation: none !important; }
-  .rn-sidebar, .rn-nav-indicator, .rn-hover-lift, .rn-canvas { transition: none !important; }
+  .rn-sidebar, .rn-sidebar *, .rn-shell-body, .rn-nav-indicator, .rn-hover-lift, .rn-canvas { transition: none !important; }
   .rn-hover-lift:hover { transform: none; }
 }
 
@@ -541,9 +563,9 @@
 .rn-modal > :first-child { position: sticky; top: 0; z-index: 3; flex-shrink: 0; }
 .rn-modal > :first-child:not([class*="bg-"]) { background: #FFFFFF; }
 /* Fixed action bar: the block holding the submit button stays at the bottom. */
-.rn-modal > :last-child:has(button[type="submit"]),
+.rn-modal > :last-child:has(button[type="submit"]):not(form),
 .rn-modal form > :last-child:has(button[type="submit"]),
-.rn-modal > :last-child:has(> button:only-child),
+.rn-modal > :last-child:has(> button:only-child):not(form),
 .rn-modal > div:last-child:has(> .rn-btn-primary) {
   position: sticky; bottom: 0; z-index: 3; flex-shrink: 0;
   background: rgba(255, 255, 255, 0.96);
@@ -553,6 +575,10 @@
   margin-top: 8px;
 }
 .rn-modal form { display: flex; flex-direction: column; min-height: 0; }
+/* A form that is the pop-up's body scrolls by itself: the title above it stays in place and its
+   own button bar stays at the bottom (on short screens the whole form used to slide over the title). */
+.rn-modal > form:not(:first-child) { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 0 !important; }
+.rn-modal:has(> form:not(:first-child)) { overflow-y: hidden !important; }
 /* Inner scrolling areas keep the scrollbar off the content. */
 /* Inner scrolling areas keep the same space on both sides, so their content stays centred. */
 .rn-modal :is(.overflow-y-auto, .overflow-auto) { scrollbar-gutter: stable both-edges; }
@@ -1062,3 +1088,15 @@ button.rn-due-row:active { background: rgba(30, 58, 43, 0.09); }
 .rn-pick-list::-webkit-scrollbar { width: 6px; }
 .rn-pick-list::-webkit-scrollbar-thumb { background: rgba(30, 35, 32, 0.22); border-radius: 999px; }
 .rn-pick-list::-webkit-scrollbar-track { background: transparent; }
+
+/* Cashbook table (laptop): fixed columns, one line per cell, no sideways scroll. */
+.rn-main table.rn-cash-table { table-layout: fixed; }
+.rn-main .rn-cash-table :is(th, td) { padding: 13px 16px; font-size: 13.5px; vertical-align: middle; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rn-main .rn-cash-table tbody tr + tr td { border-top: 1px solid var(--rn-line); }
+.rn-main .rn-cash-table tbody tr:hover { background: rgba(255, 255, 255, 0.5); }
+
+/* Daily closing tables (laptop) */
+.rn-main .rn-close-table :is(th, td) { padding: 12px 20px; font-size: 13.5px; text-align: left; white-space: nowrap; }
+.rn-main .rn-close-table tbody tr + tr td, .rn-main .rn-close-table tbody tr:first-child td { border-top: 1px solid var(--rn-line); }
+.rn-main .rn-close-table tbody tr.cursor-pointer:hover { background: rgba(255, 255, 255, 0.5); }
+.rn-label { font-size: 12.5px; font-weight: 500; color: var(--rn-ink-2); }

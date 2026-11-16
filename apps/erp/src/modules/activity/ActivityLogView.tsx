@@ -164,9 +164,9 @@ export function ActivityLogView() {
         desktop={
           <div className="space-y-4">
       <div className="rn-card rn-mflat">
-      <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <SearchField value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" className="lg:col-span-2" />
-        <div className="rn-filter-row sm:contents">
+      <div className="p-4 sm:p-5 border-b border-[var(--rn-line)] flex flex-wrap items-center gap-3">
+        <SearchField value={search} onChange={(v) => { setSearch(v); reset(); }} placeholder="Search action, record or person" className="flex-1 min-w-[240px]" />
+        <div className="rn-filter-row contents [&>*]:shrink-0 [&>div:not(.grid)]:w-[170px]">
         <SelectMenu label="Area" tone="forest" value={area} onChange={(v) => { setArea(v); reset(); }} options={AREAS} triggerClassName="bg-white border border-[#8E9F89]/40 text-[#1A2E20]" />
         <SelectMenu
           label="Person"
@@ -177,8 +177,8 @@ export function ActivityLogView() {
           triggerClassName="bg-white border border-[#8E9F89]/40 text-[#1A2E20]"
         />
         <div className="grid grid-cols-2 gap-2">
-          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); reset(); }} aria-label="From" className="rn-input min-w-0 px-3 text-[12.5px]" />
-          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); reset(); }} aria-label="To" className="rn-input min-w-0 px-3 text-[12.5px]" />
+          <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); reset(); }} aria-label="From" className="rn-input !w-[150px]" />
+          <input type="date" value={to} onChange={(e) => { setTo(e.target.value); reset(); }} aria-label="To" className="rn-input !w-[150px]" />
         </div>
         </div>
       </div>
@@ -190,14 +190,22 @@ export function ActivityLogView() {
       ) : entries.length === 0 ? (
         <EmptyState title="No activity matches these filters" />
       ) : (
-          <table className="rn-table rn-mcards">
+          <table className="rn-table rn-mcards lg:[table-layout:fixed]">
+            {/* The words get the room; the result is a narrow column at the right edge. */}
+            <colgroup>
+              <col style={{ width: "190px" }} />
+              <col style={{ width: "17%" }} />
+              <col />
+              <col style={{ width: "26%" }} />
+              <col style={{ width: "104px" }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>When</th>
                 <th>Who</th>
                 <th>What</th>
                 <th>Record</th>
-                <th>Result</th>
+                <th className="lg:!text-right">Result</th>
               </tr>
             </thead>
             <tbody>
@@ -207,7 +215,7 @@ export function ActivityLogView() {
                   <td data-m="line" className="text-[var(--rn-ink)]">{e.actorName}</td>
                   <td data-m="title"><span className="hidden lg:inline text-[11px] uppercase tracking-wide text-[var(--rn-ink-3)] mr-1.5">{e.area}</span><span className="inline-block first-letter:uppercase">{readable(e.action)}</span></td>
                   <td data-m="line" className="text-[12px] text-[var(--rn-ink-3)]">{recordLabel(e.targetType, e.targetId)}</td>
-                  <td data-m="badge">
+                  <td data-m="badge" className="lg:!text-right">
                     <Badge tone={e.outcome === "REFUSED" ? "bad" : "good"}>{e.outcome === "REFUSED" ? "Refused" : "Done"}</Badge>
                   </td>
                 </tr>

@@ -11,6 +11,7 @@ import { Card, StatStrip, SearchField, Badge } from "@/components/ui/kit";
 import { FilterMenu } from "@/components/ui/FilterMenu";
 import { LoadError, SkeletonRows } from "@/components/ui/states";
 import { RowMenu } from "@/components/ui/RowMenu";
+import { useIsPhone } from "@/components/app/m";
 import { toast } from "@/components/ui/toast";
 import { businessToday } from "@/lib/businessDate";
 import { planMealsLabel } from "@/lib/planMeals";
@@ -41,6 +42,9 @@ function twoMonthsAgo(): string {
  * on it. A plan owes its monthly price from the day each month starts; nothing is billed by hand
  * and no delivery is made unless an order is taken (Take order).
  */
+/** Laptop columns: customer, plan, meals, since, dues, menu. */
+const COLS = "lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1.5fr)_minmax(0,1.1fr)_minmax(0,1fr)_130px_44px]";
+
 export function SubscriptionsView() {
   const router = useRouter();
   const canManage = useHasPermission("tiffin.manage");
@@ -71,6 +75,7 @@ export function SubscriptionsView() {
     return m;
   }, [dues.data]);
 
+  const phone = useIsPhone();
   const cutoff = twoMonthsAgo();
   const all = useMemo(() => (q.data ?? []).filter((s) => running(s) || endedOn(s) >= cutoff), [q.data, cutoff]);
   const counts = useMemo(
@@ -154,62 +159,90 @@ export function SubscriptionsView() {
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-[var(--rn-line)]" aria-label="Subscriptions">
-            {rows.map((s) => {
-              const live = running(s);
-              const key = `C:${s.customerId}`;
-              const due = dueOf.get(key);
-              const planOwed = Math.max(0, due?.plan ?? 0);
-              return (
-                <li key={s.id} data-sub-id={s.id} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0">
-                  <div className="min-w-0 flex-1 lg:flex lg:items-center lg:gap-4">
-                    <div className="min-w-0 lg:w-[30%]">
+          <>
+            {/* Laptop: the same columns on every row, named once. */}
+            <div className={`hidden lg:grid ${COLS} items-center gap-4 px-5 py-3 border-b border-[var(--rn-line)] text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--rn-ink-3)]`} aria-hidden>
+              <span>Customer</span>
+              <span>Plan</span>
+              <span>Meals</span>
+              <span>Since</span>
+              <span className="text-right">Dues</span>
+              <span />
+            </div>
+            <ul className="divide-y divide-[var(--rn-line)]" aria-label="Subscriptions">
+              {rows.map((s) => {
+                const live = running(s);
+                const key = `C:${s.customerId}`;
+                const due = dueOf.get(key);
+                const planOwed = Math.max(0, due?.plan ?? 0);
+                const state = s.status === "PAUSED" ? <Badge tone="warn">Paused</Badge> : live ? null : <Badge>Ended</Badge>;
+                const dueChip =
+                  canSeeMoney && dues.data && ((live && monthly(s)) || planOwed > 0) ? (
+                    planOwed > 0 ? (
+                      <button type="button" onClick={() => setAccount({ key, name: s.customerName || "", total: due?.total ?? planOwed })} className="rn-press" aria-label={`${s.customerName} owes ${rupees(planOwed)} on the plan`}>
+                        <Badge tone="bad">Due {rupees(planOwed)}</Badge>
+                      </button>
+                    ) : (
+                      <Badge tone="good">Paid</Badge>
+                    )
+                  ) : null;
+                const since = live ? day(s.startDate) : `Ended ${day(endedOn(s) || s.startDate)}`;
+                return (
+                  <li key={s.id} data-sub-id={s.id} className={`flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0 lg:grid ${COLS} lg:gap-4`}>
+                    {/* Phones and tablets: two lines and the chips */}
+                    <div className="min-w-0 flex-1 lg:hidden">
                       <p className="text-[15.5px] font-semibold text-[var(--rn-ink)] truncate">{s.customerName}</p>
                       <p className="text-[13px] text-[var(--rn-ink-2)] tabular-nums truncate">{s.customerPhone}</p>
-                    </div>
-                    <div className="min-w-0 lg:flex-1 max-lg:mt-1">
-                      <p className="text-[14px] text-[var(--rn-ink)] truncate">
+                      <p className="mt-1 text-[14px] text-[var(--rn-ink)] truncate">
                         <span className="font-medium">{s.productName}</span>
                         {canSeeMoney && <span className="text-[var(--rn-ink-2)]"> · {rupees(s.price)} {monthly(s) ? "a month" : "a thali"}</span>}
                       </p>
                       <p className="text-[13px] text-[var(--rn-ink-2)] truncate">
                         {planMealsLabel(s.mealTypes)} · {live ? `since ${day(s.startDate)}` : `ended ${day(endedOn(s) || s.startDate)}`}
                       </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 max-lg:mt-2 lg:justify-end">
-                      {s.status === "PAUSED" ? <Badge tone="warn">Paused</Badge> : live ? <Badge tone="good">Active</Badge> : <Badge>Ended</Badge>}
-                      {canSeeMoney && dues.data && ((live && monthly(s)) || planOwed > 0) && (
-                        planOwed > 0 ? (
-                          <button type="button" onClick={() => setAccount({ key, name: s.customerName || "", total: due?.total ?? planOwed })} className="rn-press" aria-label={`${s.customerName} owes ${rupees(planOwed)} on the plan`}>
-                            <Badge tone="bad">Due {rupees(planOwed)}</Badge>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {s.status === "PAUSED" ? <Badge tone="warn">Paused</Badge> : live ? <Badge tone="good">Active</Badge> : <Badge>Ended</Badge>}
+                        {dueChip}
+                        {live && canManage && (
+                          <button type="button" onClick={() => router.push(`/orders?take=${encodeURIComponent(s.id)}`)} className="rn-btn rn-btn-sm" aria-label={`Take an order for ${s.customerName}`}>
+                            <ShoppingBag /> Take order
                           </button>
-                        ) : (
-                          <Badge tone="good">Paid</Badge>
-                        )
-                      )}
-                      {live && canManage && (
-                        <button type="button" onClick={() => router.push(`/orders?take=${encodeURIComponent(s.id)}`)} className="rn-btn rn-btn-sm" aria-label={`Take an order for ${s.customerName}`}>
-                          <ShoppingBag /> Take order
-                        </button>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="shrink-0 self-center">
-                    <RowMenu
-                      label={`More for ${s.customerName}`}
-                      items={[
-                        { key: "details", label: "Details", icon: <Eye />, onSelect: () => setDetail(s) },
-                        { key: "dues", label: "Dues, bill and payment", icon: <Wallet />, onSelect: () => setAccount({ key, name: s.customerName || "", total: due?.total ?? 0 }), hidden: !canSeeMoney },
-                        { key: "edit", label: "Edit", icon: <Pencil />, onSelect: () => setForm({ open: true, sub: s }), hidden: !canManage || !live },
-                        { key: "resume", label: busy === s.id ? "Resuming…" : "Resume", icon: <PlayCircle />, onSelect: () => resume(s), hidden: !canManage || s.status !== "PAUSED" },
-                        { key: "end", label: "End subscription", icon: <XCircle />, onSelect: () => setEnding(s), danger: true, hidden: !canManage || !live },
-                      ]}
-                    />
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                    {/* Laptop: one line per plan, in columns */}
+                    <div className="hidden lg:block min-w-0">
+                      <p className="text-[14.5px] font-semibold text-[var(--rn-ink)] truncate">{s.customerName}</p>
+                      <p className="text-[12.5px] text-[var(--rn-ink-2)] tabular-nums truncate">{s.customerPhone}</p>
+                    </div>
+                    <div className="hidden lg:block min-w-0">
+                      <p className="text-[14px] text-[var(--rn-ink)] truncate">{s.productName}</p>
+                      {canSeeMoney && <p className="text-[12.5px] text-[var(--rn-ink-2)] tabular-nums truncate">{rupees(s.price)} {monthly(s) ? "a month" : "a thali"}</p>}
+                    </div>
+                    <p className="hidden lg:block min-w-0 text-[13.5px] text-[var(--rn-ink-2)] truncate">{planMealsLabel(s.mealTypes)}</p>
+                    <div className="hidden lg:flex min-w-0 items-center gap-2">
+                      <span className="text-[13.5px] text-[var(--rn-ink-2)] tabular-nums truncate">{since}</span>
+                      {s.status === "PAUSED" && state}
+                    </div>
+                    <div className="hidden lg:flex justify-end min-w-0">{dueChip}</div>
+                    <div className="shrink-0 self-center lg:justify-self-end">
+                      <RowMenu
+                        label={`More for ${s.customerName}`}
+                        items={[
+                          { key: "details", label: "Details", icon: <Eye />, onSelect: () => setDetail(s) },
+                          { key: "order", label: "Take order", icon: <ShoppingBag />, onSelect: () => router.push(`/orders?take=${encodeURIComponent(s.id)}`), hidden: phone !== false || !live || !canManage },
+                          { key: "dues", label: "Dues, bill and payment", icon: <Wallet />, onSelect: () => setAccount({ key, name: s.customerName || "", total: due?.total ?? 0 }), hidden: !canSeeMoney },
+                          { key: "edit", label: "Edit", icon: <Pencil />, onSelect: () => setForm({ open: true, sub: s }), hidden: !canManage || !live },
+                          { key: "resume", label: busy === s.id ? "Resuming…" : "Resume", icon: <PlayCircle />, onSelect: () => resume(s), hidden: !canManage || s.status !== "PAUSED" },
+                          { key: "end", label: "End subscription", icon: <XCircle />, onSelect: () => setEnding(s), danger: true, hidden: !canManage || !live },
+                        ]}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </Card>
 

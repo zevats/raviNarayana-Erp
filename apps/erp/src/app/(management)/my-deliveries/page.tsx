@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useCurrentUser } from "@/components/auth/CurrentUserContext";
 import { StaffDelivery } from "@/modules/delivery/ops/StaffDelivery";
-import { MSegment } from "@/components/app/m";
+import { MSegment, useIsPhone } from "@/components/app/m";
+import { useRouter } from "next/navigation";
 import { Segmented } from "@/components/ui/kit";
 
 type View = "stops" | "cash" | "history";
@@ -31,7 +32,13 @@ export default function MyDeliveriesPage() {
     window.dispatchEvent(new CustomEvent("erp:delivery-view", { detail: v }));
     window.scrollTo({ top: 0, left: 0, behavior: "instant" as ScrollBehavior });
   };
-  if (!user) return null;
+  // A phone screen: on a laptop the same work is done from Delivery.
+  const router = useRouter();
+  const phone = useIsPhone();
+  useEffect(() => {
+    if (phone === false) router.replace("/delivery");
+  }, [phone, router]);
+  if (!user || phone === false) return null;
   // The Owner keeps the cash they collect (there is no one to hand it to): no My cash for them; it
   // stays on record in their stops and history and in Delivery → Cash.
   const VIEWS = user.role === "SUPER_ADMIN" ? ALL_VIEWS.filter((v) => v.value !== "cash") : ALL_VIEWS;

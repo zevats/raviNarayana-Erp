@@ -218,6 +218,13 @@
       "when": 1793767200000,
       "tag": "0030_thali_custody",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793853600000,
+      "tag": "0031_customer_default_thalis",
+      "breakpoints": true
     }
   ]
 }

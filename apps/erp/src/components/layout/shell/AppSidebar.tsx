@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PanelLeftClose, LogOut } from "lucide-react";
@@ -38,6 +38,9 @@ export function AppSidebar({
   isLoggingOut: boolean;
   pathname: string;
 }) {
+  // My Deliveries is a phone screen (the delivery app inside the ERP): not listed on a laptop.
+  const allGroups = groups;
+  groups = useMemo(() => allGroups.map((g) => ({ ...g, items: g.items.filter((i) => i.key !== "mydeliveries") })).filter((g) => g.items.length > 0), [allGroups]);
   const navRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
@@ -48,7 +51,8 @@ export function AppSidebar({
     if (!nav) return;
     const measure = () => {
       const el = active ? nav.querySelector<HTMLElement>(`[data-nav-key="${active}"]`) : null;
-      setIndicator(el ? { top: el.offsetTop, height: el.offsetHeight } : null);
+      const next = el ? { top: el.offsetTop, height: el.offsetHeight } : null;
+      setIndicator((cur) => (cur?.top === next?.top && cur?.height === next?.height ? cur : next));
     };
     measure();
     // Re-measure whenever the list's layout settles or changes (fonts, width transition, resize).
@@ -63,6 +67,12 @@ export function AppSidebar({
       window.removeEventListener("resize", measure);
     };
   }, [active, collapsed, groups]);
+
+  // The current page's item is always in view (the list scrolls on short screens).
+  useEffect(() => {
+    const el = active ? navRef.current?.querySelector<HTMLElement>(`[data-nav-key="${active}"]`) : null;
+    el?.scrollIntoView({ block: "nearest" });
+  }, [active]);
 
   // Every section is prefetched in full once the browser is idle, not only the links scrolled into
   // view (Staff, Activity and Settings sit below the fold on laptops and opened cold). Hovering a
@@ -130,66 +140,67 @@ export function AppSidebar({
     <aside
       aria-label="Main navigation"
       data-collapsed={collapsed ? "true" : "false"}
-      className={`rn-sidebar hidden lg:flex flex-col fixed z-30 top-4 bottom-4 left-4 text-white overflow-hidden ${collapsed ? "w-[84px] rn-sidebar-rail" : "w-[256px]"}`}
+      className={`rn-sidebar hidden lg:flex flex-col fixed z-30 top-4 bottom-4 left-4 text-white overflow-hidden ${collapsed ? "rn-sidebar-rail" : ""}`}
     >
-      {/* Brand: same height in both states */}
-      <div className={`h-[76px] shrink-0 flex items-center ${collapsed ? "justify-center px-0" : "pl-6 pr-3 gap-2"}`}>
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label="Expand navigation"
-            aria-expanded={false}
-            onMouseEnter={(e) => showTip(e, "Expand")}
-            onMouseLeave={hideTip}
-            onFocus={(e) => showTip(e, "Expand")}
-            onBlur={hideTip}
-            className="rn-brand-initial"
-          >
-            <span className="rn-brandmark-name" style={{ fontSize: 22 }} aria-hidden data-initial>R</span>
-          </button>
-        ) : (
-          <>
-            <Link href="/dashboard" prefetch={false} onClick={(e) => onNavigate(e, "/dashboard", "dashboard")} className="rn-brandmark min-w-0 flex-1" aria-label="Ravinarayan — Dashboard">
-              <span className="rn-brandmark-name">Ravinarayan</span>
-              <span className="rn-brandmark-sub">PG &amp; Tiffin</span>
-            </Link>
-            <button
-              type="button"
-              onClick={onToggle}
-              aria-label="Collapse navigation"
-              aria-expanded
-              className="rn-side-toggle grid place-items-center w-9 h-9 rounded-full shrink-0"
-            >
-              <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.8} />
-            </button>
-          </>
-        )}
+      {/* Brand: one layout for both states. The name is clipped by the panel as it narrows and the
+          initial fades in over the icon column (nothing moves up, down or sideways). */}
+      <div className="relative h-[76px] shrink-0">
+        <Link
+          href="/dashboard"
+          prefetch={false}
+          tabIndex={collapsed ? -1 : undefined}
+          aria-hidden={collapsed}
+          onClick={(e) => onNavigate(e, "/dashboard", "dashboard")}
+          className="rn-brandmark rn-side-fade absolute left-6 top-1/2 -translate-y-1/2 whitespace-nowrap"
+          aria-label="Ravinarayan — Dashboard"
+        >
+          <span className="rn-brandmark-name">Ravinarayan</span>
+          <span className="rn-brandmark-sub">PG &amp; Tiffin</span>
+        </Link>
+        <button
+          type="button"
+          onClick={onToggle}
+          tabIndex={collapsed ? -1 : undefined}
+          aria-hidden={collapsed}
+          aria-label="Collapse navigation"
+          aria-expanded
+          className="rn-side-toggle rn-side-fade absolute right-3 top-1/2 -translate-y-1/2 grid place-items-center w-9 h-9 rounded-full"
+        >
+          <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.8} />
+        </button>
+        <button
+          type="button"
+          onClick={onToggle}
+          tabIndex={collapsed ? undefined : -1}
+          aria-hidden={!collapsed}
+          aria-label="Expand navigation"
+          aria-expanded={false}
+          onMouseEnter={(e) => showTip(e, "Expand")}
+          onMouseLeave={hideTip}
+          onFocus={(e) => showTip(e, "Expand")}
+          onBlur={hideTip}
+          className="rn-brand-initial rn-rail-fade absolute left-3 top-1/2 -translate-y-1/2"
+        >
+          R
+        </button>
       </div>
 
-      {/* Navigation */}
+      {/* Navigation: every item keeps its place; only the panel's width changes. */}
       <div ref={navRef} className="relative flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {indicator && (
           <span
             aria-hidden
             className="rn-nav-indicator absolute rounded-full bg-white/95 shadow-[0_10px_24px_-14px_rgba(0,0,0,0.55)]"
-            // Collapsed: a full circle around the icon (as wide as it is tall), centred in the rail.
-            style={
-              collapsed
-                ? { transform: `translateY(${indicator.top}px)`, height: indicator.height, width: indicator.height, left: `calc(50% - ${indicator.height / 2}px)`, top: 0 }
-                : { transform: `translateY(${indicator.top}px)`, height: indicator.height, width: "calc(100% - 24px)", left: 12, top: 0 }
-            }
+            // As wide as the panel allows: a full pill when open, a circle around the icon when collapsed.
+            style={{ transform: `translateY(${indicator.top}px)`, height: indicator.height, width: "calc(100% - 24px)", left: 12, top: 0 }}
           />
         )}
         {groups.map((g, gi) => (
           <div key={g.label}>
-            {/* Group slot: 28px in both states (label expanded, a separator line collapsed) */}
-            <div className={`h-7 flex items-end ${gi === 0 ? "" : "mt-2"} ${collapsed ? "justify-center pb-3" : "px-3 pb-1.5"}`} aria-hidden={collapsed}>
-              {collapsed ? (
-                <span className="block h-px w-8 bg-white/20" />
-              ) : (
-                <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-white/40 select-none">{g.label}</span>
-              )}
+            {/* Group slot: 28px in both states (label when open, a separator line when collapsed) */}
+            <div className={`relative h-7 ${gi === 0 ? "" : "mt-2"}`} aria-hidden={collapsed}>
+              <span className="rn-rail-fade absolute left-2 bottom-3 block h-px w-8 bg-white/20" />
+              <span className="rn-side-fade absolute left-3 bottom-1.5 whitespace-nowrap text-[10.5px] font-medium uppercase tracking-[0.12em] text-white/40 select-none">{g.label}</span>
             </div>
             <ul className="space-y-0.5">
               {g.items.map((item) => {
@@ -208,14 +219,12 @@ export function AppSidebar({
                       aria-current={isActive ? "page" : undefined}
                       prefetch
                       onClick={(e) => onNavigate(e, item.href, item.key)}
-                      className={`rn-nav-item relative z-10 flex items-center h-12 rounded-full ${collapsed ? "justify-center px-0" : "gap-3 pl-1.5 pr-3"} ${
-                        isActive ? "is-active font-semibold" : "text-white/72 hover:text-white"
-                      }`}
+                      className={`rn-nav-item relative z-10 flex items-center h-12 rounded-full gap-3 pl-1.5 pr-3 overflow-hidden ${isActive ? "is-active font-semibold" : "text-white/72 hover:text-white"}`}
                     >
                       <span className="rn-nav-icon grid place-items-center w-9 h-9 rounded-full shrink-0">
                         <Icon className="w-[17px] h-[17px]" strokeWidth={1.8} />
                       </span>
-                      {!collapsed && <span className="text-[13.5px] truncate">{item.label}</span>}
+                      <span className="rn-side-fade text-[13.5px] whitespace-nowrap" aria-hidden={collapsed}>{item.label}</span>
                     </Link>
                   </li>
                 );
@@ -225,8 +234,9 @@ export function AppSidebar({
         ))}
       </div>
 
-      {/* Footer: part of the panel (never over the navigation) */}
-      <div className={`shrink-0 border-t border-white/10 flex items-center ${collapsed ? "flex-col gap-2 py-3" : "gap-3 px-4 py-3.5"}`}>
+      {/* Footer: part of the panel (never over the navigation). The avatar stays under the icons;
+          Sign out sits at the right when open and slides under the avatar when collapsed. */}
+      <div className="rn-side-foot relative shrink-0 border-t border-white/10">
         <Link
           href="/account"
           prefetch={false}
@@ -237,15 +247,13 @@ export function AppSidebar({
           onMouseLeave={hideTip}
           onFocus={(e) => showTip(e, "My account")}
           onBlur={hideTip}
-          className={`flex items-center gap-3 min-w-0 rounded-full ${collapsed ? "" : "flex-1 -ml-1 pl-1 pr-2 py-1 hover:bg-white/[0.06]"}`}
+          className="rn-side-account absolute left-[14px] top-[12px] flex items-center gap-3 rounded-full p-1 pr-2 overflow-hidden hover:bg-white/[0.06]"
         >
           <span className="rn-side-avatar grid place-items-center w-9 h-9 rounded-full shrink-0 text-[13px] font-semibold" aria-hidden>{initial}</span>
-          {!collapsed && (
-            <span className="min-w-0">
-              <span className="block text-[13px] font-semibold truncate">{user.fullName}</span>
-              <span className="block text-[11px] text-white/50 truncate">{ROLE_LABELS[user.role] || user.role}</span>
-            </span>
-          )}
+          <span className="rn-side-fade min-w-0" aria-hidden={collapsed}>
+            <span className="block text-[13px] font-semibold truncate">{user.fullName}</span>
+            <span className="block text-[11px] text-white/50 truncate">{ROLE_LABELS[user.role] || user.role}</span>
+          </span>
         </Link>
         <button
           type="button"
@@ -257,7 +265,7 @@ export function AppSidebar({
           onMouseLeave={hideTip}
           onFocus={(e) => showTip(e, "Sign out")}
           onBlur={hideTip}
-          className="rn-side-toggle grid place-items-center w-9 h-9 rounded-full shrink-0 disabled:opacity-50"
+          className="rn-side-toggle rn-side-logout absolute grid place-items-center w-9 h-9 rounded-full disabled:opacity-50"
         >
           <LogOut className="w-4 h-4" strokeWidth={1.8} />
         </button>

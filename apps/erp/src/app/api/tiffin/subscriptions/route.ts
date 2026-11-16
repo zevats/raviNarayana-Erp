@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     const clientIp = getClientIp(request);
-    const subscription = await createTiffinSubscription(user, body, clientIp);
+    const subscription = await createTiffinSubscription(user, body, clientIp, undefined, { chargeInBackground: true });
 
     return NextResponse.json({ success: true, subscription }, { status: 201 });
   } catch (error: any) {

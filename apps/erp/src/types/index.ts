@@ -1429,6 +1429,8 @@ export interface TiffinCustomer {
   contactPerson?: string | null;
   /** Pre-fills the order form only; the price comes from the menu when ordering (migration 0029). */
   defaultProductId?: string | null;
+  /** Corporate: the usual number of thalis; pre-fills the order form only (migration 0031). */
+  defaultThaliQuantity?: number | null;
   createdBy: string;
   createdByName?: string | null;
   updatedBy: string | null;
@@ -1450,6 +1452,7 @@ export interface CreateTiffinCustomerInput {
   confirmDuplicate?: boolean;
   contactPerson?: string | null;
   defaultProductId?: string | null;
+  defaultThaliQuantity?: number | null;
 }
 
 export interface UpdateTiffinCustomerInput {
@@ -1464,6 +1467,7 @@ export interface UpdateTiffinCustomerInput {
   notes?: string | null;
   contactPerson?: string | null;
   defaultProductId?: string | null;
+  defaultThaliQuantity?: number | null;
 }
 
 export type ProductCategory =

@@ -88,12 +88,12 @@ export function CreateStaffModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden animate-fadeIn">
-        <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <User className="w-5 h-5 text-[#B58A57]" />
-            <h3 className="font-serif font-bold text-lg">Provision Staff Account</h3>
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">Add staff</h3>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -248,9 +248,9 @@ export function EditStaffModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
-        <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
-          <h3 className="font-serif font-bold text-lg">Edit Profile: {staff.username}</h3>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between">
+          <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">Edit profile</h3>
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -358,12 +358,12 @@ export function ChangeRoleModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
-        <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-[#B58A57]" />
-            <h3 className="font-serif font-bold text-lg">Change Role</h3>
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">Change Role</h3>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -484,14 +484,14 @@ export function DeactivateStaffModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
-        <div className={`px-6 py-4 text-white flex items-center justify-between ${isDeactivating ? "bg-[#842213]" : "bg-[#1A2E20]"}`}>
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-white" />
-            <h3 className="font-serif font-bold text-lg">
-              {isDeactivating ? "Deactivate Staff Account" : "Activate Staff Account"}
+            <ShieldAlert className={`w-5 h-5 ${isDeactivating ? "text-[#9A3423]" : "text-[#2F6B24]"}`} />
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">
+              {isDeactivating ? "Deactivate account" : "Activate account"}
             </h3>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -591,12 +591,12 @@ export function DirectResetModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden">
-        <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between">
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-[#B58A57]" />
-            <h3 className="font-serif font-bold text-lg">Direct Password Reset</h3>
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">Set a new password</h3>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -682,12 +682,12 @@ export function StaffHistoryModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs rn-modal-scrim">
       <div className="rn-modal rn-modal-wide w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#D5CEBF] overflow-hidden flex flex-col max-h-[85dvh]">
-        <div className="px-6 py-4 bg-[#1A2E20] text-white flex items-center justify-between shrink-0">
+        <div className="px-6 py-4 bg-white text-[#1E2320] border-b border-[rgba(30,35,32,0.08)] flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2.5">
             <History className="w-5 h-5 text-[#B58A57]" />
-            <h3 className="font-serif font-bold text-lg">Audit History: {staff.fullName}</h3>
+            <h3 className="text-[17px] font-semibold tracking-[-0.01em] text-[#1E2320]">Sign-in history · {staff.fullName}</h3>
           </div>
-          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors">
+          <button onClick={onClose} aria-label="Close" className="grid place-items-center w-9 h-9 rounded-full bg-[#ECE8DF] text-[#1E2320]">
             <X className="w-5 h-5" />
           </button>
         </div>

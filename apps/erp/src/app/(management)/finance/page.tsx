@@ -20,8 +20,7 @@ import {
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { FinanceHeader } from "@/modules/finance/components/FinanceHeader";
 import { AccountingPeriodSelector } from "@/modules/finance/components/AccountingPeriodSelector";
-import { FinancialSummaryCards } from "@/modules/finance/components/FinancialSummaryCards";
-import { CashbookLedger } from "@/modules/finance/components/CashbookLedger";
+import { CashbookDesktop } from "@/modules/finance/components/CashbookDesktop";
 import { DailyClosingView } from "@/modules/finance/components/DailyClosingView";
 import { useHasPermission } from "@/components/auth/CurrentUserContext";
 import { Segmented } from "@/components/ui/kit";
@@ -336,21 +335,7 @@ export default function FinancePage() {
 
       {/* 3. Tab Content */}
       {activeTab === "cashbook" ? (
-        <div className="space-y-5">
-          {/* 5 Financial Summary KPI Cards */}
-          <FinancialSummaryCards summary={cashbook} isLoading={loading} />
-
-          {/* Cashbook Ledger Table */}
-          <CashbookLedger
-            transactions={transactions}
-            isLoading={loading}
-            onViewReceipt={(tx) => setReceiptTx(tx)}
-            onEdit={(tx) => setEditingTx(tx)}
-            onOpenPayment={openReceive}
-            onOpenDeposit={() => setIsDepositOpen(true)}
-            onOpenExpense={() => setIsExpenseOpen(true)}
-          />
-        </div>
+        <CashbookDesktop summary={cashbook} transactions={transactions} isLoading={loading} onReceipt={(tx) => setReceiptTx(tx)} onEdit={(tx) => setEditingTx(tx)} />
       ) : activeTab === "receivables" ? (
         /* Who owes what (residents and tiffin customers): bill them and receive payments */
         <DuesList scope="ALL" />

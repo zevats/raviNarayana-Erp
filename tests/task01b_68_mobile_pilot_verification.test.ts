@@ -204,12 +204,15 @@ async function runTask68Tests() {
   // ============================================================================
   console.log("\n[TEST SUITE 5] Responsive Financial Card Layouts (Overflow Prevention)");
 
-  const cashbookPath = path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "components", "CashbookLedger.tsx");
-  assert(fs.existsSync(cashbookPath), "CashbookLedger.tsx exists");
+  // 2026-11-13: one layout per screen, chosen by the finance page (phone cards / laptop table).
+  const cashbookPath = path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "components", "CashbookDesktop.tsx");
+  assert(fs.existsSync(cashbookPath), "CashbookDesktop.tsx exists");
   const cashbookContent = fs.readFileSync(cashbookPath, "utf-8");
-  assert(/(block md|lg):hidden/.test(cashbookContent), "CashbookLedger implements mobile card layout (block md:hidden)");
-  assert(/hidden (md|lg):block/.test(cashbookContent), "CashbookLedger retains desktop table layout (hidden md:block)");
-  assert(cashbookContent.includes("onViewReceipt") && cashbookContent.includes("Receipt"), "Cashbook mobile cards offer direct receipt viewing");
+  const cashbookMobileContent = fs.readFileSync(path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "mobile", "FinanceMobile.tsx"), "utf-8");
+  const financePageContent = fs.readFileSync(path.resolve(ROOT, "apps", "erp", "src", "app", "(management)", "finance", "page.tsx"), "utf-8");
+  assert(financePageContent.includes("PhoneOrDesktop") && financePageContent.includes("<CashbookMobile") && !cashbookMobileContent.includes("<table"), "Cashbook implements the mobile card layout (phones)");
+  assert(financePageContent.includes("<CashbookDesktop") && cashbookContent.includes("<table"), "Cashbook retains the desktop table layout (laptops)");
+  assert(cashbookMobileContent.includes("onReceipt") && cashbookMobileContent.includes("Receipt"), "Cashbook mobile cards offer direct receipt viewing");
 
   const invoicePath = path.resolve(ROOT, "apps", "erp", "src", "modules", "finance", "components", "InvoiceLedgerView.tsx");
   assert(fs.existsSync(invoicePath), "InvoiceLedgerView.tsx exists");

@@ -1,11 +1,9 @@
 "use client";
 
 import { friendlyError } from "@/lib/friendlyError";
-import { AppSelect } from "@/components/forms/AppSelect";
 import React, { useState, useEffect, useRef } from "react";
 import { X, User, AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { TiffinCustomer, CustomerType, DietaryPreference, TiffinProduct } from "@/types";
-import { useErpQuery } from "@/lib/cache/erpDataCache";
+import { TiffinCustomer, CustomerType, DietaryPreference } from "@/types";
 
 import { PhoneError } from "@/components/forms/PhoneError";
 interface CustomerModalProps {
@@ -33,20 +31,8 @@ export function CustomerModal({
   const [dietaryPreference, setDietaryPreference] = useState<DietaryPreference>("VEG");
   const [notes, setNotes] = useState("");
   const [contactPerson, setContactPerson] = useState("");
-  const [defaultProductId, setDefaultProductId] = useState("");
+  const [defaultThalis, setDefaultThalis] = useState("");
   const corporate = customerType === "CORPORATE";
-  // Thalis on the menu, for the default thali of a company (it only pre-fills the order form).
-  const menu = useErpQuery<TiffinProduct[]>(
-    "/api/tiffin/products?status=ACTIVE",
-    async () => {
-      const res = await fetch("/api/tiffin/products?status=ACTIVE");
-      const d = await res.json().catch(() => ({}));
-      return Array.isArray(d.products) ? d.products : [];
-    },
-    { enabled: isOpen }
-  );
-  const thalis = (menu.data ?? []).filter((p) => String(p.category).endsWith("_MEAL"));
-
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
 
@@ -74,7 +60,7 @@ export function CustomerModal({
         setDietaryPreference(customer.dietaryPreference);
         setNotes(customer.notes || "");
         setContactPerson(customer.contactPerson || "");
-        setDefaultProductId(customer.defaultProductId || "");
+        setDefaultThalis(customer.defaultThaliQuantity ? String(customer.defaultThaliQuantity) : "");
       } else {
         setFullName("");
         setPhone("");
@@ -86,7 +72,7 @@ export function CustomerModal({
         setDietaryPreference("VEG");
         setNotes("");
         setContactPerson("");
-        setDefaultProductId("");
+        setDefaultThalis("");
       }
     }
   }, [isOpen, customer]);
@@ -134,7 +120,7 @@ export function CustomerModal({
         dietaryPreference,
         notes: notes.trim() || undefined,
         contactPerson: corporate ? contactPerson.trim() : null,
-        defaultProductId: defaultProductId || null,
+        defaultThaliQuantity: corporate && defaultThalis.trim() ? Number(defaultThalis) : null,
       };
 
       if (!isEditing && confirmDuplicate) {
@@ -304,7 +290,7 @@ export function CustomerModal({
             </div>
           </div>
 
-          {/* Alternate phone and default thali */}
+          {/* Alternate phone and, for a company, its usual number of thalis */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label htmlFor="cust-alt-phone" className="block text-xs font-semibold text-[#1A2E20] mb-1">
@@ -320,25 +306,22 @@ export function CustomerModal({
               />
               <PhoneError value={alternatePhone} required={false} />
             </div>
-            <div>
-              <label htmlFor="cust-thali" className="block text-xs font-semibold text-[#1A2E20] mb-1">
-                Default thali (Optional)
-              </label>
-              <AppSelect
-                id="cust-thali"
-                value={defaultProductId}
-                onChange={(e) => setDefaultProductId(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
-              >
-                <option value="">None</option>
-                {thalis.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-                {defaultProductId && !thalis.some((p) => p.id === defaultProductId) && <option value={defaultProductId}>Current thali</option>}
-              </AppSelect>
-            </div>
+            {corporate && (
+              <div>
+                <label htmlFor="cust-thalis" className="block text-xs font-semibold text-[#1A2E20] mb-1">
+                  Default thalis (Optional)
+                </label>
+                <input
+                  id="cust-thalis"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="e.g. 25"
+                  value={defaultThalis}
+                  onChange={(e) => setDefaultThalis(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  className="w-full px-3 py-2 bg-white border border-[#8E9F89]/40 rounded-xl text-xs text-[#1A2E20]"
+                />
+              </div>
+            )}
           </div>
 
           {/* Delivery Address */}

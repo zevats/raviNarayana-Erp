@@ -414,17 +414,23 @@ async function runTask67Tests() {
   // ============================================================================
   console.log("\n[TEST SUITE 5] Financial Ledger Mobile Viewport Overflow Protection");
 
-  const cashbookPath = path.resolve(ROOT, "apps/erp/src/modules/finance/components/CashbookLedger.tsx");
-  assert(fs.existsSync(cashbookPath), "CashbookLedger.tsx exists");
+  // 2026-11-13: the cashbook has one layout per screen (the phone app's cards, a table on laptops),
+  // chosen by the finance page; the old single CashbookLedger file with both is gone.
+  const cashbookPath = path.resolve(ROOT, "apps/erp/src/modules/finance/components/CashbookDesktop.tsx");
+  assert(fs.existsSync(cashbookPath), "CashbookDesktop.tsx exists");
   const cashbookContent = fs.readFileSync(cashbookPath, "utf-8");
+  const cashbookMobileContent = fs.readFileSync(path.resolve(ROOT, "apps/erp/src/modules/finance/mobile/FinanceMobile.tsx"), "utf-8");
+  const financePageContent = fs.readFileSync(path.resolve(ROOT, "apps/erp/src/app/(management)/finance/page.tsx"), "utf-8");
 
   assert(
-    /(block md|lg):hidden/.test(cashbookContent) && /hidden (md|lg):block/.test(cashbookContent),
-    "CashbookLedger implements dual-mode responsive layout (mobile cards vs desktop table)"
+    financePageContent.includes("PhoneOrDesktop") && financePageContent.includes("<CashbookMobile") && financePageContent.includes("<CashbookDesktop") &&
+      cashbookContent.includes("<table") && cashbookMobileContent.includes("export function CashbookMobile") && !cashbookMobileContent.includes("<table"),
+    "Cashbook implements dual-mode responsive layout (mobile cards vs desktop table)"
   );
   assert(
-    cashbookContent.includes("onViewReceipt") && cashbookContent.includes("onEdit") && !cashbookContent.includes("onInitiateReversal"),
-    "CashbookLedger cards give the receipt and Edit (owner, 2026-11-12: no Reverse button)"
+    cashbookContent.includes("onReceipt") && cashbookContent.includes("onEdit") && !cashbookContent.includes("onInitiateReversal") &&
+      cashbookMobileContent.includes("onReceipt") && cashbookMobileContent.includes("onEdit") && !cashbookMobileContent.includes("onInitiateReversal"),
+    "Cashbook entries give the receipt and Edit on both layouts (owner, 2026-11-12: no Reverse button)"
   );
 
   const invoiceLedgerPath = path.resolve(ROOT, "apps/erp/src/modules/finance/components/InvoiceLedgerView.tsx");
@@ -442,10 +448,12 @@ async function runTask67Tests() {
 
   const closingViewPath = path.resolve(ROOT, "apps/erp/src/modules/finance/components/DailyClosingView.tsx");
   assert(fs.existsSync(closingViewPath), "DailyClosingView.tsx exists");
+  // 2026-11-13: the laptop layout of the closing lives in ClosingDesktop.tsx (same state and actions).
+  const closingDesktopContent = fs.readFileSync(path.resolve(ROOT, "apps/erp/src/modules/finance/components/ClosingDesktop.tsx"), "utf-8");
   const closingContent = fs.readFileSync(closingViewPath, "utf-8");
 
   assert(
-    closingContent.includes("overflow-x-auto"),
+    closingDesktopContent.includes("overflow-x-auto") && closingDesktopContent.includes("<table"),
     "DailyClosingView wraps wide channel tables with horizontal scroll containers"
   );
   assert(

@@ -923,29 +923,9 @@ export default function ResidentsPage() {
                       )}
 
                       {/* Column 6: Actions */}
-                      <td data-m="actions" className="text-right">
-                        {/* One main action on the row; the rest are in the ⋯ menu. */}
+                      <td data-m="actions" className="text-right !pr-5">
+                        {/* Every action is in the ⋯ menu. */}
                         <div className="inline-flex justify-end items-center gap-1.5">
-                          {/* Check-In action if unassigned */}
-                          {!isInHouse && (
-                            <button
-                              onClick={() => handleOpenCheckInModal(res.id)}
-                              className="rn-btn rn-btn-sm"
-                            >
-                              Assign room
-                            </button>
-                          )}
-
-                          {/* Check-Out action if in-house */}
-                          {isInHouse && (
-                            <button
-                              onClick={() => handleOpenCheckOut(res)}
-                              className="rn-btn rn-btn-sm rn-btn-danger"
-                            >
-                              Check out
-                            </button>
-                          )}
-
                           <RowMenu
                             label={`More for ${res.fullName}`}
                             items={[
@@ -953,6 +933,8 @@ export default function ResidentsPage() {
                               { key: "profile", label: "Profile and stay history", icon: <History />, onSelect: () => handleViewDetails(res.id, res.fullName) },
                               { key: "edit", label: "Edit profile", icon: <UserCog />, onSelect: () => handleOpenEdit(res.id, res.fullName) },
                               { key: "transfer", label: "Move to another room", icon: <ArrowRightLeft />, onSelect: () => handleOpenTransferModal(res), hidden: !isInHouse },
+                              { key: "assign", label: "Assign room", icon: <BedDouble />, onSelect: () => handleOpenCheckInModal(res.id), hidden: isInHouse },
+                              { key: "checkout", label: "Check out", icon: <LogOut />, onSelect: () => handleOpenCheckOut(res), danger: true, hidden: !isInHouse },
                             ]}
                           />
                         </div>

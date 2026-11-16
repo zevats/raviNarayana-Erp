@@ -29,6 +29,7 @@ import { Prewarm } from "@/components/feedback/Prewarm";
 import { installActionFeedback } from "@/lib/actionFeedback";
 import { resetScrollLock, installOverlayScrollLock } from "@/lib/scrollLock";
 import { installOutsideTapClose } from "@/lib/outsideClose";
+import { installZeroInput } from "@/lib/zeroInput";
 
 interface ErpShellProps {
   user: AuthenticatedUser;
@@ -90,6 +91,8 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
   useEffect(() => installOverlayScrollLock(), []);
   // Tapping outside any pop-up closes it (the same for every pop-up).
   useEffect(() => installOutsideTapClose(), []);
+  // A box that shows 0: the typed number replaces it (everywhere).
+  useEffect(() => installZeroInput(), []);
 
   // A page change never leaves the page locked by a pop-up that the navigation closed.
   useEffect(() => {
@@ -447,11 +450,11 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
 
       <MobileTopBar title={title} queued={offlineQueueCount} online={isOnline} onAccount={(e) => handleNavClick(e, "/account", "account")} onHome={(e) => handleNavClick(e, "/dashboard", "dashboard")} />
 
-      <div className={`relative min-w-0 transition-[padding] duration-200 ease-out ${collapsed ? "lg:pl-[116px]" : "lg:pl-[288px]"}`}>
+      <div className="rn-shell-body relative min-w-0">
         <div className="mx-auto w-full max-w-[1320px] px-4 sm:px-6 lg:pr-8 lg:pl-2">
-          <TopBar user={user} title={shownKey === "dashboard" ? pageTitle(links, "dashboard", "/dashboard", user.fullName) : null} trail={trailFor(groups, shownKey, navPending && pendingHref ? pendingHref.split("?")[0] : pathname)} links={links} websiteUrl={websiteUrl} onLogout={handleLogout} isLoggingOut={isLoggingOut} />
+          <TopBar user={user} title={shownKey === "dashboard" ? pageTitle(links, "dashboard", "/dashboard", user.fullName) : null} trail={trailFor(groups, shownKey, navPending && pendingHref ? pendingHref.split("?")[0] : pathname)} links={links.filter((l) => l.key !== "mydeliveries")} websiteUrl={websiteUrl} onLogout={handleLogout} isLoggingOut={isLoggingOut} />
           {/* While a section opens, its frame replaces the previous page at once (kept mounted, hidden). */}
-          <main ref={mainRef} className="rn-main min-w-0 pt-4 lg:pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12" data-nav-pending={navPending ? "" : undefined} data-switching={switching ? "" : undefined}>
+          <main ref={mainRef} className="rn-main min-w-0 pt-4 lg:pt-0 pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-4" data-nav-pending={navPending ? "" : undefined} data-switching={switching ? "" : undefined}>
             {/* Phones: every page opens with its name, large (the dashboard greets instead). */}
             {shownKey !== "dashboard" && (
               <h1 className="lg:hidden rn-m-title">{navPending && pendingHref ? pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName) : title}</h1>

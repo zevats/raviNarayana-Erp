@@ -21,6 +21,9 @@ import { SelectMenu } from "@/components/forms/SelectMenu";
 import { PageHeader, Segmented, Badge } from "@/components/ui/kit";
 import { useInstantChoice } from "@/lib/useInstantChoice";
 import { deliveryTasksQuery, manifestQuery, usePrefetchChoices } from "@/lib/pageQueries";
+import { EmptyState } from "./staffKit";
+
+const MEAL_WORD: Record<string, string> = { BREAKFAST: "Breakfast", LUNCH: "Lunch", DINNER: "Dinner" };
 
 type Tab = "board" | "problems" | "custody" | "history" | "rooms";
 const FILTERS: Array<DeliveryOutcome | "ALL"> = ["ALL", "WAITING", "OUT", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
@@ -473,9 +476,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           {tasksQ.isLoading && !tasksQ.data ? (
             <FullPageLoader label="Loading deliveries…" size="md" />
           ) : groups.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-surface-subtle p-8 text-center text-sm text-text-muted">
-              {tasks.length === 0 ? `No deliveries for ${meal.toLowerCase()} on this day.` : "Nothing matches this filter."}
-            </div>
+            <EmptyState title={tasks.length === 0 ? "No deliveries yet" : "None in this filter"} detail={`${MEAL_WORD[meal]} · ${date === businessToday() ? "Today" : date}`} />
           ) : (
             groups.map((g) => {
               const s = summarizeDeliveries(g.tasks);
@@ -549,7 +550,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
       {tab === "problems" && (
         <section className="rn-enter space-y-3">
           {problems.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-surface-subtle p-8 text-center text-sm text-text-muted">No open problems for this meal.</div>
+            <EmptyState title="No problems" detail={`${MEAL_WORD[meal]} · ${date === businessToday() ? "Today" : date}`} />
           ) : (
             problems.map((t) => (
               <button key={t.id} type="button" onClick={() => setFocusId(t.id)} className="rn-press w-full text-left rounded-3xl border border-status-warning-border bg-white px-4 py-3 hover:bg-surface-canvas">
