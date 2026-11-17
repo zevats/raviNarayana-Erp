@@ -461,7 +461,7 @@ export function ErpShell({ user, children, isDemo = false, websiteUrl = null }: 
             )}
             {navPending && pendingHref && <NavSkeleton href={pendingHref} title={pageTitle(links, pendingKey, pendingHref.split("?")[0], user.fullName)} />}
             <CurrentUserProvider user={user}>{children}</CurrentUserProvider>
-            {user.role === "SUPER_ADMIN" && <HandoverAlert />}
+            {(user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER") && <HandoverAlert role={user.role} userId={user.id} />}
           </main>
         </div>
       </div>

@@ -23,6 +23,17 @@ export function businessMeal(now: Date = new Date()): "BREAKFAST" | "LUNCH" | "D
   return hour < 11 ? "BREAKFAST" : hour >= 16 ? "DINNER" : "LUNCH";
 }
 
+/**
+ * The meal a NEW order is most likely for, by the clock in India: breakfast until 9:30 am, lunch
+ * until 3 pm, dinner after that (orders are taken ahead of the meal; the delivery screens use
+ * businessMeal, the meal being served). The person taking the order can always change it.
+ */
+export function orderMealNow(now: Date = new Date()): "BREAKFAST" | "LUNCH" | "DINNER" {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: BUSINESS_TIME_ZONE, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const minutes = Number(parts.find((x) => x.type === "hour")?.value ?? 0) * 60 + Number(parts.find((x) => x.type === "minute")?.value ?? 0);
+  return minutes < 9 * 60 + 30 ? "BREAKFAST" : minutes < 15 * 60 ? "LUNCH" : "DINNER";
+}
+
 /** First day (YYYY-MM-01) of the business month containing `now`. */
 export function businessMonthStart(now: Date = new Date()): string {
   return `${businessToday(now).slice(0, 7)}-01`;

@@ -62,17 +62,17 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
               {
                 label: "Stops",
                 value: c.summary.total,
-                note: `${c.summary.delivered} delivered · ${c.summary.partial} partial · ${c.summary.notDelivered} not delivered · ${c.summary.waiting + c.summary.out} open${c.summary.cancelled ? ` · ${c.summary.cancelled} cancelled` : ""}`,
+                note: `${c.summary.delivered} delivered · ${c.summary.partial} partial · ${c.summary.notDelivered} not delivered · ${c.summary.waiting + c.summary.out} to deliver${c.summary.cancelled ? ` · ${c.summary.cancelled} cancelled` : ""}`,
               },
               {
                 label: "Items delivered",
-                value: `${c.summary.items.delivered} / ${c.summary.items.ordered}`,
+                value: c.summary.items.delivered,
                 note: c.summary.items.undelivered ? `${c.summary.items.undelivered} not delivered` : "everything delivered",
                 tone: c.summary.items.undelivered ? "warn" : "default",
               },
               {
                 label: "Collected",
-                value: `${rupees(c.summary.money.collected)} / ${rupees(c.summary.money.due)}`,
+                value: rupees(c.summary.money.collected),
                 note: c.summary.money.outstanding ? `${rupees(c.summary.money.outstanding)} still to collect` : "all collected",
               },
             ]}
@@ -99,7 +99,7 @@ export function HistoryView({ date, meal, onDate, onOpen }: { date: string; meal
                   {c.items.map((i) => {
                     const where = [
                       i.returned ? `${i.returned} returned` : "",
-                      i.withStaff ? `${i.withStaff} with staff` : "",
+                      i.withStaff ? `${i.withStaff} returning to PG` : "",
                       i.discarded ? `${i.discarded} discarded` : "",
                       i.unrecorded ? `${i.unrecorded} not recorded` : "",
                     ].filter(Boolean).join(" · ");

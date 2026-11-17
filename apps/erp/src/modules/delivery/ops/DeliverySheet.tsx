@@ -43,10 +43,8 @@ import { K, Pill, firstName } from "./staffKit";
 import { useSheetDrag } from "@/components/feedback/useSheetDrag";
 import { SelectMenu } from "@/components/forms/SelectMenu";
 
-const REASONS = ["Customer not available", "Took fewer", "Cancelled at door", "Damaged in transit", "Wrong address"];
+const REASONS = ["Customer not available", "Took fewer", "Cancelled at door", "Wrong address"];
 // Thalis not delivered are brought back to the PG (and handed in like cash) or were damaged.
-const DISPOSITIONS: DeliveryDisposition[] = ["WITH_STAFF", "DISCARDED"];
-const DISPOSITION_TEXT: Partial<Record<DeliveryDisposition, string>> = { WITH_STAFF: "Bringing back", DISCARDED: "Damaged" };
 /** How many more than ordered may be handed over on an order (charged at the same price). */
 const MAX_EXTRA = 20;
 
@@ -242,7 +240,6 @@ export function DeliveryForm({
       for (const l of shortLines) {
         const st = state[l.lineId];
         if (!st?.reason.trim()) return setError(`Choose why ${l.quantity - (st?.delivered ?? 0)} ${l.productName} were not delivered.`);
-        if (!st.disposition) return setError(`Choose where the undelivered ${l.productName} went.`);
       }
     } else if (!legacyDelivered && !legacyReason.trim()) {
       return setError("Choose why it was not delivered.");
@@ -261,7 +258,7 @@ export function DeliveryForm({
                 ...(l.source === "ORDER" ? { orderItemId: l.lineId } : {}),
                 deliveredQuantity: st.delivered,
                 undeliveredQuantity: short,
-                ...(short > 0 ? { reason: st.reason.trim(), disposition: st.disposition } : {}),
+                ...(short > 0 ? { reason: st.reason.trim(), disposition: "WITH_STAFF" as DeliveryDisposition } : {}),
               };
             }),
             undeliveredReason: shortLines.length > 0 ? state[shortLines[0].lineId]?.reason.trim() : undefined,
@@ -366,7 +363,7 @@ export function DeliveryForm({
         <section aria-label="Items" className="space-y-2.5">
           <div className="flex items-baseline justify-between">
             <p className={K.eyebrow}>{itemsTitle}</p>
-            <p className={`text-[12px] ${panel ? "font-semibold text-[#2F6B24]" : "text-[#6E7F70]"}`}>{panel ? `${deliveredUnits}/${orderedUnits} delivered` : "Expected / Delivered"}</p>
+            <p className={`text-[12px] ${panel ? "font-semibold text-[#2F6B24]" : "text-[#6E7F70]"}`}>{panel ? `${deliveredUnits} delivered` : "Delivered"}</p>
           </div>
           {lines.map((l) => {
             const st = state[l.lineId] || { delivered: l.quantity, reason: "", disposition: null };
@@ -399,14 +396,7 @@ export function DeliveryForm({
                       ))}
                     </div>
                     <input value={st.reason} onChange={(e) => setLine(l.lineId, { reason: e.target.value })} placeholder="Or type the reason" aria-label={`Reason for ${l.productName}`} className="w-full h-11 px-3 rounded-lg border border-[#E2DBCE] bg-white text-sm" />
-                    <p className="text-[12px] font-semibold text-[#5A6C5E]">Where are the {short} undelivered?</p>
-                    <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label={`Where the undelivered ${l.productName} went`}>
-                      {DISPOSITIONS.map((d) => (
-                        <button key={d} type="button" role="radio" aria-checked={st.disposition === d} onClick={() => setLine(l.lineId, { disposition: d })} className={`rn-press h-11 rounded-full text-[12.5px] font-semibold ${st.disposition === d ? "bg-[#C9501C] text-white" : "bg-white text-[#3E4E42] border border-[#E2DBCE]"}`}>
-                          {DISPOSITION_TEXT[d] || DISPOSITION_LABEL[d]}
-                        </button>
-                      ))}
-                    </div>
+                    <p className="text-[12.5px] font-semibold text-[#5A6C5E]">{short} returning to the PG</p>
                   </div>
                 )}
               </div>
@@ -571,7 +561,7 @@ export function DeliveryForm({
               : nothing
                 ? "Save as Not Delivered"
                 : shortLines.length > 0
-                  ? `Confirm partial delivery (${deliveredUnits}/${orderedUnits})`
+                  ? "Confirm partial delivery"
                   : doorstep && payLater
                     ? "Mark as delivered · Pay Later"
                     : `Confirm Delivery${panel && stopNo !== undefined ? ` (Stop #${stopNo})` : ""}`}

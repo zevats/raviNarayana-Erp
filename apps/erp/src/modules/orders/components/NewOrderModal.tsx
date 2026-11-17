@@ -5,7 +5,7 @@ import { friendlyError } from "@/lib/friendlyError";
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { X, Truck, Utensils, Search, Plus, Minus, Check, AlertCircle, RotateCcw, User, MapPin, ChevronLeft, ArrowRight } from "lucide-react";
 import { TiffinCustomer, TiffinProduct, MealType, BusinessOrderType, TiffinSubscription } from "@/types";
-import { businessToday, businessMeal } from "@/lib/businessDate";
+import { businessToday, orderMealNow } from "@/lib/businessDate";
 import { useErpQuery } from "@/lib/cache/erpDataCache";
 
 import { PhoneError } from "@/components/forms/PhoneError";
@@ -43,8 +43,18 @@ export interface PendingOrderJob {
   run: () => Promise<{ message: string; orderId: string | null }>;
 }
 
-/** The meal being taken now (lunch until 4 pm India time, dinner after): businessMeal. */
-const mealForNow = (): MealType => businessMeal();
+/** The meal a new order starts on, by the clock (see orderMealNow); it can always be changed. */
+const mealForNow = (): MealType => orderMealNow();
+/** For a plan order: the clock's meal when the plan covers it, else the next meal the plan covers. */
+const mealForPlan = (planMeals: string | null | undefined, from: MealType): MealType => {
+  const order: MealType[] = ["BREAKFAST", "LUNCH", "DINNER"];
+  const start = order.indexOf(from);
+  for (let i = 0; i < order.length; i++) {
+    const m = order[(start + i) % order.length];
+    if (planCoversMeal(planMeals, m)) return m;
+  }
+  return from;
+};
 
 // Last order per customer, kept while the page is open: fetched when the pointer rests on a
 // customer (or the row is focused), so choosing the customer shows it at once.
@@ -167,7 +177,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
 
   // Operational Metadata
   const [serviceDate, setServiceDate] = useState(defaultDate || businessToday());
-  const [mealType, setMealType] = useState<MealType>(mealForNow);
+  const [mealType, setMealTypeState] = useState<MealType>(mealForNow);
+  // Whether the person picked the meal themselves in this draft (then nothing changes it for them).
+  const mealChosen = useRef(false);
+  const setMealType = (m: MealType) => {
+    mealChosen.current = true;
+    setMealTypeState(m);
+  };
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "UPI" | "PAY_LATER">("CASH");
   const [notes, setNotes] = useState("");
 
@@ -191,7 +207,8 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   useEffect(() => {
     if (!isOpen) return;
     setStep(1);
-    setMealType(mealForNow());
+    mealChosen.current = false;
+    setMealTypeState(mealForNow());
     setForPlan(false);
     setPlan(null);
     setPlanSearch("");
@@ -460,7 +477,7 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
     setFlashIds(ids);
     setMenuSearch("");
     scrollToReused.current = ids.length > 0;
-    if (pastOrder.mealType) setMealType(pastOrder.mealType);
+    // The copied order's items are reused; the meal stays the one for now unless it was picked.
     if (pastOrder.deliveryAddress && selectedCustomer) {
       setNewCustomerAddress(pastOrder.deliveryAddress);
     }
@@ -515,6 +532,13 @@ export function NewOrderModal({ isOpen, onClose, onOrderCreated, onSubmitInBackg
   // Cart summary calculations
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const totalQuantity = useMemo(() => cartItems.reduce((s, it) => s + it.quantity, 0), [cartItems]);
+  // A plan order starts on a meal the plan covers (a lunch-and-dinner plan taken in the morning
+  // starts on Lunch, not Breakfast), unless the person already picked the meal.
+  const planMeals = forPlan && plan ? plan.mealTypes : null;
+  useEffect(() => {
+    if (!planMeals || mealChosen.current) return;
+    setMealTypeState((m) => mealForPlan(planMeals, m));
+  }, [planMeals]);
   const planCovers = Boolean(forPlan && plan && planCoversMeal(plan.mealTypes, mealType));
   const planFreeThalis = planCovers && plan ? plan.quantityPerMeal : 0;
   const planFreeValue = useMemo(() => {

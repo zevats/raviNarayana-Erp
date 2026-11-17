@@ -44,7 +44,7 @@ function Timeline({ events }: { events: DeliveryTaskEvent[] }) {
   );
 }
 
-type Action = null | "assign" | "retry" | "cancel" | "resolve" | "collect";
+type Action = null | "assign" | "retry" | "cancel" | "collect";
 
 /**
  * One delivery in focus: who and where, each item's ordered / delivered / undelivered with reason
@@ -227,11 +227,6 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                     <RotateCcw className="w-4 h-4" /> Send again
                   </button>
                 )}
-                {needsFollowUp(t) && (
-                  <button type="button" className={btn.quiet} onClick={() => start("resolve")}>
-                    <CheckCheck className="w-4 h-4" /> Resolve
-                  </button>
-                )}
                 {t.paymentMode === "DOORSTEP" && (o === "DELIVERED" || o === "PARTIAL") && (t.balanceDue || 0) > 0 && (
                   <button type="button" className={btn.quiet} onClick={() => start("collect")}>
                     <IndianRupee className="w-4 h-4" /> Collect balance
@@ -273,7 +268,7 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                       <input
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={action === "cancel" ? "Reason for cancelling (required)" : action === "resolve" ? "How was it resolved? (required)" : action === "assign" ? "Reason (optional)" : "Note (optional)"}
+                        placeholder={action === "cancel" ? "Reason for cancelling (required)" : action === "assign" ? "Reason (optional)" : "Note (optional)"}
                         className="w-full min-h-[44px] px-3 rounded-xl border border-surface-subtle bg-surface-canvas text-sm"
                       />
                     )
@@ -293,7 +288,6 @@ export function TaskPanel({ taskId, onClose, readOnly, staff, pastCutoff, onReco
                         if (action === "assign") run(`/api/delivery/tasks/${t.id}/assign`, { assignedToStaffId: staffId, reason: text || undefined }, "Assigned.");
                         else if (action === "retry") run(`/api/delivery/tasks/${t.id}/retry`, { reassignToStaffId: staffId || undefined, notes: text || undefined }, "Sent again.");
                         else if (action === "cancel") run(`/api/delivery/tasks/${t.id}/cancel`, { reason: text, overrideCutoff: override }, "Cancelled.");
-                        else if (action === "resolve") run(`/api/delivery/tasks/${t.id}/resolve`, { note: text }, "Resolved.");
                         else if (action === "collect")
                           run(`/api/delivery/tasks/${t.id}/collect`, { collectedAmount: Number(amount), paymentMethod: method, idempotencyKey: collectKey.current ?? (collectKey.current = `bal_${t.id}_${uniqueId()}`) }, "Payment recorded.");
                       }}

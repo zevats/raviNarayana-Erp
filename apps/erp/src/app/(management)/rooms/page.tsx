@@ -709,7 +709,7 @@ export default function RoomsPage() {
 
       <StatStrip
         items={[
-          { label: "Occupancy", value: `${stats.occupancyRate}%`, note: `${stats.occupiedBeds}/${stats.totalCapacity} beds` },
+          { label: "Occupancy", value: `${stats.occupancyRate}%`, note: `${stats.totalCapacity} beds` },
           { label: "Free beds", value: stats.availableBeds, tone: "good" },
           { label: "Occupied beds", value: stats.occupiedBeds },
           { label: "Rooms", value: stats.totalRooms },
@@ -780,7 +780,7 @@ export default function RoomsPage() {
                       </span>
                       {/* Numerator and denominator strictly together on one line */}
                       <span className="whitespace-nowrap tabular-nums font-bold text-sm text-[#1A2E20]">
-                        {room.occupiedBeds} / {room.capacity} beds
+                        {room.availableBeds === 0 ? "Full" : `${room.availableBeds} free`}
                       </span>
                     </div>
 

@@ -20,7 +20,7 @@ export const OUTCOME_LABEL: Record<DeliveryOutcome, string> = {
 
 export const DISPOSITION_LABEL: Record<DeliveryDisposition, string> = {
   RETURNED: "Returned to PG",
-  WITH_STAFF: "Brought back by delivery staff",
+  WITH_STAFF: "Returning to PG",
   DISCARDED: "Damaged",
 };
 

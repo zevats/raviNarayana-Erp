@@ -591,7 +591,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
                 <StatStrip
                   items={[
                     { label: "Deliveries", value: s.stopsThisMonth, note: `${s.deliveredThisMonth} in full` },
-                    { label: "Today", value: `${s.todayDone} / ${s.todayStops}`, note: "stops done" },
+                    { label: "Today", value: String(s.todayDone), note: "stops done" },
                     { label: "Cash handed over", value: rupees(s.cashHandedOverThisMonth), note: s.cashWithYou > 0 ? `${rupees(s.cashWithYou)} with you now` : "nothing with you now" },
                   ]}
                 />
@@ -647,7 +647,7 @@ export function AccountPage({ user }: { user: AuthenticatedUser }) {
             {[
               { icon: <Truck className="w-4 h-4" />, label: "Deliveries", value: String(s.stopsThisMonth), sub: `${s.deliveredThisMonth} delivered in full` },
               { icon: <BadgeCheck className="w-4 h-4" />, label: "Delivered in full", value: s.deliveredRate === null ? "—" : `${s.deliveredRate}%`, sub: "of finished stops" },
-              { icon: <Clock className="w-4 h-4" />, label: "Today", value: `${s.todayDone} / ${s.todayStops}`, sub: "stops done" },
+              { icon: <Clock className="w-4 h-4" />, label: "Today", value: String(s.todayDone), sub: "stops done" },
               { icon: <Banknote className="w-4 h-4" />, label: "Cash handed over", value: rupees(s.cashHandedOverThisMonth), sub: s.cashWithYou > 0 ? `${rupees(s.cashWithYou)} with you now` : "Nothing with you now" },
             ].map((x) => (
               <div key={x.label} className="rounded-2xl bg-white border border-[#ECE6DB] p-4">

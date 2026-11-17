@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { PackageCheck, PackageMinus, PackagePlus, Undo2 } from "lucide-react";
+import { Hourglass, PackageCheck, PackagePlus, Undo2 } from "lucide-react";
 import { useErpQuery, invalidateErpCache } from "@/lib/cache/erpDataCache";
 import { postJsonRequest } from "@/lib/http/requestJson";
 import { toast } from "@/components/ui/toast";
@@ -47,11 +47,11 @@ const when = (iso: string) =>
   new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
 
 const KIND_TEXT: Record<Move["kind"], string> = {
-  HELD: "Brought back",
+  HELD: "Returning to PG",
   EXTRA: "Extra delivered",
   DAMAGED: "Damaged",
-  RETURN: "Handed in to PG",
-  SHORT: "Not received when checked",
+  RETURN: "Handed over to PG",
+  SHORT: "Not received when accepted",
   ISSUED: "Spare thalis taken",
 };
 
@@ -121,6 +121,7 @@ function CountDialog({
       onClose={onClose}
       busy={busy}
       title={title}
+      accent="orange"
       size="sm"
       footer={
         <button
@@ -149,46 +150,128 @@ function CountDialog({
   );
 }
 
-/** Delivery partner: the thalis they carry, handing them in, and damage. */
+/**
+ * Delivery partner: the thalis they carry and handing them back to the PG. The same steps as My
+ * Cash: one tap hands over everything, a different number is a choice of its own, and it then
+ * waits for the Owner or a Manager to accept it (their pop-up).
+ */
 export function StaffThalis() {
   const q = useThalis();
-  const [dialog, setDialog] = useState<"return" | "damage" | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [custom, setCustom] = useState(false);
+  const [countText, setCountText] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!q.data?.ready) return null;
   const me = q.data.staff[0];
   const holding = me?.holding ?? 0;
-  const pending = q.data.pending;
+  const waiting = q.data.pending.reduce((n, m) => n + m.quantity, 0);
   if (!me && q.data.recent.length === 0) return null;
+  const count = custom ? Math.round(Number(countText)) : holding;
+  const countOk = Number.isInteger(count) && count > 0 && count <= holding;
+  const handOver = async () => {
+    if (busy || !countOk) return;
+    setBusy(true);
+    const ok = await act({ action: "return", quantity: count }, `${thalis(count)} given to the PG. Waiting for approval.`);
+    setBusy(false);
+    if (ok) {
+      setConfirming(false);
+      setCustom(false);
+    }
+  };
   return (
-    <section aria-label="Thalis" className={`${K.card} p-5 space-y-4`}>
-      <div className="flex items-start justify-between gap-3">
+    <section aria-label="Thalis" className={`${K.card} p-4`}>
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <p className={K.eyebrow}>Thalis with you</p>
-          <p className="mt-1 text-[30px] font-extrabold tabular-nums leading-none">{holding}</p>
+          <p className="text-[14px] font-semibold text-[#5A6C5E]">Thalis with you</p>
+          <p className="mt-1 text-[40px] leading-none font-extrabold tracking-[-0.02em] text-[#1F2320] tabular-nums">{holding}</p>
         </div>
-        <PackageCheck className="w-7 h-7 text-[#C9501C]" aria-hidden />
+        <PackageCheck className="w-9 h-9 text-[#C9501C] shrink-0" aria-hidden />
       </div>
-      {pending.length > 0 && (
-        <p className="rounded-xl bg-[#FCE9DD] px-3.5 py-2.5 text-[13px] font-semibold text-[#B4440F]">
-          {thalis(pending.reduce((s, m) => s + m.quantity, 0))} handed in · waiting to be checked
-        </p>
+
+      {waiting > 0 && (
+        <div className="mt-4 flex items-center gap-3 rounded-xl bg-[#FBF1DE] px-4 py-3">
+          <Hourglass className="w-5 h-5 text-[#8F6710] shrink-0" />
+          <p className="text-[14px] text-[#5C430B]">
+            <span className="font-bold">{thalis(waiting)}</span> given to the PG · <span className="font-semibold">Waiting for approval</span>
+          </p>
+        </div>
       )}
-      <div className="grid grid-cols-2 gap-2">
-        <button type="button" className={`${K.primaryBtn} h-12 text-[14px]`} disabled={holding === 0} onClick={() => setDialog("return")}>
-          <Undo2 className="w-4 h-4" /> Hand in to PG
-        </button>
-        <button type="button" className={`${K.greyBtn} h-12 text-[14px]`} disabled={holding === 0} onClick={() => setDialog("damage")}>
-          <PackageMinus className="w-4 h-4" /> Damaged
-        </button>
-      </div>
+
+      {holding > 0 && waiting === 0 && (
+        <div className="mt-5">
+          {confirming ? (
+            <div className="rn-enter space-y-3">
+              {!custom ? (
+                <>
+                  <div className={`${K.soft} flex items-center justify-between gap-3 px-4 py-4`}>
+                    <span className="text-[14px] font-semibold text-[#3E4540]">Handing over</span>
+                    <span className="text-[28px] leading-none font-extrabold tabular-nums text-[#1F2320]">{thalis(holding)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustom(true);
+                      setCountText("");
+                    }}
+                    className="text-[14px] font-semibold text-[#C9501C] hover:underline underline-offset-2"
+                  >
+                    Giving a different number?
+                  </button>
+                </>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="block text-[13px] font-semibold text-[#3E4540] mb-1.5">Thalis you are giving</span>
+                    <span className={`${K.soft} flex items-center h-14 px-4 focus-within:ring-4 focus-within:ring-[#C9501C]/20`}>
+                      <input
+                        value={countText}
+                        onChange={(e) => setCountText(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+                        inputMode="numeric"
+                        placeholder="0"
+                        autoFocus
+                        aria-label="Thalis you are handing over"
+                        className="flex-1 min-w-0 bg-transparent text-[22px] font-extrabold tabular-nums outline-none placeholder:text-[#B9B2A6]"
+                      />
+                    </span>
+                  </label>
+                  {countText.trim() !== "" && count > holding && <p className="text-[13px] font-semibold text-[#9A3423]">You have {thalis(holding)}; you can&apos;t give more.</p>}
+                </>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirming(false);
+                    setCustom(false);
+                  }}
+                  disabled={busy}
+                  className={`${K.greyBtn} h-12`}
+                >
+                  Back
+                </button>
+                <button type="button" onClick={handOver} disabled={busy || !countOk} className={`${K.primaryBtn} h-12`}>
+                  {busy ? "Sending…" : `Hand over ${countOk ? count : ""}`}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirming(true)} className={`${K.primaryBtn} w-full h-14 text-[15px]`}>
+              <Undo2 className="w-5 h-5" /> Hand over {thalis(holding)} to PG
+            </button>
+          )}
+        </div>
+      )}
+      {holding > 0 && waiting > 0 && <p className="mt-3 text-[13px] text-[#5A6C5E]">You can hand over the rest once the last handover is approved.</p>}
+
       {q.data.recent.length > 0 && (
-        <ul className="divide-y divide-[#ECE6DB]">
+        <ul className="mt-4 divide-y divide-[#ECE6DB]">
           {q.data.recent.slice(0, 8).map((m) => (
             <li key={m.id} className="py-2.5 flex items-center justify-between gap-3 text-[13px]">
               <span className="min-w-0">
                 <span className="block font-semibold truncate">{KIND_TEXT[m.kind]}{m.customerName ? ` · ${m.customerName}` : ""}</span>
                 <span className="block text-[12px] text-[#5A6C5E]">
                   {when(m.createdAt)}
-                  {m.kind === "RETURN" ? (m.status === "PENDING" ? " · waiting to be checked" : ` · ${m.verifiedQuantity ?? m.quantity} received`) : ""}
+                  {m.kind === "RETURN" ? (m.status === "PENDING" ? " · waiting for approval" : ` · ${m.verifiedQuantity ?? m.quantity} accepted`) : ""}
                 </span>
               </span>
               <span className="shrink-0 font-bold tabular-nums">{m.quantity}</span>
@@ -196,28 +279,6 @@ export function StaffThalis() {
           ))}
         </ul>
       )}
-      <CountDialog
-        open={dialog === "return"}
-        title="Hand in thalis to the PG"
-        countLabel="Thalis handed in"
-        max={holding}
-        start={holding}
-        noteLabel="Note"
-        saveLabel="Hand in"
-        onClose={() => setDialog(null)}
-        onSave={(count, note) => act({ action: "return", quantity: count, note }, `${thalis(count)} handed in. Waiting to be checked.`)}
-      />
-      <CountDialog
-        open={dialog === "damage"}
-        title="Damaged thalis"
-        countLabel="Thalis damaged"
-        max={holding}
-        noteLabel="What happened"
-        noteRequired={() => true}
-        saveLabel="Save"
-        onClose={() => setDialog(null)}
-        onSave={(count, note) => act({ action: "damage", quantity: count, note }, `${thalis(count)} recorded as damaged.`)}
-      />
     </section>
   );
 }
@@ -265,7 +326,7 @@ export function ThaliDesk({ canManage }: { canManage: boolean }) {
           <p className="text-[24px] font-semibold tabular-nums">{d.staff.reduce((s, x) => s + x.holding, 0)}</p>
         </div>
         <div className="rounded-2xl bg-[#FCE9DD] px-3.5 py-3">
-          <p className="text-[12px] text-[#8A3A14]">To check</p>
+          <p className="text-[12px] text-[#8A3A14]">To accept</p>
           <p className="text-[24px] font-semibold tabular-nums text-[#8A3A14]">{d.pending.reduce((s, m) => s + m.quantity, 0)}</p>
         </div>
       </div>
@@ -275,12 +336,12 @@ export function ThaliDesk({ canManage }: { canManage: boolean }) {
           {d.pending.map((m) => (
             <li key={m.id} className="rn-due-row !cursor-default">
               <span className="min-w-0 flex-1">
-                <span className="block text-[14.5px] font-semibold truncate">{m.staffName || "Staff"} handed in {thalis(m.quantity)}</span>
+                <span className="block text-[14.5px] font-semibold truncate">{m.staffName || "Staff"} gave {thalis(m.quantity)}</span>
                 <span className="block text-[12.5px] text-[var(--rn-ink-2)] truncate">{when(m.createdAt)}{m.note ? ` · ${m.note}` : ""}</span>
               </span>
               {canManage && (
                 <button type="button" className="rn-btn rn-btn-primary rn-btn-sm shrink-0" onClick={() => setChecking(m)}>
-                  Check
+                  Accept
                 </button>
               )}
             </li>
@@ -295,14 +356,14 @@ export function ThaliDesk({ canManage }: { canManage: boolean }) {
               <span className="min-w-0 flex-1">
                 <span className="block text-[14.5px] font-semibold truncate">{s.staffName}</span>
                 <span className="block text-[12.5px] text-[var(--rn-ink-2)]">
-                  {thalis(s.holding)} with them{s.pending ? ` · ${s.pending} handed in` : ""}
+                  {thalis(s.holding)} with them{s.pending ? ` · ${s.pending} waiting for approval` : ""}
                   {s.extras ? ` · ${s.extras} extra delivered` : ""}
                   {s.damaged ? ` · ${s.damaged} damaged` : ""}
                 </span>
               </span>
               {canManage && s.holding > 0 && (
                 <button type="button" className="rn-btn rn-btn-sm shrink-0" onClick={() => setHandIn({ staffId: s.staffId, name: s.staffName, holding: s.holding })}>
-                  Hand in
+                  Hand over
                 </button>
               )}
             </li>
@@ -323,7 +384,7 @@ export function ThaliDesk({ canManage }: { canManage: boolean }) {
                   </span>
                   <span className="block text-[12px] text-[var(--rn-ink-2)] truncate">
                     {when(m.createdAt)}
-                    {m.kind === "RETURN" && m.status === "VERIFIED" ? ` · ${m.verifiedQuantity} received${m.verifiedByName ? ` by ${m.verifiedByName}` : ""}` : ""}
+                    {m.kind === "RETURN" && m.status === "VERIFIED" ? ` · ${m.verifiedQuantity} accepted${m.verifiedByName ? ` by ${m.verifiedByName}` : ""}` : ""}
                     {m.note ? ` · ${m.note}` : ""}
                   </span>
                 </span>
@@ -336,32 +397,33 @@ export function ThaliDesk({ canManage }: { canManage: boolean }) {
 
       <CountDialog
         open={Boolean(checking)}
-        title={checking ? `Check ${checking.staffName || "staff"}'s thalis` : ""}
-        countLabel={checking ? `Thalis received (of ${checking.quantity})` : "Thalis received"}
+        title={checking ? `${checking.staffName || "Staff"} gave ${thalis(checking.quantity)}` : ""}
+        countLabel="Thalis you received"
         max={checking?.quantity}
         start={checking?.quantity}
-        noteLabel="Why fewer"
+        noteLabel="Why is it different?"
         noteWhenNeeded
         noteRequired={(count) => Boolean(checking) && count < (checking?.quantity ?? 0)}
-        saveLabel="Confirm received"
+        saveLabel="Accept"
         onClose={() => setChecking(null)}
-        onSave={(count, note) => act({ action: "verify", moveId: checking!.id, receivedQuantity: count, note }, `${thalis(count)} received into the PG's spare stock.`)}
+        onSave={(count, note) => act({ action: "verify", moveId: checking!.id, receivedQuantity: count, note }, `${thalis(count)} accepted.`)}
       />
       <CountDialog
         open={Boolean(handIn)}
-        title={handIn ? `${handIn.name}: hand in thalis` : ""}
-        countLabel="Thalis handed in"
+        title={handIn ? `${handIn.name}: hand over thalis` : ""}
+        countLabel="Thalis handed over"
         max={handIn?.holding}
         start={handIn?.holding}
         noteLabel="Note"
-        saveLabel="Hand in"
+        saveLabel="Hand over"
         onClose={() => setHandIn(null)}
-        onSave={(count, note) => act({ action: "return", staffId: handIn!.staffId, quantity: count, note }, `${thalis(count)} handed in.`)}
+        onSave={(count, note) => act({ action: "return", staffId: handIn!.staffId, quantity: count, note }, `${thalis(count)} handed over.`)}
       />
       <Dialog
         open={issueOpen}
         onClose={() => setIssueOpen(false)}
         title="Give spare thalis"
+        accent="orange"
         size="sm"
         footer={null}
       >
@@ -399,7 +461,7 @@ function IssueCount({ max, disabled, onSave }: { max: number; disabled: boolean;
   const valid = Number.isInteger(n) && n > 0 && n <= max;
   return (
     <div className="space-y-3">
-      <CountField value={count} onChange={setCount} label={`How many (${max} spare)`} max={max} />
+      <CountField value={count} onChange={setCount} label="How many" max={max} />
       <button
         type="button"
         className="rn-btn rn-btn-primary w-full"

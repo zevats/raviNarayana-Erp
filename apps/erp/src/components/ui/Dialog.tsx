@@ -19,6 +19,7 @@ export function Dialog({
   footer,
   size = "md",
   busy = false,
+  accent,
 }: {
   open: boolean;
   onClose: () => void;
@@ -28,6 +29,8 @@ export function Dialog({
   footer?: React.ReactNode;
   size?: "sm" | "md" | "lg";
   busy?: boolean;
+  /** Delivery screens are orange: their pop-ups keep that colour (default is the green edition). */
+  accent?: "orange";
 }) {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const panel = useRef<HTMLDivElement>(null);
@@ -71,7 +74,7 @@ export function Dialog({
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
         tabIndex={-1}
-        className={`rn-dialog rn-modal ${size === "lg" ? "rn-modal-wide" : ""} relative w-full ${width} max-h-[94dvh] sm:max-h-[calc(100dvh-2rem)] flex flex-col rounded-t-[26px] sm:rounded-[26px] rn-rise outline-none`}
+        className={`rn-dialog rn-modal ${accent === "orange" ? "rn-modal-orange" : ""} ${size === "lg" ? "rn-modal-wide" : ""} relative w-full ${width} max-h-[94dvh] sm:max-h-[calc(100dvh-2rem)] flex flex-col rounded-t-[26px] sm:rounded-[26px] rn-rise outline-none`}
       >
         <div className="flex items-start justify-between gap-4 px-5 sm:px-6 pt-5 sm:pt-6">
           <div className="min-w-0">

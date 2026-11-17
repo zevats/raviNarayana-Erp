@@ -83,7 +83,7 @@ export function RecordDetail({ task, stopNo, onClose }: { task: DeliveryTask; st
                   {short > 0 && <p className="text-[12px] text-[#9A3423] truncate">{`${l.undeliveredReason || "No reason"} · ${l.disposition ? DISPOSITION_LABEL[l.disposition] : "not recorded"}`}</p>}
                 </div>
                 <p className={`text-[14px] font-extrabold tabular-nums shrink-0 ${short > 0 ? "text-[#9A3423]" : "text-[#2F6B24]"}`}>
-                  {l.deliveredQuantity ?? 0} / {l.quantity}
+                  {l.deliveredQuantity ?? 0} delivered
                 </p>
               </li>
             );

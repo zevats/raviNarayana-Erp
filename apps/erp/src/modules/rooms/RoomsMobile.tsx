@@ -95,7 +95,7 @@ export function RoomsMobile<R extends MobileRoom>({
       <MHero
         label="Beds filled"
         value={loading ? "—" : `${stats.occupancyRate}%`}
-        note={`${stats.occupiedBeds}/${stats.totalCapacity} beds · ${stats.totalRooms} rooms`}
+        note={`${stats.totalCapacity} beds · ${stats.totalRooms} rooms`}
         action={
           <button type="button" onClick={onAdd} className="m-hero-btn m-press">
             <Plus className="w-4 h-4" /> Room
@@ -155,7 +155,7 @@ export function RoomsMobile<R extends MobileRoom>({
               tone={r.availableBeds === 0 ? "accent" : r.occupiedBeds === 0 ? "green" : "blue"}
               title={`Room ${r.roomNumber}`}
               sub={[floorLabel(r.floor), typeLabel(r.type), r.occupants && r.occupants.length ? r.occupants.map((o) => o.fullName.split(" ")[0]).join(", ") : ""].filter(Boolean).join(" · ")}
-              right={`${r.occupiedBeds}/${r.capacity}`}
+              right={`${r.capacity} bed${r.capacity === 1 ? "" : "s"}`}
               rightSub={r.availableBeds === 0 ? "Full" : `${r.availableBeds} free`}
               onClick={() => setOpenId(r.id)}
             />
@@ -191,7 +191,7 @@ export function RoomsMobile<R extends MobileRoom>({
             <div className="m-card py-1">
               <MField label="Floor">{floorLabel(open.floor)}</MField>
               <MField label="Kind">{typeLabel(open.type)}</MField>
-              <MField label="Beds">{`${open.occupiedBeds}/${open.capacity} filled`}</MField>
+              <MField label="Beds">{`${open.occupiedBeds} filled · ${open.availableBeds} free`}</MField>
               <MField label="Rent">{`${formatMoney(open.baseRentMonthly)} a bed`}</MField>
             </div>
             <MSection title="People">

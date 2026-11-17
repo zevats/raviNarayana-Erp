@@ -60,7 +60,7 @@ function HandoverHistory({ handovers }: { handovers: DriverCashHandover[] }) {
             </div>
             {(h.shortfallCash ?? 0) > 0 && (
               <p className="text-red-800">
-                Handed over {inr(h.declaredCash)} / {inr(h.recordedCash ?? h.declaredCash)} · {inr(h.shortfallCash ?? 0)} short{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
+                Handed over {inr(h.declaredCash)} · {inr(h.shortfallCash ?? 0)} short{h.shortfallReason ? ` — ${h.shortfallReason}` : ""}
               </p>
             )}
             {(h.writtenOffCash ?? 0) > 0 && <p className="text-[#5A6C5E]">Written off by the Owner: {inr(h.writtenOffCash ?? 0)}{h.writeOffReason ? ` — ${h.writeOffReason}` : ""}</p>}

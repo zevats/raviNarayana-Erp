@@ -145,7 +145,7 @@ function PhoneCard({ task, stopNo }: { task: DeliveryTask; stopNo?: number }) {
           <div className="flex items-baseline justify-between gap-3 text-[14px]">
             <span className="min-w-0 break-words">{lines.map((l) => `${l.productName} (${l.quantity})`).join(", ")}</span>
             <span className="shrink-0 text-[#3E4540]">
-              {delivered}/{ordered}
+              {delivered} delivered
             </span>
           </div>
           {task.recipientName && (

@@ -26,7 +26,10 @@ import { EmptyState } from "./staffKit";
 const MEAL_WORD: Record<string, string> = { BREAKFAST: "Breakfast", LUNCH: "Lunch", DINNER: "Dinner" };
 
 type Tab = "board" | "problems" | "custody" | "history" | "rooms";
-const FILTERS: Array<DeliveryOutcome | "ALL"> = ["ALL", "WAITING", "OUT", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
+/** "OPEN" = still to deliver (assigned or not): the page has no separate waiting / out steps. */
+type StopFilter = DeliveryOutcome | "ALL" | "OPEN";
+const FILTERS: StopFilter[] = ["ALL", "OPEN", "DELIVERED", "PARTIAL", "NOT_DELIVERED", "CANCELLED"];
+const isOpenStop = (o: DeliveryOutcome) => o === "WAITING" || o === "OUT";
 
 /** Remembers each row's last outcome so a row that changes state briefly lights up. */
 function useChangedIds(tasks: DeliveryTask[]): Set<string> {
@@ -67,12 +70,12 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   const canManage = user.role === "SUPER_ADMIN" || user.role === "OPERATIONS_MANAGER";
   // Owner and Manager act directly; the server enforces every permission.
   const readOnly = !canManage;
-  const [tab, setTab] = useState<Tab>(isOwner ? "history" : "board");
+  const [tab, setTab] = useState<Tab>("board");
   // The section switch lights up on the tap; the section itself follows as a background render.
   const [shownTab, pickTab] = useInstantChoice<Tab>(tab, setTab);
   const [date, setDate] = useState(today);
   const [meal, setMeal] = useState<MealType>(() => businessMeal());
-  const [filter, setFilter] = useState<DeliveryOutcome | "ALL">("ALL");
+  const [filter, setFilter] = useState<StopFilter>("ALL");
   const phone = useIsPhone();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -155,7 +158,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tasks.filter((t) => {
-      if (filter !== "ALL" && deliveryOutcome(t) !== filter) return false;
+      if (filter === "OPEN" ? !isOpenStop(deliveryOutcome(t)) : filter !== "ALL" && deliveryOutcome(t) !== filter) return false;
       if (filter === "ALL" && t.status === "CANCELLED") return false;
       if (person && (t.assignedTo ?? "__none") !== person) return false;
       if (!q) return true;
@@ -245,8 +248,10 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
     };
   }, [readOnly, preparedNow, date, meal]);
 
+  const [assigning, setAssigning] = useState(false);
   const bulkAssign = async () => {
-    if (!bulkStaff || selected.size === 0) return;
+    if (!bulkStaff || selected.size === 0 || assigning) return;
+    setAssigning(true);
     try {
       const r = await postJson<any>("/api/delivery/tasks/batch-assign", { taskIds: Array.from(selected), assignedToStaffId: bulkStaff });
       invalidateErpCache(["delivery", "orders"]);
@@ -254,6 +259,8 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
       setSelected(new Set());
     } catch (e: any) {
       setNotice({ tone: "error", text: e.message });
+    } finally {
+      setAssigning(false);
     }
   };
 
@@ -263,22 +270,29 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
     return next;
   });
 
-  const figure = (label: string, value: number, o: DeliveryOutcome, tone = "") => (
-    <button
-      type="button"
-      onClick={() => {
-        setTab("board");
-        setFilter(filter === o ? "ALL" : o);
-      }}
-      aria-pressed={filter === o}
-      className={`rn-stat text-left transition-colors ${filter === o ? "bg-[var(--rn-accent-tint)]" : "hover:bg-white/60"}`}
-    >
-      <span className="block text-[12px] text-[var(--rn-ink-3)]">{label}</span>
-      <span className={`block mt-1 text-[22px] leading-tight font-semibold tabular-nums ${tone || "text-[var(--rn-ink)]"}`}>
-        <Count value={value} />
-      </span>
-    </button>
-  );
+  const toDeliver = summary.waiting + summary.out;
+  const problemCount = summary.partial + summary.notDelivered;
+  const showStops = (f: StopFilter) => {
+    setTab("board");
+    setFilter(filter === f ? "ALL" : f);
+  };
+  const figure = (label: string, value: React.ReactNode, onClick: (() => void) | null, pressed: boolean, tone = "") => {
+    const body = (
+      <>
+        <span className="block text-[12px] text-[var(--rn-ink-3)]">{label}</span>
+        <span className={`block mt-1 text-[22px] leading-tight font-semibold tabular-nums ${tone || "text-[var(--rn-ink)]"}`}>
+          <Count value={value as any} />
+        </span>
+      </>
+    );
+    return onClick ? (
+      <button type="button" onClick={onClick} aria-pressed={pressed} className={`rn-stat text-left transition-colors ${pressed ? "bg-[var(--rn-accent-tint)]" : "hover:bg-white/60"}`}>
+        {body}
+      </button>
+    ) : (
+      <div className="rn-stat">{body}</div>
+    );
+  };
 
   return (
     <div className="space-y-5">
@@ -299,28 +313,14 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
             <MHero
               tone="orange"
               label={<>Delivered · {meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner"}</>}
-              value={`${summary.delivered}/${summary.waiting + summary.out + summary.delivered + summary.partial + summary.notDelivered}`}
-              note={
-                !m
-                  ? "Loading the list…"
-                  : !m.schemaReady
-                  ? undefined
-                  : m.prepared
-                  ? `List ready ${timeOf(m.preparedAt)}${m.lastRunAt && m.lastRunAt !== m.preparedAt ? ` · updated ${timeOf(m.lastRunAt)}` : ""} · ${m.taskCount} stops`
-                  : m.prepareAt
-                  ? m.due
-                    ? "Preparing the list now…"
-                    : `List prepares after ${m.prepareAt}`
-                  : "List not prepared yet"
-              }
+              value={String(summary.delivered)}
+              note={!m ? "Loading the list…" : !m.schemaReady || m.prepared ? undefined : m.prepareAt ? (m.due ? "Preparing the list now…" : `List prepares after ${m.prepareAt}`) : "List not prepared yet"}
               action={<HeroDayStepper value={date} today={today} onChange={setDate} />}
               items={[
-                { label: "Out now", value: summary.out, onClick: () => { setTab("board"); setFilter(filter === "OUT" ? "ALL" : "OUT"); } },
-                summary.waiting > 0
-                  ? { label: "Not assigned", value: summary.waiting, onClick: () => { setTab("board"); setFilter(filter === "WAITING" ? "ALL" : "WAITING"); } }
-                  : { label: "Delivered", value: summary.delivered, onClick: () => { setTab("board"); setFilter(filter === "DELIVERED" ? "ALL" : "DELIVERED"); } },
-                { label: "Problems", value: summary.partial + summary.notDelivered, onClick: () => setTab("problems") },
+                { label: "To deliver", value: toDeliver, onClick: () => showStops("OPEN") },
+                { label: "Problems", value: problemCount, onClick: () => setTab("problems") },
                 { label: "To collect", value: rupees(summary.money.outstanding) },
+                ...(summary.waiting > 0 ? [{ label: "Not assigned", value: summary.waiting, onClick: () => showStops("WAITING") }] : []),
               ]}
             />
             {!readOnly && m?.schemaReady && !m.prepared && !m.prepareAt && (
@@ -332,9 +332,9 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
             {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
             <nav aria-label="Delivery sections" className="m-places" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
               {([
-                { value: "board", label: "Board", icon: LayoutList },
+                { value: "board", label: "Stops", icon: LayoutList },
                 { value: "problems", label: problems.length ? `Problems ${problems.length}` : "Problems", icon: AlertTriangle },
-                { value: "custody", label: "Cash", icon: Wallet },
+                { value: "custody", label: "Cash & thalis", icon: Wallet },
                 { value: "history", label: "History", icon: HistoryIcon },
               ] as const).map((p) => {
                 const Icon = p.icon;
@@ -360,32 +360,22 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
           </>
         }
       />
-      {/* The list behind this meal: when it was prepared and by whom, and how many stops wait for a person. */}
-      {(m === undefined || m === null || m.schemaReady || isOwner) && (
+      {/* The list behind this meal, only while it needs attention (not prepared yet, or stops with no one). */}
+      {(!m || (m.schemaReady && (!m.prepared || m.unassignedCount > 0))) && (
         <section aria-label="Delivery list" className="rn-card px-5 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[13.5px] min-w-0">
             {!m ? (
               <span className="inline-flex items-center gap-2 rn-t-meta"><BikeLoader inline label="Loading" /> Loading the {meal.toLowerCase()} list…</span>
-            ) : !m.schemaReady ? (
-              // Owner only: the database has not had the update that adds list preparation.
-              <span className="rn-t-meta">Automatic list preparation is not available until the latest database update is installed. Orders still appear below.</span>
             ) : m.prepared ? (
-              <>
-                <span className="font-medium text-[var(--rn-ink)]">{meal === "BREAKFAST" ? "Breakfast" : meal === "LUNCH" ? "Lunch" : "Dinner"} list prepared {timeOf(m.preparedAt)}</span>
-                <span className="rn-t-meta"> · {m.trigger === "AUTO" ? "automatically" : `by ${m.preparedByName || "—"}`}{m.lastRunAt && m.lastRunAt !== m.preparedAt ? ` · updated ${timeOf(m.lastRunAt)}` : ""} · {m.taskCount} stops</span>
-                {m.unassignedCount > 0 && <> <Badge tone="warn">{m.unassignedCount} unassigned</Badge></>}
-              </>
+              <span className="font-medium text-[var(--rn-ink)]">{m.unassignedCount} stop{m.unassignedCount === 1 ? "" : "s"} without a delivery person</span>
             ) : (
-              <>
-                <span className="font-medium text-[var(--rn-ink)]">List not prepared yet</span>
-                <span className="rn-t-meta"> · {m.prepareAt ? (m.due ? "preparing now…" : `prepares automatically after ${m.prepareAt}`) : "prepare it by hand"}</span>
-              </>
+              <span className="font-medium text-[var(--rn-ink)]">{m.prepareAt ? (m.due ? "Preparing the list now…" : `The list prepares after ${m.prepareAt}`) : "List not prepared yet"}</span>
             )}
           </p>
-          {!readOnly && m?.schemaReady && !m.prepared && !m.prepareAt && (
+          {!readOnly && !m?.prepared && m?.schemaReady && !m.prepareAt && (
             <button type="button" onClick={prepare} disabled={preparing} className={`rn-btn rn-btn-sm rn-refresh ${preparing ? "is-spinning" : ""}`}>
               <RefreshCw />
-              Prepare list
+              {preparing ? "Preparing…" : "Prepare list"}
             </button>
           )}
         </section>
@@ -394,17 +384,11 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
 
       {/* Totals for the whole day and meal (search and filters never change them) */}
-      <section aria-label="Summary" className="rn-card rn-stats grid grid-cols-3 sm:grid-cols-6">
-        {figure("Not assigned", summary.waiting, "WAITING")}
-        {figure("Out", summary.out, "OUT", "text-status-info-text")}
-        {figure("Delivered", summary.delivered, "DELIVERED", "text-status-success-text")}
-        {figure("Partial", summary.partial, "PARTIAL", "text-status-warning-text")}
-        {figure("Not delivered", summary.notDelivered, "NOT_DELIVERED", "text-status-danger-text")}
-        <div className="rn-stat col-span-3 sm:col-span-1">
-          <span className="block text-[12px] text-[var(--rn-ink-3)]">Outstanding</span>
-          <span className="block mt-1 text-[22px] leading-tight font-semibold tabular-nums text-[var(--rn-accent)]"><Count value={rupees(summary.money.outstanding)} /></span>
-          <span className="block text-[11.5px] text-[var(--rn-ink-3)]">{rupees(summary.money.collected)} / {rupees(summary.money.due)} in</span>
-        </div>
+      <section aria-label="Summary" className="rn-card rn-stats grid grid-cols-2 sm:grid-cols-4">
+        {figure("To deliver", toDeliver, () => showStops("OPEN"), filter === "OPEN")}
+        {figure("Delivered", summary.delivered, () => showStops("DELIVERED"), filter === "DELIVERED", "text-status-success-text")}
+        {figure("Problems", problemCount, () => setTab("problems"), tab === "problems", problemCount > 0 ? "text-status-danger-text" : "")}
+        {figure("To collect", rupees(summary.money.outstanding), null, false, "text-[var(--rn-accent)]")}
       </section>
 
       <Segmented
@@ -412,9 +396,9 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
         value={tab}
         onChange={setTab}
         options={[
-          { value: "board", label: "Board" },
+          { value: "board", label: "Stops" },
           { value: "problems", label: "Problems", count: problems.length || undefined },
-          { value: "custody", label: "Custody" },
+          { value: "custody", label: "Cash & thalis" },
           { value: "history", label: "History" },
         ]}
       />
@@ -461,7 +445,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
               onChange={setFilter}
               options={FILTERS.map((x) => ({
                 value: x,
-                label: x === "ALL" ? "All" : x === "CANCELLED" ? "Cancelled" : OUTCOME_LABEL[x],
+                label: x === "ALL" ? "All" : x === "OPEN" ? "To deliver" : x === "CANCELLED" ? "Cancelled" : OUTCOME_LABEL[x],
                 count: x === "ALL" ? summary.total : x === "CANCELLED" ? summary.cancelled : undefined,
               }))}
             />
@@ -489,16 +473,10 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                         <input type="checkbox" aria-label={`Select all of ${g.name}`} checked={ids.every((id) => selected.has(id))} onChange={(e) => setSelected((prev) => { const n = new Set(prev); ids.forEach((id) => (e.target.checked ? n.add(id) : n.delete(id))); return n; })} className="w-5 h-5 accent-forest" />
                       )}
                       <h3 className="font-serif text-lg text-text-primary">{g.name}</h3>
-                      {g.id && defaultId && (
-                        g.id === defaultId
-                          ? <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-surface-canvas border border-surface-subtle text-text-secondary">Default partner</span>
-                          : <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-status-warning-bg border border-status-warning-border text-status-warning-text">Changed for these orders</span>
-                      )}
                       {g.id === null && <AlertTriangle className="w-4 h-4 text-status-warning-text" />}
                     </div>
                     <p className="text-xs text-text-muted tabular-nums">
-                      {s.total} stops · {s.delivered + s.partial} done{s.partial ? ` (${s.partial} partial)` : ""}{s.notDelivered ? ` · ${s.notDelivered} not delivered` : ""}
-                      {s.staff[0]?.collected ? ` · ${rupees(s.staff[0].collected)} collected` : ""}
+                      {[s.waiting + s.out > 0 && `${s.waiting + s.out} to deliver`, s.delivered > 0 && `${s.delivered} delivered`, s.partial + s.notDelivered > 0 && `${s.partial + s.notDelivered} problem${s.partial + s.notDelivered === 1 ? "" : "s"}`].filter(Boolean).join(" · ")}
                     </p>
                   </div>
                   <ul className="divide-y divide-surface-subtle">
@@ -557,7 +535,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-text-primary">{displayName(t)}</span>
                   <span className="flex items-center gap-2">
-                    {openFor(t) && <span className="text-[11px] text-status-warning-text tabular-nums">Open {openFor(t)}</span>}
+                    
                     <OutcomeBadge task={t} />
                   </span>
                 </div>
@@ -565,7 +543,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
                 <ul className="mt-2 space-y-1">
                   {(t.lines ?? []).filter((l) => undeliveredOf(l) > 0).map((l) => (
                     <li key={l.lineId} className="text-sm text-text-secondary">
-                      <span className="font-medium text-status-warning-text tabular-nums">{l.deliveredQuantity}/{l.quantity}</span> {l.productName} · {l.undeliveredReason || "no reason"} · {l.disposition ? DISPOSITION_LABEL[l.disposition] : "where it went not recorded"}
+                      <span className="font-medium text-status-warning-text tabular-nums">{undeliveredOf(l)}</span> {l.productName} not delivered · {l.undeliveredReason || "no reason"}
                     </li>
                   ))}
                   {(t.lines ?? []).length === 0 && t.exceptionReason && <li className="text-sm text-text-secondary">{t.exceptionReason}</li>}
@@ -604,7 +582,7 @@ export function ManagerDelivery({ user }: { user: AuthenticatedUser }) {
             className="flex-1 min-w-[150px]"
             triggerClassName="bg-white text-text-primary"
           />
-          <button type="button" disabled={!bulkStaff} onClick={bulkAssign} className="rn-btn rn-btn-primary">Assign</button>
+          <button type="button" disabled={!bulkStaff || assigning} onClick={bulkAssign} className="rn-btn rn-btn-primary">{assigning ? "Assigning…" : "Assign"}</button>
           <button type="button" onClick={() => setSelected(new Set())} className="rn-press min-h-[44px] px-3 text-sm text-sage-pale">Clear</button>
         </div>
       )}

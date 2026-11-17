@@ -259,7 +259,7 @@ function StopsView({ user, greet = true }: { user: AuthenticatedUser; greet?: bo
         <div className="w-56 lg:w-64">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[14px] font-bold">
-              {completed}/{tasks.length} done
+              {completed} done
             </span>
             <Pill tone="grey">{open.length} Remaining</Pill>
           </div>
@@ -304,7 +304,7 @@ function StopsView({ user, greet = true }: { user: AuthenticatedUser; greet?: bo
                 <NextUp task={next} stopNo={numbers.get(next.id)} queueTotal={open.length} selected={wide && selected?.id === next.id} starting={starting === next.id} onStart={() => start(next)} onDeliver={() => deliver(next)} />
               )}
               {!next && (
-                <EmptyState title="All stops done" detail={`${completed}/${tasks.length} ${mealWord.toLowerCase()} stops`} />
+                <EmptyState title="All stops done" detail={`${completed} ${mealWord.toLowerCase()} stop${completed === 1 ? "" : "s"}`} />
               )}
               <ul className="space-y-2.5">
                 {rest.map((t) => {
@@ -314,8 +314,8 @@ function StopsView({ user, greet = true }: { user: AuthenticatedUser; greet?: bo
                       {isOpen(t) ? (
                         <>
                           <div className="md:hidden space-y-2 pt-1">
-                            <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">{open.indexOf(t) + 1}/{open.length}</span>
-                            <OpenStopCard task={t} label={`Stop ${open.indexOf(t) + 1}/${open.length}`} starting={starting === t.id} onStart={() => start(t)} onDeliver={() => deliver(t)} />
+                            <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-[#6E7F70]">Stop {open.indexOf(t) + 1}</span>
+                            <OpenStopCard task={t} label={`Stop ${open.indexOf(t) + 1}`} starting={starting === t.id} onStart={() => start(t)} onDeliver={() => deliver(t)} />
                           </div>
                           <div className="hidden md:block">{row}</div>
                         </>
